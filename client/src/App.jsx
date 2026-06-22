@@ -13,6 +13,7 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import LearningPage from './pages/LearningPage';
 import LessonPage from './pages/LessonPage';
 import ExercisePage from './pages/ExercisePage';
+import MiNi_Game from './pages/MiNi_Game';
 import FriendLogin from './pages/FriendLogin';
 import ShopPage from './pages/ShopPage';
 
@@ -204,13 +205,29 @@ function AppContent() {
   const [currentModule, setCurrentModule] = useState(null);
 
   const handleNavigate = (page, lessonId = null, module = null) => {
-    if (lessonId) setCurrentLessonId(lessonId);
+    if (lessonId !== null && lessonId !== undefined) setCurrentLessonId(lessonId);
     if (module) setCurrentModule(module);
+
+    if (page === 'lesson' && lessonId !== null && lessonId !== undefined) {
+      navigate(`/lesson/${lessonId}`);
+      return;
+    }
+
+    if (page === 'exercise' && lessonId !== null && lessonId !== undefined) {
+      navigate(`/exercise/${lessonId}`);
+      return;
+    }
+
+    if (page === 'mini-game' && lessonId !== null && lessonId !== undefined) {
+      navigate(`/mini-game/${lessonId}`);
+      return;
+    }
 
     const routeMap = {
       'learn': '/learn',
       'lesson': '/lesson',
       'exercise': '/exercise',
+      'mini-game': '/mini-game',
       'challenge': '/challenge',
       'shop': '/shop',
       'login': '/login',
@@ -223,7 +240,8 @@ function AppContent() {
   const hideNavbar = location.pathname === '/login';
   const simulationRoutes = ['/simulation', '/menu', '/online', '/matchmaking', '/join-room', '/achievements'];
   const isSimulationMode = simulationRoutes.some(r => location.pathname.startsWith(r)) || location.pathname.startsWith('/lobby');
-  const isCodingWorkspace = ['/exercise', '/challenge', '/debug'].includes(location.pathname);
+  const isCodingWorkspace = ['/exercise', '/mini-game', '/challenge', '/debug']
+    .some(route => location.pathname.startsWith(route));
   const isAdminUser = user?.role === 'admin';
 
   return (
@@ -302,7 +320,8 @@ function AppContent() {
                   ? <LearningPage onNavigate={handleNavigate} user={user} />
                   : <Navigate to="/login" replace />
               } />
-              <Route path="/lesson" element={
+              <Route path="/lesson" element={<Navigate to="/learn" replace />} />
+              <Route path="/lesson/:lessonId" element={
                 isAuthenticated ? (
                   <LessonPage
                     lessonId={currentLessonId}
@@ -312,9 +331,21 @@ function AppContent() {
                   />
                 ) : <Navigate to="/login" replace />
               } />
-              <Route path="/exercise" element={
+              <Route path="/exercise" element={<Navigate to="/learn" replace />} />
+              <Route path="/exercise/:lessonId" element={
                 isAuthenticated ? (
                   <ExercisePage
+                    lessonId={currentLessonId}
+                    onNavigate={handleNavigate}
+                    user={user}
+                    onUserRefresh={refreshUserProfile}
+                  />
+                ) : <Navigate to="/login" replace />
+              } />
+              <Route path="/mini-game" element={<Navigate to="/learn" replace />} />
+              <Route path="/mini-game/:lessonId" element={
+                isAuthenticated ? (
+                  <MiNi_Game
                     lessonId={currentLessonId}
                     onNavigate={handleNavigate}
                     user={user}

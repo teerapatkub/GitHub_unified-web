@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, ChevronRight, Play } from "lucide-react";
+import { useParams } from "react-router-dom";
 
 const API_BASE = "http://localhost:3001";
 
@@ -73,10 +74,14 @@ export default function LessonPage({
   lessonId,
   moduleData,
   module,
+  user,
 }) {
+  const params = useParams();
+  const resolvedLessonId = lessonId ?? params.lessonId;
+  lessonId = resolvedLessonId;
   const lessonSource = moduleData ?? module;
   const lessonInfo = lessonSource?.lessons?.find(
-    (item) => String(item.lesson_id ?? item.id) === String(lessonId)
+    (item) => String(item.lesson_id ?? item.id) === String(resolvedLessonId)
   );
 
   const lessonFullTitle = lessonInfo
@@ -86,6 +91,7 @@ export default function LessonPage({
   const [slides, setSlides] = useState([]);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState("");
   const [isRunning, setIsRunning] = useState(false);
   const [output, setOutput] = useState(null);
   const [answersByQuiz, setAnswersByQuiz] = useState({ pre: {}, post: {} });
@@ -93,8 +99,11 @@ export default function LessonPage({
   const [quizMeta, setQuizMeta] = useState({ preTotal: 0, postTotal: 0 });
   const [quizLocked, setQuizLocked] = useState({ pre: false, post: false });
   const [quizErrors, setQuizErrors] = useState({});
+  const [quizStatusMessage, setQuizStatusMessage] = useState("");
   const [showSummary, setShowSummary] = useState(false);
+  const [showPostTestFailModal, setShowPostTestFailModal] = useState(false);
   const [editableCodes, setEditableCodes] = useState({});
+  const [savingQuiz, setSavingQuiz] = useState(false);
 
   const slide = slides[currentSlide];
   const codeSlideKey = slide?.code
@@ -111,29 +120,59 @@ export default function LessonPage({
     setQuizMeta({ preTotal: 0, postTotal: 0 });
     setQuizLocked({ pre: false, post: false });
     setQuizErrors({});
+    setQuizStatusMessage("");
     setShowSummary(false);
+    setShowPostTestFailModal(false);
     setOutput(null);
     setEditableCodes({});
-  }, [lessonId]);
+    setFetchError("");
+    setSavingQuiz(false);
+  }, [resolvedLessonId]);
 
   useEffect(() => {
     const fetchLesson = async () => {
-      if (!lessonId) {
+      if (!resolvedLessonId) {
         setSlides([]);
+        setFetchError("Missing lesson id.");
         setLoading(false);
         return;
       }
 
       try {
         setLoading(true);
+        setFetchError("");
 
-        const [slidesRes, quizRes] = await Promise.all([
-          fetch(`${API_BASE}/api/lessons/${lessonId}/slides`),
-          fetch(`${API_BASE}/api/lessons/${lessonId}/quizzes`),
+        const shouldLoadQuizAttempts = Boolean(user?.user_id && !user?.isGuest);
+
+        const [slidesRes, quizRes, quizAttemptsRes] = await Promise.all([
+          fetch(`${API_BASE}/api/lessons/${resolvedLessonId}/slides`),
+          fetch(`${API_BASE}/api/lessons/${resolvedLessonId}/quizzes`),
+          shouldLoadQuizAttempts
+            ? fetch(`${API_BASE}/api/lessons/${resolvedLessonId}/quiz-results/${user.user_id}`)
+            : Promise.resolve(null),
         ]);
 
-        const slidesData = slidesRes.ok ? await slidesRes.json() : [];
-        const rawQuizData = quizRes.ok ? await quizRes.json() : [];
+        if (!slidesRes.ok || !quizRes.ok) {
+          const [slidesText, quizText] = await Promise.all([
+            slidesRes.text(),
+            quizRes.text(),
+          ]);
+          throw new Error(
+            slidesText ||
+              quizText ||
+              `Unable to load lesson data (slides: ${slidesRes.status}, quizzes: ${quizRes.status})`
+          );
+        }
+
+        const slidesData = await slidesRes.json();
+        const rawQuizData = await quizRes.json();
+        const attemptRows =
+          quizAttemptsRes && quizAttemptsRes.ok ? await quizAttemptsRes.json() : [];
+        const attemptsByQuizType = Array.isArray(attemptRows)
+          ? Object.fromEntries(
+              attemptRows.map((attempt) => [attempt.quiz_type, attempt])
+            )
+          : {};
 
         const lessonSlides = Array.isArray(slidesData)
           ? slidesData.map((item) => ({
@@ -169,10 +208,33 @@ export default function LessonPage({
         const postQuizData = (Array.isArray(rawQuizData) ? rawQuizData : []).find(
           (quiz) => quiz.quiz_type === "post"
         );
+        const persistedPostAttempt =
+          attemptsByQuizType.post &&
+          attemptsByQuizType.post.score >=
+            getPostPassingScore(
+              attemptsByQuizType.post.total_questions ||
+                postQuizData?.questions?.length ||
+                0
+            )
+            ? attemptsByQuizType.post
+            : null;
 
         setQuizMeta({
           preTotal: preQuizData?.questions?.length || 0,
           postTotal: postQuizData?.questions?.length || 0,
+        });
+
+        setScores({
+          pre: attemptsByQuizType.pre?.score ?? null,
+          post: persistedPostAttempt?.score ?? null,
+        });
+        setQuizLocked({
+          pre: Boolean(attemptsByQuizType.pre),
+          post: Boolean(persistedPostAttempt),
+        });
+        setAnswersByQuiz({
+          pre: attemptsByQuizType.pre?.answers || {},
+          post: persistedPostAttempt?.answers || {},
         });
 
         setSlides([
@@ -183,13 +245,18 @@ export default function LessonPage({
       } catch (error) {
         console.error("โหลดบทเรียนไม่สำเร็จ:", error);
         setSlides([]);
+        setFetchError(
+          error instanceof Error
+            ? error.message
+            : "Unable to load lesson data."
+        );
       } finally {
         setLoading(false);
       }
     };
 
     fetchLesson();
-  }, [lessonId]);
+  }, [resolvedLessonId, user?.user_id, user?.isGuest]);
 
   const runCode = () => {
     setIsRunning(true);
@@ -213,6 +280,8 @@ export default function LessonPage({
   const preTotal = quizMeta.preTotal;
   const postTotal = quizMeta.postTotal;
   const hasPostQuiz = postTotal > 0 || Boolean(postQuiz);
+  const getPostPassingScore = (totalQuestions) =>
+    totalQuestions > 0 ? Math.ceil(totalQuestions * 0.6) : 0;
 
   const canGoNext = () => {
     if (!isQuiz) return true;
@@ -263,14 +332,56 @@ export default function LessonPage({
     }
 
     setQuizErrors({});
-    setScores((prev) => ({ ...prev, [quizId]: score }));
-    setQuizLocked((prev) => ({ ...prev, [quizId]: true }));
+    setQuizStatusMessage("");
+    const shouldPersistQuizResult =
+      quizId !== "post" || score >= getPostPassingScore(slide.questions.length);
 
-    if (quizId === "pre") {
-      setSlides((prev) => prev.filter((item) => item.quizId !== "pre"));
-      setCurrentSlide(0);
+    if (quizId === "post" && !shouldPersistQuizResult) {
+      setScores((prev) => ({ ...prev, post: null }));
+      setQuizLocked((prev) => ({ ...prev, post: false }));
+      setShowSummary(false);
+      setShowPostTestFailModal(true);
       return;
     }
+
+    if (shouldPersistQuizResult && user?.user_id && !user?.isGuest) {
+      try {
+        setSavingQuiz(true);
+        const response = await fetch(
+          `${API_BASE}/api/lessons/${resolvedLessonId}/quiz-results`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              user_id: user.user_id,
+              quiz_type: quizId,
+              score,
+              total_questions: slide.questions.length,
+              answers,
+            }),
+          }
+        );
+
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({}));
+          throw new Error(payload?.error || "Unable to save quiz result.");
+        }
+      } catch (error) {
+        setFetchError(
+          error instanceof Error
+            ? error.message
+            : "Unable to save quiz result."
+        );
+        return;
+      } finally {
+        setSavingQuiz(false);
+      }
+    }
+
+    setScores((prev) => ({ ...prev, [quizId]: score }));
+    setQuizLocked((prev) => ({ ...prev, [quizId]: true }));
 
     if (quizId === "post") {
       setShowSummary(true);
@@ -298,9 +409,19 @@ export default function LessonPage({
       ? Math.max(0, Math.round(((scores.post - scores.pre) / postTotal) * 100))
       : 0;
 
+  const postPassingScore = postTotal > 0 ? Math.ceil(postTotal * 0.6) : 0;
   const postTestFinished = hasPostQuiz
     ? scores.post !== null
     : currentSlide === slides.length - 1 && !isQuiz;
+  const postTestPassed = hasPostQuiz
+    ? scores.post !== null && scores.post >= postPassingScore
+    : true;
+
+  const restartLesson = () => {
+    setShowSummary(false);
+    setShowPostTestFailModal(false);
+    setCurrentSlide(0);
+  };
 
   if (loading) {
     return (
@@ -310,6 +431,25 @@ export default function LessonPage({
           <span className="font-medium text-pysim-on-surface-variant">
             กำลังโหลดบทเรียน...
           </span>
+        </div>
+      </div>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-pysim-surface px-6">
+        <div className="max-w-xl rounded-2xl bg-white p-8 text-center whisper-shadow">
+          <h2 className="text-2xl font-bold text-slate-900">
+            Unable to load lesson
+          </h2>
+          <p className="mt-3 text-slate-600">{fetchError}</p>
+          <button
+            onClick={() => onNavigate("learn")}
+            className="mt-6 rounded-lg bg-slate-200 px-6 py-3 font-medium text-slate-700 transition-colors hover:bg-slate-300"
+          >
+            Back to lessons
+          </button>
         </div>
       </div>
     );
@@ -432,10 +572,13 @@ export default function LessonPage({
                           key={choiceIndex}
                           disabled={isLocked}
                           onClick={() =>
-                            setAnswersByQuiz((prev) => ({
-                              ...prev,
-                              [quizId]: { ...prev[quizId], [index]: choice },
-                            }))
+                            {
+                              setQuizStatusMessage("");
+                              setAnswersByQuiz((prev) => ({
+                                ...prev,
+                                [quizId]: { ...prev[quizId], [index]: choice },
+                              }));
+                            }
                           }
                           className={`mb-2 block w-full rounded-lg px-4 py-3 text-left text-base font-medium transition-all ${
                             answers[index] === choice
@@ -452,13 +595,16 @@ export default function LessonPage({
                         disabled={isLocked}
                         value={answers[index] || ""}
                         onChange={(event) =>
-                          setAnswersByQuiz((prev) => ({
-                            ...prev,
-                            [quizId]: {
-                              ...prev[quizId],
-                              [index]: event.target.value,
-                            },
-                          }))
+                          {
+                            setQuizStatusMessage("");
+                            setAnswersByQuiz((prev) => ({
+                              ...prev,
+                              [quizId]: {
+                                ...prev[quizId],
+                                [index]: event.target.value,
+                              },
+                            }));
+                          }
                         }
                         className="w-full rounded-lg border border-pysim-outline-variant/20 bg-white px-4 py-2 text-pysim-on-surface focus:outline-none focus:ring-2 focus:ring-pysim-primary/20"
                         placeholder="พิมพ์คำตอบ..."
@@ -487,14 +633,22 @@ export default function LessonPage({
                   </div>
                 ))}
 
+              {isQuiz && quizStatusMessage ? (
+                <p className="mx-auto max-w-xl rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm font-medium text-amber-800">
+                  {quizStatusMessage}
+                </p>
+              ) : null}
+
               {isQuiz && (
                 <button
                   onClick={submitQuiz}
-                  disabled={isLocked}
+                  disabled={isLocked || savingQuiz}
                   className={`mx-auto block min-w-[180px] rounded-lg py-3 text-sm font-bold transition-all ${
                     isLocked
                       ? "bg-emerald-100 text-emerald-700"
-                      : "bg-blue-700 text-white hover:bg-blue-800"
+                      : savingQuiz
+                        ? "cursor-wait bg-blue-300 text-white"
+                        : "bg-blue-700 text-white hover:bg-blue-800"
                   }`}
                 >
                   {isLocked
@@ -546,18 +700,57 @@ export default function LessonPage({
           </button>
 
           <button
-            onClick={() => onNavigate("exercise", lessonId)}
+            onClick={() =>
+              postTestPassed
+                ? onNavigate("exercise", resolvedLessonId)
+                : restartLesson()
+            }
             disabled={!postTestFinished}
-            className={`rounded-lg px-8 py-3 text-sm font-bold ${
+            data-label={
               postTestFinished
-                ? "bg-blue-700 text-white hover:bg-blue-800"
-                : "cursor-not-allowed bg-slate-200 text-slate-400"
+                ? postTestPassed
+                  ? "ไปทำแบบฝึกหัด"
+                  : "กลับไปเรียนใหม่"
+                : "ไปทำแบบฝึกหัด"
+            }
+            className={`relative rounded-lg px-8 py-3 text-sm font-bold text-transparent before:absolute before:inset-0 before:flex before:items-center before:justify-center before:content-[attr(data-label)] ${
+              postTestFinished
+                ? "bg-blue-700 before:text-white hover:bg-blue-800"
+                : "cursor-not-allowed bg-slate-200 before:text-slate-400"
             }`}
           >
             เริ่มแบบฝึกหัด
           </button>
         </div>
       </main>
+
+      {showPostTestFailModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-pysim-on-surface/30 backdrop-blur-sm">
+          <div className="w-full max-w-md space-y-4 rounded-xl bg-white p-8 text-center whisper-shadow">
+            <h2 className="text-2xl font-bold text-amber-600">ยังไม่ผ่านแบบทดสอบหลังเรียน</h2>
+            <p className="text-pysim-on-surface">
+              ผลครั้งนี้จะไม่ถูกบันทึก เพราะคะแนนยังไม่ถึงเกณฑ์ผ่าน
+            </p>
+            <p className="text-sm text-pysim-on-surface-variant">
+              กรุณากลับไปทบทวนบทเรียนแล้วลองใหม่อีกครั้ง
+            </p>
+            <div className="flex justify-center gap-4 pt-4">
+              <button
+                onClick={restartLesson}
+                className="rounded-lg bg-blue-700 px-5 py-2 text-sm font-bold text-white transition-all hover:bg-blue-800"
+              >
+                กลับไปเรียนใหม่
+              </button>
+              <button
+                onClick={() => setShowPostTestFailModal(false)}
+                className="rounded-lg bg-slate-200 px-5 py-2 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-300"
+              >
+                ปิด
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showSummary && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-pysim-on-surface/30 backdrop-blur-sm">
@@ -587,10 +780,15 @@ export default function LessonPage({
             <div className="flex justify-center gap-4 pt-4">
               <button
                 onClick={() => {
-                  setShowSummary(false);
-                  onNavigate("exercise", lessonId);
+                  if (postTestPassed) {
+                    setShowSummary(false);
+                    onNavigate("exercise", resolvedLessonId);
+                    return;
+                  }
+                  restartLesson();
                 }}
-                className="rounded-lg bg-blue-700 px-5 py-2 text-sm font-bold text-white transition-all hover:bg-blue-800"
+                data-label={postTestPassed ? "ไปทำแบบฝึกหัด" : "กลับไปเรียนใหม่"}
+                className="relative rounded-lg bg-blue-700 px-5 py-2 text-sm font-bold text-transparent transition-all hover:bg-blue-800 before:absolute before:inset-0 before:flex before:items-center before:justify-center before:text-white before:content-[attr(data-label)]"
               >
                 ไปทำแบบฝึกหัด
               </button>
@@ -607,3 +805,4 @@ export default function LessonPage({
     </div>
   );
 }
+

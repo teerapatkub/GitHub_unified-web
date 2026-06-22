@@ -47,6 +47,72 @@ CREATE TABLE IF NOT EXISTS `exercise_submissions` (
   KEY `idx_exercise_submissions_exercise` (`exercise_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+CREATE TABLE IF NOT EXISTS `mini_game_modules` (
+  `mini_game_module_id` int(11) NOT NULL AUTO_INCREMENT,
+  `module_id` int(11) NOT NULL,
+  `title` varchar(200) NOT NULL,
+  `order_index` int(11) NOT NULL DEFAULT 0,
+  `reward_xp` int(11) NOT NULL DEFAULT 30,
+  `reward_coins` int(11) NOT NULL DEFAULT 10,
+  `hint` text DEFAULT NULL,
+  `starter_code` longtext DEFAULT NULL,
+  `validation_mode` varchar(20) NOT NULL DEFAULT 'syntax',
+  `required_syntax_json` longtext DEFAULT NULL,
+  `required_vars_json` longtext DEFAULT NULL,
+  `test_cases_json` longtext DEFAULT NULL,
+  `success_message` text DEFAULT NULL,
+  `submit_unlock_step` int(11) NOT NULL DEFAULT 0,
+  `scene_background_image` varchar(255) DEFAULT 'scene_school.jpg',
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`mini_game_module_id`),
+  KEY `idx_mini_game_modules_module_order` (`module_id`,`order_index`),
+  KEY `idx_mini_game_modules_order` (`order_index`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS `mini_game_dialogues` (
+  `dialogue_id` int(11) NOT NULL AUTO_INCREMENT,
+  `mini_game_module_id` int(11) NOT NULL,
+  `step_index` int(11) NOT NULL DEFAULT 0,
+  `speaker` enum('lumi','user','system') NOT NULL DEFAULT 'lumi',
+  `dialogue_text` text NOT NULL,
+  `emotion` varchar(50) DEFAULT NULL,
+  `dialogue_phase` enum('pre_submit','post_submit') NOT NULL DEFAULT 'pre_submit',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`dialogue_id`),
+  KEY `idx_mini_game_dialogues_module_step` (`mini_game_module_id`,`step_index`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS `mini_game_terminal_logic` (
+  `terminal_logic_id` int(11) NOT NULL AUTO_INCREMENT,
+  `mini_game_module_id` int(11) NOT NULL,
+  `trigger_input` varchar(255) NOT NULL,
+  `reply_text` text NOT NULL,
+  `emotion` varchar(50) DEFAULT NULL,
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`terminal_logic_id`),
+  KEY `idx_mini_game_terminal_logic_module` (`mini_game_module_id`,`sort_order`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS `mini_game_module_progress` (
+  `progress_id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) NOT NULL,
+  `mini_game_module_id` int(11) NOT NULL,
+  `submitted_code` longtext DEFAULT NULL,
+  `is_completed` tinyint(1) NOT NULL DEFAULT 0,
+  `score` int(11) NOT NULL DEFAULT 0,
+  `last_terminal_input` varchar(255) DEFAULT NULL,
+  `last_terminal_reply` text DEFAULT NULL,
+  `completed_at` timestamp NULL DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`progress_id`),
+  UNIQUE KEY `uq_mini_game_module_progress_user_module` (`user_id`,`mini_game_module_id`),
+  KEY `idx_mini_game_module_progress_module` (`mini_game_module_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
 CREATE TABLE IF NOT EXISTS `exercises` (
   `exercise_id` int(11) NOT NULL AUTO_INCREMENT,
   `lesson_id` int(11) DEFAULT NULL,

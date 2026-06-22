@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Editor from "@monaco-editor/react";
+import { useParams } from "react-router-dom";
 import {
   RotateCcw,
   Play,
@@ -107,6 +108,9 @@ function RewardModal({ xp, currency, hasNext, onClose, onNext }) {
 }
 
 export default function ExercisePage({ lessonId, user, onUserRefresh, onNavigate }) {
+  const params = useParams();
+  const resolvedLessonId = lessonId ?? params.lessonId;
+  lessonId = resolvedLessonId;
   const [exercises, setExercises] = useState([]);
   const [currentExIdx, setCurrentExIdx] = useState(0);
   const [loadingList, setLoadingList] = useState(true);
@@ -500,6 +504,31 @@ builtins.input = custom_input
     }
   };
 
+  const getTerminalLineClassName = (line) => {
+    if (line.startsWith("PASS") || line.startsWith("เธเนเธฒเธ")) {
+      return "text-emerald-400";
+    }
+    if (
+      line.startsWith("FAIL") ||
+      line.startsWith("Error:") ||
+      line.startsWith("System Error:") ||
+      line.startsWith("Submit Error:")
+    ) {
+      return "text-red-400";
+    }
+    if (
+      line.startsWith("Expected:") ||
+      line.startsWith("Got:") ||
+      line.startsWith("Failed to load Python:")
+    ) {
+      return "text-yellow-400";
+    }
+    if (line.startsWith("---") || line.startsWith("Python runtime ready.")) {
+      return "text-blue-400 font-semibold";
+    }
+    return "text-gray-300";
+  };
+
   const sendAiMessage = async (customMessage = null) => {
     const messageToSend = customMessage || chatInput;
     if (!messageToSend.trim() || isAiResponding) return;
@@ -565,6 +594,16 @@ builtins.input = custom_input
 
   return (
     <div className="mx-auto flex h-full min-h-0 max-w-[1520px] flex-col px-2 pb-2 sm:px-3 sm:pb-3">
+      <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2">
+        <div className="flex gap-2">
+          <button 
+            onClick={() => onNavigate?.("mini-game", lessonId)}
+            className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-bold text-white hover:bg-blue-700 transition-colors"
+            >
+            Start MiNi_Game
+          </button>
+         </div>
+      </div>
       <div className="flex min-h-0 flex-1 overflow-hidden rounded-[22px] border border-white/70 bg-white/90 shadow-[0_18px_48px_rgba(15,23,42,0.10)]">
         <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)]">
           <aside className="overflow-y-auto border-b border-slate-200 bg-slate-50/90 p-5 lg:border-b-0 lg:border-r lg:p-6">
@@ -597,7 +636,7 @@ builtins.input = custom_input
                 <p className="text-slate-300">ไม่มีตัวอย่าง</p>
               )}
             </div>
-
+            
             <div className="mt-6 flex items-end justify-between gap-3 sm:mt-8">
               <div>
                 <p className="text-2xl font-black text-slate-900 sm:text-3xl">
@@ -616,7 +655,7 @@ builtins.input = custom_input
               </div>
             </div>
           </aside>
-
+          
           <section className={`relative flex min-h-0 min-w-0 flex-col ${isAiOpen ? "xl:pr-[320px]" : ""}`}>
             <div className="border-b border-slate-200 bg-white/90 px-4 py-4 sm:px-5 lg:px-6">
               <div className="flex flex-wrap items-center justify-between gap-4">
@@ -713,75 +752,41 @@ builtins.input = custom_input
                 </div>
               </div>
 
-              <div className="border-b border-slate-200 bg-white px-4 py-3 sm:px-5 lg:px-6">
-                <div className="flex flex-wrap items-center justify-between gap-4">
-                  <div className="flex flex-wrap gap-3">
-                    <button
-                      onClick={copyCode}
-                      className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50"
-                    >
-                      <Copy size={16} />
-                      คัดลอก
-                    </button>
-                    <button
-                      onClick={handleRun}
-                      disabled={!pyReady || isRunning}
-                      className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-base font-bold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 sm:px-5 sm:py-3"
-                    >
-                      <Play size={18} />
-                      Run
-                    </button>
-                    <button
-                      onClick={handleSubmit}
-                      disabled={!pyReady || isRunning}
-                      className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-4 py-2.5 text-base font-bold text-white transition-colors hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-blue-300 sm:px-5 sm:py-3"
-                    >
-                      <CheckCircle2 size={18} />
-                      ส่งแบบฝึกหัด
-                    </button>
-                  </div>
-
-                  <div className="flex gap-3">
-                    <button
-                      onClick={() => setCurrentExIdx((prev) => Math.max(0, prev - 1))}
-                      disabled={currentExIdx === 0}
-                      className="rounded-2xl bg-slate-200 px-4 py-2.5 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-300 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      ก่อนหน้า
-                    </button>
-                    <button
-                      onClick={() => setCurrentExIdx((prev) => Math.min(exercises.length - 1, prev + 1))}
-                      disabled={currentExIdx >= exercises.length - 1}
-                      className="rounded-2xl bg-slate-200 px-4 py-2.5 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-300 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      ถัดไป
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex shrink-0 basis-[190px] flex-col bg-slate-950 px-4 py-3 text-white sm:basis-[210px] sm:px-5 lg:basis-[220px] lg:px-6">
-                <div className="mb-4 flex items-center gap-2">
-                  <Terminal size={18} className="text-emerald-400" />
-                  <span className="text-sm font-black uppercase tracking-[0.24em] text-slate-300">
+              <div className="h-[185px] flex shrink-0 flex-col bg-[#070d18]">
+                <div className="flex items-center gap-2 border-b border-gray-800/50 bg-gray-900/30 px-4 py-1.5">
+                  <Terminal size={12} className="text-gray-500" />
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">
                     Terminal
                   </span>
                 </div>
 
                 <div
                   ref={terminalRef}
-                  className="h-[110px] overflow-y-auto rounded-2xl bg-slate-950 font-mono text-sm leading-6 text-emerald-300 sm:h-[120px] sm:text-[15px] sm:leading-7"
+                  className="flex-1 overflow-y-auto p-4 font-mono text-sm"
                 >
                   {terminalLines.length === 0 ? (
                     <p className="text-slate-500">Run your code to see output here.</p>
                   ) : (
                     terminalLines.map((line, index) => (
-                      <div key={`${line}-${index}`}>{line}</div>
+                      <div key={`${line}-${index}`} className={`mb-0.5 leading-snug ${getTerminalLineClassName(line)}`}>{line}</div>
                     ))
                   )}
+
+                  {inputResolverRef.current ? (
+                    <div className="flex items-center text-blue-400">
+                      <span>{currentPrompt} &gt;&nbsp;</span>
+                      <input
+                        autoFocus
+                        value={currentInput}
+                        onChange={(event) => setCurrentInput(event.target.value)}
+                        onKeyDown={handleInputKeyDown}
+                        className="flex-1 bg-transparent text-white outline-none"
+                      />
+                    </div>
+                  ) : null}
                 </div>
 
-                {currentPrompt ? (
+                {false ? (
                   <div className="mt-4 rounded-2xl border border-slate-700 bg-slate-900 p-4">
                     <p className="mb-2 text-sm text-slate-300">{currentPrompt}</p>
                     <input

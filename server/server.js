@@ -17,7 +17,8 @@ let multer;
 try {
     multer = require('multer');
 } catch (error) {
-    multer = require(path.resolve(__dirname, '../../admin/server/node_modules/multer'));
+    console.error('Missing dependency: multer. Run "npm install" in the server directory before starting the API.');
+    throw error;
 }
 
 const app = express();
@@ -90,6 +91,21 @@ const describeError = (error) => {
         return JSON.stringify(error);
     } catch (_) {
         return String(error);
+    }
+};
+
+const executeIgnoreSchemaConflict = async (sql, ignoredCodes = []) => {
+    try {
+        await db.execute(sql);
+    } catch (error) {
+        const message = String(error?.message || '').toLowerCase();
+        const isIgnoredMessage =
+            (ignoredCodes.includes('ER_DUP_FIELDNAME') && message.includes('duplicate column name')) ||
+            (ignoredCodes.includes('ER_DUP_KEYNAME') && message.includes('duplicate key name'));
+
+        if (!ignoredCodes.includes(error?.code) && !isIgnoredMessage) {
+            throw error;
+        }
     }
 };
 
@@ -1933,21 +1949,189 @@ const ensureLearningAiTaskSchema = async () => {
 
 const ensureLearningProgressSchema = async () => {
     try {
+        // ==========================================
+        // 1. สร้างตาราง mini_game_lessons
+        // ==========================================
         await db.execute(`
-            CREATE TABLE IF NOT EXISTS exercise_submissions (
-                submission_id int(11) NOT NULL AUTO_INCREMENT,
-                user_id int(11) DEFAULT NULL,
+            CREATE TABLE IF NOT EXISTS mini_game_lessons (
+                lesson_id int(11) NOT NULL AUTO_INCREMENT,
+                lesson_key varchar(80) NOT NULL,
+                title varchar(150) NOT NULL,
+                description text DEFAULT NULL,
+                sort_order int(11) NOT NULL DEFAULT 0,
+                is_active tinyint(1) NOT NULL DEFAULT 1,
+                created_at timestamp NOT NULL DEFAULT current_timestamp(),
+                updated_at timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+                PRIMARY KEY (lesson_id),
+                UNIQUE KEY uq_mini_game_lessons_key (lesson_key),
+                KEY idx_mini_game_lessons_sort (sort_order)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+        `);
+
+        // ==========================================
+        // 2. สร้างตาราง mini_game_exercises
+        // ==========================================
+        await db.execute(`
+            CREATE TABLE IF NOT EXISTS mini_game_exercises (
+                exercise_id int(11) NOT NULL AUTO_INCREMENT,
+                lesson_id int(11) DEFAULT NULL,
+                exercise_order varchar(20) DEFAULT NULL,
+                title varchar(150) NOT NULL,
+                description text DEFAULT NULL,
+                starter_code longtext DEFAULT NULL,
+                solution_code longtext DEFAULT NULL,
+                test_cases_json longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL CHECK (json_valid(test_cases_json)),
+                xp_reward int(11) NOT NULL DEFAULT 10,
+                currency_reward int(11) NOT NULL DEFAULT 5,
+                is_active tinyint(1) NOT NULL DEFAULT 1,
+                created_at timestamp NOT NULL DEFAULT current_timestamp(),
+                updated_at timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+                PRIMARY KEY (exercise_id),
+                KEY idx_mini_game_exercises_lesson (lesson_id),
+                KEY idx_mini_game_exercises_order (exercise_order),
+                CONSTRAINT fk_mini_game_exercises_lesson FOREIGN KEY (lesson_id) REFERENCES mini_game_lessons (lesson_id) ON DELETE SET NULL ON UPDATE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+        `);
+
+        // ==========================================
+        // 3. สร้างตาราง mini_game_locations
+        // ==========================================
+        await db.execute(`
+            CREATE TABLE IF NOT EXISTS mini_game_locations (
+                location_id int(11) NOT NULL AUTO_INCREMENT,
+                location_key varchar(50) NOT NULL,
+                name varchar(100) NOT NULL,
+                description text DEFAULT NULL,
+                bg_image_url varchar(255) DEFAULT NULL,
+                created_at timestamp NOT NULL DEFAULT current_timestamp(),
+                updated_at timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+                PRIMARY KEY (location_id),
+                UNIQUE KEY uq_mini_game_locations_key (location_key)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+        `);
+
+        // ==========================================
+        // 4. สร้างตาราง mini_game_npcs
+        // ==========================================
+        await db.execute(`
+            CREATE TABLE IF NOT EXISTS mini_game_npcs (
+                npc_id int(11) NOT NULL AUTO_INCREMENT,
+                npc_key varchar(50) NOT NULL,
+                name varchar(100) NOT NULL,
+                avatar_asset_url varchar(255) DEFAULT NULL,
+                default_emotion varchar(50) NOT NULL DEFAULT 'neutral',
+                description text DEFAULT NULL,
+                created_at timestamp NOT NULL DEFAULT current_timestamp(),
+                updated_at timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+                PRIMARY KEY (npc_id),
+                UNIQUE KEY uq_mini_game_npcs_key (npc_key)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+        `);
+
+        // ==========================================
+        // 5. สร้างตาราง mini_game_dialogues
+        // ==========================================
+        await db.execute(`
+            CREATE TABLE IF NOT EXISTS mini_game_dialogues (
+                dialogue_id int(11) NOT NULL AUTO_INCREMENT,
                 exercise_id int(11) DEFAULT NULL,
+                dialogue_order int(11) NOT NULL DEFAULT 0,
+                exercise_order varchar(20) DEFAULT NULL,
+                dialogue_text text NOT NULL,
+                npc_id int(11) DEFAULT NULL,
+                npc_emotion varchar(50) NOT NULL DEFAULT 'neutral',
+                location_id int(11) DEFAULT NULL,
+                dialogue_phase enum('pre_submit','post_submit') NOT NULL DEFAULT 'pre_submit',
+                branch_key varchar(80) NOT NULL DEFAULT 'default',
+                created_at timestamp NOT NULL DEFAULT current_timestamp(),
+                updated_at timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+                PRIMARY KEY (dialogue_id),
+                KEY idx_mini_game_dialogues_exercise_phase_branch (exercise_id, dialogue_phase, branch_key, dialogue_order),
+                KEY idx_mini_game_dialogues_npc (npc_id),
+                KEY idx_mini_game_dialogues_location (location_id),
+                CONSTRAINT fk_mini_game_dialogues_exercise FOREIGN KEY (exercise_id) REFERENCES mini_game_exercises (exercise_id) ON DELETE SET NULL ON UPDATE CASCADE,
+                CONSTRAINT fk_mini_game_dialogues_location FOREIGN KEY (location_id) REFERENCES mini_game_locations (location_id) ON DELETE SET NULL ON UPDATE CASCADE,
+                CONSTRAINT fk_mini_game_dialogues_npc FOREIGN KEY (npc_id) REFERENCES mini_game_npcs (npc_id) ON DELETE SET NULL ON UPDATE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+        `);
+
+        // ==========================================
+        // 6. สร้างตาราง mini_game_current_conversations
+        // ==========================================
+        await db.execute(`
+            CREATE TABLE IF NOT EXISTS mini_game_current_conversations (
+                user_id int(11) NOT NULL,
+                exercise_id int(11) DEFAULT NULL,
+                dialogue_id int(11) NOT NULL,
+                current_npc_id int(11) DEFAULT NULL,
+                current_location_id int(11) DEFAULT NULL,
+                branch_key varchar(80) NOT NULL DEFAULT 'default',
+                updated_at timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+                PRIMARY KEY (user_id),
+                KEY idx_mini_game_current_exercise (exercise_id),
+                KEY idx_mini_game_current_dialogue (dialogue_id),
+                KEY idx_mini_game_current_npc (current_npc_id),
+                KEY idx_mini_game_current_location (current_location_id),
+                CONSTRAINT fk_mini_game_current_dialogue FOREIGN KEY (dialogue_id) REFERENCES mini_game_dialogues (dialogue_id) ON DELETE CASCADE ON UPDATE CASCADE,
+                CONSTRAINT fk_mini_game_current_exercise FOREIGN KEY (exercise_id) REFERENCES mini_game_exercises (exercise_id) ON DELETE SET NULL ON UPDATE CASCADE,
+                CONSTRAINT fk_mini_game_current_location FOREIGN KEY (current_location_id) REFERENCES mini_game_locations (location_id) ON DELETE SET NULL ON UPDATE CASCADE,
+                CONSTRAINT fk_mini_game_current_npc FOREIGN KEY (current_npc_id) REFERENCES mini_game_npcs (npc_id) ON DELETE SET NULL ON UPDATE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+        `);
+
+        // ==========================================
+        // 7. สร้างตาราง mini_game_exercise_submissions
+        // ==========================================
+        await db.execute(`
+            CREATE TABLE IF NOT EXISTS mini_game_exercise_submissions (
+                submission_id int(11) NOT NULL AUTO_INCREMENT,
+                user_id int(11) NOT NULL,
+                exercise_id int(11) NOT NULL,
                 submitted_code longtext NOT NULL,
                 is_passed tinyint(1) NOT NULL DEFAULT 0,
-                score int(11) DEFAULT 0,
+                score int(11) NOT NULL DEFAULT 0,
+                passed_test_count int(11) NOT NULL DEFAULT 0,
+                total_test_count int(11) NOT NULL DEFAULT 0,
+                selected_branch_key varchar(80) DEFAULT NULL,
+                reward_granted tinyint(1) NOT NULL DEFAULT 0,
                 execution_time_ms int(11) DEFAULT NULL,
                 error_message text DEFAULT NULL,
                 submitted_at timestamp NOT NULL DEFAULT current_timestamp(),
-                PRIMARY KEY (submission_id)
-            )
+                PRIMARY KEY (submission_id),
+                KEY idx_mini_game_submissions_user_exercise (user_id, exercise_id, is_passed),
+                KEY idx_mini_game_submissions_exercise (exercise_id),
+                CONSTRAINT fk_mini_game_submissions_exercise FOREIGN KEY (exercise_id) REFERENCES mini_game_exercises (exercise_id) ON DELETE CASCADE ON UPDATE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
         `);
 
+        // ==========================================
+        // 8. สร้างตาราง mini_game_user_exercise_progress
+        // ==========================================
+        await db.execute(`
+            CREATE TABLE IF NOT EXISTS mini_game_user_exercise_progress (
+                progress_id int(11) NOT NULL AUTO_INCREMENT,
+                user_id int(11) NOT NULL,
+                exercise_id int(11) NOT NULL,
+                is_completed tinyint(1) NOT NULL DEFAULT 0,
+                completed_at timestamp NULL DEFAULT NULL,
+                reward_claimed tinyint(1) NOT NULL DEFAULT 0,
+                best_score int(11) NOT NULL DEFAULT 0,
+                selected_branch_key varchar(80) NOT NULL DEFAULT 'default',
+                last_submission_id int(11) DEFAULT NULL,
+                created_at timestamp NOT NULL DEFAULT current_timestamp(),
+                updated_at timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+                PRIMARY KEY (progress_id),
+                UNIQUE KEY uq_mini_game_progress_user_exercise (user_id, exercise_id),
+                KEY idx_mini_game_progress_exercise (exercise_id),
+                KEY idx_mini_game_progress_submission (last_submission_id),
+                CONSTRAINT fk_mini_game_progress_exercise FOREIGN KEY (exercise_id) REFERENCES mini_game_exercises (exercise_id) ON DELETE CASCADE ON UPDATE CASCADE,
+                CONSTRAINT fk_mini_game_progress_submission FOREIGN KEY (last_submission_id) REFERENCES mini_game_exercise_submissions (submission_id) ON DELETE SET NULL ON UPDATE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+        `);
+
+        // ==========================================
+        // 9. สร้างตาราง game_sessions
+        // ==========================================
         await db.execute(`
             CREATE TABLE IF NOT EXISTS game_sessions (
                 session_id int(11) NOT NULL AUTO_INCREMENT,
@@ -1956,10 +2140,128 @@ const ensureLearningProgressSchema = async () => {
                 started_at timestamp NOT NULL DEFAULT current_timestamp(),
                 ended_at timestamp NULL DEFAULT NULL,
                 PRIMARY KEY (session_id)
-            )
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+        `);
+
+
+        // Skip legacy mini game destructive seed so phpMyAdmin data remains the source of truth.
+        return;
+
+
+        // ========================================================
+        // 10. ล้างข้อมูลเก่าและรีเซ็ต AUTO_INCREMENT อย่างปลอดภัย (ป้องกัน Error #1701)
+        // ========================================================
+        await db.execute(`SET FOREIGN_KEY_CHECKS = 0;`);
+        await db.execute(`DELETE FROM mini_game_dialogues;`);
+        await db.execute(`DELETE FROM mini_game_exercises;`);
+        await db.execute(`DELETE FROM mini_game_lessons;`);
+        await db.execute(`DELETE FROM mini_game_locations;`);
+        await db.execute(`DELETE FROM mini_game_npcs;`);
+        
+        await db.execute(`ALTER TABLE mini_game_dialogues AUTO_INCREMENT = 1;`);
+        await db.execute(`ALTER TABLE mini_game_exercises AUTO_INCREMENT = 1;`);
+        await db.execute(`ALTER TABLE mini_game_lessons AUTO_INCREMENT = 1;`);
+        await db.execute(`ALTER TABLE mini_game_locations AUTO_INCREMENT = 1;`);
+        await db.execute(`ALTER TABLE mini_game_npcs AUTO_INCREMENT = 1;`);
+        await db.execute(`SET FOREIGN_KEY_CHECKS = 1;`);
+
+
+        // ========================================================
+        // 11. ใส่ข้อมูลเริ่มต้น (Seed Data) สำหรับระบบ Branching ใหม่
+        // ========================================================
+        
+        // 11.1 ใส่ข้อมูลบทเรียนพื้นฐาน (Lessons)
+        await db.execute(`
+            INSERT INTO mini_game_lessons (lesson_id, lesson_key, title, description, sort_order, is_active) 
+            VALUES (1, 'lesson_1_print', 'Lesson 1: print()', 'เริ่มต้น Python ด้วยคำสั่ง print() และเลือกเส้นทางเนื้อเรื่อง', 1, 1)
+        `);
+
+        // 11.2 ใส่ข้อมูลสถานที่ (Locations)
+        await db.execute(`
+            INSERT INTO mini_game_locations (location_id, location_key, name, description, bg_image_url) 
+            VALUES (1, 'python_lab', 'ห้องแล็บ Python', 'ห้องเรียนเขียนโปรแกรมที่มีเนื้อเรื่องแบบแตกแขนง', 'assets/images/bg/python_lab.png')
+        `);
+
+        // 11.3 ใส่ข้อมูลตัวละคร (NPCs)
+        await db.execute(`
+            INSERT INTO mini_game_npcs (npc_id, npc_key, name, avatar_asset_url, default_emotion, description) 
+            VALUES 
+            (1, 'lumi', 'Lumi', 'assets/images/npc/lumi_main.png', 'smile', 'AI ผู้ช่วยสอน Python'),
+            (2, 'system', 'System', NULL, 'neutral', 'ระบบจัดการสถานการณ์ของเกม')
+        `);
+
+        // 11.4 ใส่ข้อมูลโจทย์/ด่านย่อยทั้งหมด (Exercises 1 ถึง 7 ตามกิ่งโครงสร้าง)
+        await db.execute(`
+            INSERT INTO mini_game_exercises (exercise_id, lesson_id, exercise_order, title, description, starter_code, solution_code, test_cases_json, xp_reward, currency_reward, is_active) 
+            VALUES
+            (1, 1, 'START', 'จุดเริ่มต้นของทางแยก', 'เขียนคำสั่ง print() เพื่อเลือกเส้นทาง โดยพิมพ์ 1A หรือ 2A', 'print("")', 'print("1A")', '[{"input": "", "expected": "1A", "branch_key": "1A"}, {"input": "", "expected": "2A", "branch_key": "2A"}]', 15, 5, 1),
+            (2, 1, '1A', 'เส้นทางวิทยาศาสตร์ 1A', 'ยินดีต้อนรับสู่เส้นทาง 1A พิมพ์ 1A_1B หรือ 1A_2B เพื่อไปต่อ', 'print("")', 'print("1A_1B")', '[{"input": "", "expected": "1A_1B", "branch_key": "1A_1B"}, {"input": "", "expected": "1A_2B", "branch_key": "1A_2B"}]', 20, 10, 1),
+            (3, 1, '2A', 'เส้นทางเวทมนตร์ 2A', 'ยินดีต้อนรับสู่เส้นทาง 2A พิมพ์ 2A_1B หรือ 2A_2B เพื่อไปต่อ', 'print("")', 'print("2A_1B")', '[{"input": "", "expected": "2A_1B", "branch_key": "2A_1B"}, {"input": "", "expected": "2A_2B", "branch_key": "2A_2B"}]', 20, 10, 1),
+            (4, 1, '1A_1B', 'บทสรุปสายวิชาการ 1A_1B', 'ยินดีด้วยคุณมาถึงจุดสิ้นสุดของสาย 1A_1B แล้ว พิมพ์ print("success") เพื่อจบด่าน', 'print("")', 'print("success")', '[{"input": "", "expected": "success", "branch_key": "end"}]', 30, 15, 1),
+            (5, 1, '1A_2B', 'บทสรุปสายวิชาการ 1A_2B', 'ยินดีด้วยคุณมาถึงจุดสิ้นสุดของสาย 1A_2B แล้ว พิมพ์ print("success") เพื่อจบด่าน', 'print("")', 'print("success")', '[{"input": "", "expected": "success", "branch_key": "end"}]', 30, 15, 1),
+            (6, 1, '2A_1B', 'บทสรุปสายเวทมนตร์ 2A_1B', 'ยินดีด้วยคุณมาถึงจุดสิ้นสุดของสาย 2A_1B แล้ว พิมพ์ print("success") เพื่อจบด่าน', 'print("")', 'print("success")', '[{"input": "", "expected": "success", "branch_key": "end"}]', 30, 15, 1),
+            (7, 1, '2A_2B', 'บทสรุปสายเวทมนตร์ 2A_2B', 'ยินดีด้วยคุณมาถึงจุดสิ้นสุดของสาย 2A_2B แล้ว พิมพ์ print("success") เพื่อจบด่าน', 'print("")', 'print("success")', '[{"input": "", "expected": "success", "branch_key": "end"}]', 30, 15, 1)
+        `);
+
+        // 11.5 ใส่ข้อมูลบทสนทนาทั้งหมด (Dialogues ทั้ง Pre-submit และ Post-submit ครบทุกกิ่ง)
+        await db.execute(`
+            INSERT INTO mini_game_dialogues (dialogue_id, exercise_id, dialogue_order, exercise_order, dialogue_text, npc_id, npc_emotion, location_id, dialogue_phase, branch_key) 
+            VALUES
+            (1, 1, 0, 'START', 'สวัสดีค่ะ ยินดีต้อนรับสู่ระบบเลือกเส้นทางพัฒนาโปรแกรม!', 1, 'smile', 1, 'pre_submit', 'default'),
+            (2, 1, 1, 'START', 'ในด่านนี้ คุณต้องเลือกทางเดินชีวิตแล้วล่ะค่ะ', 1, 'neutral', 1, 'pre_submit', 'default'),
+            (3, 1, 2, 'START', 'ลองพิมพ์ print("1A") หรือ print("2A") เพื่อเลือกด่านถัดไปดูนะคะ', 1, 'curious', 1, 'pre_submit', 'default'),
+            (4, 1, 0, 'START', 'ยอดเยี่ยมมาก! คุณเลือกเดินมาทางสาย 1A สินะคะ', 1, 'smile', 1, 'post_submit', '1A'),
+            (5, 1, 1, 'START', 'ระบบกำลังบันทึก branch_key = 1A และกำลังพาคุณย้ายไปด่าน 1A ค่ะ', 2, 'neutral', 1, 'post_submit', '1A'),
+            (6, 1, 0, 'START', 'โอ้! คุณเลือกเดินมาทางสาย 2A ตื่นเต้นจังเลยค่ะ', 1, 'smile', 1, 'post_submit', '2A'),
+            (7, 1, 1, 'START', 'ระบบกำลังบันทึก branch_key = 2A และกำลังพาคุณย้ายไปด่าน 2A ค่ะ', 2, 'neutral', 1, 'post_submit', '2A'),
+            (8, 2, 0, '1A', 'ตอนนี้คุณเข้ามาอยู่ด่าน 1A เรียบร้อยแล้วค่ะ', 1, 'smile', 1, 'pre_submit', 'default'),
+            (9, 2, 1, '1A', 'ด่านนี้คุณจะต้องเลือกแตกแขนงย่อยอีกครั้ง ระหว่าง 1A_1B หรือ 1A_2B ค่ะ', 1, 'curious', 1, 'pre_submit', 'default'),
+            (10, 3, 0, '2A', 'ยินดีต้อนรับสู่ห้องแล็บลับฝั่ง 2A ครับผม', 2, 'neutral', 1, 'pre_submit', 'default'),
+            (11, 3, 1, '2A', 'ที่นี่คุณต้องพิมพ์ส่งคำตอบ 2A_1B หรือ 2A_2B เพื่อเลือกชะตาชีวิตขั้นต่อไป', 1, 'smile', 1, 'pre_submit', 'default'),
+            (12, 2, 0, '1A', 'ยอดเยี่ยมมากค่ะ! โค้ด print("1A_1B") ของคุณพาเรามาสู่ห้องวิจัยระดับสูง', 1, 'smile', 1, 'post_submit', '1A_1B'),
+            (13, 2, 1, '1A', 'ระบบกำลังบันทึก branch_key = 1A_1B และนำคุณเข้าสู่เนื้อเรื่องถัดไป...', 2, 'neutral', 1, 'post_submit', '1A_1B'),
+            (14, 2, 0, '1A', 'ว้าว! เลือกสายพัฒนาซอฟต์แวร์ประยุกต์ 1A_2B สินะคะ เป็นทางเลือกที่ท้าทายมากค่ะ', 1, 'smile', 1, 'post_submit', '1A_2B'),
+            (15, 2, 1, '1A', 'ระบบกำลังบันทึก branch_key = 1A_2B เพื่อเปิดประตูบานถัดไป...', 2, 'neutral', 1, 'post_submit', '1A_2B'),
+            (16, 3, 0, '2A', 'การตัดสินใจเด็ดขาดมาก! มุ่งหน้าสู่สายจอมเวทสายควบคุม 2A_1B', 1, 'smile', 1, 'post_submit', '2A_1B'),
+            (17, 3, 1, '2A', 'ระบบตรวจพบคำตอบ 2A_1B กำลังเปิดใช้งานโครงข่ายเวทมนตร์ขั้นสูง...', 2, 'neutral', 1, 'post_submit', '2A_1B'),
+            (18, 3, 0, '2A', 'คุณเลือกสายนักประดิษฐ์ไอเทมเวทมนตร์ 2A_2B งั้นเหรอ? น่าสนใจสุด ๆ ไปเลยค่ะ!', 1, 'curious', 1, 'post_submit', '2A_2B'),
+            (19, 3, 1, '2A', 'ระบบตรวจพบคำตอบ 2A_2B ยืนยันการบันทึกข้อมูลและเตรียมย้ายตำแหน่ง...', 2, 'neutral', 1, 'post_submit', '2A_2B'),
+            (20, 4, 0, '1A_1B', 'ยินดีต้อนรับสู่ด่านสรุป 1A_1B ค่ะ คุณได้กลายเป็นผู้เชี่ยวชาญ Data Science แล้ว!', 1, 'smile', 1, 'pre_submit', 'default'),
+            (21, 4, 1, '1A_1B', 'ภารกิจสุดท้าย พิมพ์ print("success") เพื่อทดสอบระบบส่งท้ายและรับรางวัลใหญ่กันเลยค่ะ!', 1, 'smile', 1, 'pre_submit', 'default'),
+            (22, 5, 0, '1A_2B', 'ยินดีต้อนรับสู่ด่านสรุป 1A_2B ครับ ตอนนี้คุณคือ Full-Stack Developer ตัวจริงแล้ว', 2, 'neutral', 1, 'pre_submit', 'default'),
+            (23, 5, 1, '1A_2B', 'มาร่วมปิดโปรเจกต์นี้ด้วยการพิมพ์ print("success") เพื่อรับเหรียญรางวัลกันเถอะค่ะ', 1, 'smile', 1, 'pre_submit', 'default'),
+            (24, 6, 0, '2A_1B', 'ในที่สุดคุณก็ฝ่าฟันมาถึงหอคอยเวทมนตร์สาย 2A_1B ได้สำเร็จ เก่งมากเลยค่ะ!', 1, 'smile', 1, 'pre_submit', 'default'),
+            (25, 6, 1, '2A_1B', 'รวบรวมมานาครั้งสุดท้ายแล้วร่ายคาถา print("success") เพื่อปลดล็อครางวัลกันค่ะ', 1, 'curious', 1, 'pre_submit', 'default'),
+            (26, 7, 0, '2A_2B', 'ยินดีต้อนรับสู่โรงงานผลิตอาวุธเวทมนตร์ 2A_2B ครับ! อุปกรณ์ของคุณพร้อมใช้งานแล้ว', 2, 'neutral', 1, 'pre_submit', 'default'),
+            (27, 7, 1, '2A_2B', 'มาเปิดสวิตช์เดินเครื่องจักรด้วยคำสั่ง print("success") เป็นคำสั่งสุดท้ายกันเลย!', 1, 'smile', 1, 'pre_submit', 'default')
+        `);
+
+    } catch (error) {
+        console.error('⚠️ Failed to ensure learning progress schema and seed data:', error.message);
+    }
+};
+
+const ensureLessonQuizAttemptSchema = async () => {
+    try {
+        await db.execute(`
+            CREATE TABLE IF NOT EXISTS lesson_quiz_attempts (
+                attempt_id int(11) NOT NULL AUTO_INCREMENT,
+                user_id int(11) NOT NULL,
+                lesson_id int(11) NOT NULL,
+                quiz_type varchar(10) NOT NULL,
+                score int(11) NOT NULL DEFAULT 0,
+                total_questions int(11) NOT NULL DEFAULT 0,
+                answers_json longtext DEFAULT NULL,
+                completed_at timestamp NOT NULL DEFAULT current_timestamp(),
+                updated_at timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+                PRIMARY KEY (attempt_id),
+                UNIQUE KEY uk_lesson_quiz_attempt (user_id, lesson_id, quiz_type),
+                KEY idx_lesson_quiz_attempt_lesson (lesson_id, quiz_type),
+                KEY idx_lesson_quiz_attempt_user (user_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
         `);
     } catch (error) {
-        console.error('âš ï¸ Failed to ensure learning progress schema:', error.message);
+        console.error('⚠️ Failed to ensure lesson quiz attempt schema:', error.message);
     }
 };
 
@@ -4142,6 +4444,78 @@ app.get('/api/lessons/:lessonId/quizzes', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+app.get('/api/lessons/:lessonId/quiz-results/:userId', async (req, res) => {
+    try {
+        await ensureLessonQuizAttemptSchema();
+        const { lessonId, userId } = req.params;
+        const [rows] = await db.execute(
+            `SELECT quiz_type, score, total_questions, answers_json, completed_at, updated_at
+             FROM lesson_quiz_attempts
+             WHERE lesson_id = ? AND user_id = ?
+             ORDER BY quiz_type`,
+            [lessonId, userId]
+        );
+        const normalized = rows.map((row) => ({
+            quiz_type: row.quiz_type,
+            score: Number(row.score || 0),
+            total_questions: Number(row.total_questions || 0),
+            answers: (() => {
+                if (!row.answers_json) return {};
+                try {
+                    return JSON.parse(row.answers_json);
+                } catch (_) {
+                    return {};
+                }
+            })(),
+            completed_at: row.completed_at,
+            updated_at: row.updated_at,
+        }));
+        res.json(normalized);
+    } catch (err) {
+        res.status(500).json({ error: describeError(err) });
+    }
+});
+
+app.post('/api/lessons/:lessonId/quiz-results', async (req, res) => {
+    try {
+        await ensureLessonQuizAttemptSchema();
+        const lessonId = Number(req.params.lessonId);
+        const userId = Number(req.body?.user_id);
+        const quizType = String(req.body?.quiz_type || '').trim().toLowerCase();
+        const score = Number(req.body?.score || 0);
+        const totalQuestions = Number(req.body?.total_questions || 0);
+        const answersJson = JSON.stringify(req.body?.answers || {});
+
+        if (!lessonId || !userId || !['pre', 'post'].includes(quizType)) {
+            return res.status(400).json({ error: 'Invalid quiz result payload' });
+        }
+
+        await db.execute(
+            `INSERT INTO lesson_quiz_attempts (
+                user_id, lesson_id, quiz_type, score, total_questions, answers_json
+             ) VALUES (?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE
+                score = VALUES(score),
+                total_questions = VALUES(total_questions),
+                answers_json = VALUES(answers_json),
+                completed_at = current_timestamp(),
+                updated_at = current_timestamp()`,
+            [userId, lessonId, quizType, score, totalQuestions, answersJson]
+        );
+
+        res.json({
+            success: true,
+            lesson_id: lessonId,
+            user_id: userId,
+            quiz_type: quizType,
+            score,
+            total_questions: totalQuestions,
+        });
+    } catch (err) {
+        res.status(500).json({ error: describeError(err) });
+    }
+});
+
 // --- Lesson Exercises ---
 app.get('/api/exercises/list/:lessonId', async (req, res) => {
     try {
@@ -4370,6 +4744,573 @@ app.post('/api/exercises/:exerciseId/submit', async (req, res) => {
         });
     } catch (err) {
         logRouteError('❌ Exercise submit error:', err);
+        res.status(500).json({ error: describeError(err) });
+    }
+});
+
+// --- MiNi Game Modules API ---
+// The route name still says "modules" because the client already uses it, but the data now
+// comes from the current mini_game_lessons / mini_game_exercises schema.
+app.get('/api/mini-game/modules', async (_req, res) => {
+    try {
+        const [rows] = await db.execute(
+            `SELECT lesson_id AS module_id,
+                    lesson_id,
+                    lesson_key,
+                    title,
+                    sort_order AS order_index,
+                    is_active
+             FROM mini_game_lessons
+             WHERE is_active = 1
+             ORDER BY sort_order ASC, lesson_id ASC`
+        );
+        res.json(rows);
+    } catch (err) {
+        logRouteError('MiNi Game lessons list error:', err);
+        res.status(500).json({ error: describeError(err) });
+    }
+});
+
+app.get('/api/mini-game/modules/:moduleId', async (req, res) => {
+    try {
+        const lessonId = Number(req.params.moduleId);
+        if (!lessonId) {
+            return res.status(400).json({ error: 'Invalid lessonId' });
+        }
+
+        const [lessonRows] = await db.execute(
+            `SELECT lesson_id, lesson_key, title, description, sort_order, is_active
+             FROM mini_game_lessons
+             WHERE lesson_id = ?
+               AND is_active = 1
+             LIMIT 1`,
+            [lessonId]
+        );
+
+        if (lessonRows.length === 0) {
+            return res.status(404).json({ error: 'MiNi Game lesson not found' });
+        }
+
+        const [exerciseRows] = await db.execute(
+            `SELECT exercise_id AS mini_game_module_id,
+                    exercise_id,
+                    lesson_id AS module_id,
+                    lesson_id,
+                    title,
+                    exercise_order AS order_index,
+                    xp_reward AS reward_xp,
+                    currency_reward AS reward_coins,
+                    description AS hint,
+                    starter_code,
+                    NULL AS validation_mode,
+                    JSON_ARRAY('print') AS required_syntax_json,
+                    JSON_ARRAY() AS required_vars_json,
+                    test_cases_json,
+                    'แบบฝึกหัดผ่านแล้ว' AS success_message,
+                    0 AS submit_unlock_step,
+                    'minigame01.jpg' AS scene_background_image,
+                    is_active
+             FROM mini_game_exercises
+             WHERE lesson_id = ?
+               AND is_active = 1
+             ORDER BY CAST(exercise_order AS UNSIGNED) ASC, exercise_order ASC, exercise_id ASC`,
+            [lessonId]
+        );
+
+        if (exerciseRows.length === 0) {
+            return res.status(404).json({ error: 'No mini game exercises found for this lesson' });
+        }
+
+        const exerciseIds = exerciseRows.map((row) => row.exercise_id);
+        const placeholders = exerciseIds.map(() => '?').join(',');
+
+        const [dialogueRows] = await db.execute(
+            `SELECT d.dialogue_id,
+                    d.exercise_id AS mini_game_module_id,
+                    d.exercise_id,
+                    d.dialogue_order AS step_index,
+                    COALESCE(n.npc_key, 'system') AS speaker,
+                    d.dialogue_text,
+                    d.npc_emotion AS emotion,
+                    d.dialogue_phase,
+                    d.branch_key,
+                    l.bg_image_url,
+                    l.location_key,
+                    l.name AS location_name
+             FROM mini_game_dialogues d
+             LEFT JOIN mini_game_npcs n ON n.npc_id = d.npc_id
+             LEFT JOIN mini_game_locations l ON l.location_id = d.location_id
+             WHERE d.exercise_id IN (${placeholders})
+             ORDER BY d.exercise_id ASC, d.dialogue_phase ASC, d.branch_key ASC, d.dialogue_order ASC, d.dialogue_id ASC`,
+            exerciseIds
+        );
+
+        let choiceRows = [];
+        if (dialogueRows.length > 0) {
+            const dialogueIds = dialogueRows.map((row) => row.dialogue_id);
+            const dialoguePlaceholders = dialogueIds.map(() => '?').join(',');
+            [choiceRows] = await db.execute(
+                `SELECT choice_id,
+                        dialogue_id,
+                        choice_order AS sort_order,
+                        choice_text,
+                        next_branch_key AS branch_key,
+                        'pre_submit' AS next_dialogue_phase,
+                        next_dialogue_order AS next_step_index,
+                        NULL AS feedback_text,
+                        NULL AS emotion,
+                        NULL AS ending_key,
+                        NULL AS effect_json
+                 FROM mini_game_dialogue_choices
+                 WHERE dialogue_id IN (${dialoguePlaceholders})
+                 ORDER BY dialogue_id ASC, choice_order ASC, choice_id ASC`,
+                dialogueIds
+            );
+        }
+
+        const subtopics = exerciseRows.map((row) => {
+            const dialogues = dialogueRows
+                .filter((dialogue) => dialogue.exercise_id === row.exercise_id)
+                .map((dialogue) => ({
+                    ...dialogue,
+                    choices: choiceRows.filter((choice) => choice.dialogue_id === dialogue.dialogue_id),
+                }));
+            return {
+                ...row,
+                dialogues,
+                dialogue_choices: choiceRows.filter((choice) =>
+                    dialogues.some((dialogue) => dialogue.dialogue_id === choice.dialogue_id)
+                ),
+                dialogue_branches: [],
+                terminal_logic: [],
+            };
+        });
+
+        const rewardXp = subtopics.reduce((total, row) => total + Number(row.reward_xp || 0), 0);
+        const rewardCoins = subtopics.reduce((total, row) => total + Number(row.reward_coins || 0), 0);
+        const first = subtopics[0];
+
+        res.json({
+            ...first,
+            module_id: lessonId,
+            lesson_id: lessonId,
+            title: lessonRows[0].title,
+            description: lessonRows[0].description,
+            reward_xp: rewardXp,
+            reward_coins: rewardCoins,
+            scene_background_image: first.scene_background_image,
+            subtopics,
+        });
+    } catch (err) {
+        logRouteError('MiNi Game lesson detail error:', err);
+        res.status(500).json({ error: describeError(err) });
+    }
+});
+
+app.get('/api/mini-game/modules/:moduleId/progress/:userId', async (req, res) => {
+    try {
+        const lessonId = Number(req.params.moduleId);
+        const userId = req.params.userId;
+        if (!lessonId || !userId) {
+            return res.status(400).json({ error: 'Invalid progress lookup' });
+        }
+
+        if (isGuestUserId(userId)) {
+            return res.json([]);
+        }
+
+        const [rows] = await db.execute(
+            `SELECT p.progress_id,
+                    p.user_id,
+                    p.exercise_id AS mini_game_module_id,
+                    e.lesson_id AS module_id,
+                    s.submitted_code,
+                    p.is_completed,
+                    p.best_score AS score,
+                    s.submitted_code AS last_terminal_input,
+                    s.error_message AS last_terminal_reply,
+                    p.selected_branch_key,
+                    p.selected_branch_key AS last_output,
+                    NULL AS choice_history_json,
+                    NULL AS ending_key,
+                    p.completed_at,
+                    p.updated_at
+             FROM mini_game_user_exercise_progress p
+             JOIN mini_game_exercises e ON e.exercise_id = p.exercise_id
+             LEFT JOIN mini_game_exercise_submissions s ON s.submission_id = p.last_submission_id
+             WHERE e.lesson_id = ?
+               AND p.user_id = ?
+             ORDER BY CAST(e.exercise_order AS UNSIGNED) ASC, e.exercise_order ASC, e.exercise_id ASC`,
+            [lessonId, userId]
+        );
+
+        res.json(rows);
+    } catch (err) {
+        logRouteError('MiNi Game exercise progress error:', err);
+        res.status(500).json({ error: describeError(err) });
+    }
+});
+
+app.post('/api/mini-game/modules/:moduleId/progress', async (req, res) => {
+    const lessonId = Number(req.params.moduleId);
+    const {
+        mini_game_module_id,
+        user_id,
+        submitted_code = '',
+        is_completed = false,
+        score = 0,
+        selected_branch_key = 'default',
+        last_terminal_reply = null,
+    } = req.body || {};
+
+    if (!lessonId || !mini_game_module_id || !user_id) {
+        return res.status(400).json({ error: 'lessonId, exercise id and user_id are required' });
+    }
+
+    try {
+        const [exerciseRows] = await db.execute(
+            `SELECT exercise_id, lesson_id, xp_reward, currency_reward
+             FROM mini_game_exercises
+             WHERE lesson_id = ? AND exercise_id = ?
+             LIMIT 1`,
+            [lessonId, mini_game_module_id]
+        );
+
+        if (exerciseRows.length === 0) {
+            return res.status(404).json({ error: 'MiNi Game exercise not found' });
+        }
+
+        const exercise = exerciseRows[0];
+
+        if (isGuestUserId(user_id)) {
+            return res.json({
+                success: true,
+                user: buildGuestUserSnapshot({ userId: user_id }),
+                xp_reward: 0,
+                currency_reward: 0,
+                alreadyCompleted: false,
+                is_module_completed: Boolean(is_completed),
+            });
+        }
+
+        const [existingProgressRows] = await db.execute(
+            `SELECT progress_id, is_completed, reward_claimed, best_score
+             FROM mini_game_user_exercise_progress
+             WHERE user_id = ? AND exercise_id = ?
+             LIMIT 1`,
+            [user_id, exercise.exercise_id]
+        );
+        const existingProgress = existingProgressRows[0] || null;
+        const shouldGrantReward = Boolean(is_completed) && !Number(existingProgress?.reward_claimed || 0);
+
+        const [submissionResult] = await db.execute(
+            `INSERT INTO mini_game_exercise_submissions (
+                user_id, exercise_id, submitted_code, is_passed, score,
+                passed_test_count, total_test_count, selected_branch_key, reward_granted,
+                error_message
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                user_id,
+                exercise.exercise_id,
+                submitted_code,
+                is_completed ? 1 : 0,
+                Number(score || 0),
+                is_completed ? 1 : 0,
+                1,
+                selected_branch_key || 'default',
+                shouldGrantReward ? 1 : 0,
+                last_terminal_reply,
+            ]
+        );
+
+        await db.execute(
+            `INSERT INTO mini_game_user_exercise_progress (
+                user_id, exercise_id, is_completed, completed_at, reward_claimed,
+                best_score, selected_branch_key, last_submission_id
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE
+                is_completed = GREATEST(is_completed, VALUES(is_completed)),
+                completed_at = IF(VALUES(is_completed) = 1 AND completed_at IS NULL, VALUES(completed_at), completed_at),
+                reward_claimed = GREATEST(reward_claimed, VALUES(reward_claimed)),
+                best_score = GREATEST(best_score, VALUES(best_score)),
+                selected_branch_key = VALUES(selected_branch_key),
+                last_submission_id = VALUES(last_submission_id),
+                updated_at = CURRENT_TIMESTAMP`,
+            [
+                user_id,
+                exercise.exercise_id,
+                is_completed ? 1 : 0,
+                is_completed ? new Date() : null,
+                shouldGrantReward ? 1 : 0,
+                Number(score || 0),
+                selected_branch_key || 'default',
+                submissionResult.insertId,
+            ]
+        );
+
+        let xpReward = 0;
+        let coinReward = 0;
+        if (shouldGrantReward) {
+            xpReward = Number(exercise.xp_reward || 0);
+            coinReward = Number(exercise.currency_reward || 0);
+            await db.execute(
+                `UPDATE users
+                 SET xp = xp + ?, virtual_currency = virtual_currency + ?
+                 WHERE user_id = ?`,
+                [xpReward, coinReward, user_id]
+            );
+        }
+
+        const [userRows] = await db.execute(
+            'SELECT user_id, username, level, xp, virtual_currency FROM users WHERE user_id = ? LIMIT 1',
+            [user_id]
+        );
+
+        res.json({
+            success: true,
+            alreadyCompleted: Boolean(existingProgress?.is_completed),
+            is_module_completed: Boolean(is_completed),
+            xp_reward: xpReward,
+            currency_reward: coinReward,
+            user: userRows[0] || null,
+        });
+    } catch (err) {
+        logRouteError('MiNi Game exercise progress upsert error:', err);
+        res.status(500).json({ error: describeError(err) });
+    }
+});
+
+
+// --- MiNi Games ---
+app.get('/api/_legacy-mini-game/list/:lessonId', async (req, res) => {
+    try {
+        const [rows] = await db.execute(
+            `SELECT mini_game_id AS exercise_id,
+                    lesson_id,
+                    title,
+                    description,
+                    starter_code,
+                    test_cases,
+                    xp_reward,
+                    currency_reward
+             FROM mini_games
+             WHERE lesson_id = ?
+             ORDER BY mini_game_id ASC`,
+            [req.params.lessonId]
+        );
+        res.json(rows);
+    } catch (err) {
+        logRouteError('MiNi Game list error:', err);
+        res.status(500).json({ error: describeError(err) });
+    }
+});
+
+app.get('/api/_legacy-mini-game/progress/:lessonId/:userId', async (req, res) => {
+    try {
+        const { lessonId, userId } = req.params;
+        const [rows] = await db.execute(
+            `SELECT mgs.mini_game_id AS exercise_id,
+                    mgs.is_passed,
+                    COALESCE(mgs.submitted_code, '') AS latest_submitted_code
+             FROM mini_game_submissions mgs
+             JOIN mini_games mg ON mgs.mini_game_id = mg.mini_game_id
+             WHERE mg.lesson_id = ? AND mgs.user_id = ?`,
+            [lessonId, userId]
+        );
+        res.json(rows);
+    } catch (err) {
+        try {
+            const { lessonId, userId } = req.params;
+            const [rows] = await db.execute(
+                `SELECT mgs.mini_game_id AS exercise_id,
+                        mgs.is_passed,
+                        '' AS latest_submitted_code
+                 FROM mini_game_submissions mgs
+                 JOIN mini_games mg ON mgs.mini_game_id = mg.mini_game_id
+                 WHERE mg.lesson_id = ? AND mgs.user_id = ?`,
+                [lessonId, userId]
+            );
+            res.json(rows);
+        } catch (_) {
+            res.json([]);
+        }
+    }
+});
+
+app.get('/api/_legacy-mini-game/:lessonId', async (req, res) => {
+    try {
+        const { lessonId } = req.params;
+        if (lessonId === 'list' || lessonId === 'progress') {
+            return res.status(404).json({ error: 'not found' });
+        }
+
+        const [rows] = await db.execute(
+            `SELECT mini_game_id AS exercise_id,
+                    lesson_id,
+                    title,
+                    description,
+                    starter_code,
+                    test_cases,
+                    xp_reward,
+                    currency_reward
+             FROM mini_games
+             WHERE lesson_id = ?
+             ORDER BY mini_game_id ASC
+             LIMIT 1`,
+            [lessonId]
+        );
+
+        if (rows.length === 0) {
+            return res.json({ success: false, message: `ไม่พบ MiNi Game สำหรับบทเรียน ${lessonId}` });
+        }
+
+        const miniGame = rows[0];
+        res.json({
+            success: true,
+            exercise: {
+                exercise_id: miniGame.exercise_id,
+                title: miniGame.title,
+                description: miniGame.description,
+                initial_code: miniGame.starter_code,
+                starter_code: miniGame.starter_code,
+                test_cases: miniGame.test_cases ?? [],
+                xp_reward: miniGame.xp_reward,
+                currency_reward: miniGame.currency_reward,
+            },
+        });
+    } catch (err) {
+        logRouteError('MiNi Game fallback error:', err);
+        res.status(500).json({ error: describeError(err) });
+    }
+});
+
+app.get('/api/lessons/:lessonId/_legacy-mini-game', async (req, res) => {
+    try {
+        const [rows] = await db.execute(
+            `SELECT mini_game_id AS exercise_id,
+                    lesson_id,
+                    title,
+                    description,
+                    starter_code,
+                    test_cases,
+                    xp_reward,
+                    currency_reward
+             FROM mini_games
+             WHERE lesson_id = ?
+             ORDER BY mini_game_id ASC
+             LIMIT 1`,
+            [req.params.lessonId]
+        );
+
+        if (rows.length === 0) {
+            return res.status(404).json({ message: 'ไม่พบ MiNi Game สำหรับบทเรียนนี้' });
+        }
+
+        res.json(rows[0]);
+    } catch (err) {
+        logRouteError('Lesson MiNi Game error:', err);
+        res.status(500).json({ error: describeError(err) });
+    }
+});
+
+app.post('/api/_legacy-mini-game/:exerciseId/submit', async (req, res) => {
+    const { exerciseId } = req.params;
+    const { user_id, submitted_code } = req.body || {};
+
+    if (!user_id) {
+        return res.status(400).json({ error: 'user_id is required' });
+    }
+
+    try {
+        const [miniGameRows] = await db.execute(
+            'SELECT xp_reward, currency_reward FROM mini_games WHERE mini_game_id = ?',
+            [exerciseId]
+        );
+
+        if (miniGameRows.length === 0) {
+            return res.status(404).json({ error: 'MiNi Game not found' });
+        }
+
+        const rewardXp = Number(miniGameRows[0].xp_reward || 50);
+        const rewardCoins = Number(miniGameRows[0].currency_reward || 10);
+
+        if (isGuestUserId(user_id)) {
+            return res.json({
+                success: true,
+                xp_reward: 0,
+                currency_reward: 0,
+                alreadyPassed: false,
+                user: buildGuestUserSnapshot({ userId: user_id }),
+            });
+        }
+
+        let alreadyPassed = false;
+        let existingSubmissionId = null;
+        try {
+            const [existing] = await db.execute(
+                `SELECT submission_id, is_passed
+                 FROM mini_game_submissions
+                 WHERE user_id = ? AND mini_game_id = ?
+                 ORDER BY submission_id DESC
+                 LIMIT 1`,
+                [user_id, exerciseId]
+            );
+            alreadyPassed = Boolean(existing[0]?.is_passed);
+            existingSubmissionId = existing[0]?.submission_id || null;
+        } catch (_) {
+            alreadyPassed = false;
+        }
+
+        if (existingSubmissionId) {
+            await db.execute(
+                `UPDATE mini_game_submissions
+                 SET submitted_code = ?, is_passed = true, submitted_at = CURRENT_TIMESTAMP
+                 WHERE submission_id = ?`,
+                [submitted_code || '', existingSubmissionId]
+            );
+        } else {
+            await db.execute(
+                `INSERT INTO mini_game_submissions (user_id, mini_game_id, submitted_code, is_passed, score)
+                 VALUES (?, ?, ?, true, 100)`,
+                [user_id, exerciseId, submitted_code || '']
+            );
+        }
+
+        if (alreadyPassed) {
+            const [userRows] = await db.execute(
+                'SELECT user_id, username, level, xp, virtual_currency FROM users WHERE user_id = ? LIMIT 1',
+                [user_id]
+            );
+            return res.json({
+                success: true,
+                alreadyPassed: true,
+                xp_reward: 0,
+                currency_reward: 0,
+                user: userRows[0] || null,
+            });
+        }
+
+        await db.execute(
+            `UPDATE users
+             SET xp = xp + ?, virtual_currency = virtual_currency + ?
+             WHERE user_id = ?`,
+            [rewardXp, rewardCoins, user_id]
+        );
+
+        const [selectedUsers] = await db.execute(
+            'SELECT user_id, username, level, xp, virtual_currency FROM users WHERE user_id = ? LIMIT 1',
+            [user_id]
+        );
+        const updatedUser = selectedUsers[0] || null;
+
+        res.json({
+            success: true,
+            xp_reward: rewardXp,
+            currency_reward: rewardCoins,
+            user: updatedUser,
+        });
+    } catch (err) {
+        logRouteError('MiNi Game submit error:', err);
         res.status(500).json({ error: describeError(err) });
     }
 });
@@ -5044,6 +5985,7 @@ const initializeBackgroundServices = async () => {
         await ensureAdminSchema();
         await ensureLearningAiTaskSchema();
         await ensureLearningProgressSchema();
+        await ensureLessonQuizAttemptSchema();
 
         if (!simulationLoopStarted) {
             console.log("Starting Simulation Engine...");
