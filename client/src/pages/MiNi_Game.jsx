@@ -407,7 +407,7 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
             const value = String(text ?? "");
             if (!value) return;
             runOutputRef.current += value;
-            if (outputTargetRef.current === "story") {
+            if (outputTargetRef.current !== "terminal") {
               setProgramDialogue((prev) => prev ? { text: `${prev.text || ""}${value}` } : prev);
             }
             if (value.trim()) appendTerminalLine(value.replace(/\n$/, ""));
@@ -644,8 +644,8 @@ output.strip()
       return { ok: false, output: "", reply: null };
     }
 
-    outputTargetRef.current = "terminal";
-    setProgramDialogue(null);
+    outputTargetRef.current = "both";
+    setProgramDialogue({ text: "" });
     setShowTerminal(true);
     setTerminalLines(["$ python main.py"]);
     setIsRunning(true);
@@ -821,7 +821,7 @@ await __main__()
 
     const value = currentInput;
     appendTerminalLine(`${currentPrompt}${value}`);
-    if (outputTargetRef.current === "story") {
+    if (outputTargetRef.current !== "terminal") {
       setProgramDialogue((prev) => prev ? { text: `${prev.text || ""}${currentPrompt}${value}\n` } : prev);
     }
     inputResolverRef.current(value);
