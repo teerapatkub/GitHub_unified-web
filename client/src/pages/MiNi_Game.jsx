@@ -54,12 +54,6 @@ const getTestConfig = (value) => {
   return { expected_format: "", rules: [], correctness: [], legacy: false };
 };
 
-const extractLastNumber = (text = "") => {
-  const matches = String(text).match(/-?\d+(?:\.\d+)?/g);
-  if (!matches || matches.length === 0) return null;
-  return Number(matches[matches.length - 1]);
-};
-
 const evaluateBranchRules = (rules, output) => {
   if (!rules || rules.length === 0) return "default";
 
@@ -233,7 +227,6 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
   const params = useParams();
   const moduleId = Number(lessonId ?? params.lessonId ?? 1);
 
-  const [isStageCleared, setIsStageCleared] = useState(false);
   const [moduleData, setModuleData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -259,6 +252,7 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
   const inputResolverRef = useRef(null);
   const runOutputRef = useRef("");
   const dialogueAudioRef = useRef(null);
+  const outputTargetRef = useRef("terminal");
 
   const subtopics = useMemo(() => {
     if (!moduleData) return [];
@@ -316,6 +310,12 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
   const completedSubtopicCount = subtopics.filter((subtopic) =>
     Boolean(progressBySubtopic[subtopic.exercise_id]?.completed_this_run)
   ).length;
+  const branchSubtopicIndex = getSubtopicIndexForBranch(selectedBranchKey);
+  const nextSubtopicIndex = branchSubtopicIndex >= 0
+    ? branchSubtopicIndex
+    : currentSubtopicIndex + 1 < subtopics.length
+      ? currentSubtopicIndex + 1
+      : -1;
   const isAtLastDialogue = dialogueIndex >= Math.max(dialogues.length - 1, 0);
   const canSubmit = Boolean(
     currentSubtopic
@@ -407,7 +407,9 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
             const value = String(text ?? "");
             if (!value) return;
             runOutputRef.current += value;
-            setProgramDialogue((prev) => prev ? { text: `${prev.text || ""}${value}` } : prev);
+            if (outputTargetRef.current === "story") {
+              setProgramDialogue((prev) => prev ? { text: `${prev.text || ""}${value}` } : prev);
+            }
             if (value.trim()) appendTerminalLine(value.replace(/\n$/, ""));
           },
         });
@@ -634,6 +636,8 @@ output.strip()
       return { ok: false, output: "", reply: null };
     }
 
+    outputTargetRef.current = "terminal";
+    setProgramDialogue(null);
     setShowTerminal(true);
     setTerminalLines(["$ python main.py"]);
     setIsRunning(true);
@@ -682,6 +686,7 @@ await __main__()
       return { ok: false, output: "", reply: null };
     }
 
+    outputTargetRef.current = "story";
     setShowTerminal(false);
     setProgramDialogue({ text: "" });
     setIsRunning(true);
@@ -808,7 +813,9 @@ await __main__()
 
     const value = currentInput;
     appendTerminalLine(`${currentPrompt}${value}`);
-    setProgramDialogue((prev) => prev ? { text: `${prev.text || ""}${currentPrompt}${value}\n` } : prev);
+    if (outputTargetRef.current === "story") {
+      setProgramDialogue((prev) => prev ? { text: `${prev.text || ""}${currentPrompt}${value}\n` } : prev);
+    }
     inputResolverRef.current(value);
     inputResolverRef.current = null;
     setCurrentInput("");
@@ -867,6 +874,7 @@ await __main__()
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          mini_game_module_id: currentSubtopic.exercise_id,
           exercise_id: currentSubtopic.exercise_id,
           user_id: user.user_id,
           submitted_code: code,
@@ -941,22 +949,9 @@ const handleSubmit = async () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        // 1. แก้ไขกลุ่มของ Lesson ID ดักทุกคำที่หลังบ้านอาจจะใช้แกะค่า
-        lessonId: moduleId,
-        lesson_id: moduleId,
-        moduleId: moduleId,
-
-        // 2. แก้ไขกลุ่มของ Exercise ID (เพิ่มคีย์สตริงที่มีเว้นวรรค ดักตัว Error ของคุณโดยเฉพาะ)
-        exerciseId: currentExerciseId,
+        mini_game_module_id: currentExerciseId,
         exercise_id: currentExerciseId,
-        "exercise id": currentExerciseId, // 🌟 ดัก "exercise id" ตามตัวหนังสือ Error เป๊ะๆ
-
-        // 3. แก้ไขกลุ่มของ User ID
-        userId: currentUserId,
         user_id: currentUserId,
-        "user id": currentUserId,
-
-        // ข้อมูลส่วนเนื้อหาอื่น ๆ ส่งปกติ
         submitted_code: code,
         is_completed: isCompleted,
         score: 100,
@@ -974,12 +969,6 @@ const handleSubmit = async () => {
       throw new Error(result?.error || "Unable to save MiNi Game progress.");
     }
 
-    console.log("บันทึกความคืบหน้ามินิเกมสำเร็จ! 🎉", result);
-
-    
-
-    setIsStageCleared(true); // เปลี่ยนสถานะว่าเคลียร์ด่านแล้ว
-    setSelectedBranchKey(nextBranchKey); // บังคับให้ระบบใช้ branch_key ใหม่ที่คำนวณได้
 
       if (result?.user) {
         localStorage.setItem("user", JSON.stringify({ ...user, ...result.user }));
@@ -1302,11 +1291,10 @@ const handleSubmit = async () => {
                     ) : null}
                     {dialogueIndex >= dialogues.length - 1 &&
                     isCurrentSubtopicCompleted &&
-                    getSubtopicIndexForBranch(selectedBranchKey) >= 0 ? (
+                    nextSubtopicIndex >= 0 ? (
                       <button
                         onClick={() => {
-                          const targetIndex = getSubtopicIndexForBranch(selectedBranchKey);
-                          if (targetIndex >= 0) setCurrentSubtopicIndex(targetIndex);
+                          if (nextSubtopicIndex >= 0) setCurrentSubtopicIndex(nextSubtopicIndex);
                         }}
                         className="mt-6 rounded-2xl bg-emerald-600 px-5 py-2 text-sm font-bold text-white"
                       >
