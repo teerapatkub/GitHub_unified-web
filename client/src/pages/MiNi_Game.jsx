@@ -601,6 +601,10 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
 import sys, builtins, base64, textwrap
 from io import StringIO
 
+_saved_stdout = sys.stdout
+_saved_stdin = sys.stdin
+_saved_input = builtins.input
+
 def sync_input(prompt=""):
     return sys.stdin.readline().rstrip('\\n')
 
@@ -614,6 +618,10 @@ try:
     output = sys.stdout.getvalue()
 except Exception as e:
     output = "Error: " + str(e)
+finally:
+    sys.stdout = _saved_stdout
+    sys.stdin = _saved_stdin
+    builtins.input = _saved_input
 
 output.strip()
 `;
@@ -637,7 +645,6 @@ output.strip()
     }
 
     outputTargetRef.current = "terminal";
-    setProgramDialogue(null);
     setShowTerminal(true);
     setTerminalLines(["$ python main.py"]);
     setIsRunning(true);
