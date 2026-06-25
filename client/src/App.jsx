@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { TheInfiniteGrid } from './components/ui/the-infinite-grid';
 import { NavBar } from './components/ui/tubelight-navbar';
 import { ThemeProvider } from './contexts/ThemeContext';
+import MouseEffectLayer from './components/MouseEffectLayer';
 
 // --- Friend's Learning Pages ---
 import LearningPage from './pages/LearningPage';
@@ -160,6 +161,14 @@ function AppContent() {
   }, [location.pathname, location.search, navigate]);
 
   useEffect(() => {
+    const onCosmeticEquipped = (event) => {
+      if (event.detail?.user) syncUserToState(event.detail.user);
+    };
+    window.addEventListener('pysim:user-cosmetic-equipped', onCosmeticEquipped);
+    return () => window.removeEventListener('pysim:user-cosmetic-equipped', onCosmeticEquipped);
+  }, [syncUserToState]);
+
+  useEffect(() => {
     if (!user || user.isGuest) return;
 
     refreshUserProfile();
@@ -192,7 +201,7 @@ function AppContent() {
   const handleLoginSuccess = (userData) => {
     const authenticatedUser = { ...userData, isGuest: false };
     syncUserToState(authenticatedUser);
-    navigate('/learn');
+    navigate(authenticatedUser.role === 'admin' ? '/admin/dashboard' : '/learn');
   };
 
   const handleLogout = () => {
@@ -246,6 +255,7 @@ function AppContent() {
 
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-transparent text-slate-800 font-sans transition-colors duration-300 relative">
+      <MouseEffectLayer user={user} />
       <TheInfiniteGrid>
         {/* TOP RIGHT FLOATING HEADER — Hide on login AND simulation routes */}
         <AnimatePresence>
@@ -256,7 +266,7 @@ function AppContent() {
               exit={{ y: -20, opacity: 0 }}
               transition={{ duration: 0.3, ease: 'easeInOut' }}
             >
-              <div className="fixed inset-x-0 top-0 z-40 border-b border-slate-200/70 bg-white/85 backdrop-blur-xl shadow-[0_10px_40px_rgba(15,23,42,0.08)]">
+              <div className="pysim-theme-navbar fixed inset-x-0 top-0 z-40 border-b border-slate-200/70 bg-white/85 backdrop-blur-xl shadow-[0_10px_40px_rgba(15,23,42,0.08)]">
                 <div className="mx-auto flex h-20 max-w-[1700px] items-center gap-4 px-4 sm:px-6">
                   <div className="hidden min-w-[150px] lg:block">
                     <div className="text-xs font-black uppercase tracking-[0.24em] text-blue-600">PYSIM</div>
@@ -296,7 +306,7 @@ function AppContent() {
             }
           >
             <Routes location={location}>
-              <Route path="/" element={<Navigate to={isAuthenticated ? "/learn" : "/login"} replace />} />
+              <Route path="/" element={<Navigate to={isAuthenticated ? (isAdminUser ? "/admin/dashboard" : "/learn") : "/login"} replace />} />
               <Route
                 path="/shop"
                 element={
@@ -309,7 +319,7 @@ function AppContent() {
                 path="/login"
                 element={
                   isAuthenticated
-                    ? <Navigate to="/learn" replace />
+                    ? <Navigate to={isAdminUser ? "/admin/dashboard" : "/learn"} replace />
                     : <FriendLogin onLoginSuccess={handleLoginSuccess} />
                 }
               />
@@ -408,6 +418,9 @@ const TopRightHeader = ({ user, onLogout }) => {
   const { i18n } = useTranslation();
   const navigate = useNavigate();
   const [langMenuOpen, setLangMenuOpen] = useState(false);
+  const profileImage = user?.profile_asset_url?.startsWith('/uploads')
+    ? `http://localhost:3001${user.profile_asset_url}`
+    : user?.profile_asset_url;
 
   return (
     <div className="flex items-center space-x-3 rounded-2xl border border-slate-200/70 bg-white/80 p-2 pr-4 shadow-sm">
@@ -469,6 +482,13 @@ const TopRightHeader = ({ user, onLogout }) => {
         </div>
       ) : (
         <div className="flex items-center space-x-3 pl-1">
+          {profileImage && (
+            <img
+              src={profileImage}
+              alt=""
+              className="h-9 w-9 rounded-full border-2 border-sky-300 bg-slate-100 object-cover"
+            />
+          )}
           <div className="flex flex-col items-end hidden sm:flex">
             <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">LV. {user?.level || 1}</span>
             <span className="text-xs font-semibold text-slate-700">{user?.username}</span>

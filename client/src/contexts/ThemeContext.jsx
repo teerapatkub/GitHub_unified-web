@@ -47,6 +47,10 @@ export function ThemeProvider({ children }) {
         Object.entries(activeTheme.colors).forEach(([key, value]) => {
             root.style.setProperty(key, value);
         });
+        root.style.setProperty(
+            '--shop-theme-background',
+            activeTheme.backgroundImage ? `url("${activeTheme.backgroundImage}")` : 'none',
+        );
 
         // Save preference
         localStorage.setItem('game_theme', activeTheme.id);

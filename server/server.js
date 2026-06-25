@@ -1046,6 +1046,12 @@ const adminThemeConfigs = {
     background: { route: '/api/themes/backgrounds', itemType: 'PROFILE_BACKGROUND' },
 };
 
+const toLegacyShopType = (itemType) => {
+    if (itemType === 'MOUSE_EFFECT') return 'MOUSE_EFFECT';
+    if (itemType === 'PROFILE_FRAME' || itemType === 'PROFILE_BACKGROUND') return 'PROFILE_FRAME';
+    return 'THEME';
+};
+
 const registerAdminThemeCrud = ({ route, itemType, includeEffects = false }) => {
     app.get(route, async (_req, res) => {
         try {
@@ -1076,13 +1082,16 @@ const registerAdminThemeCrud = ({ route, itemType, includeEffects = false }) => 
             }
 
             const sql = includeEffects
-                ? `INSERT INTO shop_items (name, description, item_type, price, is_active, effects)
-                   VALUES (?, ?, ?, ?, ?, ?)`
-                : `INSERT INTO shop_items (name, description, item_type, price, asset_url, preview_image, is_active)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)`;
+                ? `INSERT INTO shop_items (name, description, type, item_type, price, is_available, is_active, effects, preview_data)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                : `INSERT INTO shop_items (name, description, type, item_type, price, asset_url, preview_image, is_available, is_active)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+            const legacyType = toLegacyShopType(itemType);
+            const active = Number(is_active ?? 1);
+            const effectsJson = JSON.stringify(effects || []);
             const values = includeEffects
-                ? [name, description || '', itemType, Number(price), Number(is_active ?? 1), JSON.stringify(effects || [])]
-                : [name, description || '', itemType, Number(price), asset_url || '', preview_image || '', Number(is_active ?? 1)];
+                ? [name, description || '', legacyType, itemType, Number(price), active, active, effectsJson, effectsJson]
+                : [name, description || '', legacyType, itemType, Number(price), asset_url || '', preview_image || '', active, active];
             const [meta] = await db.execute(sql, values);
             const [rows] = await db.execute('SELECT * FROM shop_items WHERE item_id = ?', [meta.insertId]);
             const row = rows[0] || null;
@@ -1104,14 +1113,16 @@ const registerAdminThemeCrud = ({ route, itemType, includeEffects = false }) => 
 
             const sql = includeEffects
                 ? `UPDATE shop_items
-                   SET name = ?, description = ?, price = ?, is_active = ?, effects = ?
+                   SET name = ?, description = ?, price = ?, is_available = ?, is_active = ?, effects = ?, preview_data = ?
                    WHERE item_id = ? AND item_type = ?`
                 : `UPDATE shop_items
-                   SET name = ?, description = ?, price = ?, asset_url = ?, preview_image = ?, is_active = ?
+                   SET name = ?, description = ?, price = ?, asset_url = ?, preview_image = ?, is_available = ?, is_active = ?
                    WHERE item_id = ? AND item_type = ?`;
+            const active = Number(is_active ?? 1);
+            const effectsJson = JSON.stringify(effects || []);
             const values = includeEffects
-                ? [name, description || '', Number(price), Number(is_active ?? 1), JSON.stringify(effects || []), req.params.id, itemType]
-                : [name, description || '', Number(price), asset_url || '', preview_image || '', Number(is_active ?? 1), req.params.id, itemType];
+                ? [name, description || '', Number(price), active, active, effectsJson, effectsJson, req.params.id, itemType]
+                : [name, description || '', Number(price), asset_url || '', preview_image || '', active, active, req.params.id, itemType];
             const [meta] = await db.execute(sql, values);
             if (Number(meta.affectedRows || 0) === 0) {
                 return res.status(404).json({ error: 'Not found' });
@@ -2646,7 +2657,17 @@ app.post('/api/ai/generate-jobs-legacy-disabled', async (req, res) => {
 app.get('/api/user/profile/:userId', async (req, res) => {
     try {
         const [rows] = await db.execute(
-            'SELECT user_id, username, email, role, level, xp, virtual_currency FROM users WHERE user_id = ? LIMIT 1',
+            `SELECT u.user_id, u.username, u.email, u.role, u.level, u.xp, u.virtual_currency,
+                    u.equipped_mouse_effect_id, u.equipped_theme_id, u.equipped_profile_frame_id,
+                    COALESCE(item.effects, '[]') AS mouse_effect_data,
+                    theme.asset_url AS theme_asset_url, theme.preview_image AS theme_preview_image,
+                    frame.asset_url AS profile_asset_url, frame.preview_image AS profile_preview_image
+             FROM users u
+             LEFT JOIN shop_items item ON item.item_id = u.equipped_mouse_effect_id
+             LEFT JOIN shop_items theme ON theme.item_id = u.equipped_theme_id
+             LEFT JOIN shop_items frame ON frame.item_id = u.equipped_profile_frame_id
+             WHERE u.user_id = ?
+             LIMIT 1`,
             [req.params.userId]
         );
 
@@ -2655,6 +2676,11 @@ app.get('/api/user/profile/:userId', async (req, res) => {
         }
 
         const user = rows[0];
+        try {
+            user.mouse_effect_data = JSON.parse(user.mouse_effect_data);
+        } catch {
+            user.mouse_effect_data = [];
+        }
         res.json({
             ...user,
             level: Number(user.level ?? 1),
@@ -4130,7 +4156,7 @@ app.post('/simulation/move-location', async (req, res) => {
 app.get('/shop/items', async (req, res) => {
     const { type } = req.query;
     let sql = `
-        SELECT item_id, name, description, item_type AS type, price,
+        SELECT item_id, name, description, item_type AS type, price, asset_url, preview_image,
                effects AS preview_data, is_active AS is_available
         FROM shop_items
         WHERE is_active = 1
@@ -4157,7 +4183,7 @@ app.get('/shop/inventory/:userId', async (req, res) => {
     const { userId } = req.params;
     try {
         const [items] = await db.execute(`
-            SELECT si.item_id, si.name, si.description, si.item_type AS type, si.price,
+            SELECT si.item_id, si.name, si.description, si.item_type AS type, si.price, si.asset_url, si.preview_image,
                    si.effects AS preview_data, si.is_active AS is_available, ui.purchased_at
             FROM user_inventory ui
             JOIN shop_items si ON ui.item_id = si.item_id
@@ -4182,7 +4208,7 @@ app.post('/shop/buy', async (req, res) => {
 
         // ตรวจสอบว่ามีสินค้านี้อยู่
         const [items] = await connection.execute(`
-            SELECT item_id, name, description, item_type AS type, price,
+            SELECT item_id, name, description, item_type AS type, price, asset_url, preview_image,
                    effects AS preview_data, is_active AS is_available
             FROM shop_items
             WHERE item_id = ? AND is_active = 1
@@ -4201,8 +4227,10 @@ app.post('/shop/buy', async (req, res) => {
         }
 
         // ตรวจสอบเงินใน simulation
+        const price = Number(item.price);
+        if (price > 0) {
         const [saves] = await connection.execute('SELECT sim_money FROM simulation_saves WHERE user_id = ? AND is_active = 1', [userId]);
-        if (saves.length === 0 || parseFloat(saves[0].sim_money) < parseFloat(item.price)) {
+        if (saves.length === 0 || Number(saves[0].sim_money) < price) {
             await connection.rollback();
             return res.status(400).json({ error: 'เงินไม่พอ' });
         }
@@ -4210,15 +4238,16 @@ app.post('/shop/buy', async (req, res) => {
         // หักเงินจาก simulation
         await connection.execute(
             'UPDATE simulation_saves SET sim_money = sim_money - ?, total_spent = total_spent + ? WHERE user_id = ? AND is_active = 1',
-            [item.price, item.price, userId]
+            [price, price, userId]
         );
         await insertLedgerEntry(connection, {
             userId,
             type: 'EXPENSE',
             category: 'SHOP',
-            amount: Number(item.price),
+            amount: price,
             description: `Purchased ${item.name}`,
         });
+        }
 
         // เพิ่มเข้า inventory
         await connection.execute('INSERT INTO user_inventory (user_id, item_id) VALUES (?, ?)', [userId, itemId]);
@@ -4239,7 +4268,8 @@ app.post('/shop/equip', async (req, res) => {
     const columnMap = {
         'THEME': 'equipped_theme_id',
         'MOUSE_EFFECT': 'equipped_mouse_effect_id',
-        'PROFILE_FRAME': 'equipped_profile_frame_id'
+        'PROFILE_FRAME': 'equipped_profile_frame_id',
+        'PROFILE_BACKGROUND': 'equipped_profile_frame_id'
     };
     const column = columnMap[type];
     if (!column) return res.status(400).json({ error: 'Invalid type' });
