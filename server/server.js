@@ -1,4 +1,7 @@
 require('dotenv').config();
+const configuredNvidiaKey =
+    process.env.NVIDIA_API_KEY ||
+    (String(process.env.GEMINI_API_KEY || '').startsWith('nvapi-') ? process.env.GEMINI_API_KEY : '');
 console.log("=====================================");
 console.log("🔍 เช็ค NVIDIA API KEY:", process.env.NVIDIA_API_KEY ? "เจอคีย์แล้ว! (" + process.env.NVIDIA_API_KEY.substring(0, 10) + "...)" : "⚠️ ใช้ค่า fallback ใน server.js");
 console.log("=====================================");
@@ -33,9 +36,9 @@ if (!fs.existsSync(uploadsDir)) {
 
 app.use('/uploads', express.static(uploadsDir));
 
-const NVIDIA_API_KEY = String(process.env.NVIDIA_API_KEY || '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').trim();
+const NVIDIA_API_KEY = String(configuredNvidiaKey || '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').trim();
 const NVIDIA_INVOKE_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
-const NVIDIA_MODEL = String(process.env.NVIDIA_MODEL || 'moonshotai/kimi-k2.5').trim();
+const NVIDIA_MODEL = String(process.env.NVIDIA_MODEL || 'moonshotai/kimi-k2.6').trim();
 const AI_MAX_MESSAGE_LENGTH = 2000;
 const AI_MAX_CODE_LENGTH = 12000;
 const AI_RATE_LIMIT_WINDOW_MS = 60 * 1000;

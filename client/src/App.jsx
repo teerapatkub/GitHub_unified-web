@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  BookOpen, Target, FlaskConical, Globe, LogOut, Monitor, Store
+  BookOpen, Target, FlaskConical, Globe, LogOut, Monitor, Store, Coins
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { TheInfiniteGrid } from './components/ui/the-infinite-grid';
@@ -418,6 +418,7 @@ const TopRightHeader = ({ user, onLogout }) => {
   const { i18n } = useTranslation();
   const navigate = useNavigate();
   const [langMenuOpen, setLangMenuOpen] = useState(false);
+  const coinBalance = Number(user?.virtual_currency ?? user?.coins ?? 0);
   const profileImage = user?.profile_asset_url?.startsWith('/uploads')
     ? `http://localhost:3001${user.profile_asset_url}`
     : user?.profile_asset_url;
@@ -482,6 +483,13 @@ const TopRightHeader = ({ user, onLogout }) => {
         </div>
       ) : (
         <div className="flex items-center space-x-3 pl-1">
+          <div
+            className="hidden sm:flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-black text-amber-700"
+            title="Coins"
+          >
+            <Coins className="h-4 w-4 text-amber-500" />
+            <span>{coinBalance.toLocaleString()}</span>
+          </div>
           {profileImage && (
             <img
               src={profileImage}
