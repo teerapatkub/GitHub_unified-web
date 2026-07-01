@@ -96,6 +96,18 @@ export default function ShopPage() {
         }
 
         const preview = normalizePreviewData(item.preview_data);
+        if (preview?.css_class) {
+            const labelByTheme = {
+                'theme-default': 'Py',
+                'theme-neon-cyberpunk': 'NE',
+                'theme-hacker': '</>',
+            };
+            return { type: 'text', value: labelByTheme[preview.css_class] || 'Aa' };
+        }
+        if (preview?.border) {
+            return { type: 'text', value: '[]' };
+        }
+
         const firstEffect = Array.isArray(preview) ? preview[0] : null;
         const visual = firstEffect?.visual || preview?.visual || preview?.icon || preview?.effect;
 

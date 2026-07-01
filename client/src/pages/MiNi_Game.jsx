@@ -15,6 +15,11 @@ const API_BASE = "http://localhost:3001";
 const PYODIDE_SCRIPT_ID = "mini-game-pyodide";
 const PYODIDE_SCRIPT_URL = "https://cdn.jsdelivr.net/pyodide/v0.27.7/full/pyodide.js";
 
+// Singleton: ป้องกัน loadPyodide() ถูกเรียกซ้ำเมื่อ component re-mount
+// ซึ่งเป็นสาเหตุของ "WebAssembly.Memory(): could not allocate memory"
+let _pyodideInstance = null;
+let _pyodideLoading = null;
+
 const parseJsonValue = (value, fallback = null) => {
   if (!value) return fallback;
   if (typeof value === "object") return value;
@@ -55,40 +60,32 @@ const getTestConfig = (value) => {
 };
 
 const evaluateBranchRules = (rules, output) => {
-  if (!rules || rules.length === 0) return "default";
+  if (!rules || rules.length === 0) return null;
 
-  // 1. ทำความสะอาดค่า Output ที่ได้จากการ print ของผู้เล่น
   const cleanOutput = output ? output.trim() : "";
-
-  // 2. ดึงเฉพาะตัวเลขออกมา เผื่อกรณีที่ใน SQL ยังเป็นสูตรคณิตศาสตร์แบบเก่า (เช่น float > 500)
-  // หากคำตอบคือ "1070.0" หรือ "1A" ตัวนี้จะพยายามหาตัวเลขจุดทศนิยมหรือเลขเดี่ยวๆ ออกมา
   const matchNum = cleanOutput.match(/-?\d+(\.\d+)?/);
   const numericValue = matchNum ? parseFloat(matchNum[0]) : 0;
 
   for (const rule of rules) {
     try {
-      let conditionStr = rule.condition;
+      let conditionStr = String(rule.condition || "");
+      if (!conditionStr) continue;
 
-      // 3. ปรับให้รองรับเงื่อนไขทุกรูปแบบ:
       if (conditionStr.includes("value")) {
-        // ถ้าในเงื่อนไขใช้คำว่า 'value' (เช่น value == '1A') -> เอาข้อความเต็มๆ ไปเช็ค
-        conditionStr = conditionStr.replace(/value/g, `'${cleanOutput}'`);
+        conditionStr = conditionStr.replace(/value/g, JSON.stringify(cleanOutput));
       } else if (conditionStr.includes("float")) {
-        // ถ้าในเงื่อนไขใช้คำว่า 'float' (เช่น float > 500) -> เอาเฉพาะตัวเลขไปแทนค่า
         conditionStr = conditionStr.replace(/float/g, String(numericValue));
       }
 
-      // 4. สั่งคำนวณสูตรด้วย eval
       if (eval(conditionStr)) {
-        return rule.branch_key;
+        return rule.branch_key || rule.crossroad || "default";
       }
     } catch (e) {
       console.error("Error evaluating rule:", e, rule.condition);
     }
   }
 
-  // ถ้าไม่ตรงเงื่อนไขใดๆ เลย ให้ส่งค่าของแถวสุดท้ายกลับไป (เหมือน Logic เดิมของคุณ)
-  return rules[rules.length - 1].branch_key;
+  return null;
 };
 
 const normalizeOutput = (text = "") =>
@@ -194,33 +191,38 @@ const getBranchMissionCopy = (subtopic, branchKey = "default") => {
   };
 };
 
-async function ensurePyodideLoader() {
-  if (typeof window.loadPyodide === "function") {
-    return window.loadPyodide;
-  }
+async function getPyodideInstance() {
+  // คืน instance เดิมถ้ามีอยู่แล้ว — ป้องกัน WebAssembly OOM
+  if (_pyodideInstance) return _pyodideInstance;
 
-  let script = document.getElementById(PYODIDE_SCRIPT_ID);
-  if (!script) {
-    script = document.createElement("script");
-    script.id = PYODIDE_SCRIPT_ID;
-    script.src = PYODIDE_SCRIPT_URL;
-    script.async = true;
-    document.head.appendChild(script);
-  }
+  // ถ้ากำลังโหลดอยู่ให้รอ Promise เดิม ไม่สร้างใหม่
+  if (_pyodideLoading) return _pyodideLoading;
 
-  await new Promise((resolve, reject) => {
-    if (typeof window.loadPyodide === "function") {
-      resolve();
-      return;
+  _pyodideLoading = (async () => {
+    // โหลด script ถ้ายังไม่มี
+    if (typeof window.loadPyodide !== "function") {
+      let script = document.getElementById(PYODIDE_SCRIPT_ID);
+      if (!script) {
+        script = document.createElement("script");
+        script.id = PYODIDE_SCRIPT_ID;
+        script.src = PYODIDE_SCRIPT_URL;
+        script.async = true;
+        document.head.appendChild(script);
+      }
+
+      await new Promise((resolve, reject) => {
+        if (typeof window.loadPyodide === "function") { resolve(); return; }
+        script.addEventListener("load", resolve, { once: true });
+        script.addEventListener("error", () => reject(new Error("Unable to load Python runtime.")), { once: true });
+      });
     }
 
-    script.addEventListener("load", resolve, { once: true });
-    script.addEventListener("error", () => reject(new Error("Unable to load Python runtime.")), {
-      once: true,
-    });
-  });
+    const instance = await window.loadPyodide();
+    _pyodideInstance = instance;
+    return instance;
+  })();
 
-  return window.loadPyodide;
+  return _pyodideLoading;
 }
 
 export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate }) {
@@ -247,25 +249,151 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
   const [currentPrompt, setCurrentPrompt] = useState("");
   const [displayedDialogueText, setDisplayedDialogueText] = useState("");
   const [programDialogue, setProgramDialogue] = useState(null);
+  const [selectedBranchKey, setSelectedBranchKey] = useState("default");
 
   const terminalRef = useRef(null);
   const inputResolverRef = useRef(null);
   const runOutputRef = useRef("");
   const dialogueAudioRef = useRef(null);
   const outputTargetRef = useRef("terminal");
+    // --- วางฟังก์ชัน runDoneChecks ตรงนี้ ---
+  const runDoneChecks = async (storyOutput = "") => {
+    if ((!pyodide || !pyReady) && pyError) {
+      setProgramDialogue({ text: `Failed to load Python: ${pyError}` });
+      return { ok: false, output: "", reply: null };
+    }
 
+    if (!pyodide || !pyReady || isRunning || !currentSubtopic) {
+      setProgramDialogue({ text: "Python runtime is loading. Please try again in a moment." });
+      return { ok: false, output: "", reply: null };
+    }
+
+    const testConfig = getTestConfig(currentSubtopic.test_cases_json);
+    const correctnessCases = testConfig.correctness;
+    
+    if (correctnessCases.length === 0 && testConfig.rules.length === 0 && dialogueBranches.length === 0 && terminalLogic.length === 0) {
+      setProgramDialogue({ text: "FAIL: No correctness tests found for this exercise." });
+      return { ok: false, output: "", reply: null };
+    }
+
+    setTerminalLines(["--- Checking test cases ---"]);
+    setIsRunning(true);
+
+    try {
+      const errors = validateCode();
+      if (errors.length > 0) {
+        const message = errors.map((item) => `Error: ${item}`).join("\n");
+        setProgramDialogue({ text: message });
+        errors.forEach((item) => appendTerminalLine(`Error: ${item}`));
+        return { ok: false, output: "", reply: null };
+      }
+
+      let lastOutput = "";
+      for (let index = 0; index < correctnessCases.length; index += 1) {
+        const testCase = correctnessCases[index];
+        const rawOutput = await runCodeForCheck(testCase.input ?? "");
+        const actual = normalizeOutput(rawOutput);
+        const expectedValues = Array.isArray(testCase.expected_any)
+          ? testCase.expected_any
+          : [testCase.expected ?? testCase.expected_output ?? ""];
+        const expected = expectedValues.map((item) => normalizeOutput(String(item)));
+        lastOutput = String(rawOutput || "").trim();
+
+        if (expected.some((item) => item && actual.includes(item))) {
+          appendTerminalLine(`PASS Test ${index + 1}`);
+        } else {
+          const message = [`FAIL Test ${index + 1}`, `Expected: ${expected.join(" OR ")}`, `Got: ${actual || "(no output)"}`].join("\n");
+          setProgramDialogue({ text: message });
+          appendTerminalLine(`FAIL Test ${index + 1}`);
+          appendTerminalLine(`Expected: ${expected.join(" OR ")}`);
+          appendTerminalLine(`Got: ${actual || "(no output)"}`);
+          return { ok: false, output: lastOutput || "(no output)", reply: null };
+        }
+      }
+
+      // ระบบกำหนด branch_key ที่แม่นยำ
+      const branchKey = testConfig.rules.length > 0
+        ? evaluateBranchRules(testConfig.rules, storyOutput || lastOutput)
+        : (resolveDialogueBranch(storyOutput || lastOutput)?.branch_key || selectedBranchKey || "default");
+
+      if (testConfig.rules.length > 0 && !branchKey) {
+        const message = "FAIL: No branch rule matched the output.";
+        setProgramDialogue({ text: message });
+        appendTerminalLine(message);
+        return { ok: false, output: storyOutput || lastOutput || "(no output)", reply: null };
+      }
+
+      const branch = { 
+        branch_key: branchKey, 
+        trigger_output: storyOutput || lastOutput, 
+        is_correct: 1 
+      };
+
+      // อัปเดต selectedBranchKey และ mark subtopic ว่า completed ใน progressBySubtopic
+      setSelectedBranchKey(branchKey);
+      setProgressBySubtopic((prev) => ({
+        ...prev,
+        [currentSubtopic.exercise_id]: {
+          ...(prev[currentSubtopic.exercise_id] || {}),
+          exercise_id: currentSubtopic.exercise_id,
+          completed_this_run: 1,
+          is_completed: 1,
+          selected_branch_key: branchKey,
+        },
+      }));
+
+      appendTerminalLine(`PASS Branch: ${branch.branch_key}`);
+      appendTerminalLine("Correct!");
+      appendTerminalLine("--- All tests passed ---");
+      
+      return { ok: true, output: storyOutput || lastOutput || "(no output)", reply: null, branch };
+    } catch (checkError) {
+      const message = `System Error: ${checkError.message}`;
+      setProgramDialogue({ text: message });
+      appendTerminalLine(message);
+      return { ok: false, output: "", reply: null };
+    } finally {
+      setIsRunning(false);
+      setCurrentPrompt("");
+      setCurrentInput("");
+      inputResolverRef.current = null;
+    }
+  };
   const subtopics = useMemo(() => {
     if (!moduleData) return [];
-    if (Array.isArray(moduleData.subtopics) && moduleData.subtopics.length > 0) {
-      return moduleData.subtopics;
+    const list = Array.isArray(moduleData.subtopics) && moduleData.subtopics.length > 0
+      ? [...moduleData.subtopics]   // clone เพื่อไม่ mutate original
+      : [moduleData];
+
+    // ถ้ายังไม่มี subtopic ที่ exercise_order = "end" ให้สร้างจาก end_dialogues
+    const hasEnd = list.some(s => String(s.exercise_order ?? "") === "end");
+    if (!hasEnd) {
+      // ลองหา end dialogues จาก moduleData.end_dialogues (API ส่งมา)
+      // หรือ moduleData.dialogues ที่มี exercise_order = "end" และ exercise_id = null
+      const allDialogues = moduleData.end_dialogues
+        ?? (Array.isArray(moduleData.dialogues)
+            ? moduleData.dialogues.filter(d => String(d.exercise_order ?? "") === "end" && !d.exercise_id)
+            : []);
+
+      if (allDialogues.length > 0) {
+        list.push({
+          exercise_id: -1,
+          exercise_order: "end",
+          title: "จบบทเรียน",
+          starter_code: "",
+          test_cases_json: "{}",
+          dialogues: allDialogues,
+        });
+      }
     }
-    return [moduleData];
+
+    return list;
   }, [moduleData]);
 
   const currentSubtopic = subtopics[currentSubtopicIndex] ?? null;
   const getSubtopicIndexForBranch = (branchKey = "") => {
     const key = String(branchKey || "").trim();
-    if (!key || key === "default" || key === "end") return -1;
+    if (!key || key === "default") return -1;
     return subtopics.findIndex((subtopic) =>
       String(subtopic.exercise_order ?? subtopic.order_index ?? subtopic.branch_key ?? "") === key
     );
@@ -273,7 +401,21 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
   const currentProgress = currentSubtopic
     ? progressBySubtopic[currentSubtopic.exercise_id]
     : null;
-  const isCurrentSubtopicCompleted = Boolean(currentProgress?.completed_this_run);
+// เปลี่ยนจากการเช็ค property ที่ไม่มีอยู่ ให้เช็คที่ตัว Object ของ progress เอง
+// ใน MiNi_Game.jsx
+useEffect(() => {
+  console.log("Progress Map Object:", progressBySubtopic);
+  console.log("Current Subtopic ID:", currentSubtopic?.exercise_id);
+}, [progressBySubtopic, currentSubtopic]);
+
+const isCurrentSubtopicCompleted = useMemo(() => {
+  if (!currentSubtopic || !currentSubtopic.exercise_id) return false;
+  
+  // บังคับเปลี่ยนเป็น String ทั้งคู่ เพื่อให้ตรงกับ Key ที่เก็บไว้ใน progressMap
+  const currentId = String(currentSubtopic.exercise_id);
+  return !!progressBySubtopic[currentId];
+}, [currentSubtopic, progressBySubtopic]);
+
   const inheritedBranchKey = useMemo(() => {
     for (let index = currentSubtopicIndex - 1; index >= 0; index -= 1) {
       const previousSubtopic = subtopics[index];
@@ -285,10 +427,6 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
   const pendingChoice = currentSubtopic
     ? pendingChoicesBySubtopic[currentSubtopic.exercise_id]
     : null;
-  const selectedBranchKey = getSafeBranchKey(
-    currentSubtopic,
-    pendingChoice?.branch_key || currentProgress?.selected_branch_key || inheritedBranchKey
-  );
   const dialogues = useMemo(() => {
     const rows = currentSubtopic?.dialogues ?? [];
     return getVisibleDialogues(rows, isCurrentSubtopicCompleted, selectedBranchKey);
@@ -304,9 +442,12 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
   const currentDialogueText = programDialogue?.text ?? currentDialogue?.dialogue_text ?? "No dialogue found for this module yet.";
   const isProgramDialogue = Boolean(programDialogue);
   const isDialogueTyping = !isProgramDialogue && displayedDialogueText.length < currentDialogueText.length;
-  const sceneBackgroundImage =
-    currentSubtopic?.scene_background_image || moduleData?.scene_background_image || "scene_school.jpg";
-  const sceneBackgroundUrl = `/data_MiNiGame/${sceneBackgroundImage}`;
+  const sceneBackgroundImage = currentDialogue?.bg_image_url || currentSubtopic?.scene_background_image || moduleData?.scene_background_image || "";
+  const sceneBackgroundUrl = sceneBackgroundImage
+    ? sceneBackgroundImage.startsWith("http") || sceneBackgroundImage.startsWith("/")
+      ? sceneBackgroundImage
+      : `${API_BASE}/uploads/${sceneBackgroundImage}`
+    : "/data_MiNiGame/cat.jpg";
   const completedSubtopicCount = subtopics.filter((subtopic) =>
     Boolean(progressBySubtopic[subtopic.exercise_id]?.completed_this_run)
   ).length;
@@ -319,8 +460,7 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
   const isAtLastDialogue = dialogueIndex >= Math.max(dialogues.length - 1, 0);
   const canSubmit = Boolean(
     currentSubtopic
-    && !isProgramDialogue
-    && isAtLastDialogue
+    && (isProgramDialogue || isAtLastDialogue)
     && currentDialogueChoices.length === 0
   );
 
@@ -399,9 +539,10 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
   useEffect(() => {
     const initPyodide = async () => {
       try {
-        const loadPyodide = await ensurePyodideLoader();
-        const instance = await loadPyodide();
+        const instance = await getPyodideInstance();
 
+        // ตั้ง stdout/stderr ทุกครั้งที่ component mount ใหม่
+        // (instance เดิม แต่ callback ต้องชี้ไปที่ state ของ component ปัจจุบัน)
         instance.setStdout({
           batched: (text) => {
             const value = String(text ?? "");
@@ -443,69 +584,84 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
     };
   }, []);
 
-  useEffect(() => {
+  // Memoize userId to prevent infinite loops from unstable prop references
+  const userId = useMemo(() => {
+    return user?.isGuest ? null : (user?.user_id ?? null);
+  }, [user?.isGuest, user?.user_id]);
+
+// === ยุบรวมเหลือชุดเดียว ดึงข้อมูลครบจบในหนึ่งเดียว ไม่ยิงซ้ำซ้อน 100% ===
+useEffect(() => {
+    if (!moduleId) return;
+
     let active = true;
 
-    const loadModule = async () => {
-      setLoading(true);
-      setError("");
-      setTerminalLines([]);
-      setDialogueIndex(0);
-      setCurrentSubtopicIndex(0);
-      setProgressBySubtopic({});
-      setPendingChoicesBySubtopic({});
+const loadGameData = async () => {
+  try {
+    setLoading(true);
+    setError(null);
 
-      try {
-        const response = await fetch(`${API_BASE}/api/mini-game/modules/${moduleId}`);
-        const data = await response.json();
+    // 1. ดึงข้อมูลโครงสร้างหลักจากโมดูล
+    const res = await fetch(`${API_BASE}/api/mini-game/modules/${moduleId}`);
+    if (!res.ok) throw new Error("ไม่สามารถโหลดโครงสร้างมินิเกมได้");
+    const data = await res.json();
 
-        if (!response.ok) {
-          throw new Error(data?.error || "Unable to load MiNi Game module.");
-        }
+    if (!active) return;
 
-        if (!active) return;
-
-        setModuleData(data);
-        const firstSubtopic = data.subtopics?.[0] ?? data;
-        setCode(firstSubtopic?.starter_code || 'print("Hello")');
-
-        if (user?.user_id && !user?.isGuest) {
-          try {
-            const progressResponse = await fetch(
-              `${API_BASE}/api/mini-game/modules/${moduleId}/progress/${user.user_id}`
-            );
-            const progress = await progressResponse.json();
-            const progressRows = Array.isArray(progress) ? progress : progress ? [progress] : [];
-            const nextProgressBySubtopic = progressRows.reduce((acc, item) => {
-              acc[item.exercise_id] = item;
-              return acc;
-            }, {});
-            setProgressBySubtopic(nextProgressBySubtopic);
-            const firstProgress = nextProgressBySubtopic[firstSubtopic?.exercise_id];
-            if (firstProgress?.submitted_code) {
-              setCode(firstProgress.submitted_code);
-            }
-          } catch {
-            // ignore progress load failures
-          }
-        }
-      } catch (loadError) {
-        if (active) {
-          setError(loadError.message);
-        }
-      } finally {
-        if (active) {
-          setLoading(false);
+    // 1b. ดึง end dialogues (ถ้ามี)
+    try {
+      const endRes = await fetch(`${API_BASE}/api/mini-game/modules/${moduleId}/end-dialogues`);
+      if (endRes.ok) {
+        const endDialogues = await endRes.json();
+        if (Array.isArray(endDialogues) && endDialogues.length > 0) {
+          data.end_dialogues = endDialogues;
         }
       }
-    };
+    } catch (e) {
+      // endpoint นี้ optional
+    }
 
-    loadModule();
-    return () => {
-      active = false;
-    };
-  }, [moduleId, user?.user_id, user?.isGuest]);
+    setModuleData(data);
 
+    // 2. ดึงข้อมูล Progress และ Map ข้อมูลด้วย String key เพื่อป้องกันปัญหา Type Mismatch
+    let progressMap = {};
+    if (userId) {
+      try {
+        const progRes = await fetch(`${API_BASE}/api/mini-game/modules/${moduleId}/progress/${userId}`);
+        if (progRes.ok) {
+          const progressRows = await progRes.json();
+          
+          // ปรับปรุง: บังคับใช้ String เป็น Key เสมอ
+          progressMap = (Array.isArray(progressRows) ? progressRows : [progressRows]).reduce((acc, item) => {
+            acc[String(item.exercise_id)] = item;
+            return acc;
+          }, {});
+          
+          setProgressBySubtopic(progressMap);
+        }
+      } catch (e) {
+        console.warn("ไม่สามารถโหลด Progress ได้");
+      }
+    }
+
+    // 3. กำหนดค่าเริ่มต้นของ Code
+    const subtopicList = Array.isArray(data.subtopics) ? data.subtopics : [data];
+    const firstSubtopic = subtopicList[0];
+
+    // ปรับปรุง: ตรวจสอบ Key ด้วย String
+    const savedProgress = firstSubtopic ? progressMap[String(firstSubtopic.exercise_id)] : null;
+    setCode(savedProgress?.submitted_code || firstSubtopic?.starter_code || 'print("Hello")');
+
+  } catch (err) {
+    if (active) setError(err.message);
+  } finally {
+    if (active) setLoading(false);
+  }
+};
+
+    loadGameData();
+    return () => { active = false; };
+  }, [moduleId, userId]);
+  
   useEffect(() => {
     if (!currentSubtopic) return;
     const progress = progressBySubtopic[currentSubtopic.exercise_id];
@@ -517,6 +673,8 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
     setCurrentPrompt("");
     setProgramDialogue(null);
     inputResolverRef.current = null;
+    // Reset branch key เป็น progress ที่บันทึกไว้ หรือ default
+    setSelectedBranchKey(progress?.selected_branch_key || "default");
   }, [currentSubtopic?.exercise_id]);
 
   const requiredSyntax = useMemo(
@@ -738,83 +896,6 @@ await __main__()
     await runCodeInTerminal();
   };
 
-  const runDoneChecks = async (storyOutput = "") => {
-    if ((!pyodide || !pyReady) && pyError) {
-      setProgramDialogue({ text: `Failed to load Python: ${pyError}` });
-      return { ok: false, output: "", reply: null };
-    }
-
-    if (!pyodide || !pyReady || isRunning || !currentSubtopic) {
-      setProgramDialogue({ text: "Python runtime is loading. Please try again in a moment." });
-      return { ok: false, output: "", reply: null };
-    }
-
-    const testConfig = getTestConfig(currentSubtopic.test_cases_json);
-    const correctnessCases = testConfig.correctness;
-    if (correctnessCases.length === 0 && testConfig.rules.length === 0 && dialogueBranches.length === 0 && terminalLogic.length === 0) {
-      setProgramDialogue({ text: "FAIL: No correctness tests found for this exercise." });
-      return { ok: false, output: "", reply: null };
-    }
-
-    setTerminalLines(["--- Checking test cases ---"]);
-    setIsRunning(true);
-
-    try {
-      const errors = validateCode();
-      if (errors.length > 0) {
-        const message = errors.map((item) => `Error: ${item}`).join("\n");
-        setProgramDialogue({ text: message });
-        errors.forEach((item) => appendTerminalLine(`Error: ${item}`));
-        return { ok: false, output: "", reply: null };
-      }
-
-      let lastOutput = "";
-      for (let index = 0; index < correctnessCases.length; index += 1) {
-        const testCase = correctnessCases[index];
-        const rawOutput = await runCodeForCheck(testCase.input ?? "");
-        const actual = normalizeOutput(rawOutput);
-        const expectedValues = Array.isArray(testCase.expected_any)
-          ? testCase.expected_any
-          : [testCase.expected ?? testCase.expected_output ?? ""];
-        const expected = expectedValues.map((item) => normalizeOutput(String(item)));
-        lastOutput = String(rawOutput || "").trim();
-
-        if (expected.some((item) => item && actual.includes(item))) {
-          appendTerminalLine(`PASS Test ${index + 1}`);
-        } else {
-          const message = [
-            `FAIL Test ${index + 1}`,
-            `Expected: ${expected.join(" OR ")}`,
-            `Got: ${actual || "(no output)"}`,
-          ].join("\n");
-          setProgramDialogue({ text: message });
-          appendTerminalLine(`FAIL Test ${index + 1}`);
-          appendTerminalLine(`Expected: ${expected.join(" OR ")}`);
-          appendTerminalLine(`Got: ${actual || "(no output)"}`);
-          return { ok: false, output: lastOutput || "(no output)", reply: null };
-        }
-      }
-
-      const branch = evaluateBranchRules(testConfig.rules, storyOutput || lastOutput)
-        || resolveDialogueBranch(storyOutput || lastOutput)
-        || { branch_key: selectedBranchKey || "default", trigger_output: storyOutput || lastOutput, is_correct: 1 };
-      appendTerminalLine(`PASS Branch: ${branch.branch_key}`);
-      appendTerminalLine("Correct!");
-      appendTerminalLine("--- All tests passed ---");
-      return { ok: true, output: storyOutput || lastOutput || "(no output)", reply: null, branch };
-    } catch (checkError) {
-      const message = `System Error: ${checkError.message}`;
-      setProgramDialogue({ text: message });
-      appendTerminalLine(message);
-      return { ok: false, output: "", reply: null };
-    } finally {
-      setIsRunning(false);
-      setCurrentPrompt("");
-      setCurrentInput("");
-      inputResolverRef.current = null;
-    }
-  };
-
   const handleInputKeyDown = (event) => {
     if (event.key !== "Enter" || !inputResolverRef.current) return;
 
@@ -924,6 +1005,8 @@ await __main__()
     );
   };
 
+  // เพิ่มเข้าไปในรายการ useState ของคุณ
+const [isDoneSubmitted, setIsDoneSubmitted] = useState(false);
 const handleSubmit = async () => {
   if (!currentSubtopic || isSubmitting || isRunning || !canSubmit) return;
 
@@ -943,15 +1026,13 @@ const handleSubmit = async () => {
   }
 
   const { output, reply, branch } = execution;
-  const nextBranchKey = branch?.branch_key || selectedBranchKey || "default"; 
+  const nextBranchKey = branch?.branch_key || selectedBranchKey || "default";
   const isCompleted = true;
 
-  // ดักเอาไอดีด่านปัจจุบันและไอดีผู้ใช้ออกมารอไว้ ป้องกันค่าว่าง (undefined)
   const currentExerciseId = currentSubtopic?.exercise_id || currentSubtopic?.id;
-  const currentUserId = user?.user_id || user?.id || 1; 
+  const currentUserId = user?.user_id || user?.id || 1;
 
   try {
-    // 🌟 ดึงค่าระบุตัวตนด่านจาก params (ให้แน่ใจว่ายิงไปหา Endpoint หลังบ้านถูกเส้น)
     const response = await fetch(`${API_BASE}/api/mini-game/modules/${moduleId}/progress`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -976,84 +1057,50 @@ const handleSubmit = async () => {
       throw new Error(result?.error || "Unable to save MiNi Game progress.");
     }
 
+    setIsDoneSubmitted(true);
 
-      if (result?.user) {
-        localStorage.setItem("user", JSON.stringify({ ...user, ...result.user }));
-        onUserRefresh?.({ ...user, ...result.user });
-      }
-
-      setTerminalLines((prev) => [
-        ...prev,
-        "Correct!",
-        currentSubtopic.success_message || "Subtopic completed successfully.",
-      ]);
-
-      setProgressBySubtopic((prev) => ({
-        ...prev,
-        [currentSubtopic.exercise_id]: {
-          ...(prev[currentSubtopic.exercise_id] || {}),
-          exercise_id: currentSubtopic.exercise_id,
-          submitted_code: code,
-          is_completed: 1,
-          completed_this_run: 1,
-          selected_branch_key: nextBranchKey,
-          last_output: output,
-          choice_history_json: pendingChoice?.choice_history_json || currentProgress?.choice_history_json || null,
-          ending_key: pendingChoice?.ending_key || currentProgress?.ending_key || null,
-        },
-      }));
-
-      const nextDialogues = getVisibleDialogues(currentSubtopic.dialogues || [], true, nextBranchKey);
-      const postSubmitIndex = nextDialogues.findIndex(
-        (dialogue) => dialogue.dialogue_phase === "post_submit"
-      );
-      if (postSubmitIndex >= 0) {
-        window.setTimeout(() => {
-          setProgramDialogue(null);
-          setShowTerminal(false);
-          setDialogueIndex(postSubmitIndex);
-        }, 900);
-      } else if (getSubtopicIndexForBranch(nextBranchKey) >= 0) {
-        window.setTimeout(() => {
-          setProgramDialogue(null);
-          setShowTerminal(false);
-          setCurrentSubtopicIndex(getSubtopicIndexForBranch(nextBranchKey));
-        }, 900);
-      }
-
-      if (result?.is_module_completed) {
-        setRewardModal({
-          xp: result?.xp_reward ?? moduleData.reward_xp ?? 0,
-          currency: result?.currency_reward ?? moduleData.reward_coins ?? 0,
-        });
-      }
-    } catch (submitError) {
-      setTerminalLines((prev) => [...prev, `Submit Error: ${submitError.message}`]);
-      setProgressBySubtopic((prev) => ({
-        ...prev,
-        [currentSubtopic.exercise_id]: {
-          ...(prev[currentSubtopic.exercise_id] || {}),
-          exercise_id: currentSubtopic.exercise_id,
-          submitted_code: code,
-          is_completed: 1,
-          completed_this_run: 1,
-          selected_branch_key: nextBranchKey,
-          last_output: output,
-        },
-      }));
-      const nextDialogues = getVisibleDialogues(currentSubtopic.dialogues || [], true, nextBranchKey);
-      const postSubmitIndex = nextDialogues.findIndex((dialogue) => dialogue.dialogue_phase === "post_submit");
-      if (postSubmitIndex >= 0) {
-        window.setTimeout(() => {
-          setProgramDialogue(null);
-          setShowTerminal(false);
-          setDialogueIndex(postSubmitIndex);
-        }, 900);
-      }
-    } finally {
-      setIsSubmitting(false);
+    if (result?.user) {
+      localStorage.setItem("user", JSON.stringify({ ...user, ...result.user }));
+      onUserRefresh?.({ ...user, ...result.user });
     }
-  };
+
+    setTerminalLines((prev) => [
+      ...prev,
+      "Correct!",
+      currentSubtopic.success_message || "Subtopic completed successfully.",
+    ]);
+
+    setProgressBySubtopic((prev) => ({
+      ...prev,
+      [currentSubtopic.exercise_id]: {
+        ...(prev[currentSubtopic.exercise_id] || {}),
+        exercise_id: currentSubtopic.exercise_id,
+        submitted_code: code,
+        is_completed: 1,
+        completed_this_run: 1,
+        selected_branch_key: nextBranchKey,
+        last_output: output,
+        choice_history_json: pendingChoice?.choice_history_json || currentProgress?.choice_history_json || null,
+        ending_key: pendingChoice?.ending_key || currentProgress?.ending_key || null,
+      },
+    }));
+
+    // ระบบจะอัปเดต State ทำให้ปุ่ม "Next" ปรากฏขึ้นมาโดยอัตโนมัติ 
+    // โดยไม่ต้องใช้ setTimeout เพื่อข้ามฉากเองครับ
+
+    if (result?.is_module_completed) {
+      setRewardModal({
+        xp: result?.xp_reward ?? moduleData.reward_xp ?? 0,
+        currency: result?.currency_reward ?? moduleData.reward_coins ?? 0,
+      });
+    }
+  } catch (submitError) {
+    setTerminalLines((prev) => [...prev, `Submit Error: ${submitError.message}`]);
+    // ในกรณีที่ error ก็จะหยุดอยู่ที่หน้านี้เพื่อให้ผู้เล่นแก้ไข ไม่มีการข้ามฉากอัตโนมัติเช่นกัน[cite: 1]
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   if (loading) {
     return (
@@ -1095,27 +1142,41 @@ const handleSubmit = async () => {
             <h1 className="mt-2 text-2xl font-black text-slate-900 italic underline decoration-indigo-200">
               {currentMissionCopy.title || moduleData.title}
             </h1>
-            <div className="mt-5 rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3">
-              <p className="text-[10px] font-black uppercase tracking-wider text-indigo-400">Stage</p>
-              <p className="mt-1 text-sm font-black text-indigo-700">
-                ด่านที่ {currentSubtopicIndex + 1} จาก {subtopics.length}
-              </p>
-              <p className="mt-2 text-xs font-semibold leading-relaxed text-slate-600">
-                {currentSubtopic?.title || currentMissionCopy.title || moduleData.title}
-              </p>
-            </div>
-            <div className="mt-5 rounded-xl bg-slate-900 px-4 py-3 text-white">
-              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Progress</p>
-              <p className="mt-1 text-lg font-black">
-                {completedSubtopicCount}/{subtopics.length} Subtopics
-              </p>
-            </div>
             <div className="mt-8 rounded-2xl border border-indigo-100 bg-white p-5 shadow-sm">
               <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-400">Hint</p>
               <p className="mt-2 text-sm font-medium text-slate-600">
                 {currentMissionCopy.hint || "Write code that matches this subtopic objective."}
               </p>
             </div>
+                        {isCurrentSubtopicCompleted ? (
+              <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+                <p className="text-[10px] font-black uppercase tracking-wider text-emerald-500">✅ ผ่านแล้ว</p>
+                <div className="mt-3 flex gap-3">
+                  <div className="flex-1 rounded-xl bg-amber-50 border border-amber-100 px-3 py-2 text-center">
+                    <p className="text-[9px] font-bold uppercase text-amber-400">XP ที่ได้</p>
+                    <p className="text-base font-black text-amber-600">+{currentProgress?.xp_reward ?? currentSubtopic?.reward_xp ?? 0}</p>
+                  </div>
+                  <div className="flex-1 rounded-xl bg-emerald-50 border border-emerald-100 px-3 py-2 text-center">
+                    <p className="text-[9px] font-bold uppercase text-emerald-400">Coins ที่ได้</p>
+                    <p className="text-base font-black text-emerald-600">+{currentProgress?.currency_reward ?? currentSubtopic?.reward_coins ?? 0}</p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">⏳ ยังไม่ผ่าน</p>
+                <div className="mt-3 flex gap-3">
+                  <div className="flex-1 rounded-xl bg-amber-50 border border-amber-100 px-3 py-2 text-center">
+                    <p className="text-[9px] font-bold uppercase text-amber-400">XP</p>
+                    <p className="text-base font-black text-amber-500">{currentSubtopic?.reward_xp ?? 0}</p>
+                  </div>
+                  <div className="flex-1 rounded-xl bg-slate-100 border border-slate-200 px-3 py-2 text-center">
+                    <p className="text-[9px] font-bold uppercase text-slate-400">Coins</p>
+                    <p className="text-base font-black text-slate-500">{currentSubtopic?.reward_coins ?? 0}</p>
+                  </div>
+                </div>
+              </div>
+            )}
           </aside>
 
           <section className="relative flex flex-col overflow-hidden bg-white">
@@ -1168,7 +1229,10 @@ const handleSubmit = async () => {
                     alt="Scene background"
                     className="absolute inset-0 h-full w-full object-cover"
                     onError={(event) => {
-                      event.currentTarget.src = "/data_MiNiGame/minigame01.jpg";
+                      if (!event.currentTarget.dataset.fallback) {
+                        event.currentTarget.dataset.fallback = "1";
+                        event.currentTarget.src = "/data_MiNiGame/cat.jpg";
+                      }
                     }}
                   />
                   <div className="absolute inset-0 bg-gradient-to-b from-white/5 via-slate-900/5 to-slate-950/35" />
@@ -1229,87 +1293,91 @@ const handleSubmit = async () => {
                   </div>
                 </div>
               ) : (
-                <div className="relative top-5 flex h-full w-full flex-col justify-end">
-                  {!isProgramDialogue && currentDialogue?.speaker !== "user" && currentDialogue?.speaker !== "system" ? (
-                    <div className="absolute bottom-28 right-10 z-10 h-[400px] w-[340px] transition-all duration-300">
-                      <img
-                        src={`/data_MiNiGame/lumi_${currentDialogue?.emotion || "smile"}.png`}
-                        className="absolute bottom-0 left-1/2 h-2/3 max-w-none -translate-x-1/2 object-contain drop-shadow-[0_18px_32px_rgba(15,23,42,0.45)]"
-                        alt="Lumi"
-                        onError={(event) => {
-                          event.currentTarget.src = "/data_MiNiGame/Error.png";
-                        }}
-                      />
-                    </div>
-                  ) : null}
+<div className="relative z-20 flex w-full items-end gap-6 rounded-3xl border border-white/70 bg-white/95 p-4 shadow-xl backdrop-blur-sm">
+  
+  {/* ส่วนเนื้อหาข้อความ */}
+  <div className="flex-1 space-y-4">
+    {!isProgramDialogue && (
+      <div className="absolute -top-3 left-8 rounded-lg bg-pink-500 px-4 py-1 text-[10px] font-black uppercase tracking-widest text-white shadow-md">
+        {currentDialogue?.speaker === "user" ? "You" : currentDialogue?.speaker === "system" ? "System" : "Lumi"}
+      </div>
+    )}
 
-                  <div className="relative z-20 w-full rounded-3xl border border-white/70 bg-white/95 p-8 shadow-2xl backdrop-blur-sm">
-                    {!isProgramDialogue ? (
-                      <div className="absolute -top-3 left-8 rounded-lg bg-pink-500 px-4 py-1 text-[10px] font-black uppercase tracking-widest text-white shadow-md">
-                        {currentDialogue?.speaker === "user" ? "You" : currentDialogue?.speaker === "system" ? "System" : "Lumi"}
-                      </div>
-                    ) : null}
+    <div className="text-xl font-medium leading-relaxed text-slate-700 min-h-[80px]">
+      {isProgramDialogue ? currentDialogueText : displayedDialogueText}
+      {(isDialogueTyping || isRunning) && (
+        <span className="animate-pulse text-indigo-500 ml-1">|</span>
+      )}
+    </div>
 
-                    <div className="min-h-[60px] text-xl font-bold leading-relaxed text-slate-800">
-                      {isProgramDialogue ? currentDialogueText : displayedDialogueText}
-                      {isDialogueTyping || isRunning ? <span className="animate-pulse text-indigo-500">|</span> : null}
-                    </div>
+    {/* Input Section */}
+    {inputResolverRef.current && !showTerminal && (
+      <div className="flex items-center gap-2 rounded-2xl border border-indigo-100 bg-slate-50 px-6 py-3 text-base text-slate-800">
+        <span className="font-bold text-indigo-600">{currentPrompt}</span>
+        <input
+          autoFocus
+          value={currentInput}
+          onChange={(e) => setCurrentInput(e.target.value)}
+          onKeyDown={handleInputKeyDown}
+          className="min-w-0 flex-1 bg-transparent font-mono outline-none"
+        />
+      </div>
+    )}
 
-                    {inputResolverRef.current && !showTerminal ? (
-                      <div className="mt-4 flex items-center gap-2 rounded-2xl border border-indigo-100 bg-slate-50 px-4 py-3 text-base text-slate-800">
-                        <span className="font-bold text-indigo-600">{currentPrompt}</span>
-                        <input
-                          autoFocus
-                          value={currentInput}
-                          onChange={(event) => setCurrentInput(event.target.value)}
-                          onKeyDown={handleInputKeyDown}
-                          className="min-w-0 flex-1 bg-transparent font-mono outline-none"
-                        />
-                      </div>
-                    ) : null}
+    {/* Choices Section */}
+    {!isDialogueTyping && currentDialogueChoices.length > 0 && (
+      <div className="grid gap-2 sm:grid-cols-2">
+        {currentDialogueChoices.map((choice) => (
+          <button
+            key={choice.choice_id}
+            onClick={() => handleDialogueChoice(choice)}
+            className="rounded-xl border border-indigo-100 bg-indigo-50 px-6 py-2 text-left text-sm font-bold text-indigo-700 transition-all hover:bg-indigo-100 active:scale-[0.98]"
+          >
+            {choice.choice_text}
+          </button>
+        ))}
+      </div>
+    )}
 
-                    {!isDialogueTyping && currentDialogueChoices.length > 0 ? (
-                      <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                        {currentDialogueChoices.map((choice) => (
-                          <button
-                            key={choice.choice_id}
-                            onClick={() => handleDialogueChoice(choice)}
-                            className="rounded-2xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-left text-sm font-bold text-indigo-700 transition-all hover:border-indigo-300 hover:bg-indigo-100 active:scale-[0.99]"
-                          >
-                            {choice.choice_text}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
+    {/* ส่วนปุ่ม Action */}
+    <div className="flex gap-3">
+      {/* 1. ปุ่ม Next Dialogue */}
+      {!isProgramDialogue && dialogueIndex < dialogues.length - 1 && currentDialogueChoices.length === 0 && (
+        <button
+          onClick={() => isDialogueTyping ? setDisplayedDialogueText(currentDialogueText) : setDialogueIndex(prev => prev + 1)}
+          className="rounded-xl bg-indigo-600 px-6 py-2 text-sm font-bold text-white transition-all hover:bg-indigo-700"
+        >
+          Next Dialogue
+        </button>
+      )}
 
-                    {!isProgramDialogue && dialogueIndex < dialogues.length - 1 && currentDialogueChoices.length === 0 ? (
-                      <button
-                        onClick={() => {
-                          if (isDialogueTyping) {
-                            setDisplayedDialogueText(currentDialogueText);
-                            return;
-                          }
-                          setDialogueIndex((prev) => prev + 1);
-                        }}
-                        className="mt-6 rounded-2xl bg-indigo-600 px-5 py-2 text-sm font-bold text-white"
-                      >
-                        Next Dialogue
-                      </button>
-                    ) : null}
-                    {dialogueIndex >= dialogues.length - 1 &&
-                    isCurrentSubtopicCompleted &&
-                    nextSubtopicIndex >= 0 ? (
-                      <button
-                        onClick={() => {
-                          if (nextSubtopicIndex >= 0) setCurrentSubtopicIndex(nextSubtopicIndex);
-                        }}
-                        className="mt-6 rounded-2xl bg-emerald-600 px-5 py-2 text-sm font-bold text-white"
-                      >
-                        Next Subtopic
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
+      {/* 2. ปุ่ม ไปด่านถัดไป */}
+      {isDoneSubmitted && nextSubtopicIndex >= 0 && (
+        <button
+          onClick={() => { 
+            setProgramDialogue(null); 
+            setCurrentSubtopicIndex(nextSubtopicIndex); 
+            setIsDoneSubmitted(false); 
+          }}
+          className="rounded-xl bg-emerald-600 px-6 py-2 text-sm font-bold text-white transition-all hover:bg-emerald-700"
+        >
+          ไปด่านถัดไป →
+        </button>
+      )}
+    </div>
+  </div>
+
+  {/* ส่วนรูป NPC */}
+  {!isProgramDialogue && currentDialogue?.speaker !== "user" && currentDialogue?.speaker !== "system" && (
+    <div className="hidden h-[140px] w-[140px] flex-shrink-0 lg:flex items-end justify-center">
+      <img
+        src={`${(currentDialogue?.avatar_asset_url || "/data_MiNiGame/NPC_lumi").replace(/\/$/, "")}/${(currentDialogue?.avatar_asset_url?.split("/").pop() || "npc_lumi").replace("NPC_", "").toLowerCase()}_${currentDialogue?.emotion || "smile"}.png`}
+        className="h-full w-full object-contain object-bottom"
+        alt="NPC Avatar"
+      />
+    </div>
+  )}
+</div>
               )}
             </div>
           </section>
