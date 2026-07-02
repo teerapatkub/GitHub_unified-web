@@ -2543,7 +2543,7 @@ app.get('/api/user/profile/:userId', async (req, res) => {
             `SELECT u.user_id, u.username, u.email, u.role, u.level, u.xp, u.virtual_currency,
                     u.equipped_mouse_effect_id, u.equipped_theme_id, u.equipped_profile_frame_id,
                     COALESCE(item.effects, '[]') AS mouse_effect_data,
-                    theme.asset_url AS theme_asset_url, theme.preview_image AS theme_preview_image,
+                    theme.name AS theme_name, theme.asset_url AS theme_asset_url, theme.preview_image AS theme_preview_image,
                     frame.asset_url AS profile_asset_url, frame.preview_image AS profile_preview_image
              FROM users u
              LEFT JOIN shop_items item ON item.item_id = u.equipped_mouse_effect_id
@@ -4170,11 +4170,17 @@ app.post('/shop/equip', async (req, res) => {
     try {
         // ตรวจสอบว่าเป็นเจ้าของ
         if (itemId) {
-            const [owned] = await db.execute('SELECT * FROM user_inventory WHERE user_id = ? AND item_id = ?', [userId, itemId]);
+            const [owned] = await db.execute(`
+                SELECT si.item_id
+                FROM user_inventory ui
+                JOIN shop_items si ON si.item_id = ui.item_id
+                WHERE ui.user_id = ? AND ui.item_id = ? AND si.item_type = ? AND si.is_active = 1
+            `, [userId, itemId, type]);
             if (owned.length === 0) return res.status(400).json({ error: 'คุณไม่มีไอเทมนี้' });
         }
 
-        await db.execute(`UPDATE users SET ${column} = ? WHERE user_id = ?`, [itemId || null, userId]);
+        const [result] = await db.execute(`UPDATE users SET ${column} = ? WHERE user_id = ?`, [itemId || null, userId]);
+        if (result.affectedRows === 0) return res.status(404).json({ error: 'User not found' });
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: 'Failed to equip item' });

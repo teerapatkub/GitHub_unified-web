@@ -7,7 +7,6 @@ import {
 import { useTranslation } from 'react-i18next';
 import { TheInfiniteGrid } from './components/ui/the-infinite-grid';
 import { NavBar } from './components/ui/tubelight-navbar';
-import { ThemeProvider } from './contexts/ThemeContext';
 import MouseEffectLayer from './components/MouseEffectLayer';
 
 // --- Friend's Learning Pages ---
@@ -49,18 +48,16 @@ export default function App() {
   }, []);
 
   return (
-    <ThemeProvider>
-      <BrowserRouter>
-        <audio
-          ref={audioRef}
-          id="bg-music"
-          src="/assets/music/Monplaisir.mp3"
-          loop
-          hidden
-        />
-        <AppContent />
-      </BrowserRouter>
-    </ThemeProvider>
+    <BrowserRouter>
+      <audio
+        ref={audioRef}
+        id="bg-music"
+        src="/assets/music/Monplaisir.mp3"
+        loop
+        hidden
+      />
+      <AppContent />
+    </BrowserRouter>
   );
 }
 
@@ -79,6 +76,9 @@ function AppContent() {
     if (!nextUser) return;
     setUser(nextUser);
     localStorage.setItem('user', JSON.stringify(nextUser));
+    window.dispatchEvent(new CustomEvent('pysim:user-updated', {
+      detail: { user: nextUser },
+    }));
   }, []);
 
   const refreshUserProfile = useCallback(async (injectedUser = null) => {
@@ -108,8 +108,7 @@ function AppContent() {
         isGuest: false,
         level: Number(incomingUser?.level || 1),
       };
-      localStorage.setItem('user', JSON.stringify(authenticatedUser));
-      setUser(authenticatedUser);
+      syncUserToState(authenticatedUser);
       return authenticatedUser;
     };
 
@@ -143,7 +142,7 @@ function AppContent() {
     };
 
     if (savedUser?.user_id && !savedUser?.isGuest) {
-      setUser({
+      syncUserToState({
         ...savedUser,
         isGuest: false,
         level: Number(savedUser.level || 1),
@@ -152,13 +151,12 @@ function AppContent() {
     }
 
     if (!savedUser || (savedUser.isGuest && savedUser.level !== defaultGuest.level)) {
-      localStorage.setItem('user', JSON.stringify(defaultGuest));
-      setUser(defaultGuest);
+      syncUserToState(defaultGuest);
       if (savedUser) window.location.reload();
     } else {
-      setUser(savedUser);
+      syncUserToState(savedUser);
     }
-  }, [location.pathname, location.search, navigate]);
+  }, [location.pathname, location.search, navigate, syncUserToState]);
 
   useEffect(() => {
     const onCosmeticEquipped = (event) => {

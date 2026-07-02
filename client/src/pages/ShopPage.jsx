@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShoppingBag, ShoppingCart, Coins, CheckCircle, Search } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -16,6 +16,9 @@ const itemSlot = (type) => {
 const createShopTheme = (item) => ({
     id: `shop-theme-${item.itemId}`,
     name: item.name,
+    icon: 'Aa',
+    category: 'shop',
+    description: 'Theme Store',
     backgroundImage: resolveAssetUrl(item.assetUrl || item.previewImage),
     colors: {
         '--t-bg': '#fff7fb',
@@ -58,6 +61,25 @@ export default function ShopPage() {
     });
 
     useEffect(() => { setTimeout(() => setMounted(true), 100); }, []);
+
+    useEffect(() => {
+        const syncEquippedFromUser = (user) => {
+            if (!user) return;
+            setEquippedItems({
+                THEME: Number(user.equipped_theme_id) || null,
+                MOUSE_EFFECT: Number(user.equipped_mouse_effect_id) || null,
+                PROFILE_FRAME: Number(user.equipped_profile_frame_id) || null,
+            });
+        };
+
+        const onUserUpdated = (event) => syncEquippedFromUser(event.detail?.user);
+        window.addEventListener('pysim:user-updated', onUserUpdated);
+        window.addEventListener('pysim:user-cosmetic-equipped', onUserUpdated);
+        return () => {
+            window.removeEventListener('pysim:user-updated', onUserUpdated);
+            window.removeEventListener('pysim:user-cosmetic-equipped', onUserUpdated);
+        };
+    }, []);
 
     const categories = [
         { id: 'all', name: t('shop.categories.all', 'ทั้งหมด') },
@@ -123,7 +145,7 @@ export default function ShopPage() {
         return { type: 'text', value: '#' };
     };
 
-    const fetchShop = async () => {
+    const fetchShop = useCallback(async () => {
         setLoading(true);
         setError('');
         try {
@@ -140,8 +162,7 @@ export default function ShopPage() {
             const inventoryItems = inventoryRes && inventoryRes.ok ? await inventoryRes.json() : [];
             const ownedIds = new Set((Array.isArray(inventoryItems) ? inventoryItems : []).map((item) => Number(item.item_id)));
 
-            setOwnedItemIds(ownedIds);
-            setItems((Array.isArray(shopItems) ? shopItems : []).map((item) => ({
+            const nextItems = (Array.isArray(shopItems) ? shopItems : []).map((item) => ({
                 id: Number(item.item_id),
                 itemId: Number(item.item_id),
                 name: item.name,
@@ -154,18 +175,27 @@ export default function ShopPage() {
                 effectData: normalizePreviewData(item.preview_data),
                 rarity: String(item.rarity || 'common').toLowerCase(),
                 owned: ownedIds.has(Number(item.item_id)),
-            })));
+            }));
+
+            setOwnedItemIds(ownedIds);
+            setItems(nextItems);
+
+            const equippedThemeId = Number(user?.equipped_theme_id || 0);
+            const equippedTheme = nextItems.find((item) => item.type === 'THEME' && item.itemId === equippedThemeId);
+            if (equippedTheme) {
+                registerTheme(createShopTheme(equippedTheme));
+            }
         } catch (err) {
             setError(err.message || 'โหลดสินค้าไม่สำเร็จ');
             setItems([]);
         } finally {
             setLoading(false);
         }
-    };
+    }, [registerTheme]);
 
     useEffect(() => {
         fetchShop();
-    }, []);
+    }, [fetchShop]);
 
     const filteredItems = items.filter(item => {
         const matchesCategory = selectedCategory === 'all' || item.category === selectedCategory;
