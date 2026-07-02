@@ -9,6 +9,8 @@ import {
   Trophy,
   ArrowLeft,
   Loader2,
+  Send,
+  X,
 } from "lucide-react";
 
 const API_BASE = "http://localhost:3001";
@@ -250,8 +252,18 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
   const [displayedDialogueText, setDisplayedDialogueText] = useState("");
   const [programDialogue, setProgramDialogue] = useState(null);
   const [selectedBranchKey, setSelectedBranchKey] = useState("default");
+  const [isAiOpen, setIsAiOpen] = useState(false);
+  const [chatHistory, setChatHistory] = useState([
+    {
+      role: "ai",
+      text: "สวัสดีครับ เราคือ Lumi ผู้ช่วยของมินิเกมนี้ ถามเรื่องโจทย์หรือโค้ด Python ได้เลย",
+    },
+  ]);
+  const [chatInput, setChatInput] = useState("");
+  const [isAiResponding, setIsAiResponding] = useState(false);
 
   const terminalRef = useRef(null);
+  const chatEndRef = useRef(null);
   const inputResolverRef = useRef(null);
   const runOutputRef = useRef("");
   const dialogueAudioRef = useRef(null);
@@ -497,6 +509,10 @@ const isCurrentSubtopicCompleted = useMemo(() => {
   }, [terminalLines, showTerminal]);
 
   useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatHistory, isAiOpen]);
+
+  useEffect(() => {
     setDisplayedDialogueText(isProgramDialogue ? currentDialogueText : "");
 
     if (showTerminal || isProgramDialogue) return undefined;
@@ -675,6 +691,13 @@ const loadGameData = async () => {
     inputResolverRef.current = null;
     // Reset branch key เป็น progress ที่บันทึกไว้ หรือ default
     setSelectedBranchKey(progress?.selected_branch_key || "default");
+    setChatHistory([
+      {
+        role: "ai",
+        text: `เราพร้อมช่วยด่าน "${currentSubtopic.title || moduleData?.title || "มินิเกมนี้"}" แล้วครับ ถามได้เลยว่าต้องทำอะไรหรือโค้ดติดตรงไหน`,
+      },
+    ]);
+    setChatInput("");
   }, [currentSubtopic?.exercise_id]);
 
   const requiredSyntax = useMemo(
@@ -894,6 +917,72 @@ await __main__()
 
   const handleRunOnly = async () => {
     await runCodeInTerminal();
+  };
+
+  const getMiniGameChatFallback = (message = "") => {
+    const combined = `${message}\n${currentMissionCopy.title || ""}\n${currentMissionCopy.hint || ""}\n${code}`.toLowerCase();
+    if (combined.includes("vat") || combined.includes("ภาษี") || combined.includes("1.07") || combined.includes("vat_total")) {
+      return [
+        "ด่านนี้ให้คำนวณราคารวมภาษี 7% แล้วแสดงผลออกหน้าจอครับ",
+        "ถ้ามี `vat_total = price * 1.07` แล้ว ให้ใส่บรรทัดนี้:",
+        "```python",
+        'print("ราคารวมทั้งหมดคือ:", vat_total)',
+        "```",
+      ].join("\n");
+    }
+
+    return currentMissionCopy.hint
+      ? `ตอนนี้ AI หลักตอบไม่ได้ชั่วคราวครับ ลองทำตาม Hint นี้ก่อน:\n${currentMissionCopy.hint}`
+      : "ตอนนี้ AI หลักตอบไม่ได้ชั่วคราวครับ ลองถามแบบเจาะจง เช่น “ต้องแก้บรรทัดไหน” หรือ “โค้ดนี้ผิดตรงไหน”";
+  };
+
+  const sendAiMessage = async () => {
+    const messageToSend = chatInput.trim();
+    if (!messageToSend || isAiResponding) return;
+
+    const nextHistory = [...chatHistory, { role: "user", text: messageToSend }];
+    setChatHistory([...nextHistory, { role: "ai", text: "Lumi กำลังดูโจทย์กับโค้ดของคุณ..." }]);
+    setChatInput("");
+    setIsAiResponding(true);
+
+    try {
+      const response = await fetch(`${API_BASE}/api/ai/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contextMode: "miniGameTutor",
+          message: [
+            `Mission title: ${currentMissionCopy.title || currentSubtopic?.title || moduleData?.title || ""}`,
+            `Mission hint: ${currentMissionCopy.hint || currentSubtopic?.hint || ""}`,
+            `Player asks: ${messageToSend}`,
+          ].join("\n"),
+          code,
+          level: user?.level || 1,
+          lessonId: moduleId,
+          exerciseTitle: currentMissionCopy.title || currentSubtopic?.title || moduleData?.title || "",
+          instructions: currentMissionCopy.hint || currentSubtopic?.hint || "",
+        }),
+      });
+
+      const data = await response.json();
+      setChatHistory([
+        ...nextHistory,
+        {
+          role: "ai",
+          text: data?.reply || "I could not get a full answer yet. Try asking again with a little more detail.",
+        },
+      ]);
+    } catch {
+      setChatHistory([
+        ...nextHistory,
+        {
+          role: "ai",
+          text: getMiniGameChatFallback(messageToSend),
+        },
+      ]);
+    } finally {
+      setIsAiResponding(false);
+    }
   };
 
   const handleInputKeyDown = (event) => {
@@ -1125,12 +1214,102 @@ const handleSubmit = async () => {
   return (
     <div className="mx-auto flex h-full max-w-[1520px] flex-col p-3 bg-slate-50 font-sans relative">
       <div className="mb-2 flex items-center justify-between rounded-xl border-b bg-white px-4 py-2 shadow-sm">
-        <button
-          onClick={() => onNavigate?.("exercise", moduleId)}
-          className="flex items-center text-sm font-bold text-slate-500 transition-colors hover:text-indigo-600"
-        >
-          <ArrowLeft size={16} className="mr-2" /> Back
-        </button>
+        <div className="relative flex items-center gap-2">
+          <button
+            onClick={() => onNavigate?.("exercise", moduleId)}
+            className="flex items-center text-sm font-bold text-slate-500 transition-colors hover:text-indigo-600"
+          >
+            <ArrowLeft size={16} className="mr-2" /> Back
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsAiOpen((value) => !value)}
+            className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-bold transition-all active:scale-95 ${
+              isAiOpen
+                ? "border-indigo-200 bg-indigo-600 text-white shadow-md shadow-indigo-100"
+                : "border-slate-200 bg-white text-indigo-600 hover:bg-indigo-50"
+            }`}
+            title="Ask Lumi for help"
+          >
+            <MessageSquareCode size={14} />
+            Lumi Chat
+          </button>
+
+          {isAiOpen ? (
+            <div className="absolute left-0 top-11 z-50 flex h-[460px] w-[min(390px,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-50 text-indigo-600">
+                    <MessageSquareCode size={16} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-black text-slate-900">Lumi AI Assistant</p>
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Mini game helper</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsAiOpen(false)}
+                  className="rounded-lg p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                  title="Close chat"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="flex-1 space-y-3 overflow-y-auto bg-slate-50/70 p-4">
+                {chatHistory.map((message, index) => (
+                  <div
+                    key={`${message.role}-${index}`}
+                    className={`flex gap-2 ${message.role === "ai" ? "" : "justify-end"}`}
+                  >
+                    {message.role === "ai" ? (
+                      <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-indigo-600 shadow-sm">
+                        <MessageSquareCode size={15} />
+                      </div>
+                    ) : null}
+                    <div
+                      className={`max-w-[82%] rounded-2xl px-3.5 py-2.5 text-sm leading-6 whitespace-pre-wrap ${
+                        message.role === "ai"
+                          ? "rounded-tl-sm bg-white text-slate-700 shadow-sm"
+                          : "rounded-tr-sm bg-indigo-600 text-white"
+                      }`}
+                    >
+                      {message.text}
+                    </div>
+                  </div>
+                ))}
+                <div ref={chatEndRef} />
+              </div>
+
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  sendAiMessage();
+                }}
+                className="border-t border-slate-200 bg-white p-3"
+              >
+                <div className="relative">
+                  <input
+                    value={chatInput}
+                    onChange={(event) => setChatInput(event.target.value)}
+                    placeholder="Ask Lumi about this task..."
+                    disabled={isAiResponding}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-3 pr-10 text-sm text-slate-900 outline-none transition-colors focus:border-indigo-500"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!chatInput.trim() || isAiResponding}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg p-1 text-indigo-600 transition-colors hover:bg-indigo-50 disabled:opacity-40"
+                    title="Send message"
+                  >
+                    <Send size={18} />
+                  </button>
+                </div>
+              </form>
+            </div>
+          ) : null}
+        </div>
       </div>
 
       <div className="flex flex-1 overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-xl">

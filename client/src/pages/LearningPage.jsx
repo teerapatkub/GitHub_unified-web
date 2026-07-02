@@ -296,8 +296,15 @@ const ModuleAccordion = ({
               <Lock className="h-6 w-6" />
             </div>
           ) : (
-            <div className="chapter-card-gradient flex h-16 w-16 shrink-0 items-center justify-center rounded-lg text-white">
-              <span className="text-2xl font-black">
+            <div
+              className="flex h-16 w-16 shrink-0 select-none items-center justify-center rounded-lg border shadow-sm"
+              style={{
+                backgroundColor: "#e5e7eb",
+                borderColor: "#9ca3af",
+                color: "#111827",
+              }}
+            >
+              <span className="text-2xl font-black leading-none">
                 {String(moduleData.module_id || "").padStart(2, "0")}
               </span>
             </div>
@@ -403,7 +410,14 @@ const ModuleAccordion = ({
                       </div>
 
                       <div className="flex items-center space-x-5">
-                        <span className="rounded-lg bg-pysim-surface-high px-2.5 py-1 text-[11px] font-mono font-bold text-pysim-on-surface-variant">
+                        <span
+                          className="min-w-[3.25rem] select-none rounded-lg border px-3 py-1 text-center text-xs font-mono font-black shadow-sm"
+                          style={{
+                            backgroundColor: "#e5e7eb",
+                            borderColor: "#9ca3af",
+                            color: "#111827",
+                          }}
+                        >
                           {lesson.completed_count || 0}/{lesson.total_count || 0}
                         </span>
                       </div>

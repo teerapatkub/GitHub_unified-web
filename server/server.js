@@ -2232,6 +2232,32 @@ const injectBugIntoReply = (reply = '', level = 'Beginner') => {
     };
 };
 
+const getMiniGameTutorFallbackReply = ({ message = '', code = '', exerciseTitle = '', instructions = '' } = {}) => {
+    const combined = `${message}\n${exerciseTitle}\n${instructions}\n${code}`.toLowerCase();
+    const asksWhatToDo = /(ต้องใส่อะไร|ทำอะไร|ทำไง|ยังไง|hint|ช่วย|what|how)/i.test(combined);
+    const looksLikeVatMission = /vat|ภาษี|1\.07|7%|vat_total|ราคารวม/.test(combined);
+
+    if (looksLikeVatMission) {
+        if (asksWhatToDo) {
+            return [
+                'ด่านนี้ให้คำนวณราคารวมภาษี 7% แล้วแสดงผลออกหน้าจอครับ',
+                'ถ้ามีตัวแปร `vat_total = price * 1.07` แล้ว ให้เพิ่มบรรทัดนี้:',
+                '```python',
+                'print("ราคารวมทั้งหมดคือ:", vat_total)',
+                '```',
+            ].join('\n');
+        }
+
+        return 'ดูที่ตัวแปร `vat_total` เป็นหลักครับ ต้องเอาค่านี้ไป `print()` ให้ตรงกับรูปแบบที่โจทย์ต้องการ';
+    }
+
+    if (instructions) {
+        return `ตอนนี้ AI หลักตอบไม่ได้ชั่วคราว แต่จาก hint ของด่านนี้ให้ทำตามนี้ก่อนครับ:\n${instructions}`;
+    }
+
+    return 'ตอนนี้ AI หลักตอบไม่ได้ชั่วคราวครับ ลองอ่าน Hint ทางซ้าย แล้วถามแบบเจาะจงได้ เช่น “ต้องแก้บรรทัดไหน” หรือ “โค้ดนี้ผิดตรงไหน”';
+};
+
 if (!NVIDIA_API_KEY) {
     console.warn('⚠️ NVIDIA_API_KEY is not set. AI chat and job generation APIs will be unavailable.');
 } else {
@@ -2276,7 +2302,8 @@ const EMAIL_CONFIGURED = !!(process.env.EMAIL_USER && process.env.EMAIL_PASS);
 // NVIDIA AI routes (active)
 // ==========================================
 app.post('/api/ai/chat', async (req, res) => {
-    const { message, code, level = 'Beginner' } = req.body;
+    const { message, code, level = 'Beginner', exerciseTitle = '', instructions = '', contextMode = '' } = req.body;
+    const isMiniGameTutor = contextMode === 'miniGameTutor';
 
     try {
         let bugRules = '';
@@ -2288,7 +2315,7 @@ app.post('/api/ai/chat', async (req, res) => {
             bugRules = 'สร้างบั๊กซับซ้อน เช่น mutable default arguments, ใช้ global ผิด, หรือ performance issue';
         }
 
-        const systemInstruction = `
+        const defaultSystemInstruction = `
         คุณคือ "Lumi" แชทบอทนางฟ้าผู้ช่วยสอนเขียนโค้ด Python ในเกม
         บุคลิก: ร่าเริง มั่นใจในตัวเองสูงมาก เป็นมิตร และชอบใช้ Emoji ✨💖
 
@@ -2300,20 +2327,41 @@ app.post('/api/ai/chat', async (req, res) => {
         5. ตอบเป็นภาษาไทย หรือผสมอังกฤษตามความเหมาะสม
         `;
 
+        const miniGameSystemInstruction = `
+You are "Lumi", a helpful Python tutor inside a Thai mini game.
+Answer in Thai by default. Keep answers short, concrete, and focused on the current mission.
+
+Rules for this mini-game tutor mode:
+1. Do not intentionally add bugs.
+2. Do not give a full finished program unless the user clearly asks for the complete code.
+3. If the user asks "ต้องใส่อะไร", "ทำยังไง", or asks for a hint, give only the next small step or the exact line/idea they should change.
+4. Prefer explaining what to type in the existing code instead of creating new functions or extra features.
+5. Use the mission title and hint as the source of truth. Do not invent requirements like currency formatting, commas, recursion, globals, or extra functions unless they are in the mission hint.
+6. For this VAT mission, the expected simple solution is to calculate price * 1.07 and print the total. If asked what to put, suggest a minimal answer such as print("ราคารวมทั้งหมดคือ:", vat_total).
+7. Use at most 1 short code block, no more than 3 lines, unless the user explicitly asks for full code.
+        `;
+        const systemInstruction = isMiniGameTutor ? miniGameSystemInstruction : defaultSystemInstruction;
+        const userInstruction = isMiniGameTutor
+            ? `Player message: ${message || ''}\n\nMission title: ${exerciseTitle || '-'}\nMission hint/instructions: ${instructions || '-'}\n\nCurrent code:\n\`\`\`python\n${code || '# No code yet'}\n\`\`\``
+            : `เธเนเธญเธเธงเธฒเธกเธเธญเธเธเธนเนเน€เธฅเนเธ: ${message || ''}\n\nเนเธเนเธ”เธเธฑเธเธเธธเธเธฑเธ:\n\`\`\`python\n${code || 'เธขเธฑเธเนเธกเนเธกเธตเธเธฒเธฃเน€เธเธตเธขเธเนเธเนเธ”'}\n\`\`\``;
+        const chatUserInstruction = isMiniGameTutor
+            ? userInstruction
+            : `Player message: ${message || ''}\n\nCurrent code:\n\`\`\`python\n${code || '# No code yet'}\n\`\`\``;
+
         let reply = await callNvidiaChat({
             messages: [
                 { role: 'system', content: systemInstruction },
                 {
                     role: 'user',
-                    content: `ข้อความของผู้เล่น: ${message || ''}\n\nโค้ดปัจจุบัน:\n\`\`\`python\n${code || 'ยังไม่มีการเขียนโค้ด'}\n\`\`\``
+                    content: chatUserInstruction
                 }
             ],
-            temperature: 1.0,
-            maxTokens: 4096,
+            temperature: isMiniGameTutor ? 0.35 : 1.0,
+            maxTokens: isMiniGameTutor ? 700 : 4096,
             thinking: false
         });
 
-        if (shouldInjectBug(message, code, reply)) {
+        if (!isMiniGameTutor && shouldInjectBug(message, code, reply)) {
             const buggedReply = injectBugIntoReply(reply, level);
             if (buggedReply.injected) {
                 reply = buggedReply.reply;
@@ -2324,6 +2372,14 @@ app.post('/api/ai/chat', async (req, res) => {
     } catch (error) {
         const status = getAiErrorStatus(error);
         console.error('❌ Lumi Error:', error.response?.data || error.message || error);
+
+        if (isMiniGameTutor) {
+            return res.json({
+                reply: getMiniGameTutorFallbackReply({ message, code, exerciseTitle, instructions }),
+                aiUnavailable: true,
+                rateLimited: status === 429,
+            });
+        }
 
         const fallbackReply = status === 429
             ? '✨ ตอนนี้ Lumi ตอบคำถามเยอะมากเลย ขอพักหายใจแป๊บนึงแล้วค่อยถามใหม่อีกครั้งนะ~'

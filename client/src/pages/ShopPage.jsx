@@ -7,6 +7,7 @@ import { useTheme } from '../contexts/ThemeContext';
 const API_BASE = 'http://localhost:3001';
 
 const resolveAssetUrl = (value) => (value?.startsWith('/uploads') ? `${API_BASE}${value}` : value);
+const userThemeKey = (user) => `game_theme:user:${user.user_id}`;
 const itemSlot = (type) => {
     if (type === 'THEME') return 'THEME';
     if (type === 'MOUSE_EFFECT') return 'MOUSE_EFFECT';
@@ -254,8 +255,11 @@ export default function ShopPage() {
             if (slot === 'THEME') {
                 nextUser.equipped_theme_id = item.itemId;
                 nextUser.theme_asset_url = item.assetUrl || item.previewImage;
+                nextUser.theme_preview_image = item.previewImage || item.assetUrl;
+                nextUser.theme_name = item.name;
                 const theme = createShopTheme(item);
                 registerTheme(theme);
+                localStorage.setItem(userThemeKey(user), theme.id);
                 window.setTimeout(() => setTheme(theme.id), 0);
             } else if (slot === 'MOUSE_EFFECT') {
                 nextUser.equipped_mouse_effect_id = item.itemId;
@@ -294,6 +298,9 @@ export default function ShopPage() {
             if (slot === 'THEME') {
                 nextUser.equipped_theme_id = null;
                 nextUser.theme_asset_url = '';
+                nextUser.theme_preview_image = '';
+                nextUser.theme_name = '';
+                localStorage.setItem(userThemeKey(user), 'cyberpunk-light');
                 setTheme('cyberpunk-light');
             } else if (slot === 'MOUSE_EFFECT') {
                 nextUser.equipped_mouse_effect_id = null;
