@@ -70,6 +70,7 @@ function AppContent() {
 
   // === Auth State ===
   const [user, setUser] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
   const isAuthenticated = Boolean(user && !user.isGuest);
 
   const syncUserToState = useCallback((nextUser) => {
@@ -99,6 +100,39 @@ function AppContent() {
     }
   }, [syncUserToState]);
 
+  const getPresenceInfo = useCallback((pathname) => {
+    if (pathname.startsWith('/admin')) {
+      return { mode: 'admin', activityLabel: 'อยู่ในหน้าแอดมิน' };
+    }
+    if (pathname.startsWith('/lesson')) {
+      return { mode: 'learn', activityLabel: 'กำลังอ่านบทเรียน' };
+    }
+    if (pathname.startsWith('/exercise') || pathname.startsWith('/debug')) {
+      return { mode: 'exercise', activityLabel: 'กำลังทำแบบฝึกหัด' };
+    }
+    if (pathname.startsWith('/mini-game')) {
+      return { mode: 'mini-game', activityLabel: 'กำลังเล่นมินิเกม' };
+    }
+    if (pathname.startsWith('/challenge')) {
+      return { mode: 'challenge', activityLabel: 'กำลังทำความท้าทาย' };
+    }
+    if (
+      pathname.startsWith('/online') ||
+      pathname.startsWith('/matchmaking') ||
+      pathname.startsWith('/join-room') ||
+      pathname.startsWith('/lobby')
+    ) {
+      return { mode: 'online', activityLabel: 'กำลังเล่นโหมดออนไลน์' };
+    }
+    if (pathname.startsWith('/menu') || pathname.startsWith('/simulation')) {
+      return { mode: 'solo', activityLabel: 'กำลังเล่นโหมดเดี่ยว' };
+    }
+    if (pathname.startsWith('/shop')) {
+      return { mode: 'shop', activityLabel: 'กำลังดูร้านค้า' };
+    }
+    return { mode: 'learn', activityLabel: 'กำลังดูบทเรียน' };
+  }, []);
+
   useEffect(() => {
     const searchParams = new URLSearchParams(location.search);
     const userParam = searchParams.get('user');
@@ -124,6 +158,7 @@ function AppContent() {
 
         if (parsedUser?.user_id || parsedUser?.username) {
           persistAuthenticatedUser(parsedUser);
+          setAuthReady(true);
           navigate(location.pathname, { replace: true });
           return;
         }
@@ -147,14 +182,17 @@ function AppContent() {
         isGuest: false,
         level: Number(savedUser.level || 1),
       });
+      setAuthReady(true);
       return;
     }
 
     if (!savedUser || (savedUser.isGuest && savedUser.level !== defaultGuest.level)) {
       syncUserToState(defaultGuest);
+      setAuthReady(true);
       if (savedUser) window.location.reload();
     } else {
       syncUserToState(savedUser);
+      setAuthReady(true);
     }
   }, [location.pathname, location.search, navigate, syncUserToState]);
 
@@ -194,6 +232,29 @@ function AppContent() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.user_id]);
+
+  useEffect(() => {
+    if (!user || user.isGuest || !user.user_id) return;
+
+    const sendPresence = () => {
+      const presence = getPresenceInfo(location.pathname);
+      fetch('http://localhost:3001/api/presence', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.user_id,
+          currentPath: location.pathname,
+          ...presence,
+        }),
+      }).catch(() => {
+        // Presence is best-effort; the app should keep working if the API is unavailable.
+      });
+    };
+
+    sendPresence();
+    const interval = setInterval(sendPresence, 30000);
+    return () => clearInterval(interval);
+  }, [getPresenceInfo, location.pathname, user?.isGuest, user?.user_id]);
 
   // === Login Success ===
   const handleLoginSuccess = (userData) => {
@@ -250,6 +311,18 @@ function AppContent() {
   const isCodingWorkspace = ['/exercise', '/mini-game', '/challenge', '/debug']
     .some(route => location.pathname.startsWith(route));
   const isAdminUser = user?.role === 'admin';
+  const requireStudent = (element) => {
+    if (!authReady) return null;
+    if (!isAuthenticated) return <Navigate to="/login" replace />;
+    if (isAdminUser) return <Navigate to="/admin/dashboard" replace />;
+    return element;
+  };
+  const requireAdmin = (element) => {
+    if (!authReady) return null;
+    if (!isAuthenticated) return <Navigate to="/login" replace />;
+    if (!isAdminUser) return <Navigate to="/learn" replace />;
+    return element;
+  };
 
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-transparent text-slate-800 font-sans transition-colors duration-300 relative">
@@ -304,19 +377,21 @@ function AppContent() {
             }
           >
             <Routes location={location}>
-              <Route path="/" element={<Navigate to={isAuthenticated ? (isAdminUser ? "/admin/dashboard" : "/learn") : "/login"} replace />} />
+              <Route path="/" element={
+                authReady
+                  ? <Navigate to={isAuthenticated ? (isAdminUser ? "/admin/dashboard" : "/learn") : "/login"} replace />
+                  : null
+              } />
               <Route
                 path="/shop"
-                element={
-                  isAuthenticated
-                    ? <ShopPage />
-                    : <Navigate to="/login" replace />
-                }
+                element={requireStudent(<ShopPage />)}
               />
               <Route
                 path="/login"
                 element={
-                  isAuthenticated
+                  !authReady
+                    ? null
+                    : isAuthenticated
                     ? <Navigate to={isAdminUser ? "/admin/dashboard" : "/learn"} replace />
                     : <FriendLogin onLoginSuccess={handleLoginSuccess} />
                 }
@@ -324,52 +399,46 @@ function AppContent() {
 
               {/* Friend's Learning Pages */}
               <Route path="/learn" element={
-                isAuthenticated
-                  ? <LearningPage onNavigate={handleNavigate} user={user} />
-                  : <Navigate to="/login" replace />
+                requireStudent(<LearningPage onNavigate={handleNavigate} user={user} />)
               } />
               <Route path="/lesson" element={<Navigate to="/learn" replace />} />
               <Route path="/lesson/:lessonId" element={
-                isAuthenticated ? (
+                requireStudent(
                   <LessonPage
                     lessonId={currentLessonId}
                     module={currentModule}
                     onNavigate={handleNavigate}
                     user={user}
                   />
-                ) : <Navigate to="/login" replace />
+                )
               } />
               <Route path="/exercise" element={<Navigate to="/learn" replace />} />
               <Route path="/exercise/:lessonId" element={
-                isAuthenticated ? (
+                requireStudent(
                   <ExercisePage
                     lessonId={currentLessonId}
                     onNavigate={handleNavigate}
                     user={user}
                     onUserRefresh={refreshUserProfile}
                   />
-                ) : <Navigate to="/login" replace />
+                )
               } />
               <Route path="/mini-game" element={<Navigate to="/learn" replace />} />
               <Route path="/mini-game/:lessonId" element={
-                isAuthenticated ? (
+                requireStudent(
                   <MiNi_Game
                     lessonId={currentLessonId}
                     onNavigate={handleNavigate}
                     user={user}
                     onUserRefresh={refreshUserProfile}
                   />
-                ) : <Navigate to="/login" replace />
+                )
               } />
               <Route path="/debug" element={
-                isAuthenticated
-                  ? <AiTaskPage mode="exercise" user={user} onUserRefresh={refreshUserProfile} />
-                  : <Navigate to="/login" replace />
+                requireStudent(<AiTaskPage mode="exercise" user={user} onUserRefresh={refreshUserProfile} />)
               } />
               <Route path="/challenge" element={
-                isAuthenticated
-                  ? <ChallengePage onNavigate={handleNavigate} user={user} onUserRefresh={refreshUserProfile} />
-                  : <Navigate to="/login" replace />
+                requireStudent(<ChallengePage onNavigate={handleNavigate} user={user} onUserRefresh={refreshUserProfile} />)
               } />
 
               {/* Simulation Pages */}
@@ -382,23 +451,23 @@ function AppContent() {
               <Route path="/simulation" element={<DesktopPage />} />
               <Route
                 path="/admin/dashboard"
-                element={isAdminUser ? <Dashboard /> : <Navigate to="/learn" replace />}
+                element={requireAdmin(<Dashboard />)}
               />
               <Route
                 path="/admin/manage-account"
-                element={isAdminUser ? <ManageAccount /> : <Navigate to="/learn" replace />}
+                element={requireAdmin(<ManageAccount />)}
               />
               <Route
                 path="/admin/theme"
-                element={isAdminUser ? <ThemePage /> : <Navigate to="/learn" replace />}
+                element={requireAdmin(<ThemePage />)}
               />
               <Route
                 path="/admin/add-lesson"
-                element={isAdminUser ? <AddLesson /> : <Navigate to="/learn" replace />}
+                element={requireAdmin(<AddLesson />)}
               />
               <Route
                 path="/admin/leaderboard"
-                element={isAdminUser ? <Leaderboard /> : <Navigate to="/learn" replace />}
+                element={requireAdmin(<Leaderboard />)}
               />
             </Routes>
           </motion.div>

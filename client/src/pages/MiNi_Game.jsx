@@ -333,6 +333,19 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
           : [testCase.expected ?? testCase.expected_output ?? ""];
         const expected = expectedValues.map((item) => normalizeOutput(String(item)));
         lastOutput = String(rawOutput || "").trim();
+        const forbiddenValues = Array.isArray(testCase.forbidden_any)
+          ? testCase.forbidden_any
+          : [testCase.forbidden ?? testCase.not_expected ?? ""];
+        const forbidden = forbiddenValues.map((item) => normalizeOutput(String(item))).filter(Boolean);
+
+        if (forbidden.some((item) => actual.includes(item))) {
+          const message = [`FAIL Test ${index + 1}`, `Forbidden output: ${forbidden.join(" OR ")}`, `Got: ${actual || "(no output)"}`].join("\n");
+          setProgramDialogue({ text: message });
+          appendTerminalLine(`FAIL Test ${index + 1}`);
+          appendTerminalLine(`Forbidden output: ${forbidden.join(" OR ")}`);
+          appendTerminalLine(`Got: ${actual || "(no output)"}`);
+          return { ok: false, output: lastOutput || "(no output)", reply: null };
+        }
 
         if (expected.some((item) => item && actual.includes(item))) {
           appendTerminalLine(`PASS Test ${index + 1}`);
@@ -400,29 +413,29 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
       ? [...moduleData.subtopics]   // clone เพื่อไม่ mutate original
       : [moduleData];
 
-    // ถ้ายังไม่มี subtopic ที่ exercise_order = "end" ให้สร้างจาก end_dialogues
-    const hasEnd = list.some(s => String(s.exercise_order ?? "") === "end");
-    if (!hasEnd) {
-      // ลองหา end dialogues จาก moduleData.end_dialogues (API ส่งมา)
-      // หรือ moduleData.dialogues ที่มี exercise_order = "end" และ exercise_id = null
-      const allDialogues = moduleData.end_dialogues
-        ?? (Array.isArray(moduleData.dialogues)
-            ? moduleData.dialogues.filter(d => String(d.exercise_order ?? "") === "end" && !d.exercise_id)
-            : []);
+    const hasEnd = list.some((subtopic) => String(subtopic.exercise_order ?? "") === "end");
+    const realSubtopics = list.filter((subtopic) => String(subtopic.exercise_order ?? "") !== "end");
+    if (hasEnd) return list;
 
-      if (allDialogues.length > 0) {
-        list.push({
-          exercise_id: -1,
-          exercise_order: "end",
-          title: "จบบทเรียน",
-          starter_code: "",
-          test_cases_json: "{}",
-          dialogues: allDialogues,
-        });
-      }
-    }
+    const allDialogues = Array.isArray(moduleData.end_dialogues) && moduleData.end_dialogues.length > 0
+      ? moduleData.end_dialogues
+      : (Array.isArray(moduleData.dialogues)
+          ? moduleData.dialogues.filter((dialogue) => String(dialogue.exercise_order ?? "") === "end")
+          : []);
 
-    return list;
+    if (!allDialogues.length) return realSubtopics;
+
+    return [
+      ...realSubtopics,
+      {
+        exercise_id: -1,
+        exercise_order: "end",
+        title: "จบบทเรียน",
+        starter_code: 'print("Hello")',
+        test_cases_json: "{}",
+        dialogues: allDialogues,
+      },
+    ];
   }, [moduleData]);
 
   const currentSubtopic = subtopics[currentSubtopicIndex] ?? null;
@@ -771,6 +784,20 @@ const loadGameData = async () => {
     return errors;
   };
 
+  const buildAsyncPythonBody = (sourceCode = "") => {
+    const processedCode = String(sourceCode || "").replace(/\binput\(/g, "await input(");
+    const lines = processedCode.split("\n");
+    const hasExecutableLine = lines.some((line) => {
+      const trimmed = line.trim();
+      return trimmed && !trimmed.startsWith("#");
+    });
+
+    return [
+      ...lines.map((line) => `    ${line}`),
+      ...(hasExecutableLine ? [] : ["    pass"]),
+    ].join("\n");
+  };
+
   const resolveTerminalReply = () => {
     const output = runOutputRef.current.trim() || "(no output)";
     const matchedLogic = terminalLogic.find((item) => output.includes(item.trigger_input));
@@ -862,7 +889,7 @@ output.strip()
     runOutputRef.current = "";
 
     try {
-      const processedCode = code.replace(/\binput\(/g, "await input(");
+      const pythonBody = buildAsyncPythonBody(code);
       await pyodide.runPythonAsync(`
 import builtins
 from js import miniGameRequestInputFromJS
@@ -873,7 +900,7 @@ async def input(prompt=""):
 builtins.input = input
 
 async def __main__():
-${processedCode.split("\n").map((line) => `    ${line}`).join("\n")}
+${pythonBody}
 
 await __main__()
 `);
@@ -911,7 +938,7 @@ await __main__()
     runOutputRef.current = "";
 
     try {
-      const processedCode = code.replace(/\binput\(/g, "await input(");
+      const pythonBody = buildAsyncPythonBody(code);
       await pyodide.runPythonAsync(`
 import builtins
 from js import miniGameRequestInputFromJS
@@ -922,7 +949,7 @@ async def input(prompt=""):
 builtins.input = input
 
 async def __main__():
-${processedCode.split("\n").map((line) => `    ${line}`).join("\n")}
+${pythonBody}
 
 await __main__()
 `);
@@ -1131,6 +1158,15 @@ const handleSubmit = async () => {
 
   setIsSubmitting(true);
   setProgramDialogue(null);
+
+  const validationErrors = validateCode();
+  if (validationErrors.length > 0) {
+    const message = validationErrors.map((item) => `Error: ${item}`).join("\n");
+    setProgramDialogue({ text: message });
+    validationErrors.forEach((item) => appendTerminalLine(`Error: ${item}`));
+    setIsSubmitting(false);
+    return;
+  }
 
   const storyRun = await runCodeInStory();
   if (!storyRun.ok) {

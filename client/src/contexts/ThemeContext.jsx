@@ -24,10 +24,64 @@ const getUserScope = (user) => {
 const getThemeKey = (user) => `game_theme:${getUserScope(user)}`;
 const getCustomThemesKey = (user) => `game_custom_themes:${getUserScope(user)}`;
 
+const getShopThemePalette = (theme) => {
+    const themeText = `${theme?.name || ''} ${theme?.assetUrl || ''} ${theme?.previewImage || ''} ${theme?.theme_asset_url || ''} ${theme?.theme_preview_image || ''}`.toLowerCase();
+    if (themeText.includes('ocean')) {
+        return {
+            bg: '#f1fdff',
+            bgSoft: '#e6f9fb',
+            text: '#164e63',
+            textSoft: '#397281',
+            muted: '#6aa3ad',
+            accent: '#0891b2',
+            accentSoft: 'rgba(8, 145, 178, 0.14)',
+            accentHover: '#0e7490',
+            border: 'rgba(8, 145, 178, 0.2)',
+            surface: 'rgba(241, 253, 255, 0.9)',
+            navbarOverlay: 'rgba(241, 253, 255, 0.74)',
+            navbarBorder: 'rgba(8, 145, 178, 0.22)',
+            navBg: 'rgba(255, 255, 255, 0.78)',
+        };
+    }
+    if (themeText.includes('space')) {
+        return {
+            bg: '#f7f8ff',
+            bgSoft: '#eef1ff',
+            text: '#302e63',
+            textSoft: '#5b5f94',
+            muted: '#858dc3',
+            accent: '#7c3aed',
+            accentSoft: 'rgba(124, 58, 237, 0.13)',
+            accentHover: '#6d28d9',
+            border: 'rgba(124, 58, 237, 0.18)',
+            surface: 'rgba(247, 248, 255, 0.9)',
+            navbarOverlay: 'rgba(247, 248, 255, 0.74)',
+            navbarBorder: 'rgba(124, 58, 237, 0.2)',
+            navBg: 'rgba(255, 255, 255, 0.8)',
+        };
+    }
+    return {
+        bg: '#fff7fb',
+        bgSoft: '#fff0f6',
+        text: '#4a2338',
+        textSoft: '#85516b',
+        muted: '#b08098',
+        accent: '#ec4899',
+        accentSoft: 'rgba(236, 72, 153, 0.14)',
+        accentHover: '#db2777',
+        border: 'rgba(236, 72, 153, 0.16)',
+        surface: 'rgba(255, 247, 251, 0.88)',
+        navbarOverlay: 'rgba(255, 247, 251, 0.72)',
+        navbarBorder: 'rgba(236, 72, 153, 0.18)',
+        navBg: 'rgba(255, 255, 255, 0.76)',
+    };
+};
+
 const createEquippedShopTheme = (user) => {
     const itemId = Number(user?.equipped_theme_id || 0);
     const backgroundImage = resolveAssetUrl(user?.theme_asset_url || user?.theme_preview_image || '');
     if (!itemId || !backgroundImage) return null;
+    const palette = getShopThemePalette(user);
 
     return {
         id: `shop-theme-${itemId}`,
@@ -37,18 +91,22 @@ const createEquippedShopTheme = (user) => {
         description: 'Theme Store',
         backgroundImage,
         colors: {
-            '--t-bg': '#fff7fb',
-            '--t-bg-soft': '#fff0f6',
+            '--t-bg': palette.bg,
+            '--t-bg-soft': palette.bgSoft,
             '--t-card': 'rgba(255, 255, 255, 0.82)',
             '--t-card-hover': 'rgba(255, 255, 255, 0.94)',
             '--t-input': 'rgba(255, 255, 255, 0.9)',
-            '--t-text': '#4a2338',
-            '--t-text-soft': '#85516b',
-            '--t-muted': '#b08098',
-            '--t-accent': '#ec4899',
-            '--t-accent-soft': 'rgba(236, 72, 153, 0.14)',
-            '--t-accent-hover': '#db2777',
-            '--t-border': 'rgba(236, 72, 153, 0.16)',
+            '--t-text': palette.text,
+            '--t-text-soft': palette.textSoft,
+            '--t-muted': palette.muted,
+            '--t-accent': palette.accent,
+            '--t-accent-soft': palette.accentSoft,
+            '--t-accent-hover': palette.accentHover,
+            '--t-border': palette.border,
+            '--shop-theme-surface': palette.surface,
+            '--shop-theme-navbar-overlay': palette.navbarOverlay,
+            '--shop-theme-navbar-border': palette.navbarBorder,
+            '--shop-theme-nav-bg': palette.navBg,
         },
     };
 };

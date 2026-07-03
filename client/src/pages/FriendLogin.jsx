@@ -43,6 +43,7 @@ export default function LoginPage({ onLoginSuccess }) {
   const [loggedInUser, setLoggedInUser] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showPasswordRules, setShowPasswordRules] = useState(false);
   const primaryGradientClass =
@@ -66,6 +67,7 @@ export default function LoginPage({ onLoginSuccess }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setSuccess("");
 
     // Frontend password validation (เฉพาะ register)
     if (isRegister) {
@@ -83,6 +85,19 @@ export default function LoginPage({ onLoginSuccess }) {
     setLoading(true);
     const endpoint = isRegister ? "/api/register" : "/api/login";
     try {
+      const loginAfterRegister = async () => {
+        const loginRes = await fetch("http://localhost:3001/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        });
+        const loginData = await loginRes.json();
+        if (!loginRes.ok) {
+          throw new Error(loginData.message || loginData.error || "เข้าสู่ระบบหลังสมัครไม่สำเร็จ");
+        }
+        return loginData;
+      };
+
       const res = await fetch(`http://localhost:3001${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -90,29 +105,37 @@ export default function LoginPage({ onLoginSuccess }) {
           isRegister ? { username, password, email } : { username, password }
         ),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message);
+      const data = await res.json().catch(() => ({}));
 
       if (isRegister) {
-        // ✅ สมัครสำเร็จ → Auto Login → แสดง Survey ทันที
-        const loginRes = await fetch("http://localhost:3001/api/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password }),
-        });
-        const loginData = await loginRes.json();
-        if (!loginRes.ok) throw new Error(loginData.message);
-
+        let loginData;
+        let successMessage = data.message || "สมัครสมาชิกสำเร็จ";
+        if (!res.ok) {
+          if (res.status < 500) {
+            throw new Error(data.message || "ไม่สามารถสมัครสมาชิกได้");
+          }
+          try {
+            loginData = await loginAfterRegister();
+            successMessage = "สมัครสมาชิกสำเร็จ";
+          } catch {
+            throw new Error(data.message || "ไม่สามารถสมัครสมาชิกได้");
+          }
+        } else {
+          loginData = await loginAfterRegister();
+        }
+        setSuccess(successMessage);
         setLoggedInUser(loginData);
+        await new Promise((resolve) => setTimeout(resolve, 700));
         setStep("survey"); // ← แสดง Survey ทันทีหลังสมัคร
       } else {
+        if (!res.ok) throw new Error(data.message || "ไม่สามารถดำเนินการได้");
         // Login ปกติ
         setLoggedInUser(data);
         if (data.level === 0) setStep("survey");
         else onLoginSuccess(data);
       }
     } catch (err) {
-      setError(err.message);
+      setError(err.message || "เกิดข้อผิดพลาด");
     } finally {
       setLoading(false);
     }
@@ -549,6 +572,13 @@ export default function LoginPage({ onLoginSuccess }) {
               </div>
             )}
 
+            {success && (
+              <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm">
+                <Check className="w-4 h-4 flex-shrink-0" />
+                {success}
+              </div>
+            )}
+
             {/* Submit Button */}
             <button
               type="submit"
@@ -576,6 +606,7 @@ export default function LoginPage({ onLoginSuccess }) {
               onClick={() => {
                 setIsRegister(!isRegister);
                 setError("");
+                setSuccess("");
                 setShowPasswordRules(false);
               }}
               className="text-pysim-primary font-bold hover:text-pysim-primary-container transition-colors border-b border-transparent hover:border-pysim-primary pb-0.5"

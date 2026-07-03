@@ -374,7 +374,7 @@ button, input, select, textarea {
 }
 
 html[data-theme^="shop-theme-"] .bg-pysim-surface {
-    background-color: rgba(255, 247, 251, 0.88) !important;
+    background-color: var(--shop-theme-surface, rgba(255, 247, 251, 0.88)) !important;
     background-image: var(--shop-theme-background) !important;
     background-position: center;
     background-repeat: no-repeat;
@@ -383,15 +383,15 @@ html[data-theme^="shop-theme-"] .bg-pysim-surface {
 }
 
 html[data-theme^="shop-theme-"] .pysim-theme-navbar {
-    background-color: rgba(255, 247, 251, 0.9) !important;
-    background-image: linear-gradient(rgba(255, 247, 251, 0.72), rgba(255, 247, 251, 0.72)), var(--shop-theme-background) !important;
+    background-color: var(--shop-theme-surface, rgba(255, 247, 251, 0.9)) !important;
+    background-image: linear-gradient(var(--shop-theme-navbar-overlay, rgba(255, 247, 251, 0.72)), var(--shop-theme-navbar-overlay, rgba(255, 247, 251, 0.72))), var(--shop-theme-background) !important;
     background-position: center top;
     background-size: cover;
-    border-color: rgba(236, 72, 153, 0.18) !important;
+    border-color: var(--shop-theme-navbar-border, rgba(236, 72, 153, 0.18)) !important;
 }
 
 html[data-theme^="shop-theme-"] .pysim-theme-nav {
-    background-color: rgba(255, 255, 255, 0.76) !important;
-    border-color: rgba(236, 72, 153, 0.2) !important;
+    background-color: var(--shop-theme-nav-bg, rgba(255, 255, 255, 0.76)) !important;
+    border-color: var(--shop-theme-navbar-border, rgba(236, 72, 153, 0.2)) !important;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
