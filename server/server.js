@@ -434,7 +434,7 @@ const ensureLessonExerciseExists = async (lessonId) => {
     }
 
     const [lessonRows] = await db.execute(
-        'SELECT lesson_id, title, description FROM lessons WHERE lesson_id = ? LIMIT 1',
+        'SELECT lesson_id, title FROM lessons WHERE lesson_id = ? LIMIT 1',
         [numericLessonId]
     );
 
@@ -516,6 +516,336 @@ const ensureLessonExercisesSeeded = async () => {
 ensureLessonExercisesSeeded().catch((error) => {
     console.error('Failed to seed lesson exercises:', describeError(error));
 });
+
+const buildMiniGameSeedSet = (lesson) => {
+    const title = normalizeLessonTitle(lesson?.title);
+    const displayTitle = lesson?.title || 'บทเรียนนี้';
+
+    if (title.includes('comment')) {
+        return [
+            {
+                title: 'Mini 1: อธิบายโค้ดด้วยคอมเมนต์',
+                description: 'เพิ่ม comment 1 บรรทัด แล้วแสดงข้อความ "อ่านโค้ดง่ายขึ้น"',
+                starter_code: '# เขียนคำอธิบายโค้ดตรงนี้\nprint("อ่านโค้ดง่ายขึ้น")',
+                solution_code: '# แสดงข้อความว่าคอมเมนต์ช่วยให้อ่านง่าย\nprint("อ่านโค้ดง่ายขึ้น")',
+                test_cases: [{ input: '', expected: 'อ่านโค้ดง่ายขึ้น' }],
+            },
+            {
+                title: 'Mini 2: ปิดโค้ดทดลองด้วยคอมเมนต์',
+                description: 'ใช้ # ปิดบรรทัด print("debug") แล้วให้โปรแกรมแสดงเฉพาะ "พร้อมส่งงาน"',
+                starter_code: '# print("debug")\nprint("พร้อมส่งงาน")',
+                solution_code: '# print("debug")\nprint("พร้อมส่งงาน")',
+                test_cases: [{ input: '', expected: 'พร้อมส่งงาน' }],
+            },
+            {
+                title: 'Mini 3: โน้ตขั้นตอนก่อนรัน',
+                description: 'เขียน comment บอกขั้นตอนสั้น ๆ แล้วแสดงข้อความ "โค้ดนี้มีคำอธิบาย"',
+                starter_code: '# 1. เตรียมข้อความ\nprint("โค้ดนี้มีคำอธิบาย")',
+                solution_code: '# 1. เตรียมข้อความ\nprint("โค้ดนี้มีคำอธิบาย")',
+                test_cases: [{ input: '', expected: 'โค้ดนี้มีคำอธิบาย' }],
+            },
+        ];
+    }
+
+    if (title.includes('input') || title.includes('รับ')) {
+        return [
+            {
+                title: 'Mini 1: รับชื่อผู้เล่น',
+                description: 'รับชื่อ 1 ค่า แล้วแสดงคำทักทายในรูปแบบ "สวัสดี <ชื่อ>"',
+                starter_code: 'name = input("ชื่อของคุณ: ")\nprint("สวัสดี", name)',
+                solution_code: 'name = input("ชื่อของคุณ: ")\nprint("สวัสดี", name)',
+                test_cases: [
+                    { input: 'Lumi', expected: 'สวัสดี Lumi' },
+                    { input: 'PySim', expected: 'สวัสดี PySim' },
+                ],
+            },
+            {
+                title: 'Mini 2: รับของโปรด',
+                description: 'รับชื่ออาหาร 1 ค่า แล้วแสดง "ฉันชอบ <อาหาร>"',
+                starter_code: 'food = input("อาหารที่ชอบ: ")\nprint("ฉันชอบ", food)',
+                solution_code: 'food = input("อาหารที่ชอบ: ")\nprint("ฉันชอบ", food)',
+                test_cases: [
+                    { input: 'ราเมง', expected: 'ฉันชอบ ราเมง' },
+                    { input: 'ข้าวผัด', expected: 'ฉันชอบ ข้าวผัด' },
+                ],
+            },
+            {
+                title: 'Mini 3: รับตัวเลขแล้วสะท้อนผล',
+                description: 'รับตัวเลข 1 ค่า แล้วแสดง "เลขที่เลือกคือ <ตัวเลข>"',
+                starter_code: 'number = input("เลือกเลข: ")\nprint("เลขที่เลือกคือ", number)',
+                solution_code: 'number = input("เลือกเลข: ")\nprint("เลขที่เลือกคือ", number)',
+                test_cases: [
+                    { input: '7', expected: 'เลขที่เลือกคือ 7' },
+                    { input: '21', expected: 'เลขที่เลือกคือ 21' },
+                ],
+            },
+        ];
+    }
+
+    if (title.includes('ตัวแปร') || title.includes('variable')) {
+        return [
+            {
+                title: 'Mini 1: เก็บชื่อคอร์ส',
+                description: 'สร้างตัวแปร course เก็บคำว่า "Python" แล้วแสดงค่าตัวแปร',
+                starter_code: 'course = "Python"\nprint(course)',
+                solution_code: 'course = "Python"\nprint(course)',
+                test_cases: [{ input: '', expected: 'Python' }],
+            },
+            {
+                title: 'Mini 2: คำนวณคะแนนรวม',
+                description: 'สร้างตัวแปร score มีค่า 40 แล้วเพิ่มอีก 10 จากนั้นแสดงผลรวม',
+                starter_code: 'score = 40\nscore = score + 10\nprint(score)',
+                solution_code: 'score = 40\nscore = score + 10\nprint(score)',
+                test_cases: [{ input: '', expected: '50' }],
+            },
+            {
+                title: 'Mini 3: รวมข้อความจากตัวแปร',
+                description: 'สร้างตัวแปร first และ last แล้วแสดง "Lumi Python"',
+                starter_code: 'first = "Lumi"\nlast = "Python"\nprint(first, last)',
+                solution_code: 'first = "Lumi"\nlast = "Python"\nprint(first, last)',
+                test_cases: [{ input: '', expected: 'Lumi Python' }],
+            },
+        ];
+    }
+
+    if (title.includes('type conversion') || title.includes('conversion') || title.includes('ชนิดข้อมูล')) {
+        return [
+            {
+                title: 'Mini 1: แปลงข้อความเป็นจำนวนเต็ม',
+                description: 'รับตัวเลข 2 ค่า แปลงด้วย int() แล้วแสดงผลรวม',
+                starter_code: 'a = int(input())\nb = int(input())\nprint(a + b)',
+                solution_code: 'a = int(input())\nb = int(input())\nprint(a + b)',
+                test_cases: [
+                    { input: '2\n3', expected: '5' },
+                    { input: '10\n5', expected: '15' },
+                ],
+            },
+            {
+                title: 'Mini 2: แปลงเป็นทศนิยม',
+                description: 'รับราคา 1 ค่า แปลงด้วย float() แล้วแสดงราคาหลังบวก 10',
+                starter_code: 'price = float(input())\nprint(price + 10)',
+                solution_code: 'price = float(input())\nprint(price + 10)',
+                test_cases: [
+                    { input: '20', expected_any: ['30.0', '30'] },
+                    { input: '5.5', expected: '15.5' },
+                ],
+            },
+            {
+                title: 'Mini 3: แปลงตัวเลขเป็นข้อความ',
+                description: 'กำหนด age = 15 แล้วใช้ str() เพื่อแสดง "อายุ 15"',
+                starter_code: 'age = 15\nprint("อายุ " + str(age))',
+                solution_code: 'age = 15\nprint("อายุ " + str(age))',
+                test_cases: [{ input: '', expected: 'อายุ 15' }],
+            },
+        ];
+    }
+
+    if (title.includes('if') || title.includes('else') || title.includes('เงื่อนไข')) {
+        return [
+            {
+                title: 'Mini 1: ตรวจคะแนนผ่าน',
+                description: 'รับคะแนน ถ้าตั้งแต่ 50 ขึ้นไปให้แสดง "ผ่าน" ไม่เช่นนั้นแสดง "ไม่ผ่าน"',
+                starter_code: 'score = int(input())\nif score >= 50:\n    print("ผ่าน")\nelse:\n    print("ไม่ผ่าน")',
+                solution_code: 'score = int(input())\nif score >= 50:\n    print("ผ่าน")\nelse:\n    print("ไม่ผ่าน")',
+                test_cases: [
+                    { input: '80', expected: 'ผ่าน' },
+                    { input: '40', expected: 'ไม่ผ่าน' },
+                ],
+            },
+            {
+                title: 'Mini 2: เลขคู่หรือเลขคี่',
+                description: 'รับจำนวนเต็ม ถ้าหาร 2 ลงตัวให้แสดง "เลขคู่" ไม่เช่นนั้นแสดง "เลขคี่"',
+                starter_code: 'number = int(input())\nif number % 2 == 0:\n    print("เลขคู่")\nelse:\n    print("เลขคี่")',
+                solution_code: 'number = int(input())\nif number % 2 == 0:\n    print("เลขคู่")\nelse:\n    print("เลขคี่")',
+                test_cases: [
+                    { input: '8', expected: 'เลขคู่' },
+                    { input: '9', expected: 'เลขคี่' },
+                ],
+            },
+            {
+                title: 'Mini 3: ส่วนลดสมาชิก',
+                description: 'รับคำว่า yes/no ถ้าเป็น yes ให้แสดง "ได้ส่วนลด" ถ้าไม่ใช่ให้แสดง "ราคาปกติ"',
+                starter_code: 'member = input()\nif member == "yes":\n    print("ได้ส่วนลด")\nelse:\n    print("ราคาปกติ")',
+                solution_code: 'member = input()\nif member == "yes":\n    print("ได้ส่วนลด")\nelse:\n    print("ราคาปกติ")',
+                test_cases: [
+                    { input: 'yes', expected: 'ได้ส่วนลด' },
+                    { input: 'no', expected: 'ราคาปกติ' },
+                ],
+            },
+        ];
+    }
+
+    if (title.includes('for loop') || title.includes('while loop') || title.includes('loop')) {
+        return [
+            {
+                title: 'Mini 1: นับเลขตามจำนวน',
+                description: 'รับ n แล้วแสดงเลข 1 ถึง n ทีละบรรทัด',
+                starter_code: 'n = int(input())\nfor i in range(1, n + 1):\n    print(i)',
+                solution_code: 'n = int(input())\nfor i in range(1, n + 1):\n    print(i)',
+                test_cases: [
+                    { input: '3', expected: '1 2 3' },
+                    { input: '1', expected: '1' },
+                ],
+            },
+            {
+                title: 'Mini 2: รวมเลขด้วยลูป',
+                description: 'รับ n แล้วหาผลรวม 1 ถึง n จากนั้นแสดงผลรวม',
+                starter_code: 'n = int(input())\ntotal = 0\nfor i in range(1, n + 1):\n    total += i\nprint(total)',
+                solution_code: 'n = int(input())\ntotal = 0\nfor i in range(1, n + 1):\n    total += i\nprint(total)',
+                test_cases: [
+                    { input: '4', expected: '10' },
+                    { input: '5', expected: '15' },
+                ],
+            },
+            {
+                title: 'Mini 3: พิมพ์คำซ้ำ',
+                description: 'รับจำนวนครั้ง แล้วแสดงคำว่า "Python" ตามจำนวนนั้น',
+                starter_code: 'count = int(input())\nfor i in range(count):\n    print("Python")',
+                solution_code: 'count = int(input())\nfor i in range(count):\n    print("Python")',
+                test_cases: [
+                    { input: '2', expected: 'Python Python' },
+                    { input: '1', expected: 'Python' },
+                ],
+            },
+        ];
+    }
+
+    return [
+        {
+            title: `Mini 1: เริ่มโจทย์ ${displayTitle}`,
+            description: `เขียนโปรแกรม Python แสดงข้อความ "พร้อมเรียน ${displayTitle}"`,
+            starter_code: `print("พร้อมเรียน ${displayTitle}")`,
+            solution_code: `print("พร้อมเรียน ${displayTitle}")`,
+            test_cases: [{ input: '', expected: `พร้อมเรียน ${displayTitle}` }],
+        },
+        {
+            title: `Mini 2: ทบทวน ${displayTitle}`,
+            description: 'สร้างตัวแปร status เก็บคำว่า "เข้าใจแล้ว" แล้วแสดงผล',
+            starter_code: 'status = "เข้าใจแล้ว"\nprint(status)',
+            solution_code: 'status = "เข้าใจแล้ว"\nprint(status)',
+            test_cases: [{ input: '', expected: 'เข้าใจแล้ว' }],
+        },
+        {
+            title: `Mini 3: ปิดท้าย ${displayTitle}`,
+            description: 'แสดงข้อความ "ผ่านมินิเกมแล้ว" เพื่อจบบทนี้',
+            starter_code: 'print("ผ่านมินิเกมแล้ว")',
+            solution_code: 'print("ผ่านมินิเกมแล้ว")',
+            test_cases: [{ input: '', expected: 'ผ่านมินิเกมแล้ว' }],
+        },
+    ];
+};
+
+const ensureMiniGameLessonExists = async (lessonId) => {
+    const numericLessonId = Number(lessonId);
+    if (!Number.isFinite(numericLessonId) || numericLessonId <= 0) {
+        return false;
+    }
+
+    await ensureLearningProgressSchema();
+
+    const connection = await db.getConnection();
+    const lockName = `mini_game_lesson_${numericLessonId}`;
+
+    try {
+        await connection.execute('SELECT GET_LOCK(?, 5) AS lock_result', [lockName]);
+
+        const [lessonRows] = await connection.execute(
+            'SELECT lesson_id, title FROM lessons WHERE lesson_id = ? LIMIT 1',
+            [numericLessonId]
+        );
+
+        if (lessonRows.length === 0) {
+            return false;
+        }
+
+        const [existingRows] = await connection.execute(
+            'SELECT exercise_order FROM mini_game_exercises WHERE lesson_id = ? AND is_active = 1',
+            [numericLessonId]
+        );
+        if (existingRows.length >= 3) {
+            return true;
+        }
+
+        const existingOrders = new Set(existingRows.map((row) => String(row.exercise_order || '').trim()));
+        const seeds = buildMiniGameSeedSet(lessonRows[0]).slice(0, 3);
+        let totalActiveExercises = existingRows.length;
+
+        for (let index = 0; index < seeds.length; index += 1) {
+            if (totalActiveExercises >= 3) {
+                break;
+            }
+
+            const exerciseOrder = String(index + 1);
+            if (existingOrders.has(exerciseOrder)) {
+                continue;
+            }
+
+            const seed = seeds[index];
+            const [insertResult] = await connection.execute(
+                `INSERT INTO mini_game_exercises (
+                    lesson_id,
+                    exercise_order,
+                    title,
+                    description,
+                    starter_code,
+                    solution_code,
+                    test_cases_json,
+                    xp_reward,
+                    currency_reward,
+                    is_active
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+                [
+                    numericLessonId,
+                    exerciseOrder,
+                    seed.title,
+                    seed.description,
+                    seed.starter_code,
+                    seed.solution_code,
+                    JSON.stringify(seed.test_cases),
+                    15 + (index * 5),
+                    5,
+                ]
+            );
+
+            const exerciseId = insertResult.insertId;
+            await connection.execute(
+                `INSERT INTO mini_game_dialogues (
+                    lesson_id,
+                    exercise_id,
+                    dialogue_order,
+                    exercise_order,
+                    dialogue_text,
+                    npc_id,
+                    npc_emotion,
+                    location_id
+                ) VALUES
+                    (?, ?, 0, ?, ?, NULL, 'smile', NULL),
+                    (?, ?, 1, ?, ?, NULL, 'neutral', NULL)`,
+                [
+                    numericLessonId,
+                    exerciseId,
+                    exerciseOrder,
+                    `โจทย์ที่ ${exerciseOrder}: ${seed.title} ลองอ่าน Hint แล้วเติมโค้ดให้ผ่านนะคะ`,
+                    numericLessonId,
+                    exerciseId,
+                    exerciseOrder,
+                    seed.description,
+                ]
+            );
+
+            totalActiveExercises += 1;
+        }
+
+        return true;
+    } finally {
+        try {
+            await connection.execute('SELECT RELEASE_LOCK(?)', [lockName]);
+        } catch (_) {
+            // ignore lock release failures
+        }
+        connection.release();
+    }
+};
 
 const createGuestLearningTask = async ({ userId, mode, level }) => {
     const generatedTask = await generateLearningTaskWithAI({ mode, level });
@@ -1988,6 +2318,19 @@ const ensureLearningProgressSchema = async () => {
                 CONSTRAINT fk_mini_game_exercises_lesson FOREIGN KEY (lesson_id) REFERENCES lessons (lesson_id) ON DELETE SET NULL ON UPDATE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
         `);
+        const [miniGameExerciseActiveColumns] = await db.execute(
+            `SELECT COUNT(*) AS count
+             FROM information_schema.columns
+             WHERE table_schema = DATABASE()
+               AND table_name = 'mini_game_exercises'
+               AND column_name = 'is_active'`
+        );
+
+        if (Number(miniGameExerciseActiveColumns[0]?.count || 0) === 0) {
+            await db.execute(
+                'ALTER TABLE mini_game_exercises ADD COLUMN is_active tinyint(1) NOT NULL DEFAULT 1 AFTER currency_reward'
+            );
+        }
 
         // ==========================================
         // 3. สร้างตาราง mini_game_locations
@@ -4738,6 +5081,11 @@ app.post('/api/exercises/:exerciseId/submit', async (req, res) => {
 // comes from lessons and mini_game_exercises instead of legacy mini_game_lessons.
 app.get('/api/mini-game/modules', async (_req, res) => {
     try {
+        const [lessonSeedRows] = await db.execute('SELECT lesson_id FROM lessons ORDER BY order_index, lesson_id');
+        for (const lesson of lessonSeedRows) {
+            await ensureMiniGameLessonExists(lesson.lesson_id);
+        }
+
         const [rows] = await db.execute(
             `SELECT l.lesson_id AS module_id,
                     l.lesson_id,
@@ -4766,6 +5114,11 @@ app.get('/api/mini-game/modules/:moduleId', async (req, res) => {
         const lessonId = Number(req.params.moduleId);
         if (!lessonId) {
             return res.status(400).json({ error: 'Invalid lessonId' });
+        }
+
+        const hasMiniGame = await ensureMiniGameLessonExists(lessonId);
+        if (!hasMiniGame) {
+            return res.status(404).json({ error: 'MiNi Game lesson not found' });
         }
 
         // ถ้ามีข้อมูลใน cache และยังไม่หมดอายุ (2 วินาที) ให้คืนทันที
@@ -4813,7 +5166,8 @@ app.get('/api/mini-game/modules/:moduleId', async (req, res) => {
                     1 AS is_active
              FROM mini_game_exercises
              WHERE lesson_id = ?
-             ORDER BY CAST(exercise_order AS UNSIGNED) ASC, exercise_order ASC, exercise_id ASC`,
+             ORDER BY CAST(exercise_order AS UNSIGNED) ASC, exercise_order ASC, exercise_id ASC
+             LIMIT 3`,
             [lessonId]
         );
 
