@@ -12,6 +12,29 @@ import {
   Send,
   X,
 } from "lucide-react";
+// เปลี่ยนจากการโหลดใน useEffect แบบเดิม ให้มาใช้ฟังก์ชันช่วย
+const loadConfetti = () => {
+  return new Promise((resolve) => {
+    if (window.confetti) {
+      resolve(window.confetti);
+    } else {
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js';
+      script.onload = () => resolve(window.confetti);
+      document.body.appendChild(script);
+    }
+  });
+};
+const triggerCelebration = async () => {
+  const confettiFunc = await loadConfetti();
+  
+  // แสดงกระดาษสี
+  confettiFunc({
+    particleCount: 150,
+    spread: 70,
+    origin: { y: 0.6 }
+  });
+};
 
 const API_BASE = "http://localhost:3001";
 const PYODIDE_SCRIPT_ID = "mini-game-pyodide";
@@ -501,6 +524,13 @@ const isCurrentSubtopicCompleted = useMemo(() => {
     }
     return "text-gray-300";
   };
+
+  // นำ useEffect นี้ไปวางไว้ใกล้ๆ กับ useEffect อื่นๆ ในไฟล์
+useEffect(() => {
+  if (rewardModal) {
+    triggerCelebration();
+  }
+}, [rewardModal]); // เอฟเฟกต์จะทำงานทันทีที่ rewardModal มีค่า (หมายถึง MISSION CLEAR)
 
   useEffect(() => {
     if (terminalRef.current) {
@@ -1177,12 +1207,16 @@ const handleSubmit = async () => {
     // ระบบจะอัปเดต State ทำให้ปุ่ม "Next" ปรากฏขึ้นมาโดยอัตโนมัติ 
     // โดยไม่ต้องใช้ setTimeout เพื่อข้ามฉากเองครับ
 
-    if (result?.is_module_completed) {
-      setRewardModal({
-        xp: result?.xp_reward ?? moduleData.reward_xp ?? 0,
-        currency: result?.currency_reward ?? moduleData.reward_coins ?? 0,
-      });
-    }
+// ในฟังก์ชัน handleSubmit ของคุณ
+if (result?.is_module_completed) {
+  // สั่งให้แสดงทันทีที่ API คอนเฟิร์มว่าจบโมดูล
+  triggerCelebration(); 
+  
+  setRewardModal({
+    xp: result?.xp_reward ?? moduleData.reward_xp ?? 0,
+    currency: result?.currency_reward ?? moduleData.reward_coins ?? 0,
+  });
+}
   } catch (submitError) {
     setTerminalLines((prev) => [...prev, `Submit Error: ${submitError.message}`]);
     // ในกรณีที่ error ก็จะหยุดอยู่ที่หน้านี้เพื่อให้ผู้เล่นแก้ไข ไม่มีการข้ามฉากอัตโนมัติเช่นกัน[cite: 1]
@@ -1321,41 +1355,46 @@ const handleSubmit = async () => {
             <h1 className="mt-2 text-2xl font-black text-slate-900 italic underline decoration-indigo-200">
               {currentMissionCopy.title || moduleData.title}
             </h1>
-            <div className="mt-8 rounded-2xl border border-indigo-100 bg-white p-5 shadow-sm">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-400">Hint</p>
-              <p className="mt-2 text-sm font-medium text-slate-600">
-                {currentMissionCopy.hint || "Write code that matches this subtopic objective."}
-              </p>
+{String(currentSubtopic?.exercise_order) !== "end" && (
+    <>
+      <div className="mt-8 rounded-2xl border border-indigo-100 bg-white p-5 shadow-sm">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-400">Hint</p>
+        <p className="mt-2 text-sm font-medium text-slate-600">
+          {currentMissionCopy.hint || "Write code that matches this subtopic objective."}
+        </p>
+      </div>
+
+      {isCurrentSubtopicCompleted ? (
+        <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+          <p className="text-[10px] font-black uppercase tracking-wider text-emerald-500">✅ ผ่านแล้ว</p>
+          <div className="mt-3 flex gap-3">
+            <div className="flex-1 rounded-xl bg-amber-50 border border-amber-100 px-3 py-2 text-center">
+              <p className="text-[9px] font-bold uppercase text-amber-400">XP ที่ได้</p>
+              <p className="text-base font-black text-amber-600">+{currentProgress?.xp_reward ?? currentSubtopic?.reward_xp ?? 0}</p>
             </div>
-                        {isCurrentSubtopicCompleted ? (
-              <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
-                <p className="text-[10px] font-black uppercase tracking-wider text-emerald-500">✅ ผ่านแล้ว</p>
-                <div className="mt-3 flex gap-3">
-                  <div className="flex-1 rounded-xl bg-amber-50 border border-amber-100 px-3 py-2 text-center">
-                    <p className="text-[9px] font-bold uppercase text-amber-400">XP ที่ได้</p>
-                    <p className="text-base font-black text-amber-600">+{currentProgress?.xp_reward ?? currentSubtopic?.reward_xp ?? 0}</p>
-                  </div>
-                  <div className="flex-1 rounded-xl bg-emerald-50 border border-emerald-100 px-3 py-2 text-center">
-                    <p className="text-[9px] font-bold uppercase text-emerald-400">Coins ที่ได้</p>
-                    <p className="text-base font-black text-emerald-600">+{currentProgress?.currency_reward ?? currentSubtopic?.reward_coins ?? 0}</p>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">⏳ ยังไม่ผ่าน</p>
-                <div className="mt-3 flex gap-3">
-                  <div className="flex-1 rounded-xl bg-amber-50 border border-amber-100 px-3 py-2 text-center">
-                    <p className="text-[9px] font-bold uppercase text-amber-400">XP</p>
-                    <p className="text-base font-black text-amber-500">{currentSubtopic?.reward_xp ?? 0}</p>
-                  </div>
-                  <div className="flex-1 rounded-xl bg-slate-100 border border-slate-200 px-3 py-2 text-center">
-                    <p className="text-[9px] font-bold uppercase text-slate-400">Coins</p>
-                    <p className="text-base font-black text-slate-500">{currentSubtopic?.reward_coins ?? 0}</p>
-                  </div>
-                </div>
-              </div>
-            )}
+            <div className="flex-1 rounded-xl bg-emerald-50 border border-emerald-100 px-3 py-2 text-center">
+              <p className="text-[9px] font-bold uppercase text-emerald-400">Coins ที่ได้</p>
+              <p className="text-base font-black text-emerald-600">+{currentProgress?.currency_reward ?? currentSubtopic?.reward_coins ?? 0}</p>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">⏳ ยังไม่ผ่าน</p>
+          <div className="mt-3 flex gap-3">
+            <div className="flex-1 rounded-xl bg-amber-50 border border-amber-100 px-3 py-2 text-center">
+              <p className="text-[9px] font-bold uppercase text-amber-400">XP</p>
+              <p className="text-base font-black text-amber-500">{currentSubtopic?.reward_xp ?? 0}</p>
+            </div>
+            <div className="flex-1 rounded-xl bg-slate-100 border border-slate-200 px-3 py-2 text-center">
+              <p className="text-[9px] font-bold uppercase text-slate-400">Coins</p>
+              <p className="text-base font-black text-slate-500">{currentSubtopic?.reward_coins ?? 0}</p>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )}
           </aside>
 
           <section className="relative flex flex-col overflow-hidden bg-white">
@@ -1373,21 +1412,28 @@ const handleSubmit = async () => {
                     <Play size={12} className="text-emerald-500" />
                     RUN
                   </button>
-                  <button
-                    onClick={handleSubmit}
-                    disabled={isSubmitting || isRunning || !canSubmit}
-                    title={
-                      isCurrentSubtopicCompleted
-                        ? "This subtopic is already complete."
-                        : !canSubmit
-                          ? "Continue the dialogue to unlock submit."
-                          : "Submit this subtopic."
-                    }
-                    className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-1.5 text-xs font-bold text-white shadow-md transition-all hover:bg-indigo-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <CheckCircle2 size={12} />
-                    {isCurrentSubtopicCompleted ? "DONE AGAIN" : "DONE"}
-                  </button>
+<button
+  onClick={handleSubmit}
+  disabled={
+    isSubmitting || 
+    isRunning || 
+    !canSubmit || 
+    String(currentSubtopic.exercise_order) === "end" // <--- เพิ่มเงื่อนไขนี้
+  }
+  title={
+    String(currentSubtopic.exercise_order) === "end"
+      ? "บทเรียนจบแล้ว"
+      : isCurrentSubtopicCompleted
+        ? "This subtopic is already complete."
+        : !canSubmit
+          ? "Continue the dialogue to unlock submit."
+          : "Submit this subtopic."
+  }
+  className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-1.5 text-xs font-bold text-white shadow-md transition-all hover:bg-indigo-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+>
+  <CheckCircle2 size={12} />
+  {isCurrentSubtopicCompleted ? "DONE AGAIN" : "DONE"}
+</button>
                 </div>
               </div>
               <Editor
