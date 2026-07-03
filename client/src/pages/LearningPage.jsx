@@ -77,6 +77,25 @@ const removeDuplicateModules = (rows) => {
     .reverse();
 };
 
+const getLevelProgress = (xp = 0) => {
+  const numericXp = Number(xp || 0);
+  let level = 1;
+  let remainingXp = numericXp;
+  let requiredXpForNextLevel = 120;
+
+  while (remainingXp >= requiredXpForNextLevel) {
+    remainingXp -= requiredXpForNextLevel;
+    level += 1;
+    requiredXpForNextLevel = 120 * level;
+  }
+
+  return {
+    level,
+    xpInCurrentLevel: remainingXp,
+    xpNeededThisLevel: Math.max(1, requiredXpForNextLevel),
+  };
+};
+
 export default function LearningPage({ onNavigate, user }) {
   const [modules, setModules] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -87,12 +106,12 @@ export default function LearningPage({ onNavigate, user }) {
     return !translated || translated === key ? fallback : translated;
   };
 
-  const currentLevel = Number(user?.level || 1);
   const totalXp = Number(user?.xp || 0);
-  const xpForCurrentLevel = (currentLevel - 1) * 1000;
-  const xpForNextLevel = currentLevel * 1000;
-  const currentLevelXp = Math.max(0, totalXp - xpForCurrentLevel);
-  const xpNeededThisLevel = Math.max(1, xpForNextLevel - xpForCurrentLevel);
+  const storedLevel = Number(user?.level ?? 1);
+  const levelProgress = getLevelProgress(totalXp);
+  const currentLevel = Math.max(storedLevel, levelProgress.level);
+  const currentLevelXp = levelProgress.xpInCurrentLevel;
+  const xpNeededThisLevel = levelProgress.xpNeededThisLevel;
   const xpProgressPercent = Math.min(
     100,
     Math.round((currentLevelXp / xpNeededThisLevel) * 100)
@@ -152,7 +171,7 @@ export default function LearningPage({ onNavigate, user }) {
                 {user?.username || "Python Scholar"}
               </h2>
               <p className="text-xs font-semibold uppercase tracking-wider text-pysim-outline">
-                เลเวล {user?.level || 1}
+                เลเวล {currentLevel}
               </p>
             </div>
 
@@ -229,7 +248,7 @@ export default function LearningPage({ onNavigate, user }) {
           >
             {modules.map((mod, index) => {
               const reqLevel = Number(mod.required_level || 0);
-              const myLevel = Number(user?.level || 1);
+              const myLevel = currentLevel;
               const isLocked = myLevel < reqLevel;
 
               return (
