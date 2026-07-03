@@ -16,6 +16,49 @@ const nodemailer = require('nodemailer');
 const fs = require('fs');
 const path = require('path');
 
+const computeLevelFromXp = (xp = 0) => {
+    const numericXp = Number(xp || 0);
+    let level = 1;
+    let remainingXp = numericXp;
+
+    while (remainingXp >= 120 * level) {
+        remainingXp -= 120 * level;
+        level += 1;
+    }
+
+    return level;
+};
+
+const applyXpRewardToUser = async (executor, userId, xpDelta = 0, coinDelta = 0) => {
+    const [userRows] = await executor.execute(
+        'SELECT user_id, username, level, xp, virtual_currency FROM users WHERE user_id = ? LIMIT 1',
+        [userId]
+    );
+
+    if (userRows.length === 0) {
+        throw new Error('User not found');
+    }
+
+    const currentUser = userRows[0];
+    const currentLevel = Number(currentUser.level ?? 1);
+    const nextXp = Number(currentUser.xp ?? 0) + Number(xpDelta || 0);
+    const nextCoins = Number(currentUser.virtual_currency ?? 0) + Number(coinDelta || 0);
+    const computedLevel = computeLevelFromXp(nextXp);
+    const nextLevel = Math.max(currentLevel, computedLevel);
+    const storedXp = nextLevel > currentLevel ? 0 : nextXp;
+
+    await executor.execute(
+        'UPDATE users SET xp = ?, virtual_currency = ?, level = ? WHERE user_id = ?',
+        [storedXp, nextCoins, nextLevel, userId]
+    );
+
+    return {
+        ...currentUser,
+        level: nextLevel,
+        xp: storedXp,
+        virtual_currency: nextCoins,
+    };
+};
 let multer;
 try {
     multer = require('multer');
@@ -3177,8 +3220,6 @@ const extractFirstJsonBlock = (rawText = '') => {
     return null;
 };
 
-const computeLevelFromXp = (xp = 0) => Math.max(1, Math.floor(Number(xp || 0) / 1000) + 1);
-
 const getLearningModeConfig = (mode = 'exercise') => {
     const normalizedMode = String(mode || 'exercise').trim().toLowerCase();
     if (normalizedMode === 'challenge') {
@@ -4405,15 +4446,11 @@ app.post('/api/learning/ai-task/submit', async (req, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
 
-        const user = userRows[0];
-        const nextXp = Number(user.xp || 0) + Number(task.reward_xp || 0);
-        const nextCoins = Number(user.virtual_currency || 0) + Number(task.reward_coins || 0);
-        const computedLevel = computeLevelFromXp(nextXp);
-        const nextLevel = Math.max(Number(user.level || 1), computedLevel);
-
-        await connection.execute(
-            'UPDATE users SET xp = ?, virtual_currency = ?, level = ? WHERE user_id = ?',
-            [nextXp, nextCoins, nextLevel, userId]
+        const updatedUser = await applyXpRewardToUser(
+            connection,
+            userId,
+            Number(task.reward_xp || 0),
+            Number(task.reward_coins || 0)
         );
 
         await connection.commit();
@@ -4425,12 +4462,7 @@ app.post('/api/learning/ai-task/submit', async (req, res) => {
                 xp: Number(task.reward_xp || 0),
                 coins: Number(task.reward_coins || 0),
             },
-            user: {
-                ...user,
-                level: nextLevel,
-                xp: nextXp,
-                virtual_currency: nextCoins,
-            },
+            user: updatedUser,
         });
     } catch (error) {
         await connection.rollback();
@@ -5884,8 +5916,8 @@ app.post('/api/login', async (req, res) => {
             username: user.username,
             email: user.email,
             role: user.role || 'user',
-            level: user.level || 1,
-            xp: user.xp || 0
+            level: Number(user.level ?? 1),
+            xp: Number(user.xp || 0)
         });
     } catch (err) {
         console.error('❌ API Login Error:', err.message);
@@ -5915,8 +5947,8 @@ app.post('/api/auth/google', async (req, res) => {
                 username: user.username,
                 email: user.email,
                 role: user.role || 'user',
-                level: user.level || 0,
-                xp: user.xp || 0,
+                level: Number(user.level ?? 0),
+                xp: Number(user.xp ?? 0),
                 email_verified: 1 // Google email ถือว่า verified แล้ว
             });
         } else {
@@ -5988,13 +6020,28 @@ app.get('/api/verify-email/:token', async (req, res) => {
 app.get('/api/course-content', async (req, res) => {
     try {
         const currentLevel = Number(req.query.user_level || req.query.userLevel || 0);
-        const [modules, lessons] = await Promise.all([
-            db.execute('SELECT module_id, title, order_index, required_level FROM modules ORDER BY order_index'),
-            db.execute('SELECT lesson_id, module_id, title, order_index, required_level FROM lessons ORDER BY order_index'),
-        ]);
+        const userId = req.query.user_id || req.query.userId || 0; // รับค่า userId จาก query
 
-        const moduleRows = Array.isArray(modules?.[0]) ? modules[0] : [];
-        const lessonRows = Array.isArray(lessons?.[0]) ? lessons[0] : [];
+        // ปรับ Query โดยใช้ JOIN เพื่อดึงสถิติแบบฝึกหัดในคราวเดียว
+        const [modules] = await db.execute('SELECT module_id, title, order_index, required_level FROM modules ORDER BY order_index');
+        const [lessons] = await db.execute(`
+            SELECT 
+                l.lesson_id, 
+                l.module_id, 
+                l.title, 
+                l.order_index, 
+                l.required_level,
+                COUNT(e.exercise_id) as total_count,
+                SUM(CASE WHEN es.is_passed = 1 THEN 1 ELSE 0 END) as completed_count
+            FROM lessons l
+            LEFT JOIN exercises e ON l.lesson_id = e.lesson_id
+            LEFT JOIN exercise_submissions es ON e.exercise_id = es.exercise_id AND es.user_id = ?
+            GROUP BY l.lesson_id
+            ORDER BY l.order_index
+        `, [userId]);
+
+        const moduleRows = Array.isArray(modules) ? modules : [];
+        const lessonRows = Array.isArray(lessons) ? lessons : [];
 
         const data = moduleRows.map((m) => ({
             module_id: m.module_id,
@@ -6009,10 +6056,11 @@ app.get('/api/course-content', async (req, res) => {
                     title: l.title,
                     required_level: l.required_level || 0,
                     is_locked: currentLevel < Number(l.required_level || 0),
-                    completed_count: 0,
-                    total_count: 10
+                    completed_count: Number(l.completed_count || 0),
+                    total_count: Number(l.total_count || 0)
                 }))
         }));
+        
         res.json(data);
     } catch (err) {
         const message = logRouteError('❌ Course Content Error:', err);
@@ -6331,18 +6379,7 @@ app.post('/api/exercises/:exerciseId/submit', async (req, res) => {
             });
         }
 
-        await db.execute(
-            `UPDATE users
-             SET xp = xp + ?, virtual_currency = virtual_currency + ?
-             WHERE user_id = ?`,
-            [rewardXp, rewardCoins, user_id]
-        );
-
-        const [selectedUsers] = await db.execute(
-            'SELECT user_id, username, level, xp, virtual_currency FROM users WHERE user_id = ? LIMIT 1',
-            [user_id]
-        );
-        const updatedUser = selectedUsers[0] || null;
+        const updatedUser = await applyXpRewardToUser(db, user_id, rewardXp, rewardCoins);
 
         res.json({
             success: true,
@@ -6716,21 +6753,12 @@ app.post('/api/mini-game/modules/:moduleId/progress', async (req, res) => {
 
         let xpReward = 0;
         let coinReward = 0;
+        let updatedUser = null;
         if (shouldGrantReward) {
             xpReward = Number(exercise.xp_reward || 0);
             coinReward = Number(exercise.currency_reward || 0);
-            await db.execute(
-                `UPDATE users
-                 SET xp = xp + ?, virtual_currency = virtual_currency + ?
-                 WHERE user_id = ?`,
-                [xpReward, coinReward, user_id]
-            );
+            updatedUser = await applyXpRewardToUser(db, user_id, xpReward, coinReward);
         }
-
-        const [userRows] = await db.execute(
-            'SELECT user_id, username, level, xp, virtual_currency FROM users WHERE user_id = ? LIMIT 1',
-            [user_id]
-        );
 
         res.json({
             success: true,
@@ -6738,7 +6766,7 @@ app.post('/api/mini-game/modules/:moduleId/progress', async (req, res) => {
             is_module_completed: Boolean(is_completed),
             xp_reward: xpReward,
             currency_reward: coinReward,
-            user: userRows[0] || null,
+            user: updatedUser || null,
         });
     } catch (err) {
         logRouteError('MiNi Game exercise progress upsert error:', err);
@@ -6956,18 +6984,7 @@ app.post('/api/_legacy-mini-game/:exerciseId/submit', async (req, res) => {
             });
         }
 
-        await db.execute(
-            `UPDATE users
-             SET xp = xp + ?, virtual_currency = virtual_currency + ?
-             WHERE user_id = ?`,
-            [rewardXp, rewardCoins, user_id]
-        );
-
-        const [selectedUsers] = await db.execute(
-            'SELECT user_id, username, level, xp, virtual_currency FROM users WHERE user_id = ? LIMIT 1',
-            [user_id]
-        );
-        const updatedUser = selectedUsers[0] || null;
+        const updatedUser = await applyXpRewardToUser(db, user_id, rewardXp, rewardCoins);
 
         res.json({
             success: true,

@@ -140,7 +140,7 @@ function AppContent() {
       const authenticatedUser = {
         ...incomingUser,
         isGuest: false,
-        level: Number(incomingUser?.level || 1),
+        level: Number(incomingUser?.level ?? 1),
       };
       syncUserToState(authenticatedUser);
       return authenticatedUser;
@@ -180,7 +180,7 @@ function AppContent() {
       syncUserToState({
         ...savedUser,
         isGuest: false,
-        level: Number(savedUser.level || 1),
+        level: Number(savedUser.level ?? 1),
       });
       setAuthReady(true);
       return;
