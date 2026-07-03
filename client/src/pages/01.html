@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Surprise Confetti!</title>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+</head>
+<body>
+
+  <h1>คลิกปุ่มเพื่อรับเซอร์ไพรส์!</h1>
+  <button id="surprise-btn">กดตรงนี้เลย!</button>
+
+  <script>
+    const btn = document.getElementById('surprise-btn');
+
+    btn.addEventListener('click', () => {
+      // คำสั่งสั่งให้กระดาษสีลอยขึ้น
+      confetti({
+        particleCount: 150,    // จำนวนกระดาษ
+        spread: 70,           // ความกว้างของการกระจาย
+        origin: { y: 0.8 },    // จุดเริ่มต้น (0.8 คือลอยขึ้นจากด้านล่าง)
+        colors: ['#ff0a54', '#ff7b00', '#ffc300', '#00d084', '#007bff'] // สีของกระดาษ
+      });
+    });
+  </script>
+</body>
+</html>
