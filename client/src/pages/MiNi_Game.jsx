@@ -37,8 +37,45 @@ const triggerCelebration = async () => {
 };
 
 const API_BASE = "http://localhost:3001";
+const LUMI_AVATAR_BASE = "/data_MiNiGame/NPC_lumi";
 const PYODIDE_SCRIPT_ID = "mini-game-pyodide";
 const PYODIDE_SCRIPT_URL = "https://cdn.jsdelivr.net/pyodide/v0.27.7/full/pyodide.js";
+
+const getDefaultEndDialogues = () => [
+  {
+    dialogue_id: "default-end-1",
+    step_index: 0,
+    speaker: "lumi",
+    dialogue_text: "ยินดีด้วยค่ะ! แบบทดสอบทั้งหมดได้จบลงเป็นที่เรียบร้อยแล้ว",
+    emotion: "happy",
+    dialogue_phase: "pre_submit",
+    branch_key: "end",
+    avatar_asset_url: LUMI_AVATAR_BASE,
+    bg_image_url: "/data_MiNiGame/locations/classroom.jpg",
+  },
+];
+
+const hasBrokenThaiText = (text = "") => {
+  const value = String(text || "");
+  return value.includes("เธ") && value.includes("เน");
+};
+
+const getEndDialogues = (rows = []) => {
+  const validRows = Array.isArray(rows)
+    ? rows.filter((dialogue) => dialogue?.dialogue_text && !hasBrokenThaiText(dialogue.dialogue_text))
+    : [];
+  return validRows.length > 0 ? validRows : getDefaultEndDialogues();
+};
+
+const getNpcAvatarSrc = (dialogue) => {
+  const assetUrl = dialogue?.avatar_asset_url || LUMI_AVATAR_BASE;
+  if (/\.(png|jpe?g|webp|gif)$/i.test(assetUrl)) return assetUrl;
+
+  const basePath = assetUrl.replace(/\/$/, "");
+  const folderName = basePath.split("/").pop() || "NPC_lumi";
+  const npcKey = folderName.replace(/^NPC_/i, "").toLowerCase() || "lumi";
+  return `${basePath}/${npcKey}_${dialogue?.emotion || "smile"}.png`;
+};
 
 // Singleton: ป้องกัน loadPyodide() ถูกเรียกซ้ำเมื่อ component re-mount
 // ซึ่งเป็นสาเหตุของ "WebAssembly.Memory(): could not allocate memory"
@@ -413,9 +450,20 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
       ? [...moduleData.subtopics]   // clone เพื่อไม่ mutate original
       : [moduleData];
 
-    const hasEnd = list.some((subtopic) => String(subtopic.exercise_order ?? "") === "end");
-    const realSubtopics = list.filter((subtopic) => String(subtopic.exercise_order ?? "") !== "end");
-    if (hasEnd) return list;
+    const normalizedList = list.map((subtopic) => {
+      if (String(subtopic.exercise_order ?? "") !== "end") return subtopic;
+      const endDialogues = getEndDialogues(subtopic.dialogues);
+      return {
+        ...subtopic,
+        title: subtopic.title || "จบบทเรียน",
+        starter_code: subtopic.starter_code || 'print("Hello")',
+        dialogues: endDialogues,
+      };
+    });
+
+    const hasEnd = normalizedList.some((subtopic) => String(subtopic.exercise_order ?? "") === "end");
+    const realSubtopics = normalizedList.filter((subtopic) => String(subtopic.exercise_order ?? "") !== "end");
+    if (hasEnd) return normalizedList;
 
     const allDialogues = Array.isArray(moduleData.end_dialogues) && moduleData.end_dialogues.length > 0
       ? moduleData.end_dialogues
@@ -423,7 +471,7 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
           ? moduleData.dialogues.filter((dialogue) => String(dialogue.exercise_order ?? "") === "end")
           : []);
 
-    if (!allDialogues.length) return realSubtopics;
+    const endDialogues = getEndDialogues(allDialogues);
 
     return [
       ...realSubtopics,
@@ -433,7 +481,7 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
         title: "จบบทเรียน",
         starter_code: 'print("Hello")',
         test_cases_json: "{}",
-        dialogues: allDialogues,
+        dialogues: endDialogues,
       },
     ];
   }, [moduleData]);
@@ -487,7 +535,11 @@ const isCurrentSubtopicCompleted = useMemo(() => {
   const terminalLogic = currentSubtopic?.terminal_logic ?? [];
   const currentDialogue = dialogues[dialogueIndex] ?? null;
   const currentDialogueChoices = programDialogue ? [] : currentDialogue?.choices ?? [];
-  const currentDialogueText = programDialogue?.text ?? currentDialogue?.dialogue_text ?? "No dialogue found for this module yet.";
+  const currentDialogueText = programDialogue?.text
+    ?? currentDialogue?.dialogue_text
+    ?? (String(currentSubtopic?.exercise_order ?? "") === "end"
+      ? getDefaultEndDialogues()[0].dialogue_text
+      : "ยังไม่มีบทสนทนาสำหรับบทนี้");
   const isProgramDialogue = Boolean(programDialogue);
   const isDialogueTyping = !isProgramDialogue && displayedDialogueText.length < currentDialogueText.length;
   const sceneBackgroundImage = currentDialogue?.bg_image_url || currentSubtopic?.scene_background_image || moduleData?.scene_background_image || "";
@@ -1629,10 +1681,10 @@ if (result?.is_module_completed) {
   </div>
 
   {/* ส่วนรูป NPC */}
-  {!isProgramDialogue && currentDialogue?.speaker !== "user" && currentDialogue?.speaker !== "system" && (
+  {!isProgramDialogue && currentDialogue && currentDialogue.speaker !== "user" && currentDialogue.speaker !== "system" && (
     <div className="hidden h-[140px] w-[140px] flex-shrink-0 lg:flex items-end justify-center">
       <img
-        src={`${(currentDialogue?.avatar_asset_url || "/data_MiNiGame/NPC_lumi").replace(/\/$/, "")}/${(currentDialogue?.avatar_asset_url?.split("/").pop() || "npc_lumi").replace("NPC_", "").toLowerCase()}_${currentDialogue?.emotion || "smile"}.png`}
+        src={getNpcAvatarSrc(currentDialogue)}
         className="h-full w-full object-contain object-bottom"
         alt="NPC Avatar"
       />
