@@ -1,0 +1,9 @@
+Task: Improve Frontend Alert Message Details for AI Rate Limits
+Date: 2026-07-04
+Time: 13:10 (Run #17)
+
+Description:
+1. Improved Frontend Alert Display:
+   - Observation: When the Nvidia completions API returned a 429 status code, the frontend alert modal only showed the generic error header "เซิร์ฟเวอร์ AI หนาแน่น".
+   - Solution: Updated JobPlatform.jsx catch block to fetch and display the detailed instruction `err.response.data.message` (informing the player that it is an AI rate limit and suggesting they wait 10-20 seconds before resubmitting) first, with a fallback to `err.response.data.error`.
+   - Verified that the production client build compiles cleanly.

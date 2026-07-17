@@ -1,0 +1,21 @@
+Task: AI-driven Daily Job Generation & AI Code Validation
+Date: 2026-07-04
+Time: 11:56 (Run #8)
+
+Description:
+1. Fixed Console Errors (404 Profile / AI Tasks):
+   - Instructed user to restart backend server. Verified that all ported helper functions, NVIDIA configurations, and endpoints (like `/api/user/profile/:userId` and `/api/learning/ai-task`) are present and valid inside server.js.
+
+2. Daily Quest AI Generation:
+   - Created a helper `generateDailyJobs(executor, userId, count)` inside server.js. It deletes offered jobs for the current slot/user and uses the NVIDIA AI completions API to generate 3-5 freelance jobs tailored to the user's level (Beginner/Intermediate/Advanced).
+   - Hooked `generateDailyJobs` into the startNewGame (new playthrough) and `/simulation/next-day` (new day) events.
+   - Updated /jobs/available endpoint to optionally filter by userId.
+
+3. AI Code Evaluation on Submit:
+   - Modified /jobs/submit endpoint to take code payload from client.
+   - Configured AI Grading Prompt that sends specification + user's Python code to NVIDIA AI (moonshotai/kimi-k2.5) to decide if requirements are met.
+   - If AI grades as passed: user gets money and +5 reputation.
+   - If AI grades as failed: user is penalized with -10 reputation.
+
+4. Client updates:
+   - Updated JobPlatform.jsx to pass userId query parameter during available jobs fetch and file content during submit.

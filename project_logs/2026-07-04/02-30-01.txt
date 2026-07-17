@@ -1,0 +1,35 @@
+TASK LOG: Analysis and Audit of Simulation Mode
+Date: 2026-07-04
+Time: 02:30 (Log index: 01)
+File: 02-30-01.txt
+
+Description:
+Completed a detailed code audit and technical investigation of the Simulation Mode within PySim / Python Coder Game.
+
+Key Systems Investigated & Mapped:
+1. Time Sync & Game Loop:
+   - Local clock runs between 08:00 and 20:00 (approx. 30 real-world minutes).
+   - Syncs current_hour to database at start/end of day and every 6 game minutes via `/simulation/sync-time`.
+
+2. Backend Simulation Engine Loop (startSimulationLoop):
+   - Runs every 5 seconds (TICK_RATE = 5000) for active save states.
+   - Evaluates random events: checks expiration, handles event duration, and clears expired events.
+   - Event Spawner: limits to 3 events per day, 60s cooldown, no active critical event, rolls chance to spawn eligible random events.
+   - Side Effects: MONEY_LOSS (deducts 100-300 coins, inserts expense to financial ledger) and INSTANT_END (forces day transition, deducts 500-1500 repair cost).
+   - Blackouts: spawned based on current location's power reliability score. Blackouts prevent further random event spawns and force day transition if battery drops to <= 0.
+
+3. Freelance Jobs (JobPlatform & contracts):
+   - Minimum 4 jobs are kept offered (OFFERED status) using fallback pools based on player level.
+   - Accept Flow (/jobs/accept-v3) transitions contract to ACTIVE and links user_contracts.
+   - Carry Over & Bot Steal: active contracts carried over to the next day have an increasing chance (starting at 25% on day 2, scaling to 80% on day 5) of being stolen by bot competitors, which marks the job as FAILED (reason: BOT_STEAL) and penalizes user reputation.
+
+4. Static Reviewer (evaluateJobSubmission):
+   - Code submissions in Simulation Mode (/jobs/submit-v3) are graded statically out of 100 based on file extension (+20), code length (up to +20), core structures (+20), profile expectations like VAT logic/loops (+8 each), and keyword hits (up to +25).
+   - Verdicts: PASSED (score >= 70), REVISION_REQUIRED (45 <= score < 70), and REJECTED (score < 45).
+   - Reject states deduct penalty/review fees and reduce reputation.
+
+5. Day Transition & Rent Check (/simulation/next-day-v2):
+   - Summarizes daily earnings and reputation updates.
+   - Checks weekly rent (due on day 7, 14, 21... when newDay % 7 === 1).
+   - If player money >= 3000, deducts rent and advances day.
+   - If player money < 3000, updates all active jobs to FAILED (GAME_OVER), marks saves as inactive, and triggers the Game Over sequence.

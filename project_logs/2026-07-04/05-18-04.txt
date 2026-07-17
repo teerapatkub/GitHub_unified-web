@@ -1,0 +1,13 @@
+Task: 3-Slot Save/Load Game & Safety Lock System
+Date: 2026-07-04
+Time: 05:18 (Run #4)
+
+Description:
+Implemented the full 3-slot save/load database, backend endpoints, and frontend user interfaces in the Simulation Mode.
+
+Implemented Features:
+1. Database Schema Migration: Added slot_number and is_locked to simulation_saves table, backfilled existing data, deduplicated saves to a limit of 3 per user, and applied a UNIQUE constraint.
+2. Backend Saves Endpoints: Created routes in server.js for saves listing (mapping list to array of size 3), saving to specific slot (overwriting unlocked slot with confirmation, or inserting new slot), loading a save, toggling lock status, and deleting an unlocked slot.
+3. Main Menu Integration: Rendered split "Simulation Mode" and "Load Save" buttons. The Load Save button is faded and disabled if no saves are present in database. Click events open an interactive slot manager modal.
+4. Pause Menu Integration: Added LOAD GAME button and linked SAVE GAME to slots modal with overwrite prompt validation.
+5. Code Consistency: Copied updated source code files from main workspace into client/server folders of full_web/unified-web and verified successful production build compilations.

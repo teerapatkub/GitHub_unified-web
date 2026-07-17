@@ -1,0 +1,27 @@
+Task: Reorganize Workspace Directories & Initialize Multiplayer PostgreSQL Schema
+Date: 2026-07-17
+Time: 02:36 (Run #19)
+
+Description:
+1. File Reorganization (Move to "old plan"):
+   - Created "old plan" subdirectories in pages (`client/src/pages/old plan`) and components (`client/src/components/old plan`).
+   - Moved deprecated simulation files:
+     * Pages: DesktopPage.jsx, OnlineMenu.jsx, Matchmaking.jsx, Lobby.jsx, JoinRoom.jsx, Achievements.jsx, ShopPage.jsx.
+     * Components: app/, os/ directories (Notepad, EmailClient, RecycleBin, JobPlatform, Taskbar, Wallpaper, etc.).
+   - Removed deprecated page imports and routes from client App.jsx, leaving only MainMenu (/menu) and learning portal views.
+   - Verified that Vite compiles successfully with tree-shaking active (bundle size reduced from 822.31 kB to 680.06 kB).
+
+2. Database Cleanup & Schema Restoration:
+   - Discovered that the PostgreSQL postgres database was empty.
+   - Streamed the DataBase FullProjectPython.sql backup script into the Docker container to restore the base database schema and courses/users seed data.
+   - Dropped old simulation tables (simulation_saves, simulation_active_events, simulation_logs, random_events, locations, user_contracts, contracts, user_inventory, user_profile_showcase, financial_ledger, assets, room_participants, game_rooms, game_sessions) without touching the learning tables.
+
+3. Multiplayer Database Schema Implementation:
+   - Designed and created new multiplayer tables:
+     * multiplayer_challenges: Coding tasks for Competitive (Serious) and Arcade (Party) modes. Seeded 3 default coding challenges.
+     * multiplayer_sessions: Game rooms state.
+     * session_players: In-game players status, balance, and survival state.
+     * multiplayer_submissions: Code runs, correctness stats, and AI feedback.
+     * cosmetics: Cosmetics store items. Seeded 5 initial items.
+     * user_cosmetics: Purchases of items.
+   - Disabled the backend simulation engine interval (startSimulationLoop()) inside server.js to avoid DB lookup errors on deprecated tables.

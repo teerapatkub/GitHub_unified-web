@@ -1,0 +1,11 @@
+Task: Implement Gemini API Model Fallback and 429 Quota Exceeded Rate Limit Handler
+Date: 2026-07-04
+Time: 12:28 (Run #12)
+
+Description:
+1. Resolved Quota Exceeded 429 Errors:
+   - Root Cause: The client's Gemini API Key (under the free tier) reached the request rate/token limit of `gemini-2.0-flash`, returning a `429 Too Many Requests` error, which caused the server to fall back to the old grading logic and incorrectly pass garbage submissions.
+   - Solution:
+     * Added model fallback to `callGeminiChat`. If the primary model `gemini-2.0-flash` fails due to rate limits or quotas, the server instantly falls back and retries the request using `gemini-1.5-flash` (which has a separate rate limit quota).
+     * Modified the `/jobs/submit` endpoint error handler. If both models fail due to `429/quota` errors, the server returns a `429` status code and alerts the player: "ระบบวิเคราะห์โค้ดด้วย AI กำลังหนาแน่นชั่วคราว (Rate Limit) กรุณารอสักครู่ (ประมาณ 10-20 วินาที) แล้วกดส่งใหม่อีกครั้งน้า~".
+     * This protects the integrity of the gameplay rules and prevents players from passing tasks by submitting garbage code during API rate limits.

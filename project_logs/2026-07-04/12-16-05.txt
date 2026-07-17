@@ -1,0 +1,12 @@
+Task: Migrate AI Model Provider to Google Gemini
+Date: 2026-07-04
+Time: 12:16 (Run #11)
+
+Description:
+1. Resolved AI API 404 Status:
+   - Root Cause: The default hardcoded NVIDIA model 'moonshotai/kimi-k2.5' or API key returned 404 Not Found from integrate.api.nvidia.com, causing the server to log "⚠️ AI Grading Error: Request failed with status code 404" and trigger fallback code grading.
+   - Solution: Since the player's .env file has a valid Google Gemini API Key (GEMINI_API_KEY) and model configuration (GEMINI_MODEL=gemini-2.0-flash), we transitioned the AI backend to Google's official Generative AI SDK (@google/generative-ai).
+   - Details:
+     * Defined `callGeminiChat({ messages, systemInstruction })` wrapper.
+     * Replaced all occurrences of `callNvidiaChat` with `callGeminiChat`.
+     * Verified the server compiles and boots successfully.

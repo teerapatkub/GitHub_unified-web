@@ -1,0 +1,14 @@
+Task: Registration API Resilience & Test Verification
+Date: 2026-07-17
+Time: 03:28 (Run #21)
+
+Description:
+1. Wrap sendMail in try-catch:
+   - Updated /api/register endpoint inside server.js to catch any errors from emailTransporter.sendMail() (e.g. SMTP 535 Bad Credentials).
+   - This ensures registration completes successfully (201 status) even if SMTP settings in .env are invalid or offline.
+   - Synchronized changes from server/server.js to full_web/unified-web/server/server.js.
+
+2. Test Registration Flow and Database Cleanup:
+   - Wrote a temporary test script (test_registration_flow.js) that calls POST http://localhost:3001/api/register with a unique test account.
+   - Verified that the server responds with 201 Created and the user is successfully created in the database.
+   - Deleted the created test user from both users and email_verifications tables inside PostgreSQL database to clean up the DB.

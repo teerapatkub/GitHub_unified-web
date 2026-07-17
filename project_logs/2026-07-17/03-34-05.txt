@@ -1,0 +1,13 @@
+Task: Survey Endpoint Column Mapping & Verification
+Date: 2026-07-17
+Time: 03:34 (Run #22)
+
+Description:
+1. Fix Survey Union Columns Mapping:
+   - Root Cause: Submitting or viewing the survey failed with a database error: `column "question_id" does not exist`. This occurred inside /api/survey SQL UNION ALL query because level_config does not have question_id and level columns, but rather q_id and level_value, and lacks option_description.
+   - Solution: Updated the SQL UNION inside server.js to explicitly map `q_id AS question_id`, `NULL AS description`, and `level_value AS level` from level_config table.
+   - Overwrote and synchronized server.js changes to full_web/unified-web/server/server.js.
+
+2. Verification:
+   - Wrote a test script (test_survey.js) that performs a GET request to http://localhost:3001/api/survey.
+   - Confirmed the API responds with 200 OK and returns the full JSON representation of the survey questions and matching options.
