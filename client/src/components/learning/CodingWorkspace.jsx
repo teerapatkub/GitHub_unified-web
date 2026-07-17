@@ -87,6 +87,7 @@ export default function CodingWorkspace({
   onReroll,
   rerolling = false,
   onSubmitTask,
+  onTaskSubmitted,
   workspaceNotice = '',
 }) {
   const [code, setCode] = useState(initialCode);
@@ -308,6 +309,7 @@ output.strip()
       appendLine(result?.message || 'Task submitted successfully.');
       setIsSuccess(true);
       setHasPassedTests(false);
+      onTaskSubmitted?.(result);
     } catch (error) {
       appendLine(`Submit Error: ${error?.response?.data?.error || error.message || 'Unable to submit task.'}`);
     } finally {
