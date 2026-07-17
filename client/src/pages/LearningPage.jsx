@@ -77,25 +77,6 @@ const removeDuplicateModules = (rows) => {
     .reverse();
 };
 
-const getLevelProgress = (xp = 0) => {
-  const numericXp = Number(xp || 0);
-  let level = 1;
-  let remainingXp = numericXp;
-  let requiredXpForNextLevel = 120;
-
-  while (remainingXp >= requiredXpForNextLevel) {
-    remainingXp -= requiredXpForNextLevel;
-    level += 1;
-    requiredXpForNextLevel = 120 * level;
-  }
-
-  return {
-    level,
-    xpInCurrentLevel: remainingXp,
-    xpNeededThisLevel: Math.max(1, requiredXpForNextLevel),
-  };
-};
-
 export default function LearningPage({ onNavigate, user }) {
   const [modules, setModules] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -106,16 +87,16 @@ export default function LearningPage({ onNavigate, user }) {
     return !translated || translated === key ? fallback : translated;
   };
 
+  const progression = user?.progression || {};
+  const currentLevel = Number(progression.level || user?.level || 1);
   const totalXp = Number(user?.xp || 0);
-  const storedLevel = Number(user?.level ?? 1);
-  const levelProgress = getLevelProgress(totalXp);
-  const currentLevel = Math.max(storedLevel, levelProgress.level);
-  const currentLevelXp = levelProgress.xpInCurrentLevel;
-  const xpNeededThisLevel = levelProgress.xpNeededThisLevel;
-  const xpProgressPercent = Math.min(
-    100,
-    Math.round((currentLevelXp / xpNeededThisLevel) * 100)
-  );
+  const currentLevelXp = Number(progression.xpIntoLevel || 0);
+  const xpNeededThisLevel = Number(progression.xpNeededThisLevel || 100);
+  const xpProgressPercent = Number(progression.xpProgressPercent || 0);
+  const promotionExamEligible = Boolean(progression.promotionExamEligible);
+  const promotionStageLabel = progression.promotionStage === "intermediate_to_advanced"
+    ? "Intermediate → Advanced"
+    : "Beginner → Intermediate";
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -171,7 +152,7 @@ export default function LearningPage({ onNavigate, user }) {
                 {user?.username || "Python Scholar"}
               </h2>
               <p className="text-xs font-semibold uppercase tracking-wider text-pysim-outline">
-                เลเวล {currentLevel}
+                เลเวล {user?.level || 1}
               </p>
             </div>
 
@@ -240,6 +221,31 @@ export default function LearningPage({ onNavigate, user }) {
             </p>
           </header>
 
+          {promotionExamEligible ? (
+            <div className="rounded-[28px] border border-violet-200 bg-[linear-gradient(135deg,rgba(79,70,229,0.08),rgba(168,85,247,0.08))] p-6 shadow-sm">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.24em] text-violet-600">
+                    Promotion Exam Ready
+                  </p>
+                  <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-950">
+                    ถึงเวลาสอบเลื่อนขั้นแล้ว
+                  </h2>
+                  <p className="mt-2 max-w-2xl text-sm font-medium leading-6 text-slate-600">
+                    คุณมี XP ถึงเกณฑ์สำหรับด่าน {promotionStageLabel} แล้ว หากสอบผ่านจะปลดล็อกระดับถัดไปและเนื้อหาใหม่ทันที
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onNavigate("promotion-exam")}
+                  className="inline-flex items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#4f46e5,#9333ea)] px-5 py-3 text-sm font-black text-white shadow-[0_16px_30px_rgba(99,102,241,0.24)]"
+                >
+                  เข้าสอบเลื่อนขั้น
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           <motion.div
             variants={containerVariants}
             initial="hidden"
@@ -248,7 +254,7 @@ export default function LearningPage({ onNavigate, user }) {
           >
             {modules.map((mod, index) => {
               const reqLevel = Number(mod.required_level || 0);
-              const myLevel = currentLevel;
+              const myLevel = Number(user?.level || 1);
               const isLocked = myLevel < reqLevel;
 
               return (
@@ -315,15 +321,8 @@ const ModuleAccordion = ({
               <Lock className="h-6 w-6" />
             </div>
           ) : (
-            <div
-              className="flex h-16 w-16 shrink-0 select-none items-center justify-center rounded-lg border shadow-sm"
-              style={{
-                backgroundColor: "#e5e7eb",
-                borderColor: "#9ca3af",
-                color: "#111827",
-              }}
-            >
-              <span className="text-2xl font-black leading-none">
+            <div className="chapter-card-gradient flex h-16 w-16 shrink-0 items-center justify-center rounded-lg text-white">
+              <span className="text-2xl font-black">
                 {String(moduleData.module_id || "").padStart(2, "0")}
               </span>
             </div>
@@ -429,14 +428,7 @@ const ModuleAccordion = ({
                       </div>
 
                       <div className="flex items-center space-x-5">
-                        <span
-                          className="min-w-[3.25rem] select-none rounded-lg border px-3 py-1 text-center text-xs font-mono font-black shadow-sm"
-                          style={{
-                            backgroundColor: "#e5e7eb",
-                            borderColor: "#9ca3af",
-                            color: "#111827",
-                          }}
-                        >
+                        <span className="rounded-lg bg-pysim-surface-high px-2.5 py-1 text-[11px] font-mono font-bold text-pysim-on-surface-variant">
                           {lesson.completed_count || 0}/{lesson.total_count || 0}
                         </span>
                       </div>

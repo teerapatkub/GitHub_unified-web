@@ -1,274 +1,291 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Monitor, Globe, Settings, Trophy, Palette, BookOpen } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
-import { useTheme } from '../contexts/ThemeContext';
-import SettingsModal from '../components/SettingsModal';
+import { 
+  Trophy, 
+  Gamepad2, 
+  Award, 
+  Sparkles, 
+  GraduationCap, 
+  User, 
+  LogOut, 
+  ArrowRight,
+  TrendingUp,
+  Activity,
+  Zap,
+  BookOpen
+} from 'lucide-react';
+import { motion } from 'framer-motion';
 
-export default function MainMenu({ user }) {
+export default function MainMenu() {
   const navigate = useNavigate();
-  const { theme, setTheme, themes } = useTheme();
-  const { t } = useTranslation();
-  const [mounted, setMounted] = useState(false);
-  const [showThemePicker, setShowThemePicker] = useState(false);
-  const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [volume, setVolume] = useState(localStorage.getItem('musicVolume') || 50);
-  const [storedUser, setStoredUser] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('user') || 'null');
-    } catch {
-      return null;
-    }
-  });
+  const [userData, setUserData] = useState(null);
 
   useEffect(() => {
-    const timer = setTimeout(() => setMounted(true), 100);
-    return () => clearTimeout(timer);
+    const userStr = localStorage.getItem('user');
+    if (userStr) {
+      setUserData(JSON.parse(userStr));
+    }
   }, []);
 
-  useEffect(() => {
-    if (user) {
-      setStoredUser(user);
-      return;
-    }
-
-    try {
-      setStoredUser(JSON.parse(localStorage.getItem('user') || 'null'));
-    } catch {
-      setStoredUser(null);
-    }
-  }, [user]);
-
-  const resolvedUser = user || storedUser;
-  const displayName = resolvedUser?.username || 'Guest User';
-  const displayLevel = Number(resolvedUser?.level || 1);
-  const profileLabel = resolvedUser?.isGuest ? 'บัญชีผู้เยี่ยมชม' : 'บัญชีผู้เล่น';
-
-  const menus = [
-    {
-      name: t('mainMenu.simulation'),
-      sub: 'Initialize Local Environment',
-      icon: <Monitor size={24} />,
-      color: 'python-gradient',
-      action: () => navigate('/simulation'),
-    },
-    {
-      name: t('mainMenu.online'),
-      sub: 'Collaborative Logic',
-      icon: <Globe size={24} />,
-      color: 'bg-gradient-to-br from-pysim-primary to-pysim-primary-container',
-      action: () => navigate('/online'),
-    },
-    {
-      name: t('mainMenu.theme'),
-      sub: 'Personalize',
-      icon: <Palette size={24} />,
-      color: 'bg-gradient-to-br from-pysim-tertiary-container to-pysim-tertiary',
-      action: () => setShowThemePicker(true),
-    },
-    {
-      name: t('mainMenu.settings'),
-      sub: 'Configure Core',
-      icon: <Settings size={24} />,
-      color: 'bg-gradient-to-br from-pysim-outline to-slate-600',
-      action: () => setShowSettingsModal(true),
-    },
-    {
-      name: t('mainMenu.achievements'),
-      sub: 'Milestones Met',
-      icon: <Trophy size={24} />,
-      color: 'bg-gradient-to-br from-pysim-secondary-container to-pysim-secondary',
-      action: () => navigate('/achievements'),
-    },
-    {
-      name: t('mainMenu.studyMode'),
-      sub: 'The Academy',
-      icon: <BookOpen size={24} />,
-      color: 'bg-gradient-to-br from-emerald-500 to-green-600',
-      action: () => navigate('/learn'),
-    },
-  ];
-
-  const handleVolumeChange = (nextVolume) => {
-    setVolume(nextVolume);
-    localStorage.setItem('musicVolume', nextVolume);
-    const music = document.getElementById('bg-music');
-    if (music) {
-      music.volume = nextVolume / 100;
-      if (music.paused) music.play().catch(() => {});
-    }
+  const handleLogout = () => {
+    localStorage.removeItem('user');
+    window.location.href = '/';
   };
 
   return (
-    <div className="min-h-screen relative overflow-y-auto bg-pysim-surface transition-colors duration-300">
-      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
-        <div className="absolute -top-24 -left-24 h-96 w-96 rounded-full bg-pysim-primary/5 blur-3xl" />
-        <div className="absolute top-1/2 -right-48 h-[600px] w-[600px] rounded-full bg-pysim-secondary-container/10 blur-[100px]" />
-        <div
-          className="absolute inset-0 opacity-[0.03]"
-          style={{ backgroundImage: 'radial-gradient(#145d91 1px, transparent 1px)', backgroundSize: '40px 40px' }}
-        />
-        <div className="absolute bottom-10 left-10 flex flex-col gap-2 font-mono text-xs text-pysim-primary opacity-10">
-          <span>def simulate_world():</span>
-          <span className="pl-4">while True:</span>
-          <span className="pl-8">growth = logic.calculate()</span>
-          <span className="pl-8">render(growth)</span>
-        </div>
-      </div>
-
-      <div className="relative z-10 flex min-h-screen flex-col items-center justify-center px-4 py-8">
-        <header
-          className={`relative mb-12 flex flex-col items-center space-y-2 transition-all duration-1000 ${
-            mounted ? 'translate-y-0 opacity-100' : '-translate-y-8 opacity-0'
-          }`}
-        >
-          <div className="bg-gradient-to-r from-pysim-primary to-pysim-primary-container bg-clip-text text-3xl font-black uppercase tracking-tighter text-transparent">
-            PySim OS
+    <div className="min-h-screen bg-slate-50/50 pb-16 font-sans antialiased">
+      {/* 1. TOP NAVIGATION BAR */}
+      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200/80 px-6 py-4 flex justify-between items-center shadow-sm">
+        <div className="flex items-center space-x-3">
+          <div className="bg-blue-600 text-white p-2 rounded-xl shadow-md shadow-blue-500/20">
+            <Zap className="h-5 w-5 fill-white animate-pulse" />
           </div>
-          <div className="text-[10px] font-bold uppercase tracking-[0.3em] text-pysim-outline opacity-60">
-            {t('mainMenu.subtitle') || 'The Living Manuscript Edition'}
-          </div>
-        </header>
-
-        <div className="w-full max-w-lg">
-          <div className="relative flex flex-col space-y-6 rounded-2xl border border-pysim-outline-variant/10 bg-white p-8 whisper-shadow">
-            <div className="mb-2 flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-pysim-surface-high">
-                  <Monitor size={20} className="text-pysim-primary" />
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-pysim-outline">{profileLabel}</p>
-                  <p className="text-sm font-bold text-pysim-on-surface">{displayName}</p>
-                </div>
-              </div>
-              <div className="flex flex-col items-end">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-pysim-outline">ระดับผู้เล่น</p>
-                <div className="flex items-center space-x-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-pysim-secondary" />
-                  <span className="text-xs font-semibold text-pysim-primary">LV.{displayLevel}</span>
-                </div>
-              </div>
-            </div>
-
-            <nav className="flex flex-col space-y-3">
-              <button
-                onClick={menus[0].action}
-                className={`group relative w-full overflow-hidden rounded-2xl border border-blue-200/70 bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-400 px-7 py-6 text-slate-900 shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98] ${
-                  mounted ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'
-                }`}
-                style={{ transitionDelay: '300ms' }}
-              >
-                <div className="absolute inset-0 bg-gradient-to-r from-white/25 via-white/5 to-transparent opacity-90" />
-                <div className="relative flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-5">
-                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/90 text-blue-700 ring-1 ring-white/60 backdrop-blur-sm shadow-sm">
-                      <Monitor size={30} className="opacity-95" />
-                    </div>
-                    <div className="text-left">
-                      <span className="block text-2xl font-black leading-none tracking-tight text-white drop-shadow-sm">{menus[0].name}</span>
-                      <span className="mt-2 block text-sm font-semibold text-blue-50">{menus[0].sub}</span>
-                    </div>
-                  </div>
-                  <div className="rounded-full bg-white px-4 py-2 text-xs font-black uppercase tracking-[0.2em] text-blue-700 shadow-sm ring-1 ring-blue-100">
-                    Start
-                  </div>
-                </div>
-              </button>
-
-              <div className="grid grid-cols-2 gap-3">
-                {menus.slice(1, 5).map((menu, index) => (
-                  <button
-                    key={menu.name}
-                    onClick={menu.action}
-                    className={`flex flex-col items-start space-y-3 rounded-lg bg-pysim-surface-low p-5 transition-colors active:scale-[0.98] hover:bg-pysim-surface-high ${
-                      mounted ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'
-                    }`}
-                    style={{ transitionDelay: `${400 + index * 80}ms` }}
-                  >
-                    <div className={`rounded-lg p-2 text-white ${menu.color}`}>{menu.icon}</div>
-                    <div>
-                      <span className="block text-sm font-bold text-pysim-on-surface">{menu.name}</span>
-                      <span className="text-[10px] text-pysim-outline">{menu.sub}</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </nav>
-
-            <div className="border-t border-pysim-outline-variant/5 pt-4">
-              <button
-                onClick={menus[5].action}
-                className={`flex w-full items-center justify-center space-x-3 rounded-lg bg-pysim-secondary-container py-4 font-bold text-pysim-on-secondary-container transition-all hover:opacity-90 active:scale-[0.98] ${
-                  mounted ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'
-                }`}
-                style={{ transitionDelay: '750ms' }}
-              >
-                <BookOpen size={20} />
-                <span className="text-sm uppercase tracking-wide">{menus[5].name}</span>
-              </button>
-            </div>
-          </div>
-
-          <div className={`mt-8 flex items-center justify-between px-4 transition-all duration-1000 delay-700 ${mounted ? 'opacity-100' : 'opacity-0'}`}>
-            <div className="text-[10px] font-mono text-pysim-outline/50">
-              {t('mainMenu.version') || 'BUILD_ID: PS_OS_2024.0.1'}
-            </div>
-            <div className="text-[10px] font-mono text-pysim-outline/50">{t('mainMenu.copyright') || '© PySim'}</div>
+          <div>
+            <span className="text-sm font-black uppercase tracking-[0.24em] bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+              PyClash Arena
+            </span>
+            <span className="block text-[9px] font-bold tracking-widest text-slate-400 uppercase">
+              Multiplayer Hub
+            </span>
           </div>
         </div>
-      </div>
 
-      {showThemePicker ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-pysim-on-surface/20 backdrop-blur-sm animate-fade-in"
-          onClick={() => setShowThemePicker(false)}
-        >
-          <div
-            className="w-full max-w-sm rounded-2xl border border-pysim-outline-variant/10 bg-white p-6 whisper-shadow animate-scale-in"
-            onClick={(event) => event.stopPropagation()}
+        <div className="flex items-center space-x-4">
+          {/* BACK TO LEARNING MODE BUTTON */}
+          <button
+            onClick={() => navigate('/learn')}
+            className="flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all bg-gradient-to-r from-emerald-50 to-emerald-100/80 text-emerald-700 hover:text-emerald-800 border border-emerald-200/60 hover:shadow-md hover:scale-[1.02] active:scale-[0.98]"
           >
-            <h2 className="mb-1 flex items-center gap-2 text-xl font-black text-pysim-on-surface">
-              <Palette size={20} className="text-pysim-primary" /> {t('mainMenu.themeModal.title')}
-            </h2>
-            <p className="mb-4 text-xs text-pysim-on-surface-variant">{t('mainMenu.themeModal.subtitle')}</p>
-            <div className="space-y-2">
-              {themes.map((themeItem) => (
-                <button
-                  key={themeItem.id}
-                  onClick={() => {
-                    setTheme(themeItem.id);
-                    setShowThemePicker(false);
-                  }}
-                  className={`flex w-full items-center gap-3 rounded-xl border p-3 transition-all duration-200 ${
-                    theme.id === themeItem.id
-                      ? 'border-pysim-primary/20 bg-pysim-primary-fixed ring-1 ring-pysim-primary/20'
-                      : 'border-pysim-outline-variant/10 hover:bg-pysim-surface-low'
-                  }`}
-                >
-                  <span className="text-2xl">{themeItem.icon}</span>
-                  <div className="flex-1 text-left">
-                    <div className="text-sm font-bold text-pysim-on-surface">{themeItem.name}</div>
-                    <div className="text-xs text-pysim-on-surface-variant">{themeItem.description}</div>
-                  </div>
-                  {theme.id === themeItem.id ? <span className="text-sm text-pysim-primary">✓</span> : null}
-                </button>
-              ))}
+            <BookOpen className="h-4 w-4" />
+            <span>กลับไปโหมดเรียน (Academy)</span>
+          </button>
+
+          <div className="h-6 w-px bg-slate-200" />
+
+          {/* USER INFO BLOCK */}
+          {userData ? (
+            <div className="flex items-center space-x-3">
+              <div className="flex flex-col items-end">
+                <span className="text-[10px] font-black text-blue-600 uppercase tracking-wider">
+                  LV. {userData.level || 1}
+                </span>
+                <span className="text-xs font-bold text-slate-700">
+                  {userData.username}
+                </span>
+              </div>
+              <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center border border-slate-200">
+                <User className="h-4 w-4 text-slate-500" />
+              </div>
+              <button
+                onClick={handleLogout}
+                className="p-2 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-400 hover:text-rose-500 transition-colors border border-slate-200"
+                title="Logout"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
             </div>
-            <div className="mt-4 rounded-xl border border-pysim-primary/10 bg-pysim-primary-fixed p-3 text-center">
-              <p className="text-xs font-bold text-pysim-primary">{t('mainMenu.themeModal.storeComingSoon')}</p>
-              <p className="mt-1 text-[10px] text-pysim-on-surface-variant">{t('mainMenu.themeModal.storeDesc')}</p>
+          ) : (
+            <div className="px-4 py-2 rounded-xl bg-slate-100 text-slate-500 font-bold text-xs">
+              Guest Mode
+            </div>
+          )}
+        </div>
+      </nav>
+
+      {/* 2. BODY CONTENT */}
+      <main className="max-w-6xl mx-auto px-6 mt-10">
+        
+        {/* HERO HEADER */}
+        <div className="text-center max-w-2xl mx-auto mb-12">
+          <motion.div
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+          >
+            <span className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-blue-600 bg-blue-50 rounded-full border border-blue-100">
+              โหมดการแข่งขันรูปแบบใหม่
+            </span>
+            <h1 className="text-4xl font-black text-slate-800 tracking-tight mt-3 mb-4">
+              สมรภูมิประชันเขียนโปรแกรม Python
+            </h1>
+            <p className="text-sm text-slate-500 leading-relaxed font-medium">
+              พัฒนาทักษะแบบก้าวกระโดดด้วยโหมดการแข่งขันสุดมันส์กับผู้เล่นอื่นในเวลาจริง 
+              เลือกโหมดการเล่นที่ตรงกับความชอบของคุณด้านล่างนี้ได้เลย!
+            </p>
+          </motion.div>
+        </div>
+
+        {/* 3. CORE MULTIPLAYER MODES */}
+        <div className="grid md:grid-cols-2 gap-8 mb-12">
+          
+          {/* MODE 1: COMPETITIVE ARENA */}
+          <motion.div
+            whileHover={{ y: -8 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className="flex flex-col bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden hover:shadow-xl hover:border-blue-200/80 transition-all group"
+          >
+            <div className="bg-gradient-to-br from-blue-500 to-indigo-600 p-8 text-white relative overflow-hidden">
+              {/* Background Art */}
+              <div className="absolute right-0 bottom-0 opacity-10 translate-x-4 translate-y-4">
+                <Award size={180} />
+              </div>
+              
+              <span className="px-3 py-1 rounded-full text-[9px] font-bold tracking-widest uppercase bg-white/20 text-white border border-white/10">
+                🏆 MODE 1: SERIOUS
+              </span>
+              <h2 className="text-2xl font-black tracking-tight mt-4 mb-2">
+                Competitive Arena
+              </h2>
+              <p className="text-xs text-blue-100/90 font-medium leading-relaxed">
+                การแข่งเขียนโค้ดแก้โจทย์ปัญหาแบบดวลทักษะความรู้
+              </p>
+            </div>
+
+            <div className="p-8 flex-1 flex flex-col justify-between">
+              <div className="space-y-4 mb-8">
+                <div className="flex items-start space-x-3">
+                  <div className="bg-blue-50 p-2 rounded-xl text-blue-600 mt-0.5">
+                    <Activity className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-700">โจทย์จริงจากแอดมินและผู้ใช้งาน</h3>
+                    <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
+                      ไม่มีระบบสุ่มมั่วๆ โพสต์โจทย์จริงที่มีเวลาจำกัดและรางวัลรออยู่
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start space-x-3">
+                  <div className="bg-blue-50 p-2 rounded-xl text-blue-600 mt-0.5">
+                    <TrendingUp className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-700">วัดความถูกต้องและความเร็ว</h3>
+                    <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
+                      ประมวลผลคะแนนอย่างละเอียดด้วยระบบ AI เพื่อจัดอันดับผู้นำคุณภาพโค้ด
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <button 
+                onClick={() => navigate('/online')}
+                className="w-full flex items-center justify-center space-x-2 py-4 bg-slate-900 hover:bg-blue-600 active:scale-[0.98] text-white rounded-2xl font-bold text-xs tracking-wider uppercase transition-all shadow-md hover:shadow-blue-500/20"
+              >
+                <span>เข้าสู่สนามแข่ง (Enter Arena)</span>
+                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+              </button>
+            </div>
+          </motion.div>
+
+          {/* MODE 2: ARCADE BATTLE ROYALE */}
+          <motion.div
+            whileHover={{ y: -8 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className="flex flex-col bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden hover:shadow-xl hover:border-rose-200/80 transition-all group"
+          >
+            <div className="bg-gradient-to-br from-rose-500 to-orange-500 p-8 text-white relative overflow-hidden">
+              {/* Background Art */}
+              <div className="absolute right-0 bottom-0 opacity-10 translate-x-4 translate-y-4">
+                <Gamepad2 size={180} />
+              </div>
+              
+              <span className="px-3 py-1 rounded-full text-[9px] font-bold tracking-widest uppercase bg-white/20 text-white border border-white/10">
+                🔥 MODE 2: PARTY
+              </span>
+              <h2 className="text-2xl font-black tracking-tight mt-4 mb-2">
+                Arcade Battle Royale
+              </h2>
+              <p className="text-xs text-rose-100/90 font-medium leading-relaxed">
+                สนามแข่งโค้ดแบบป่วนหน้าจอกดดัน 5 คน 3 รอบ
+              </p>
+            </div>
+
+            <div className="p-8 flex-1 flex flex-col justify-between">
+              <div className="space-y-4 mb-8">
+                <div className="flex items-start space-x-3">
+                  <div className="bg-rose-50 p-2 rounded-xl text-rose-600 mt-0.5">
+                    <Zap className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-700">ใช้ไอเทมขัดขวางเพื่อเอาตัวรอด</h3>
+                    <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
+                      ยิงหมอกบังจอ ล็อกปุ่ม Backspace หรือจ้าง AI คลี่คลายสถานการณ์ช่วยเหลือ
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start space-x-3">
+                  <div className="bg-rose-50 p-2 rounded-xl text-rose-600 mt-0.5">
+                    <Trophy className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-700">คัดคนออกและบริหารเงินให้ดี</h3>
+                    <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
+                      ซื้อไอเทมในร้านค้าเพื่อเตรียมแข่งต่อ และระวังตกรอบหากเหลือเงินน้อยที่สุด
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <button 
+                onClick={() => navigate('/matchmaking')}
+                className="w-full flex items-center justify-center space-x-2 py-4 bg-rose-600 hover:bg-rose-500 active:scale-[0.98] text-white rounded-2xl font-bold text-xs tracking-wider uppercase transition-all shadow-md shadow-rose-500/20"
+              >
+                <span>จับคู่แข่งขัน (Find Match)</span>
+                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+              </button>
+            </div>
+          </motion.div>
+
+        </div>
+
+        {/* 4. BOTTOM QUICK LINKS GRID */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+          
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-sm flex items-center space-x-4">
+            <div className="bg-amber-50 p-3 rounded-xl text-amber-600">
+              <Sparkles className="h-5 w-5" />
+            </div>
+            <div>
+              <span className="block text-xs font-bold text-slate-700">Custom Shop</span>
+              <span className="block text-[10px] text-slate-400 mt-0.5">ร้านค้าแฟชั่น</span>
             </div>
           </div>
-        </div>
-      ) : null}
 
-      <SettingsModal
-        open={showSettingsModal}
-        onClose={() => setShowSettingsModal(false)}
-        volume={volume}
-        onVolumeChange={handleVolumeChange}
-      />
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-sm flex items-center space-x-4">
+            <div className="bg-emerald-50 p-3 rounded-xl text-emerald-600">
+              <Trophy className="h-5 w-5" />
+            </div>
+            <div>
+              <span className="block text-xs font-bold text-slate-700">Leaderboard</span>
+              <span className="block text-[10px] text-slate-400 mt-0.5">ตารางเกียรติยศ</span>
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-sm flex items-center space-x-4">
+            <div className="bg-blue-50 p-3 rounded-xl text-blue-600">
+              <Activity className="h-5 w-5" />
+            </div>
+            <div>
+              <span className="block text-xs font-bold text-slate-700">Active Players</span>
+              <span className="block text-[10px] text-slate-400 mt-0.5">244 กำลังเล่นอยู่</span>
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-sm flex items-center space-x-4">
+            <div className="bg-indigo-50 p-3 rounded-xl text-indigo-600">
+              <BookOpen className="h-5 w-5" />
+            </div>
+            <div>
+              <span className="block text-xs font-bold text-slate-700">Developer Log</span>
+              <span className="block text-[10px] text-slate-400 mt-0.5">อัปเดตระบบ v2.0</span>
+            </div>
+          </div>
+
+        </div>
+
+      </main>
     </div>
   );
 }
