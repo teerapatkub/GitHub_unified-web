@@ -1,0 +1,8 @@
+[db.execute] Query failed: {
+  message: "Duplicate key name 'idx_learning_ai_tasks_user_mode_status'",
+  sql: '\n' +
+    '                CREATE INDEX idx_learning_ai_tasks_user_mode_status\n' +
+    '                ON learning_ai_tasks (user_id, mode, status)\n' +
+    '            ',
+  values: []
+}

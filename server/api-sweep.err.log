@@ -1,0 +1,22 @@
+[db.execute] Query failed: {
+  message: "Unknown column 'q_id' in 'field list'",
+  sql: '\n' +
+    '            SELECT question_id, option_text AS label, option_description AS description, `order`, NULL as level FROM survey_options\n' +
+    '            UNION ALL\n' +
+    '            SELECT q_id AS question_id, title AS label, NULL AS description, `order`, level_value AS level FROM level_config\n' +
+    '            ORDER BY `order` ASC\n' +
+    '        ',
+  values: []
+}
+❌ Survey Error: Unknown column 'q_id' in 'field list'
+[db.execute] Query failed: {
+  message: "Unknown column 'q_id' in 'field list'",
+  sql: '\n' +
+    '            SELECT question_id, option_text AS label, option_description AS description, `order`, NULL as level FROM survey_options\n' +
+    '            UNION ALL\n' +
+    '            SELECT q_id AS question_id, title AS label, NULL AS description, `order`, level_value AS level FROM level_config\n' +
+    '            ORDER BY `order` ASC\n' +
+    '        ',
+  values: []
+}
+❌ Survey Error: Unknown column 'q_id' in 'field list'
