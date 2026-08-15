@@ -2643,7 +2643,68 @@ function generateRoomCode() {
 // escapes rendered text so this isn't an XSS fix — it's the input-validation
 // pass CLAUDE.md requires at every point that accepts player input.
 function sanitizeName(raw, maxLen) {
-    return String(raw || '').replace(/[ -]/g, '').trim().slice(0, maxLen);
+    return String(raw || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, maxLen);
+}
+
+// Deterministic backup scorer for code readability, used when Claude is
+// unavailable (no API key, timeout, request error) so judging a round never
+// blocks on AI. Rewards short lines and some comments/docstring, penalizes
+// very long lines. Score 0-100.
+function heuristicReadabilityScore(code) {
+    const lines = String(code || '').split('\n');
+    const codeLines = lines.filter(l => l.trim().length > 0);
+    if (codeLines.length === 0) return 0;
+
+    const avgLen = codeLines.reduce((sum, l) => sum + l.length, 0) / codeLines.length;
+    const longLineRatio = codeLines.filter(l => l.length > 79).length / codeLines.length;
+    const hasComment = /#|"""|'''/.test(code);
+
+    let score = 70;
+    score -= Math.max(0, avgLen - 40) * 0.5;
+    score -= longLineRatio * 30;
+    score += hasComment ? 10 : 0;
+
+    return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+// Isolated Claude caller for Arcade round readability judging only, kept
+// entirely separate from callAiChat()/NVIDIA above (shared by Person 1/2's
+// AI helper, job generator, promotion exams) since this deliberately uses a
+// different provider. Always resolves (never throws) so a round can never
+// get stuck waiting on this — falls back to the heuristic scorer above on
+// any missing key, timeout, or API error.
+async function callClaudeForReadability(code) {
+    if (!process.env.ANTHROPIC_API_KEY) {
+        return { score: heuristicReadabilityScore(code), source: 'fallback' };
+    }
+    try {
+        const response = await axios.post(
+            'https://api.anthropic.com/v1/messages',
+            {
+                model: 'claude-haiku-4-5-20251001',
+                max_tokens: 200,
+                system: 'You are a strict but fair code reviewer grading Python code readability for a coding competition. Judge ONLY readability (naming, structure, consistency, comments) — never correctness. Respond with ONLY a JSON object, no markdown: {"score": <integer 0-100>, "reason": "<one short sentence in Thai>"}',
+                messages: [{ role: 'user', content: code || '' }]
+            },
+            {
+                headers: {
+                    'x-api-key': process.env.ANTHROPIC_API_KEY,
+                    'anthropic-version': '2023-06-01',
+                    'content-type': 'application/json'
+                },
+                timeout: 8000
+            }
+        );
+        const text = String(response.data?.content?.[0]?.text || '').trim();
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : text);
+        const score = Math.max(0, Math.min(100, Math.round(Number(parsed.score))));
+        if (Number.isNaN(score)) throw new Error('Invalid score from Claude response');
+        return { score, reason: parsed.reason, source: 'ai' };
+    } catch (err) {
+        console.error('⚠️ Claude readability judge failed, using fallback:', err.message);
+        return { score: heuristicReadabilityScore(code), source: 'fallback' };
+    }
 }
 
 // 1. Get joinable public rooms (status = 'WAITING')
@@ -3099,6 +3160,24 @@ app.get('/api/arcade/rooms/:id/effects', async (req, res) => {
         res.json({ success: true, effects: pending || [] });
     } catch (err) {
         console.error('❌ GET /api/arcade/rooms/:id/effects error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 13. Judge a submitted round's code for the readability leg of ranking.
+// Correctness (pass_count/total_count) is already checked client-side via
+// Pyodide before this is called — this endpoint only adds the readability
+// score, since that's the piece that needs a server-side AI call.
+app.post('/api/arcade/rooms/:id/judge-round', async (req, res) => {
+    try {
+        const { code } = req.body;
+        if (typeof code !== 'string') {
+            return res.status(400).json({ error: 'กรุณาส่งโค้ดที่จะตรวจ' });
+        }
+        const judged = await callClaudeForReadability(code.slice(0, 4000));
+        res.json({ success: true, readabilityScore: judged.score, source: judged.source });
+    } catch (err) {
+        console.error('❌ POST /api/arcade/rooms/:id/judge-round error:', err.message);
         res.status(500).json({ error: err.message });
     }
 });

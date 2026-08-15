@@ -23,6 +23,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import Editor from '@monaco-editor/react';
 import { botManager } from '../bot/botManager.js';
+import usePyodide from '../hooks/usePyodide.js';
 
 // --- Localized texts to prevent mixing languages ---
 const TRANSLATIONS = {
@@ -85,6 +86,7 @@ const TRANSLATIONS = {
     submitCode: "Submit solution",
     testsPassed: "All tests passed! Ready for submission.",
     codeEmpty: "Please write some code before submitting.",
+    judgingCode: "🧪 Judging your code...",
     pythonFile: "arcade_main.py",
     backToHub: "Exit to Hub",
     activeEffects: "Active Debuffs",
@@ -188,6 +190,7 @@ const TRANSLATIONS = {
     submitCode: "ส่งคำตอบ",
     testsPassed: "โค้ดผ่านการทดสอบทั้งหมด! กดส่งได้เลย",
     codeEmpty: "กรุณาเขียนโค้ดก่อนทำการส่งคำตอบ",
+    judgingCode: "🧪 กำลังตรวจโค้ด...",
     pythonFile: "arcade_main.py",
     backToHub: "ย้อนกลับหน้าหลัก",
     activeEffects: "เอฟเฟกต์ดีบัฟที่โดน",
@@ -258,6 +261,30 @@ const TASKS = {
   ROUND_3: { titleKey: "task3Title", descKey: "task3Desc", initialCode: "def two_sum(nums, target):\n    # Write your python code here\n    pass" }
 };
 
+// Test cases for real correctness checking, one set per static TASKS entry
+// above — kept in lockstep with those (not with the separate dbTasks/
+// getTaskForRound pool, which nothing currently wires into what's actually
+// shown/edited per round) so the function graded is always exactly the one
+// the player is looking at.
+const TASK_TEST_CASES = {
+  ROUND_1: {
+    functionName: 'fib',
+    cases: [{ input: [5], output: 5 }, { input: [7], output: 13 }, { input: [0], output: 0 }, { input: [1], output: 1 }]
+  },
+  ROUND_2: {
+    functionName: 'is_anagram',
+    cases: [
+      { input: ["listen", "silent"], output: true },
+      { input: ["hello", "world"], output: false },
+      { input: ["aabbcc", "abcabc"], output: true }
+    ]
+  },
+  ROUND_3: {
+    functionName: 'two_sum',
+    cases: [{ input: [[2, 7, 11, 15], 9], output: [0, 1] }, { input: [[3, 2, 4], 6], output: [1, 2] }]
+  }
+};
+
 const SHOP_ITEMS = [
   { id: 'inkFog', nameKey: 'inkFogName', price: 400, icon: '🌫️', descKey: 'inkFogDesc', type: 'attack' },
   { id: 'backspaceLock', nameKey: 'backspaceLockName', price: 500, icon: '🔒', descKey: 'backspaceLockDesc', type: 'attack' },
@@ -325,6 +352,15 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
   const [targetingItem, setTargetingItem] = useState(null);
   const [showGlossary, setShowGlossary] = useState(false);
   const [consoleOutput, setConsoleOutput] = useState("");
+  const [isGrading, setIsGrading] = useState(false);
+
+  // Reused as-is from Person 1's learning system (client/src/hooks/usePyodide.js)
+  // to run player code for real instead of the old fake "always PASS" checker.
+  const { status: pyodideStatus, runCode: runPyCode, clearOutput: clearPyOutput, setOnOutput: setPyOnOutput } = usePyodide();
+  const pyOutputRef = useRef([]);
+  useEffect(() => {
+    setPyOnOutput((lines) => { pyOutputRef.current = lines; });
+  }, [setPyOnOutput]);
 
   const timerRef = useRef(null);
   const editorRef = useRef(null);
@@ -697,13 +733,13 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
     return () => clearTimeout(timerRef.current);
   }, [timeLeft, phase, roomParticipants, playerState.name, setPlayerState, setOpponents, notify]);
 
-  const handlePhaseTransition = () => {
+  const handlePhaseTransition = async () => {
     switch (phase) {
       case PHASES.ROUND_1:
-        calculateRoundScores(1);
+        await evaluateRound(1);
         setPhase(PHASES.SHOP_1);
         setTimeLeft(ROUND_TIMES.SHOP_1);
-        rollShop(true); 
+        rollShop(true);
         notify(t('round1Over'), "info");
         break;
       case PHASES.SHOP_1:
@@ -714,11 +750,11 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
         notify(t('round2Start'), "warning");
         break;
       case PHASES.ROUND_2:
-        calculateRoundScores(2);
+        await evaluateRound(2);
         eliminateBottom(2);
         setPhase(PHASES.SHOP_2);
         setTimeLeft(ROUND_TIMES.SHOP_2);
-        rollShop(true); 
+        rollShop(true);
         break;
       case PHASES.SHOP_2:
         if (playerState.eliminated) {
@@ -732,7 +768,7 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
         }
         break;
       case PHASES.ROUND_3:
-        calculateRoundScores(3);
+        await evaluateRound(3);
         setPhase(PHASES.RESULT);
         notify(t('matchFinished'), "info");
         break;
@@ -741,28 +777,107 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
     }
   };
 
-  const calculateRoundScores = (roundNum) => {
-    const codeLen = playerState.code.replace(/\s/g, "").length;
-    let playerScoreGain = codeLen > 25 ? 500 : 100;
-    const cashGain = codeLen * 8;
-    
-    const isMultiplierActive = checkEffectActive('scoreMultiplier');
-    if (isMultiplierActive) {
-      playerScoreGain *= 2;
-    }
-    
-    setPlayerState(prev => ({
-      ...prev, 
-      score: prev.score + playerScoreGain,
-      cash: prev.cash + cashGain,
-      activeEffects: prev.activeEffects.filter(e => e.type !== 'scoreMultiplier')
-    }));
+  // Wraps the player's code in a small harness that calls the round's target
+  // function against each test case and prints a single marker line with a
+  // JSON array of booleans — parsed back out of Pyodide's stdout below.
+  // Test cases/inputs are base64-embedded so no quoting/escaping in the
+  // player's own code can ever break the harness itself.
+  const buildTestHarness = (code, functionName, cases) => {
+    const json = JSON.stringify(cases);
+    const b64 = btoa(unescape(encodeURIComponent(json)));
+    return `${code}\n\nimport json as __json, base64 as __b64\n__tc = __json.loads(__b64.b64decode("${b64}").decode("utf-8"))\n__results = []\nfor __case in __tc:\n    try:\n        __actual = ${functionName}(*__case["input"])\n        __results.append(bool(__actual == __case["output"]))\n    except Exception:\n        __results.append(False)\nprint("__ARCADE_JUDGE__" + __json.dumps(__results))\n`;
+  };
 
-    setOpponents(prev => prev.map(bot => ({
-      ...bot,
-      score: bot.eliminated ? bot.score : bot.score + Math.floor(Math.random() * 800),
-      cash: bot.eliminated ? bot.cash : bot.cash + Math.floor(Math.random() * 500)
-    })));
+  // Runs the player's real code through Pyodide (reusing Person 1's
+  // usePyodide hook as-is) and reads back how many test cases it passed.
+  // Never throws — an empty task, a not-yet-loaded runtime, a syntax error,
+  // or a missing marker line all just resolve to 0/total so a bad submission
+  // can't get the player stuck instead of simply scoring zero.
+  const runCorrectnessCheck = async (functionName, cases) => {
+    const totalCount = cases.length;
+    if (!functionName || totalCount === 0) return { passCount: 0, totalCount: 0 };
+    if (pyodideStatus !== 'ready') return { passCount: 0, totalCount };
+
+    clearPyOutput();
+    const harness = buildTestHarness(playerState.code, functionName, cases);
+    await runPyCode(harness);
+
+    const marker = '__ARCADE_JUDGE__';
+    const line = pyOutputRef.current.find(l => l.type === 'stdout' && l.text.startsWith(marker));
+    if (!line) return { passCount: 0, totalCount };
+    try {
+      const results = JSON.parse(line.text.slice(marker.length));
+      return { passCount: results.filter(Boolean).length, totalCount };
+    } catch {
+      return { passCount: 0, totalCount };
+    }
+  };
+
+  // Asks the server's Claude-based judge for a readability score. Falls back
+  // to a neutral default client-side if the request itself fails (the server
+  // endpoint already has its own AI-unavailable fallback — this is only for
+  // when the request can't even reach it).
+  const requestReadabilityScore = async (code) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/arcade/rooms/${currentRoom.room_id}/judge-round`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code })
+      });
+      const data = await res.json();
+      if (data.success && Number.isFinite(data.readabilityScore)) return data.readabilityScore;
+      return 50;
+    } catch {
+      return 50;
+    }
+  };
+
+  // Real per-round judging: runs the player's code against the round's test
+  // cases, asks the readability judge, and folds pass count / readability /
+  // time-used into one number that ranks strictly by priority order —
+  // passCount always dominates readability, which always dominates time —
+  // by giving each tier a value range the tier below it can never reach.
+  // Bots don't have real code, so their three components are synthesized
+  // from randomness scaled to the same task's test-case count, keeping them
+  // on the same scale as real players for eliminateBottom()'s comparison.
+  const evaluateRound = async (roundNum) => {
+    setIsGrading(true);
+    notify(t('judgingCode'), "info");
+    try {
+      const { functionName, cases } = TASK_TEST_CASES[`ROUND_${roundNum}`];
+      const roundDuration = ROUND_TIMES[`ROUND_${roundNum}`];
+      const timeUsedSeconds = Math.max(0, Math.min(roundDuration, roundDuration - timeLeft));
+
+      const { passCount, totalCount } = await runCorrectnessCheck(functionName, cases);
+      const readabilityScore = await requestReadabilityScore(playerState.code);
+
+      const isMultiplierActive = checkEffectActive('scoreMultiplier');
+      const timeBonus = roundDuration - timeUsedSeconds;
+      let roundScore = passCount * 10_000_000 + readabilityScore * 10_000 + timeBonus;
+      if (isMultiplierActive) roundScore *= 2;
+      const cashGain = passCount * 150 + Math.floor(readabilityScore * 2);
+
+      setPlayerState(prev => ({
+        ...prev,
+        score: prev.score + roundScore,
+        cash: prev.cash + cashGain,
+        activeEffects: prev.activeEffects.filter(e => e.type !== 'scoreMultiplier')
+      }));
+
+      setOpponents(prev => prev.map(bot => {
+        if (bot.eliminated) return bot;
+        const botPassCount = totalCount === 0 ? 0 : Math.min(totalCount, Math.max(0, Math.round(totalCount * (0.35 + Math.random() * 0.65))));
+        const botReadability = 40 + Math.floor(Math.random() * 50);
+        const botTimeUsed = Math.floor(Math.random() * roundDuration);
+        const botScoreGain = botPassCount * 10_000_000 + botReadability * 10_000 + (roundDuration - botTimeUsed);
+        const botCashGain = botPassCount * 150 + Math.floor(botReadability * 2);
+        return { ...bot, score: bot.score + botScoreGain, cash: bot.cash + botCashGain };
+      }));
+
+      notify(`✅ ${passCount}/${totalCount} tests | 📖 ${readabilityScore}/100 | ⏱ ${timeUsedSeconds}s`, "success");
+    } finally {
+      setIsGrading(false);
+    }
   };
 
   const eliminateBottom = (count) => {
@@ -1053,6 +1168,7 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
   };
 
   const handleManualSubmit = () => {
+    if (isGrading) return;
     if (playerState.code.trim().length === 0) {
       notify(t('codeEmpty'), "error");
       return;
@@ -1826,11 +1942,12 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
                   {t('runTests')}
                 </button>
                 
-                <button 
+                <button
                   onClick={handleManualSubmit}
-                  className="px-8 py-2.5 bg-rose-600 hover:bg-rose-500 active:scale-[0.98] text-white rounded-xl text-xs font-black transition-all shadow-md shadow-rose-500/10 hover:scale-[1.02]"
+                  disabled={isGrading}
+                  className="px-8 py-2.5 bg-rose-600 hover:bg-rose-500 active:scale-[0.98] text-white rounded-xl text-xs font-black transition-all shadow-md shadow-rose-500/10 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
                 >
-                  {t('submitCode')}
+                  {isGrading ? t('judgingCode') : t('submitCode')}
                 </button>
               </div>
             </div>
