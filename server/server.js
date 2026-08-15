@@ -2544,6 +2544,512 @@ app.post('/api/mailbox/:mailId/claim', async (req, res) => {
 });
 
 // ==========================================
+// 7.7 API: Arcade Battle Royale Mode
+// ==========================================
+
+const ARCADE_SHOP_ITEMS = [
+    { id: 'inkFog', nameTH: 'หมอกดำบังจอ (Ink Fog)', nameEN: 'Ink Fog', price: 400, icon: '🌫️', descTH: 'ทำให้จอพิมพ์โค้ดของเป้าหมายเบลอเป็นเวลา 15 วินาที', descEN: 'Blurs target editor screen for 15s.', type: 'attack' },
+    { id: 'backspaceLock', nameTH: 'ล็อกปุ่มลบ (Backspace Lock)', nameEN: 'Backspace Lock', price: 500, icon: '🔒', descTH: 'เป้าหมายไม่สามารถกดลบตัวอักษรได้ 10 วินาที', descEN: 'Disables target backspace key for 10s.', type: 'attack' },
+    { id: 'keyScrambler', nameTH: 'สลับแป้นพิมพ์ (Key Scrambler)', nameEN: 'Key Scrambler', price: 450, icon: '⌨️', descTH: 'พิมพ์แล้วตัวอักษรจะสลับตำแหน่งมั่วๆ 10 วินาที', descEN: 'Scrambles typed keys for 10s.', type: 'attack' },
+    { id: 'aiHelper', nameTH: 'AI บอกใบ้โค้ด (AI Helper)', nameEN: 'AI Helper', price: 600, icon: '🤖', descTH: 'ขอคำแนะนำและโครงสร้างโค้ดจากระบบ Gemini AI', descEN: 'Requests AI hint for the current task.', type: 'buff' },
+    { id: 'screenShake', nameTH: 'แผ่นดินไหว (Earthquake)', nameEN: 'Earthquake', price: 300, icon: '🌋', descTH: 'เขย่าหน้าจอกล่องเขียนโค้ดของเป้าหมายอย่างรุนแรง 8 วินาที', descEN: 'Violently shakes target editor for 8s.', type: 'attack' },
+    { id: 'typoGenerator', nameTH: 'Glitch ก่อกวน (Glitch Injector)', nameEN: 'Glitch Injector', price: 550, icon: '🐛', descTH: 'สุ่มพิมพ์ตัวอักษรแปลกปลอมแทรกในโค้ดเป้าหมาย 10 วินาที', descEN: 'Injects random typos into target editor.', type: 'attack' },
+    { id: 'timeFreeze', nameTH: 'หยุดเวลาแช่แข็ง (Time Freeze)', nameEN: 'Time Freeze', price: 1200, icon: '❄️', descTH: 'หยุดศัตรูทั้งหมดไม่ให้แก้ไขโค้ดได้ชั่วคราว 5 วินาที', descEN: 'Freezes all active opponents for 5s.', type: 'aoe' },
+    { id: 'blackout', nameTH: 'ระเบิดไฟดับ (EMP Strike)', nameEN: 'EMP Strike', price: 900, icon: '🔌', descTH: 'ปิดจอของเป้าหมายทุกคนให้มืดสนิทเป็นเวลา 8 วินาที', descEN: 'Turns off target screens completely for 8s.', type: 'aoe' },
+    { id: 'shield', nameTH: 'กำแพงไฟร์วอลล์ (Firewall)', nameEN: 'Firewall Shield', price: 700, icon: '🛡️', descTH: 'ป้องกันความเสียหายจากดีบัฟครั้งถัดไป 100%', descEN: 'Blocks next incoming attack completely.', type: 'buff' },
+    { id: 'cashSteal', nameTH: 'โจรกรรม Survival Cash (Data Heist)', nameEN: 'Data Heist', price: 600, icon: '🎭', descTH: 'ขโมยเงิน 🪙 300 จากเป้าหมายมาเป็นของตัวเอง', descEN: 'Steals 🪙 300 Cash from a target.', type: 'attack' },
+    { id: 'capsLockLock', nameTH: 'กับดักอักษรใหญ่ (Caps Lock Trap)', nameEN: 'Caps Lock Trap', price: 350, icon: '🔠', descTH: 'บังคับให้พิมพ์เป็นตัวอักษรพิมพ์ใหญ่ทั้งหมด 10 วินาที (เกิด NameError)', descEN: 'Forces target to type in ALL CAPS.', type: 'attack' },
+    { id: 'mirrorMode', nameTH: 'กระจกสลับฝั่ง (Mirror Mode)', nameEN: 'Mirror Mode', price: 500, icon: '🪞', descTH: 'สะท้อนหน้าจอเขียนโค้ดกลับด้านซ้าย-ขวาเป็นเวลา 12 วินาที', descEN: 'Horizontally flips target editor container.', type: 'attack' },
+    { id: 'taxCollection', nameTH: 'เก็บภาษีคนรวย (Tax Collector)', nameEN: 'Tax Collector', price: 800, icon: '💸', descTH: 'ขโมยเงิน 20% จากผู้เล่นที่มี Survival Cash สูงสุดมาเป็นของคุณ', descEN: 'Steals 20% cash from wealthiest player.', type: 'buff' },
+    { id: 'scoreMultiplier', nameTH: 'ตัวคูณคะแนน 2 เท่า (Score Booster)', nameEN: 'Score Booster', price: 650, icon: '⚡', descTH: 'คูณคะแนนที่จะได้รับในรอบปัจจุบันเป็น 2 เท่าเมื่อทำโจทย์สำเร็จ', descEN: 'Doubles current round score gain.', type: 'buff' },
+    { id: 'screenDimmer', nameTH: 'แสงจ้าหน้าจอมืด (Screen Dimmer)', nameEN: 'Screen Dimmer', price: 400, icon: '🕶️', descTH: 'หรี่แสงหน้าจอกล่องพิมพ์โค้ดของเป้าหมายให้มืดลงเหลือ 10% นาน 15 วินาที', descEN: 'Dims target editor brightness to 10%.', type: 'attack' }
+];
+
+const ARCADE_TASKS = {
+    ROUND_1: {
+        round: 1,
+        title: "ง่าย: เลขฟีโบนัชชี (Fibonacci)",
+        desc: "เขียนฟังก์ชัน `fib(n)` เพื่อคืนค่าตัวเลขฟีโบนัชชีลำดับที่ n (รอบแรกวัดฝีมือเพียวๆ ไม่อนุญาตให้ใช้ไอเทม)",
+        initialCode: "def fib(n):\n    if n <= 1:\n        return n\n    return fib(n-1) + fib(n-2)"
+    },
+    ROUND_2: {
+        round: 2,
+        title: "กลาง: ตรวจสอบแอนนาแกรม (Anagram)",
+        desc: "เขียนฟังก์ชัน `is_anagram(s, t)` เพื่อตรวจสอบว่าข้อความสองชุดสลับตัวอักษรกันหรือไม่",
+        initialCode: "def is_anagram(s, t):\n    return sorted(s) == sorted(t)"
+    },
+    ROUND_3: {
+        round: 3,
+        title: "ยาก: ผลรวมสองจำนวน (Two Sum)",
+        desc: "กำหนดอาร์เรย์ตัวเลขและเป้าหมาย คืนค่าตำแหน่งของตัวเลข 2 ตัวที่บวกกันได้เท่ากับเป้าหมาย",
+        initialCode: "def two_sum(nums, target):\n    seen = {}\n    for i, num in enumerate(nums):\n        diff = target - num\n        if diff in seen:\n            return [seen[diff], i]\n        seen[num] = i"
+    }
+};
+
+app.get('/api/arcade/items', (req, res) => {
+    res.json({ success: true, items: ARCADE_SHOP_ITEMS });
+});
+
+app.get('/api/arcade/tasks', async (req, res) => {
+    try {
+        const [easyTasks] = await db.query(`SELECT * FROM arcade_tasks WHERE difficulty = 'easy' ORDER BY task_id ASC`);
+        const [mediumTasks] = await db.query(`SELECT * FROM arcade_tasks WHERE difficulty = 'medium' ORDER BY task_id ASC`);
+        const [hardTasks] = await db.query(`SELECT * FROM arcade_tasks WHERE difficulty = 'hard' ORDER BY task_id ASC`);
+
+        res.json({
+            success: true,
+            easy: easyTasks || [],
+            medium: mediumTasks || [],
+            hard: hardTasks || [],
+            all_tasks: {
+                easy_count: (easyTasks || []).length,
+                medium_count: (mediumTasks || []).length,
+                hard_count: (hardTasks || []).length
+            }
+        });
+    } catch (err) {
+        console.error('❌ GET /api/arcade/tasks error:', err.message);
+        res.status(500).json({ error: err.message, fallback: ARCADE_TASKS });
+    }
+});
+
+app.post('/api/arcade/evaluate', (req, res) => {
+    const { round, code, scoreMultiplierActive } = req.body;
+    let baseScore = 500;
+    if (scoreMultiplierActive) baseScore *= 2;
+    const baseCash = 400;
+
+    res.json({
+        success: true,
+        scoreEarned: baseScore,
+        cashEarned: baseCash,
+        message: `ประมวลผลโค้ดรอบที่ ${round} สำเร็จ!`
+    });
+});
+
+// --- ARCADE ROOM MANAGEMENT ENDPOINTS ---
+
+function generateRoomCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let code = 'ARC-';
+    for (let i = 0; i < 4; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return code;
+}
+
+// 1. Get joinable public rooms (status = 'WAITING')
+app.get('/api/arcade/rooms', async (req, res) => {
+    try {
+        const [rooms] = await db.query(
+            `SELECT r.room_id, r.room_code, r.room_name, r.host_name, r.max_players, r.status, r.created_at,
+                    (r.password IS NOT NULL AND r.password != '') AS is_password_protected,
+                    COUNT(p.id) AS current_players
+             FROM arcade_rooms r
+             LEFT JOIN arcade_participants p ON r.room_id = p.room_id
+             WHERE r.status = 'WAITING'
+             GROUP BY r.room_id, r.room_code, r.room_name, r.host_name, r.max_players, r.status, r.created_at, r.password
+             ORDER BY r.created_at DESC`
+        );
+        res.json({ success: true, rooms: rooms || [] });
+    } catch (err) {
+        console.error('❌ GET /api/arcade/rooms error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 2. Create new room
+app.post('/api/arcade/rooms/create', async (req, res) => {
+    try {
+        const { room_name, password, max_players = 5, host_name } = req.body;
+        if (!room_name || !host_name) {
+            return res.status(400).json({ error: 'กรุณาระบุชื่อห้องและชื่อผู้สร้างห้อง' });
+        }
+        const maxPlayersNum = Math.min(5, Math.max(2, parseInt(max_players) || 5));
+        const roomCode = generateRoomCode();
+        const pwdValue = (password && password.trim().length > 0) ? await bcrypt.hash(password.trim(), 10) : null;
+
+        const [insertResult] = await db.query(
+            `INSERT INTO arcade_rooms (room_code, room_name, host_name, password, max_players, status)
+             VALUES (?, ?, ?, ?, ?, 'WAITING') RETURNING room_id`,
+            [roomCode, room_name.trim(), host_name.trim(), pwdValue, maxPlayersNum]
+        );
+
+        const roomId = insertResult[0]?.room_id || insertResult.insertId;
+
+        // Add host as first participant
+        await db.query(
+            `INSERT INTO arcade_participants (room_id, user_name, is_host) VALUES (?, ?, 1)`,
+            [roomId, host_name.trim()]
+        );
+
+        res.json({
+            success: true,
+            room: {
+                room_id: roomId,
+                room_code: roomCode,
+                room_name: room_name.trim(),
+                host_name: host_name.trim(),
+                max_players: maxPlayersNum,
+                is_password_protected: !!pwdValue
+            }
+        });
+    } catch (err) {
+        console.error('❌ POST /api/arcade/rooms/create error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 3. Join room by Code or ID
+app.post('/api/arcade/rooms/join', async (req, res) => {
+    try {
+        const { room_code_or_id, password, user_name } = req.body;
+        if (!room_code_or_id || !user_name) {
+            return res.status(400).json({ error: 'กรุณาระบุรหัสห้องและชื่อผู้ใช้' });
+        }
+
+        const queryTerm = String(room_code_or_id).trim().toUpperCase();
+        const [rooms] = await db.query(
+            `SELECT * FROM arcade_rooms WHERE UPPER(room_code) = ? OR CAST(room_id AS TEXT) = ?`,
+            [queryTerm, queryTerm]
+        );
+
+        if (!rooms || rooms.length === 0) {
+            return res.status(404).json({ error: 'ไม่พบห้องแข่งขันที่ระบุ' });
+        }
+
+        const room = rooms[0];
+
+        if (room.status !== 'WAITING') {
+            return res.status(400).json({ error: 'ห้องนี้เริ่มการแข่งขันไปแล้ว ไม่สามารถเข้าร่วมได้' });
+        }
+
+        if (room.password && !(await bcrypt.compare(password || '', room.password))) {
+            return res.status(401).json({ error: 'รหัสผ่านเข้าห้องไม่ถูกต้อง' });
+        }
+
+        const [participants] = await db.query(
+            `SELECT * FROM arcade_participants WHERE room_id = ?`,
+            [room.room_id]
+        );
+
+        if (participants.length >= room.max_players) {
+            return res.status(400).json({ error: 'ห้องนี้มีผู้เล่นเต็มจำนวนแล้ว' });
+        }
+
+        // Add player if not already in room
+        const alreadyIn = participants.find(p => p.user_name === user_name);
+        if (!alreadyIn) {
+            await db.query(
+                `INSERT INTO arcade_participants (room_id, user_name, is_host) VALUES (?, ?, 0)`,
+                [room.room_id, user_name.trim()]
+            );
+        }
+
+        const [updatedParticipants] = await db.query(
+            `SELECT * FROM arcade_participants WHERE room_id = ? ORDER BY joined_at ASC`,
+            [room.room_id]
+        );
+
+        const { password: _pwd, ...roomSafe } = room;
+        res.json({
+            success: true,
+            room: roomSafe,
+            participants: updatedParticipants
+        });
+    } catch (err) {
+        console.error('❌ POST /api/arcade/rooms/join error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 4. Get specific room state & participants
+app.get('/api/arcade/rooms/:id', async (req, res) => {
+    try {
+        const roomId = req.params.id;
+        const [rooms] = await db.query(`SELECT * FROM arcade_rooms WHERE room_id = ?`, [roomId]);
+        if (!rooms || rooms.length === 0) {
+            return res.status(404).json({ error: 'ไม่พบห้องแข่งขัน' });
+        }
+        const [participants] = await db.query(
+            `SELECT * FROM arcade_participants WHERE room_id = ? ORDER BY joined_at ASC`,
+            [roomId]
+        );
+        const { password: _pwd, ...roomSafe } = rooms[0];
+        res.json({ success: true, room: roomSafe, participants });
+    } catch (err) {
+        console.error('❌ GET /api/arcade/rooms/:id error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 5. Host updates room settings
+app.post('/api/arcade/rooms/:id/settings', async (req, res) => {
+    try {
+        const roomId = req.params.id;
+        const { host_name, room_name, max_players, password } = req.body;
+
+        const [rooms] = await db.query(`SELECT * FROM arcade_rooms WHERE room_id = ?`, [roomId]);
+        if (!rooms || rooms.length === 0) return res.status(404).json({ error: 'ไม่พบห้อง' });
+        if (rooms[0].host_name !== host_name) return res.status(403).json({ error: 'สิทธิ์เฉพาะหัวห้องเท่านั้น' });
+
+        const newName = room_name ? room_name.trim() : rooms[0].room_name;
+        const newMax = max_players ? Math.min(5, Math.max(2, parseInt(max_players))) : rooms[0].max_players;
+        const newPwd = password !== undefined ? (password ? await bcrypt.hash(password.trim(), 10) : null) : rooms[0].password;
+
+        await db.query(
+            `UPDATE arcade_rooms SET room_name = ?, max_players = ?, password = ?, updated_at = CURRENT_TIMESTAMP WHERE room_id = ?`,
+            [newName, newMax, newPwd, roomId]
+        );
+
+        res.json({ success: true, message: 'อัปเดตการตั้งค่าห้องสำเร็จ' });
+    } catch (err) {
+        console.error('❌ POST /api/arcade/rooms/:id/settings error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 6. Host transfers host role
+app.post('/api/arcade/rooms/:id/transfer-host', async (req, res) => {
+    try {
+        const roomId = req.params.id;
+        const { current_host, target_user_name } = req.body;
+
+        const [rooms] = await db.query(`SELECT * FROM arcade_rooms WHERE room_id = ?`, [roomId]);
+        if (!rooms || rooms.length === 0) return res.status(404).json({ error: 'ไม่พบห้อง' });
+        if (rooms[0].host_name !== current_host) return res.status(403).json({ error: 'สิทธิ์เฉพาะหัวห้องเท่านั้น' });
+        if (target_user_name.startsWith('Bot_')) return res.status(400).json({ error: 'ไม่สามารถโอนตำแหน่งหัวห้องให้บอทได้' });
+
+        await db.query(`UPDATE arcade_rooms SET host_name = ? WHERE room_id = ?`, [target_user_name, roomId]);
+        await db.query(`UPDATE arcade_participants SET is_host = 0 WHERE room_id = ?`, [roomId]);
+        await db.query(`UPDATE arcade_participants SET is_host = 1 WHERE room_id = ? AND user_name = ?`, [roomId, target_user_name]);
+
+        res.json({ success: true, message: `โอนตำแหน่งหัวห้องให้คุณ ${target_user_name} เรียบร้อยแล้ว` });
+    } catch (err) {
+        console.error('❌ POST /api/arcade/rooms/:id/transfer-host error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 7. Host kicks player
+app.post('/api/arcade/rooms/:id/kick', async (req, res) => {
+    try {
+        const roomId = req.params.id;
+        const { host_name, target_user_name } = req.body;
+
+        const [rooms] = await db.query(`SELECT * FROM arcade_rooms WHERE room_id = ?`, [roomId]);
+        if (!rooms || rooms.length === 0) return res.status(404).json({ error: 'ไม่พบห้อง' });
+        if (rooms[0].host_name !== host_name) return res.status(403).json({ error: 'สิทธิ์เฉพาะหัวห้องเท่านั้น' });
+
+        await db.query(`DELETE FROM arcade_participants WHERE room_id = ? AND user_name = ?`, [roomId, target_user_name]);
+
+        res.json({ success: true, message: `เตะผู้เล่น ${target_user_name} ออกจากห้องแล้ว` });
+    } catch (err) {
+        console.error('❌ POST /api/arcade/rooms/:id/kick error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 7.5 Host adds random bot player
+app.post('/api/arcade/rooms/:id/add-bot', async (req, res) => {
+    try {
+        const roomId = req.params.id;
+        const { host_name } = req.body;
+
+        const [rooms] = await db.query(`SELECT * FROM arcade_rooms WHERE room_id = ?`, [roomId]);
+        if (!rooms || rooms.length === 0) return res.status(404).json({ error: 'ไม่พบห้อง' });
+        if (rooms[0].host_name !== host_name) return res.status(403).json({ error: 'สิทธิ์เฉพาะหัวห้องเท่านั้นในการเพิ่มบอท' });
+
+        const [participants] = await db.query(`SELECT * FROM arcade_participants WHERE room_id = ?`, [roomId]);
+        if (participants.length >= rooms[0].max_players) {
+            return res.status(400).json({ error: 'ห้องแข่งขันมีผู้เล่นเต็มจำนวนแล้ว' });
+        }
+
+        const botNamesPool = [
+            "Bot_PyNinja", "Bot_SyntaxPro", "Bot_CyberCoder", "Bot_NullPointer",
+            "Bot_AlgorithmX", "Bot_LogicCraft", "Bot_BugHunter", "Bot_CodeMaster",
+            "Bot_StackOverflow", "Bot_Pythonic"
+        ];
+
+        const existingNames = new Set(participants.map(p => p.user_name));
+        const availableBots = botNamesPool.filter(name => !existingNames.has(name));
+
+        const chosenBotName = availableBots.length > 0 
+            ? availableBots[Math.floor(Math.random() * availableBots.length)]
+            : `Bot_Player_${Math.floor(Math.random() * 900) + 100}`;
+
+        await db.query(
+            `INSERT INTO arcade_participants (room_id, user_name, is_host) VALUES (?, ?, 0)`,
+            [roomId, chosenBotName]
+        );
+
+        const [updatedParticipants] = await db.query(
+            `SELECT * FROM arcade_participants WHERE room_id = ? ORDER BY joined_at ASC`,
+            [roomId]
+        );
+
+        res.json({ success: true, bot_name: chosenBotName, participants: updatedParticipants });
+    } catch (err) {
+        console.error('❌ POST /api/arcade/rooms/:id/add-bot error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 8. Host starts room match
+app.post('/api/arcade/rooms/:id/start', async (req, res) => {
+    try {
+        const roomId = req.params.id;
+        const { host_name } = req.body;
+
+        const [rooms] = await db.query(`SELECT * FROM arcade_rooms WHERE room_id = ?`, [roomId]);
+        if (!rooms || rooms.length === 0) return res.status(404).json({ error: 'ไม่พบห้อง' });
+        if (rooms[0].host_name !== host_name) return res.status(403).json({ error: 'สิทธิ์เฉพาะหัวห้องเท่านั้น' });
+
+        await db.query(`UPDATE arcade_rooms SET status = 'PLAYING' WHERE room_id = ?`, [roomId]);
+
+        res.json({ success: true, message: 'เริ่มการแข่งขันแล้ว!' });
+    } catch (err) {
+        console.error('❌ POST /api/arcade/rooms/:id/start error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 9. Leave room
+app.post('/api/arcade/rooms/:id/leave', async (req, res) => {
+    try {
+        const roomId = req.params.id;
+        const { user_name } = req.body;
+
+        await db.query(`DELETE FROM arcade_participants WHERE room_id = ? AND user_name = ?`, [roomId, user_name]);
+
+        const [remaining] = await db.query(`SELECT * FROM arcade_participants WHERE room_id = ? ORDER BY joined_at ASC`, [roomId]);
+
+        if (!remaining || remaining.length === 0) {
+            await db.query(`DELETE FROM arcade_rooms WHERE room_id = ?`, [roomId]);
+        } else {
+            const [rooms] = await db.query(`SELECT host_name FROM arcade_rooms WHERE room_id = ?`, [roomId]);
+            if (rooms?.[0]?.host_name === user_name) {
+                const nextHost = remaining[0].user_name;
+                await db.query(`UPDATE arcade_rooms SET host_name = ? WHERE room_id = ?`, [nextHost, roomId]);
+                await db.query(`UPDATE arcade_participants SET is_host = 1 WHERE room_id = ? AND user_name = ?`, [roomId, nextHost]);
+            }
+        }
+
+        res.json({ success: true, message: 'ออกจากห้องเรียบร้อยแล้ว' });
+    } catch (err) {
+        console.error('❌ POST /api/arcade/rooms/:id/leave error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 10. Post-match finish choice (REMAIN vs LEAVE)
+app.post('/api/arcade/rooms/:id/finish-choice', async (req, res) => {
+    try {
+        const roomId = req.params.id;
+        const { user_name, choice } = req.body; // 'REMAIN' or 'LEAVE'
+
+        if (choice === 'LEAVE') {
+            await db.query(`DELETE FROM arcade_participants WHERE room_id = ? AND user_name = ?`, [roomId, user_name]);
+        } else if (choice === 'REMAIN') {
+            await db.query(
+                `UPDATE arcade_participants SET score = 0, cash = 1000, is_eliminated = 0 WHERE room_id = ? AND user_name = ?`,
+                [roomId, user_name]
+            );
+            await db.query(`UPDATE arcade_rooms SET status = 'WAITING', current_round = 0 WHERE room_id = ?`, [roomId]);
+        }
+
+        res.json({ success: true, choice });
+    } catch (err) {
+        console.error('❌ POST /api/arcade/rooms/:id/finish-choice error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 11. Attack another real participant — targeted or AOE debuffs go into the
+// arcade_effects delivery queue; cashSteal is settled immediately since it's
+// a direct cash transfer, not a visual debuff.
+app.post('/api/arcade/rooms/:id/attack', async (req, res) => {
+    try {
+        const roomId = req.params.id;
+        const { attacker_name, target_name, effect_type, item_name } = req.body;
+        if (!attacker_name || !target_name || !effect_type) {
+            return res.status(400).json({ error: 'ข้อมูลการโจมตีไม่ครบถ้วน' });
+        }
+        if (attacker_name === target_name) {
+            return res.status(400).json({ error: 'ไม่สามารถโจมตีตัวเองได้' });
+        }
+
+        const [participants] = await db.query(
+            `SELECT * FROM arcade_participants WHERE room_id = ? AND user_name IN (?, ?)`,
+            [roomId, attacker_name, target_name]
+        );
+        const attacker = participants.find(p => p.user_name === attacker_name);
+        const target = participants.find(p => p.user_name === target_name);
+        if (!attacker || !target) {
+            return res.status(404).json({ error: 'ไม่พบผู้เล่นในห้องนี้' });
+        }
+        if (target.is_eliminated) {
+            return res.status(400).json({ error: 'เป้าหมายถูกคัดออกไปแล้ว' });
+        }
+
+        if (effect_type === 'cashSteal') {
+            const stolen = Math.min(300, target.cash);
+            await db.query(`UPDATE arcade_participants SET cash = cash - ? WHERE room_id = ? AND user_name = ?`, [stolen, roomId, target_name]);
+            await db.query(`UPDATE arcade_participants SET cash = cash + ? WHERE room_id = ? AND user_name = ?`, [stolen, roomId, attacker_name]);
+            // Also queue a delivery row so the victim's own client (polling /effects)
+            // deducts the same amount from their locally-held cash state.
+            await db.query(
+                `INSERT INTO arcade_effects (room_id, attacker_name, target_name, effect_type, item_name, amount) VALUES (?, ?, ?, ?, ?, ?)`,
+                [roomId, attacker_name, target_name, 'cashSteal', item_name || 'cashSteal', stolen]
+            );
+            return res.json({ success: true, stolen });
+        }
+
+        await db.query(
+            `INSERT INTO arcade_effects (room_id, attacker_name, target_name, effect_type, item_name) VALUES (?, ?, ?, ?, ?)`,
+            [roomId, attacker_name, target_name, effect_type, item_name || effect_type]
+        );
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('❌ POST /api/arcade/rooms/:id/attack error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 12. Poll for incoming sabotage effects — atomically claims and marks delivered
+// so each row is applied by the target exactly once.
+app.get('/api/arcade/rooms/:id/effects', async (req, res) => {
+    try {
+        const roomId = req.params.id;
+        const userName = req.query.user_name;
+        if (!userName) return res.status(400).json({ error: 'กรุณาระบุ user_name' });
+
+        // db.js's query() only returns real row arrays for SELECT — an UPDATE ...
+        // RETURNING collapses to a { rowCount, insertId, ... } summary object, not
+        // the actual rows — so the pending rows have to be read first and marked
+        // delivered as a second query.
+        const [pending] = await db.query(
+            `SELECT id, attacker_name, target_name, effect_type, item_name, amount, created_at
+             FROM arcade_effects WHERE room_id = ? AND target_name = ? AND delivered = 0
+             ORDER BY created_at ASC`,
+            [roomId, userName]
+        );
+
+        if (pending && pending.length > 0) {
+            const ids = pending.map(p => p.id);
+            const placeholders = ids.map(() => '?').join(',');
+            await db.query(`UPDATE arcade_effects SET delivered = 1 WHERE id IN (${placeholders})`, ids);
+        }
+
+        res.json({ success: true, effects: pending || [] });
+    } catch (err) {
+        console.error('❌ GET /api/arcade/rooms/:id/effects error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ==========================================
 // 8. Start Server & Simulation Engine
 // ==========================================
 

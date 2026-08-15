@@ -1,0 +1,15 @@
+Task: Integrate Nvidia GLM-5.2 OpenAI-Compatible API Endpoint
+Date: 2026-07-04
+Time: 12:35 (Run #13)
+
+Description:
+1. Integrated Nvidia GLM-5.2:
+   - Root Cause: Prompted by the user to use the newly provided Nvidia GLM-5.2 API key and OpenAI-compatible completions endpoint.
+   - Solution: Instead of introducing another npm package dependency (openai), we wrapped the endpoint call natively inside `callAiChat` using the already imported and functional `axios` library.
+   - Details:
+     * Pointed requests to baseURL: 'https://integrate.api.nvidia.com/v1/chat/completions'.
+     * Configured headers with the new Authorization key ('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').
+     * Configured model to use: 'z-ai/glm-5.2'.
+     * Cleaned up the deprecated `@google/generative-ai` package import from server.js.
+     * Replaced all previous AI caller references with `callAiChat`.
+     * Tested that the server boots cleanly and is fully ready to grade and generate quests.

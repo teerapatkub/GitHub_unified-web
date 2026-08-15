@@ -1,0 +1,14 @@
+Task: Create Test User Account Directly in PostgreSQL
+Date: 2026-07-04
+Time: 13:01 (Run #15)
+
+Description:
+1. Created Test User Account test1:
+   - Credentials:
+     * Username: test1
+     * Password: test (hashed securely using bcryptjs with 10 salt rounds)
+     * Email: test1@example.com
+     * Role: student
+     * Level: 1
+     * Reputation: 10
+   - Execution: Ran a backend database query to insert this record directly into the `users` table, which successfully assigned user_id 18.

@@ -1,0 +1,16 @@
+Task: Fix Database Connection Bug (database "FullProjectPython" does not exist)
+Date: 2026-07-04
+Time: 11:22 (Run #5)
+
+Description:
+Diagnosed and resolved database connection failure shown in browser alert dialog.
+
+Cause:
+1. The `.env` file in the user's active workspace `full_web/unified-web/server/.env` was configured to target the database name `FullProjectPython`.
+2. Inspection of the local PostgreSQL server showed that no database named `FullProjectPython` exists; all simulation tables and player data exist in the default database named `postgres`.
+3. Pre-existing environment variables in the user's terminal environment shell could override values in `.env` during Node execution.
+
+Fixes Implemented:
+1. Updated `full_web/unified-web/server/.env` to configure `PGDATABASE=postgres`.
+2. Modified `server/server.js` and `full_web/unified-web/server/server.js` to explicitly load `.env` from its own directory with `{ override: true }` to enforce loading configurations correctly and prevent terminal variables pollution.
+3. Verified the server successfully boots and logs `Connected to PostgreSQL database "postgres"`.

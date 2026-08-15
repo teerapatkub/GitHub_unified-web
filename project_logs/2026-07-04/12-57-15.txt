@@ -1,0 +1,14 @@
+Task: Resolve Stale Session, Save Slot Interactions & Quest Seeding Issues
+Date: 2026-07-04
+Time: 12:57 (Run #14)
+
+Description:
+1. Fixed Profile 404 & Stale Session Loop:
+   - Root Cause: Because the player had logged in previously during the MySQL database session, their browser local storage had cached `{"user_id": 1}` for the user 'Tees'. After migrating to PostgreSQL, user 1 did not exist, leading to continuous `/api/user/profile/1` 404 errors. This invalid user session broke the play/new game slot buttons and prevented any jobs from loading because no playthrough or quests were associated with user 1 in the new database.
+   - Solution:
+     * Modified active workspace client App.jsx: If a profile fetch returns a 404, it immediately removes 'user' from localStorage, clears state, and redirects the player to the login screen.
+     * Normalized App.jsx and other components to support fallback key checks (user_id || id).
+     * Modified server /login endpoint to include user_id inside the nested user object response payload.
+
+2. Verified AI daily Quest Seeding:
+   - Tested generating daily jobs with the new Nvidia GLM-5.2 completions API. Confirmed it generates and seeds 3 jobs successfully with no JSON mapping errors in PostgreSQL.

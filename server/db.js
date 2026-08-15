@@ -425,6 +425,123 @@ const db = {
     try {
         const [rows] = await db.query('SELECT current_database() AS database, current_user AS user, version() AS version');
         console.log(`เชื่อมต่อ PostgreSQL สำเร็จ: ${rows[0].database} (${rows[0].user})`);
+
+        // Initialize Arcade Battle Royale tables in PostgreSQL
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS arcade_rooms (
+                room_id SERIAL PRIMARY KEY,
+                room_code VARCHAR(10) UNIQUE NOT NULL,
+                room_name VARCHAR(100) NOT NULL,
+                host_name VARCHAR(50) NOT NULL,
+                password VARCHAR(100) DEFAULT NULL,
+                max_players INTEGER DEFAULT 5,
+                current_round INTEGER DEFAULT 0,
+                status VARCHAR(20) DEFAULT 'WAITING',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        // is_host/is_eliminated are plain INTEGER (not BOOLEAN) because normalizeSql()
+        // rewrites the literal words TRUE/FALSE to 1/0 for every query including this
+        // CREATE TABLE, and Postgres has no implicit int->boolean cast for a BOOLEAN
+        // column's DEFAULT clause (confirmed: "column is of type boolean but default
+        // expression is of type integer"). server.js already only ever reads/writes
+        // these as integer 0/1 literals, so INTEGER matches actual usage exactly.
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS arcade_participants (
+                id SERIAL PRIMARY KEY,
+                room_id INTEGER NOT NULL REFERENCES arcade_rooms(room_id) ON DELETE CASCADE,
+                user_name VARCHAR(50) NOT NULL,
+                is_host INTEGER DEFAULT 0,
+                score INTEGER DEFAULT 0,
+                cash INTEGER DEFAULT 1000,
+                is_eliminated INTEGER DEFAULT 0,
+                joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (room_id, user_name)
+            );
+        `);
+
+        // Delivery queue for player-vs-player sabotage: an attacker inserts a row,
+        // the target's own client polls GET /api/arcade/rooms/:id/effects and the
+        // matching row is atomically marked delivered=1 so it's only applied once.
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS arcade_effects (
+                id SERIAL PRIMARY KEY,
+                room_id INTEGER NOT NULL REFERENCES arcade_rooms(room_id) ON DELETE CASCADE,
+                attacker_name VARCHAR(50) NOT NULL,
+                target_name VARCHAR(50) NOT NULL,
+                effect_type VARCHAR(30) NOT NULL,
+                item_name VARCHAR(100),
+                amount INTEGER DEFAULT NULL,
+                delivered INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS arcade_tasks (
+                task_id SERIAL PRIMARY KEY,
+                difficulty VARCHAR(20) NOT NULL,
+                title_th VARCHAR(255) NOT NULL,
+                title_en VARCHAR(255) NOT NULL,
+                desc_th TEXT NOT NULL,
+                desc_en TEXT NOT NULL,
+                initial_code TEXT NOT NULL,
+                test_cases JSONB NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        // Check if arcade_tasks has tasks, seed 25 tasks if empty
+        const [taskRows] = await db.query(`SELECT COUNT(*) as count FROM arcade_tasks`);
+        if (!taskRows || parseInt(taskRows[0].count) === 0) {
+            console.log('📌 กำลังเพิ่มโจทย์การแข่งขัน 25 ข้อ (ง่าย 10, กลาง 10, ยาก 5) รองรับ 2 ภาษา ลงใน PostgreSQL...');
+            
+            const SEED_TASKS = [
+                // EASY (10 Tasks)
+                { difficulty: 'easy', title_th: '1. เลขฟีโบนัชชี (Fibonacci)', title_en: '1. Fibonacci Number', desc_th: 'เขียนฟังก์ชัน `fib(n)` เพื่อคืนค่าตัวเลขฟีโบนัชชีลำดับที่ n', desc_en: 'Write a function `fib(n)` that returns the n-th Fibonacci number.', initial_code: 'def fib(n):\n    if n <= 1:\n        return n\n    return fib(n-1) + fib(n-2)', test_cases: JSON.stringify([{ input: [5], output: 5 }, { input: [7], output: 13 }]) },
+                { difficulty: 'easy', title_th: '2. ตรวจสอบเลขคู่/เลขคี่ (Even or Odd)', title_en: '2. Even or Odd', desc_th: 'เขียนฟังก์ชัน `is_even(n)` เพื่อคืนค่า True หากเป็นเลขคู่ และ False หากเป็นเลขคี่', desc_en: 'Write a function `is_even(n)` returning True if n is even, False otherwise.', initial_code: 'def is_even(n):\n    return n % 2 == 0', test_cases: JSON.stringify([{ input: [4], output: true }, { input: [7], output: false }]) },
+                { difficulty: 'easy', title_th: '3. กลับด้านข้อความ (Reverse String)', title_en: '3. Reverse String', desc_th: 'เขียนฟังก์ชัน `reverse_string(s)` เพื่อคืนค่าตัวอักษรเรียงย้อนกลับ', desc_en: 'Write a function `reverse_string(s)` that returns the reversed string.', initial_code: 'def reverse_string(s):\n    return s[::-1]', test_cases: JSON.stringify([{ input: ["hello"], output: "olleh" }, { input: ["python"], output: "nohtyp" }]) },
+                { difficulty: 'easy', title_th: '4. ผลรวมของรายการตัวเลข (Sum Array)', title_en: '4. Sum of Array', desc_th: 'เขียนฟังก์ชัน `sum_array(nums)` เพื่อคืนค่าผลรวมของตัวเลขทั้งหมดในอาร์เรย์', desc_en: 'Write a function `sum_array(nums)` that returns the sum of all elements.', initial_code: 'def sum_array(nums):\n    return sum(nums)', test_cases: JSON.stringify([{ input: [[1, 2, 3, 4]], output: 10 }, { input: [[5, 10, 15]], output: 30 }]) },
+                { difficulty: 'easy', title_th: '5. หาค่าสูงสุด (Find Maximum)', title_en: '5. Find Maximum', desc_th: 'เขียนฟังก์ชัน `find_max(nums)` คืนค่าตัวเลขที่มีค่ามากที่สุดในรายการ', desc_en: 'Write a function `find_max(nums)` returning the largest number.', initial_code: 'def find_max(nums):\n    return max(nums)', test_cases: JSON.stringify([{ input: [[3, 9, 2, 5]], output: 9 }, { input: [[-1, -5, -2]], output: -1 }]) },
+                { difficulty: 'easy', title_th: '6. นับจำนวนสระ (Count Vowels)', title_en: '6. Count Vowels', desc_th: 'เขียนฟังก์ชัน `count_vowels(s)` คืนค่าจำนวนสระ (a, e, i, o, u) ในข้อความ', desc_en: 'Write a function `count_vowels(s)` returning the count of vowels.', initial_code: 'def count_vowels(s):\n    return sum(1 for char in s if char.lower() in "aeiou")', test_cases: JSON.stringify([{ input: ["hello world"], output: 3 }, { input: ["arcade"], output: 3 }]) },
+                { difficulty: 'easy', title_th: '7. แปลงองศาเซลเซียสเป็นฟาเรนไฮต์ (Celsius to Fahrenheit)', title_en: '7. Celsius to Fahrenheit', desc_th: 'เขียนฟังก์ชัน `c_to_f(c)` เพื่อแปลงอุณหภูมิจาก C เป็น F (`(c * 9/5) + 32`)', desc_en: 'Write a function `c_to_f(c)` to convert Celsius to Fahrenheit.', initial_code: 'def c_to_f(c):\n    return (c * 9/5) + 32', test_cases: JSON.stringify([{ input: [0], output: 32 }, { input: [100], output: 212 }]) },
+                { difficulty: 'easy', title_th: '8. แฟกทอเรียล (Factorial)', title_en: '8. Factorial', desc_th: 'เขียนฟังก์ชัน `factorial(n)` คืนค่าผลคูณ n! (เช่น 5! = 120)', desc_en: 'Write a function `factorial(n)` returning n!.', initial_code: 'def factorial(n):\n    if n <= 1: return 1\n    return n * factorial(n - 1)', test_cases: JSON.stringify([{ input: [5], output: 120 }, { input: [3], output: 6 }]) },
+                { difficulty: 'easy', title_th: '9. ตรวจสอบพาลินโดรม (Palindrome Check)', title_en: '9. Palindrome Check', desc_th: 'เขียนฟังก์ชัน `is_palindrome(s)` คืนค่า True หากคำอ่านจากหน้าไปหลังและหลังมาหน้าเหมือนกัน', desc_en: 'Write a function `is_palindrome(s)` returning True if string is a palindrome.', initial_code: 'def is_palindrome(s):\n    c = s.lower().replace(" ", "")\n    return c == c[::-1]', test_cases: JSON.stringify([{ input: ["racecar"], output: true }, { input: ["python"], output: false }]) },
+                { difficulty: 'easy', title_th: '10. กำลังสองของทุกสมาชิก (Square List)', title_en: '10. Square List', desc_th: 'เขียนฟังก์ชัน `square_list(nums)` คืนค่าอาร์เรย์ตัวเลขที่ยกกำลังสองทุกตัว', desc_en: 'Write a function `square_list(nums)` returning a list of squared numbers.', initial_code: 'def square_list(nums):\n    return [x**2 for x in nums]', test_cases: JSON.stringify([{ input: [[1, 2, 3]], output: [1, 4, 9] }]) },
+
+                // MEDIUM (10 Tasks)
+                { difficulty: 'medium', title_th: '1. ตรวจสอบแอนนาแกรม (Anagram Checker)', title_en: '1. Anagram Checker', desc_th: 'เขียนฟังก์ชัน `is_anagram(s, t)` เพื่อตรวจสอบว่าข้อความสองชุดสลับตัวอักษรกันหรือไม่', desc_en: 'Write a function `is_anagram(s, t)` to check if two strings are anagrams.', initial_code: 'def is_anagram(s, t):\n    return sorted(s) == sorted(t)', test_cases: JSON.stringify([{ input: ["anagram", "nagaram"], output: true }, { input: ["rat", "car"], output: false }]) },
+                { difficulty: 'medium', title_th: '2. ผลรวมสองจำนวน (Two Sum)', title_en: '2. Two Sum', desc_th: 'เขียนฟังก์ชัน `two_sum(nums, target)` คืนค่าตำแหน่งดรรชนีของตัวเลข 2 ตัวที่บวกกันได้เท่ากับเป้าหมาย', desc_en: 'Write a function `two_sum(nums, target)` returning indices of 2 numbers summing to target.', initial_code: 'def two_sum(nums, target):\n    seen = {}\n    for i, num in enumerate(nums):\n        diff = target - num\n        if diff in seen:\n            return [seen[diff], i]\n        seen[num] = i', test_cases: JSON.stringify([{ input: [[2, 7, 11, 15], 9], output: [0, 1] }]) },
+                { difficulty: 'medium', title_th: '3. อาร์เรย์ FizzBuzz (FizzBuzz Array)', title_en: '3. FizzBuzz Array', desc_th: 'เขียนฟังก์ชัน `fizz_buzz(n)` คืนค่ารายการคำว่า "Fizz", "Buzz", "FizzBuzz" หรือตัวเลข ตั้งแต่ 1 ถึง n', desc_en: 'Write a function `fizz_buzz(n)` returning FizzBuzz string list from 1 to n.', initial_code: 'def fizz_buzz(n):\n    res = []\n    for i in range(1, n+1):\n        if i % 15 == 0: res.append("FizzBuzz")\n        elif i % 3 == 0: res.append("Fizz")\n        elif i % 5 == 0: res.append("Buzz")\n        else: res.append(str(i))\n    return res', test_cases: JSON.stringify([{ input: [5], output: ["1", "2", "Fizz", "4", "Buzz"] }]) },
+                { difficulty: 'medium', title_th: '4. ลบตัวเลขซ้ำในรายการ (Remove Duplicates)', title_en: '4. Remove Duplicates', desc_th: 'เขียนฟังก์ชัน `remove_duplicates(nums)` เพื่อลบตัวเลขซ้ำและคืนค่ารายการตัวเลขที่ไม่ซ้ำโดยคงลำดับเดิมไว้', desc_en: 'Write a function `remove_duplicates(nums)` returning list with duplicates removed preserving order.', initial_code: 'def remove_duplicates(nums):\n    res = []\n    for num in nums:\n        if num not in res: res.append(num)\n    return res', test_cases: JSON.stringify([{ input: [[1, 2, 2, 3, 1]], output: [1, 2, 3] }]) },
+                { difficulty: 'medium', title_th: '5. รวบรวม 2 อาร์เรย์ที่จัดเรียงแล้ว (Merge Sorted Lists)', title_en: '5. Merge Two Sorted Lists', desc_th: 'เขียนฟังก์ชัน `merge_lists(l1, l2)` เพื่อรวม 2 อาร์เรย์ที่จัดเรียงแล้วให้กลายเป็นอาร์เรย์ที่เรียงจากน้อยไปมาก', desc_en: 'Write a function `merge_lists(l1, l2)` merging two sorted arrays.', initial_code: 'def merge_lists(l1, l2):\n    return sorted(l1 + l2)', test_cases: JSON.stringify([{ input: [[1, 3, 5], [2, 4, 6]], output: [1, 2, 3, 4, 5, 6] }]) },
+                { difficulty: 'medium', title_th: '6. ค้นหาคำที่ยาวที่สุด (Longest Word)', title_en: '6. Longest Word', desc_th: 'เขียนฟังก์ชัน `longest_word(sentence)` คืนค่าคำที่มีความยาวมากที่สุดในประโยค', desc_en: 'Write a function `longest_word(sentence)` returning the longest word in a string.', initial_code: 'def longest_word(sentence):\n    words = sentence.split()\n    return max(words, key=len) if words else ""', test_cases: JSON.stringify([{ input: ["The quick brown fox jumps"], output: "jumps" }]) },
+                { difficulty: 'medium', title_th: '7. ตรวจสอบจำนวนเฉพาะ (Prime Number Check)', title_en: '7. Prime Number Check', desc_th: 'เขียนฟังก์ชัน `is_prime(n)` เพื่อตรวจสอบว่า n เป็นจำนวนเฉพาะหรือไม่', desc_en: 'Write a function `is_prime(n)` returning True if n is a prime number.', initial_code: 'def is_prime(n):\n    if n <= 1: return False\n    for i in range(2, int(n**0.5) + 1):\n        if n % i == 0: return False\n    return True', test_cases: JSON.stringify([{ input: [11], output: true }, { input: [4], output: false }]) },
+                { difficulty: 'medium', title_th: '8. ค้นหาแบบทวิภาค (Binary Search)', title_en: '8. Binary Search', desc_th: 'เขียนฟังก์ชัน `binary_search(nums, target)` เพื่อหาตำแหน่งดรรชนีของ target ในอาร์เรย์ที่เรียงแล้ว (หากไม่พบคืนค่า -1)', desc_en: 'Write a function `binary_search(nums, target)` returning target index or -1.', initial_code: 'def binary_search(nums, target):\n    low, high = 0, len(nums) - 1\n    while low <= high:\n        mid = (low + high) // 2\n        if nums[mid] == target: return mid\n        elif nums[mid] < target: low = mid + 1\n        else: high = mid - 1\n    return -1', test_cases: JSON.stringify([{ input: [[1, 3, 5, 7, 9], 7], output: 3 }, { input: [[1, 3, 5], 2], output: -1 }]) },
+                { difficulty: 'medium', title_th: '9. ตรวจสอบวงเล็บสมบูรณ์ (Valid Parentheses)', title_en: '9. Valid Parentheses', desc_th: 'เขียนฟังก์ชัน `is_valid_parentheses(s)` ตรวจสอบว่าวงเล็บ (), [], {} เปิดและปิดถูกคู่และถูกลำดับหรือไม่', desc_en: 'Write a function `is_valid_parentheses(s)` validating matching brackets (), [], {}.', initial_code: 'def is_valid_parentheses(s):\n    stack = []\n    mapping = {")": "(", "]": "[", "}": "{"}\n    for char in s:\n        if char in mapping:\n            top = stack.pop() if stack else "#"\n            if mapping[char] != top: return False\n        else:\n            stack.append(char)\n    return not stack', test_cases: JSON.stringify([{ input: ["()[]{}"], output: true }, { input: ["(]"], output: false }]) },
+                { difficulty: 'medium', title_th: '10. คำนวณความถี่ของตัวอักษร (Character Frequency)', title_en: '10. Character Frequency', desc_th: 'เขียนฟังก์ชัน `char_frequency(s)` คืนค่าดิกชันนารีนับจำนวนตัวอักษรแต่ละตัวในสเตรนจ์', desc_en: 'Write a function `char_frequency(s)` returning a dictionary of character counts.', initial_code: 'def char_frequency(s):\n    freq = {}\n    for char in s:\n        freq[char] = freq.get(char, 0) + 1\n    return freq', test_cases: JSON.stringify([{ input: ["aba"], output: { "a": 2, "b": 1 } }]) },
+
+                // HARD (5 Tasks)
+                { difficulty: 'hard', title_th: '1. ผลรวมย่อยสูงสุด / อัลกอริทึมของ Kadane (Max Subarray Sum)', title_en: '1. Maximum Subarray Sum', desc_th: 'เขียนฟังก์ชัน `max_sub_array(nums)` หาผลรวมของอาร์เรย์ย่อยที่มีค่ามากที่สุด (Kadane Algorithm)', desc_en: 'Write a function `max_sub_array(nums)` finding the maximum contiguous subarray sum.', initial_code: 'def max_sub_array(nums):\n    max_so_far = nums[0]\n    curr_max = nums[0]\n    for i in range(1, len(nums)):\n        curr_max = max(nums[i], curr_max + nums[i])\n        max_so_far = max(max_so_far, curr_max)\n    return max_so_far', test_cases: JSON.stringify([{ input: [[-2, 1, -3, 4, -1, 2, 1, -5, 4]], output: 6 }]) },
+                { difficulty: 'hard', title_th: '2. ความยาวสับสตริงที่ไม่มีอักขระซ้ำ (Longest Substring Without Repeating)', title_en: '2. Longest Substring Without Repeating Characters', desc_th: 'เขียนฟังก์ชัน `length_of_longest_substring(s)` หาความยาวสตริงย่อยที่ไม่มีอักขระซ้ำกันเลย', desc_en: 'Write a function `length_of_longest_substring(s)` finding max length of substring without repeating characters.', initial_code: 'def length_of_longest_substring(s):\n    char_map = {}\n    left = 0\n    max_len = 0\n    for right, char in enumerate(s):\n        if char in char_map and char_map[char] >= left:\n            left = char_map[char] + 1\n        char_map[char] = right\n        max_len = max(max_len, right - left + 1)\n    return max_len', test_cases: JSON.stringify([{ input: ["abcabcbb"], output: 3 }, { input: ["bbbbb"], output: 1 }]) },
+                { difficulty: 'hard', title_th: '3. ระบบจำลองแคช LRU (LRU Cache Simulator)', title_en: '3. LRU Cache Simulator', desc_th: 'เขียนฟังก์ชัน `simulate_lru(capacity, operations)` คืนค่าผลลัพธ์ของคำสั่ง Get/Put ตามลำดับ LRU Cache', desc_en: 'Write a function `simulate_lru(capacity, operations)` simulating Least Recently Used Cache.', initial_code: 'def simulate_lru(capacity, ops):\n    from collections import OrderedDict\n    cache = OrderedDict()\n    res = []\n    for op, key, val in ops:\n        if op == "put":\n            if key in cache: cache.move_to_end(key)\n            cache[key] = val\n            if len(cache) > capacity: cache.popitem(last=False)\n        elif op == "get":\n            if key in cache:\n                cache.move_to_end(key)\n                res.append(cache[key])\n            else: res.append(-1)\n    return res', test_cases: JSON.stringify([{ input: [2, [["put", 1, 1], ["put", 2, 2], ["get", 1, null], ["put", 3, 3], ["get", 2, null]]], output: [1, -1] }]) },
+                { difficulty: 'hard', title_th: '4. กักเก็บน้ำฝน (Trapping Rain Water)', title_en: '4. Trapping Rain Water', desc_th: 'เขียนฟังก์ชัน `trap(height)` คำนวณปริมาณน้ำฝนที่ขังอยู่ระหว่างความสูงของแท่งกราฟ', desc_en: 'Write a function `trap(height)` calculating total trapped rainwater.', initial_code: 'def trap(height):\n    if not height: return 0\n    l, r = 0, len(height) - 1\n    left_max, right_max = height[l], height[r]\n    water = 0\n    while l < r:\n        if left_max < right_max:\n            l += 1\n            left_max = max(left_max, height[l])\n            water += left_max - height[l]\n        else:\n            r -= 1\n            right_max = max(right_max, height[r])\n            water += right_max - height[r]\n    return water', test_cases: JSON.stringify([{ input: [[0,1,0,2,1,0,1,3,2,1,2,1]], output: 6 }]) },
+                { difficulty: 'hard', title_th: '5. รวบรวม K อาร์เรย์ที่เรียงแล้ว (Merge K Sorted Lists)', title_en: '5. Merge K Sorted Lists', desc_th: 'เขียนฟังก์ชัน `merge_k_lists(lists)` เพื่อรวม K อาร์เรย์ที่เรียงลำดับแล้วให้กลายเป็นอาร์เรย์เดียวที่เรียงลำดับสมบูรณ์', desc_en: 'Write a function `merge_k_lists(lists)` merging K sorted lists into one sorted array.', initial_code: 'def merge_k_lists(lists):\n    flat = [item for sublist in lists for item in sublist]\n    return sorted(flat)', test_cases: JSON.stringify([{ input: [[[1,4,5],[1,3,4],[2,6]]], output: [1,1,2,3,4,4,5,6] }]) }
+            ];
+
+            for (const t of SEED_TASKS) {
+                await db.query(
+                    `INSERT INTO arcade_tasks (difficulty, title_th, title_en, desc_th, desc_en, initial_code, test_cases)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                    [t.difficulty, t.title_th, t.title_en, t.desc_th, t.desc_en, t.initial_code, t.test_cases]
+                );
+            }
+            console.log('✅ บันทึกโจทย์ 25 ข้อ (ง่าย 10, กลาง 10, ยาก 5) ลงใน PostgreSQL เรียบร้อยแล้ว!');
+        }
+
+        console.log('✅ ตารางข้อมูล Arcade Battle Royale และ Arcade Tasks ใน PostgreSQL พร้อมใช้งานแล้ว');
     } catch (err) {
         console.error('เชื่อมต่อ PostgreSQL ล้มเหลว:', err.message);
     }

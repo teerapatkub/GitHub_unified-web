@@ -1,0 +1,20 @@
+Task: Restore Missing Desktop Icons & Fix Terminal (404 Endpoints)
+Date: 2026-07-04
+Time: 11:32 (Run #6)
+
+Description:
+1. Fixed Desktop Icons Disappearance:
+   - Root Cause: A previous agent modified DraggableIcon.jsx to use container-relative percentages (0-100) instead of absolute pixels. However, the hardcoded desktop icon coordinate properties in DesktopPage.jsx (such as y: 110, y: 200, y: 290, etc.) were left in absolute pixels. This caused the icons to render at top: 110%, 200%, etc., placing them completely outside the viewport boundary. Furthermore, a missing `containerRef` parameter caused icon dragging to crash silently on undefined variables.
+   - Solution: Reverted and merged DraggableIcon.jsx back to its pixel-based styling and standalone coordinate computation. All desktop icons are now fully visible and fully draggable.
+
+2. Fixed Terminal / AI Task 404 Errors:
+   - Root Cause: During the initial PostgreSQL database porting, many route endpoints and core AI task helpers present in server(Mysql).js were omitted from the server.js codebase. This caused the Terminal app (which requests AI learning tasks, rerolls, and submits code challenges) to throw 404 Not Found errors and fail.
+   - Solution: Ported the following endpoints and helpers to server.js using PostgreSQL compatibility rules (e.g. RETURNING statements and connection transactions):
+     * GET /jobs/my-active-v2/:userId
+     * GET /jobs/history-v3/:userId
+     * POST /simulation/sync-time
+     * GET /api/user/profile/:userId
+     * GET /api/learning/ai-task
+     * POST /api/learning/ai-task/reroll
+     * POST /api/learning/ai-task/submit
+     * Helper functions: formatJobStatus, safeJsonParse, extractFirstJsonBlock, getLearningModeConfig, generateLearningTaskWithAI, serializeLearningTask, createLearningTaskRecord, normalizePlayerLevel, computeLevelFromXp.

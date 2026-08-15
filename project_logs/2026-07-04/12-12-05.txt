@@ -1,0 +1,8 @@
+Task: Define Missing Axios Dependency in server.js
+Date: 2026-07-04
+Time: 12:12 (Run #10)
+
+Description:
+1. Fixed ReferenceError: axios is not defined:
+   - Root Cause: When calling NVIDIA AI chat or grading submitted Python scripts, the server requires axios for API requests. However, axios was never imported in server.js, causing ReferenceError: axios is not defined. This also triggered the fallback grading logic (which granted reward money for garbage submissions).
+   - Solution: Added const axios = require('axios') at the top of server/server.js.

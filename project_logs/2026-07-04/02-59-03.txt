@@ -1,0 +1,27 @@
+TASK LOG: Freelance Job System with Dynamic Deadlines and UI Countdown
+Date: 2026-07-04
+Time: 02:59 (Log index: 03)
+File: 02-59-03.txt
+
+Description:
+Designed and implemented a full-stack Freelance Job System featuring daily randomized contracts (3-5 jobs), difficulty-scaled deadline windows, active contract persistence, server-side grading with late penalties and fast-delivery rewards, and dynamic ticking countdown UI elements on both the Job Board and the Desktop Taskbar.
+
+Work Done:
+1. AI & Core Job Generation:
+   - Enhanced job generation to randomize 3-5 unique contracts per game day.
+   - Categorized jobs into Easy, Medium, and Hard tiers, assigning reward brackets, fail penalties, and default completion windows (6, 5, and 4 game hours).
+   
+2. Active Contract & Time Sync Backend:
+   - Added `deadline_day` and `deadline_hour` columns to the contracts table tracking.
+   - Built a robust scheduling engine to compute deadlines: when accepting a job, the deadline scales with current game day/hour, rolling over to future days if the deadline window goes beyond the 20:00 end-of-day.
+   - Implemented `/simulation/sync-time` to save live ticking clock minutes to PostgreSQL database state.
+   
+3. Late Grading & Reward Scaling:
+   - Integrated check-deadline verification logic during code submissions.
+   - Implemented reputation point deduction (-15 rep) and money reward scaling (reduced to 50%) for late contract completions.
+   - Added a fast-delivery system providing +5 bonus reputation if a contract is submitted in under 50% of the allocated time window.
+
+4. Client UI Timers:
+   - Created `getRemainingGameTime` helper to calculate dynamic client-side ticks using `currentDay` and `currentHour`.
+   - Rendered active job countdown badges inside the "My Jobs" section and the Client Job Detail Modal.
+   - Added a persistent floating countdown indicator widget directly on the main desktop taskbar to keep deadlines visible while writing code.

@@ -1,0 +1,19 @@
+TASK LOG: Database Connection and Schema Initialization
+Date: 2026-07-04
+Time: 02:38 (Log index: 02)
+File: 02-38-02.txt
+
+Description:
+Connected to the project's PostgreSQL database running on localhost:5432 (Container ID: 39e700f7) and initialized the project schemas and tables.
+
+Work Done:
+1. Docker Container Status Check:
+   - Verified that the PostgreSQL container 39e700f7 is running and mapping port 5432 correctly.
+2. Connection Configuration Retrieval:
+   - Verified DB config parameters from server/.env (postgres / postgres).
+3. Schema Import:
+   - Located the PostgreSQL-specific DDL/data seed file: `full_web/DataBase FullProjectPython.sql`
+   - Successfully piped and imported the entire schema and data seeds into the running container using `docker exec`.
+4. Verification:
+   - Queried the table schema. Confirmed 41 tables were successfully created in the 'public' schema.
+   - Executed a test query through the project's own backend database adapter `db.js` to fetch users: retrieved admin, FFs, and Za users successfully, confirming the custom TCP connection wire protocol and query normalization is functional.

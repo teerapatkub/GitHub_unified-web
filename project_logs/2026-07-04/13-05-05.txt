@@ -1,0 +1,10 @@
+Task: Secure generateDailyJobs Against Empty JSON API Outputs
+Date: 2026-07-04
+Time: 13:05 (Run #16)
+
+Description:
+1. Fixed Empty Daily Jobs Bug:
+   - Root Cause: If the AI API returns a response that fails to parse as a valid array (such as an empty array, or text refusal, or formatting variance), the parser previously returned `[]` with no thrown exception. This skipped the catch block, inserted 0 contracts, logged "Generated 0 daily jobs", and left the user with "No Jobs Available".
+   - Solution: Added a validation check in generateDailyJobs:
+     `if (!Array.isArray(jobs) || jobs.length === 0) throw new Error("AI returned empty or invalid jobs format.");`
+     This successfully catches empty or invalid parses and redirects them to the catch block to insert the standard fallback jobs, guaranteeing the player is never left with an empty job feed.

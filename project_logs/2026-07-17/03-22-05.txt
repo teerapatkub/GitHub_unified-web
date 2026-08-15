@@ -1,0 +1,9 @@
+Task: Sync db.js Database Driver file
+Date: 2026-07-17
+Time: 03:22 (Run #20)
+
+Description:
+1. Sync db.js to unified-web/server:
+   - Observation: Registration failed with a database constraint error: `null value in column "user_id" of relation "email_verifications" violates not-null constraint`. This happened because `result.insertId` returned `undefined`.
+   - Root Cause: The active workspace server copy of `db.js` (`full_web/unified-web/server/db.js`) was outdated and did not have the PostgreSQL `RETURNING *` and `insertId` parsing normalization that was implemented in the root copy `server/db.js`.
+   - Solution: Copied `server/db.js` into `full_web/unified-web/server/db.js` using `-Force` to overwrite and synchronize both files, which resolves the registration and token generation.

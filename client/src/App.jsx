@@ -20,6 +20,7 @@ import ShopPage from './pages/old plan/ShopPage';
 // --- Your Original Pages ---
 import MainMenu from './pages/MainMenu';
 import CompetitiveArena from './pages/CompetitiveArena';
+import ArcadeBattleRoyale from './pages/ArcadeBattleRoyale';
 import ChallengePage from './pages/ChallengePage';
 import AiTaskPage from './components/learning/AiTaskPage';
 import PromotionExamPage from './pages/PromotionExamPage';
@@ -234,7 +235,7 @@ function AppContent() {
 
   // === Which pages show the Navbar ===
   const hideNavbar = location.pathname === '/login';
-  const simulationRoutes = ['/menu', '/online'];
+  const simulationRoutes = ['/menu', '/online', '/matchmaking'];
   const isSimulationMode = simulationRoutes.some(r => location.pathname.startsWith(r));
   const isCodingWorkspace = ['/exercise', '/challenge', '/debug'].includes(location.pathname);
   const isAdminUser = user?.role === 'admin';
@@ -354,6 +355,7 @@ function AppContent() {
               {/* Multiplayer Hub Route */}
               <Route path="/menu" element={<MainMenu user={user} />} />
               <Route path="/online" element={isAuthenticated ? <CompetitiveArena user={user} /> : <Navigate to="/login" replace />} />
+              <Route path="/matchmaking" element={isAuthenticated ? <ArcadeBattleRoyale user={user} /> : <Navigate to="/login" replace />} />
               <Route
                 path="/admin/dashboard"
                 element={isAdminUser ? <Dashboard /> : <Navigate to="/learn" replace />}
