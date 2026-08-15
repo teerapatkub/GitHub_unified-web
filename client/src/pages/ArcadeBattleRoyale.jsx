@@ -928,6 +928,10 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
           newOpp[p.index] = { ...newOpp[p.index], eliminated: true };
           return newOpp;
         });
+        // Tell the actual BotAIEngine instance too — otherwise it never
+        // learns it was cut and keeps ticking (buying/attacking/earning its
+        // own internal score) forever after the UI already shows it out.
+        botManager.markEliminated(opponents[p.index].name);
         notify(`${opponents[p.index].name} ${t('wasEliminated')}`, "info");
       }
     });

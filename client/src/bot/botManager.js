@@ -36,6 +36,16 @@ class BotManager {
     }
   }
 
+  // Called by ArcadeBattleRoyale.jsx's eliminateBottom() when a bot is cut.
+  // Without this, the BotAIEngine instance never learns it was eliminated
+  // (its own eliminated field only starts/resets false), so it would keep
+  // ticking — buying items, attacking, earning its own internal score —
+  // forever after the UI already shows it as "ตกรอบ".
+  markEliminated(name) {
+    const bot = this.botMap.get(name);
+    if (bot) bot.eliminated = true;
+  }
+
   // Main update loop called every tick during gameplay
   update(phase, playerState, setPlayerState, setOpponents, notify) {
     if (this.botMap.size === 0) return;
@@ -114,16 +124,21 @@ class BotManager {
       });
     }
 
-    // Sync updated bot scores & states back to opponents state — including
-    // whether each bot currently has an active debuff, so the player's
-    // target-selection UI can gray out anyone who's already been hit.
+    // Sync bot cash/eliminated/debuff status back to opponents state —
+    // NOT score. score is owned entirely by evaluateRound() in
+    // ArcadeBattleRoyale.jsx (the real code-judging result, on the same
+    // 10,000,000-scale encoding used for the player); BotAIEngine's own
+    // internal `score` field is a much smaller, unrelated number it uses
+    // only for its own "who's currently leading" targeting heuristic
+    // (pickAttackTarget). Syncing it here used to silently overwrite the
+    // real round score back down to that tiny internal value on every tick
+    // after a round ended, corrupting elimination/ranking comparisons.
     setOpponents(prevOpponents => {
       return prevOpponents.map(opp => {
         if (this.botMap.has(opp.name)) {
           const botInstance = this.botMap.get(opp.name);
           return {
             ...opp,
-            score: botInstance.score,
             cash: botInstance.cash,
             eliminated: botInstance.eliminated,
             isDebuffed: botInstance.isDebuffed()
