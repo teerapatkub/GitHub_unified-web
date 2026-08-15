@@ -42,6 +42,7 @@ const TRANSLATIONS = {
     lobbyStatus: "BATTLEFIELD ALIVE PLAYERS",
     pickTarget: "PICK TARGET",
     clickToAttack: "LAUNCH ATTACK",
+    targetAlreadyHit: "ALREADY HIT — PICK ANOTHER TARGET",
     eliminated: "ELIMINATED",
     matchOver: "Arena Match Over",
     winner: "CHAMPION",
@@ -55,6 +56,11 @@ const TRANSLATIONS = {
     notEnoughCash: "Insufficient Survival Cash!",
     notEnoughCashReroll: "Not enough cash to reroll shop!",
     bought: "Purchased",
+    inventoryFull: "Inventory full — sell or use an item first!",
+    aoeLimitReached: "You can only hold 1 AOE item at a time!",
+    yourItemsSell: "Your Items — Sell Back",
+    sell: "Sell",
+    sold: "Sold",
     selectTarget: "Select target to strike with",
     fromLobby: "from the players panel on the right!",
     aiHint: "💡 AI Advice: Try using a loop or dictionary to speed up matches.",
@@ -146,6 +152,7 @@ const TRANSLATIONS = {
     lobbyStatus: "ผู้รอดชีวิตในสนามประลอง",
     pickTarget: "เลือกเป้าหมาย",
     clickToAttack: "ปล่อยการโจมตี",
+    targetAlreadyHit: "โดนไอเทมอยู่ — เลือกเป้าอื่นแทน",
     eliminated: "ตกรอบ",
     matchOver: "จบการแข่งขันในห้อง",
     winner: "ผู้ชนะเลิศ",
@@ -159,6 +166,11 @@ const TRANSLATIONS = {
     notEnoughCash: "เงินสะสมไม่เพียงพอ!",
     notEnoughCashReroll: "เงินไม่พอสำหรับการสุ่มร้านค้าใหม่!",
     bought: "ซื้อสำเร็จ",
+    inventoryFull: "กระเป๋าเต็ม — ขายหรือใช้ไอเทมก่อนนะ!",
+    aoeLimitReached: "ถือไอเทม AOE ได้แค่ 1 ชิ้นเท่านั้น!",
+    yourItemsSell: "ไอเทมของคุณ — ขายคืน",
+    sell: "ขาย",
+    sold: "ขายแล้ว",
     selectTarget: "เลือกเป้าหมายเพื่อยิงดีบัฟ",
     fromLobby: "จากหน้าต่างรายชื่อผู้เล่นฝั่งขวามือ!",
     aiHint: "💡 คำแนะนำ AI: ลองใช้วิธีวนซ้ำ หรือใช้ดิกชันนารีเพื่อลดเวลาประมวลผล",
@@ -303,6 +315,12 @@ const SHOP_ITEMS = [
   { id: 'screenDimmer', nameKey: 'screenDimmerName', price: 400, icon: '🕶️', descKey: 'screenDimmerDesc', type: 'attack' }
 ];
 
+// Inventory can hold at most 3 items total, and at most 1 of those may be an
+// `aoe` item (it's powerful enough to need its own scarcity, but it still
+// counts toward the 3-slot cap rather than getting a separate quota).
+const MAX_INVENTORY = 3;
+const MAX_AOE_HELD = 1;
+
 // Visual/gameplay debuff duration per effect id, shared by AOE dispatch and by
 // the incoming-effects poll (the server only carries the effect id — the actual
 // duration is applied client-side by whoever receives it).
@@ -339,6 +357,7 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
     inventory: [],
     activeEffects: [],
     eliminated: false,
+    hasSubmittedThisRound: false,
     code: "",
     hint: ""
   });
@@ -369,9 +388,16 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
   const playerStateRef = useRef(playerState);
   useEffect(() => { playerStateRef.current = playerState; }, [playerState]);
 
+  // Monotonic counter instead of Date.now() — several notifications can
+  // legitimately fire within the same millisecond (e.g. a burst of bot
+  // attacks), and colliding ids would make the dismiss-by-id filter below
+  // remove the wrong entries.
+  const notificationIdRef = useRef(0);
+  const MAX_VISIBLE_NOTIFICATIONS = 5;
+
   const notify = useCallback((msg, type = 'info') => {
-    const id = Date.now();
-    setNotifications(prev => [...prev, { id, msg, type }]);
+    const id = ++notificationIdRef.current;
+    setNotifications(prev => [...prev, { id, msg, type }].slice(-MAX_VISIBLE_NOTIFICATIONS));
     setTimeout(() => {
       setNotifications(prev => prev.filter(n => n.id !== id));
     }, 4000);
@@ -470,7 +496,7 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
 
             setPhase(PHASES.ROUND_1);
             setTimeLeft(ROUND_TIMES.ROUND_1);
-            setPlayerState(prev => ({ ...prev, code: TASKS.ROUND_1.initialCode }));
+            setPlayerState(prev => ({ ...prev, code: TASKS.ROUND_1.initialCode, hasSubmittedThisRound: false }));
             notify("🎮 หัวห้องเริ่มการแข่งขันแล้ว!", "success");
           }
         }
@@ -565,7 +591,7 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
       if (data.success) {
         setPhase(PHASES.ROUND_1);
         setTimeLeft(ROUND_TIMES.ROUND_1);
-        setPlayerState(prev => ({ ...prev, code: TASKS.ROUND_1.initialCode }));
+        setPlayerState(prev => ({ ...prev, code: TASKS.ROUND_1.initialCode, hasSubmittedThisRound: false }));
         notify("🎮 เริ่มการแข่งขัน!", "success");
       } else {
         notify(data.error || "ไม่สามารถเริ่มการแข่งขันได้", "error");
@@ -709,6 +735,7 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
         eliminated: false,
         inventory: [],
         activeEffects: [],
+        hasSubmittedThisRound: false,
         code: "",
         hint: ""
       }));
@@ -737,6 +764,7 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
     switch (phase) {
       case PHASES.ROUND_1:
         await evaluateRound(1);
+        eliminateBottom(2); // 5 -> 3
         setPhase(PHASES.SHOP_1);
         setTimeLeft(ROUND_TIMES.SHOP_1);
         rollShop(true);
@@ -745,13 +773,13 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
       case PHASES.SHOP_1:
         setPhase(PHASES.ROUND_2);
         setTimeLeft(ROUND_TIMES.ROUND_2);
-        setPlayerState(prev => ({...prev, code: TASKS.ROUND_2.initialCode, hint: ""}));
+        setPlayerState(prev => ({...prev, code: TASKS.ROUND_2.initialCode, hint: "", hasSubmittedThisRound: false}));
         setOpponents(prev => prev.map(b => ({...b, progress: 0})));
         notify(t('round2Start'), "warning");
         break;
       case PHASES.ROUND_2:
         await evaluateRound(2);
-        eliminateBottom(2);
+        eliminateBottom(1); // 3 -> 2
         setPhase(PHASES.SHOP_2);
         setTimeLeft(ROUND_TIMES.SHOP_2);
         rollShop(true);
@@ -762,13 +790,14 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
         } else {
           setPhase(PHASES.ROUND_3);
           setTimeLeft(ROUND_TIMES.ROUND_3);
-          setPlayerState(prev => ({...prev, code: TASKS.ROUND_3.initialCode, hint: ""}));
+          setPlayerState(prev => ({...prev, code: TASKS.ROUND_3.initialCode, hint: "", hasSubmittedThisRound: false}));
           setOpponents(prev => prev.map(b => ({...b, progress: 0})));
           notify(t('finalRound'), "warning");
         }
         break;
       case PHASES.ROUND_3:
         await evaluateRound(3);
+        eliminateBottom(1); // 2 -> 1 (decided purely by code score, same eliminateBottom sort)
         setPhase(PHASES.RESULT);
         notify(t('matchFinished'), "info");
         break;
@@ -983,6 +1012,30 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
     setShopState(prev => ({ ...prev, items: shuffled.slice(0, 4).map(item => ({ ...item, purchased: false })) }));
   };
 
+  // Whether `item` can still be bought right now: enough cash, bag not full
+  // (max 3), and — if it's an `aoe` item — not already holding one (max 1,
+  // counted inside the same 3-slot cap, not a separate quota).
+  const canBuyItem = (item) => {
+    if (playerState.cash < item.price) return false;
+    if (playerState.inventory.length >= MAX_INVENTORY) return false;
+    if (item.type === 'aoe' && playerState.inventory.filter(i => i.type === 'aoe').length >= MAX_AOE_HELD) return false;
+    return true;
+  };
+
+  // Sell an item back from the inventory for half its purchase price — shop
+  // phase only, human player only (bots never sell).
+  const sellItem = (inventoryIndex) => {
+    const item = playerState.inventory[inventoryIndex];
+    if (!item) return;
+    const refund = Math.floor(item.price * 0.5);
+    setPlayerState(prev => ({
+      ...prev,
+      cash: prev.cash + refund,
+      inventory: prev.inventory.filter((_, idx) => idx !== inventoryIndex)
+    }));
+    notify(`${t('sold')} ${t(item.nameKey)} (+🪙 ${refund})`, "success");
+  };
+
   const initiateItemUse = (item) => {
     if (item.type === 'attack') {
       setTargetingItem(item);
@@ -1109,8 +1162,15 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
     setTargetingItem(null); 
   };
 
+  // Attack-type items can't be aimed at someone who already has a debuff
+  // active — they're not selectable as a target at all, forcing the
+  // attacker to pick someone else. Once that target's current effect
+  // expires they become selectable again. AOE items never go through this
+  // picker (they execute immediately on every live opponent), so this only
+  // ever gates single-target `attack` items.
   const handleTargetClick = (botIndex) => {
-    if (targetingItem && !opponents[botIndex].eliminated) {
+    const target = opponents[botIndex];
+    if (targetingItem && !target.eliminated && !target.isDebuffed) {
       executeItem(targetingItem, botIndex);
     }
   };
@@ -1173,6 +1233,7 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
       notify(t('codeEmpty'), "error");
       return;
     }
+    setPlayerState(prev => ({ ...prev, hasSubmittedThisRound: true }));
     notify(t('submitCode') + " Done!", "success");
     handlePhaseTransition();
   };
@@ -1743,29 +1804,38 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
                     <p className="text-slate-400 text-xs leading-relaxed">{t(item.descKey)}</p>
                   </div>
 
-                  <button 
+                  <button
                     onClick={() => {
-                      if (playerState.cash >= item.price && !item.purchased) {
-                        setPlayerState(prev => ({
-                          ...prev,
-                          cash: prev.cash - item.price,
-                          inventory: [...prev.inventory, item]
-                        }));
-                        setShopState(prev => {
-                          const newItems = [...prev.items];
-                          newItems[index] = { ...newItems[index], purchased: true };
-                          return { ...prev, items: newItems };
-                        });
-                        notify(`${t('bought')} ${t(item.nameKey)}!`, "success");
-                      } else if (playerState.cash < item.price) {
+                      if (item.purchased) return;
+                      if (playerState.cash < item.price) {
                         notify(t('notEnoughCash'), "error");
+                        return;
                       }
+                      if (playerState.inventory.length >= MAX_INVENTORY) {
+                        notify(t('inventoryFull'), "error");
+                        return;
+                      }
+                      if (item.type === 'aoe' && playerState.inventory.filter(i => i.type === 'aoe').length >= MAX_AOE_HELD) {
+                        notify(t('aoeLimitReached'), "error");
+                        return;
+                      }
+                      setPlayerState(prev => ({
+                        ...prev,
+                        cash: prev.cash - item.price,
+                        inventory: [...prev.inventory, item]
+                      }));
+                      setShopState(prev => {
+                        const newItems = [...prev.items];
+                        newItems[index] = { ...newItems[index], purchased: true };
+                        return { ...prev, items: newItems };
+                      });
+                      notify(`${t('bought')} ${t(item.nameKey)}!`, "success");
                     }}
-                    disabled={playerState.cash < item.price || item.purchased}
+                    disabled={item.purchased || !canBuyItem(item)}
                     className={`py-3 rounded-2xl font-black text-xs uppercase transition-all w-full ${
                       item.purchased ? 'bg-slate-100 text-slate-400' :
-                      playerState.cash >= item.price 
-                      ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-md hover:scale-[1.02] active:scale-[0.98]' 
+                      canBuyItem(item)
+                      ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-md hover:scale-[1.02] active:scale-[0.98]'
                       : 'bg-slate-50 text-slate-400 border border-slate-200 cursor-not-allowed'
                     }`}
                   >
@@ -1773,6 +1843,30 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
                   </button>
                 </div>
               ))}
+            </div>
+
+            {/* SELL BACK YOUR OWN INVENTORY — shop phase only, human player
+                only, refund is 50% of the original purchase price. */}
+            <div className="mt-8 bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
+              <h3 className="text-sm font-black text-slate-700 uppercase tracking-wider mb-4">{t('yourItemsSell')}</h3>
+              {playerState.inventory.length === 0 ? (
+                <p className="text-xs text-slate-400 font-bold">{t('empty')}</p>
+              ) : (
+                <div className="flex flex-wrap gap-3">
+                  {playerState.inventory.map((item, idx) => (
+                    <div key={idx} className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5">
+                      <span className="text-lg">{item.icon}</span>
+                      <span className="text-xs font-black text-slate-700">{t(item.nameKey)}</span>
+                      <button
+                        onClick={() => sellItem(idx)}
+                        className="text-[10px] font-black uppercase bg-amber-100 hover:bg-amber-200 text-amber-700 px-3 py-1.5 rounded-xl transition-all hover:scale-105 active:scale-95"
+                      >
+                        {t('sell')} 🪙 {Math.floor(item.price * 0.5)}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -2000,13 +2094,17 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
 
                 {/* Opponents List */}
                 <div className="space-y-3 overflow-y-auto pr-1 flex-1">
-                  {opponents.map((bot, i) => (
-                    <div 
-                      key={i} 
+                  {opponents.map((bot, i) => {
+                    const isUnselectableTarget = Boolean(targetingItem) && !bot.eliminated && bot.isDebuffed;
+                    return (
+                    <div
+                      key={i}
                       onClick={() => handleTargetClick(i)}
+                      title={isUnselectableTarget ? t('targetAlreadyHit') : undefined}
                       className={`p-4 rounded-2xl border transition-all relative overflow-hidden
                         ${bot.eliminated ? 'bg-slate-50 border-slate-200 opacity-60 grayscale' : 'bg-white border-slate-200 shadow-sm hover:border-slate-300'}
-                        ${targetingItem && !bot.eliminated ? 'cursor-crosshair bg-rose-50/50 border-rose-300 hover:bg-rose-50 hover:border-rose-500 shadow-md hover:scale-[1.02]' : ''}
+                        ${targetingItem && !bot.eliminated && !bot.isDebuffed ? 'cursor-crosshair bg-rose-50/50 border-rose-300 hover:bg-rose-50 hover:border-rose-500 shadow-md hover:scale-[1.02]' : ''}
+                        ${isUnselectableTarget ? 'opacity-50 grayscale cursor-not-allowed' : ''}
                       `}
                     >
                       <div className="flex justify-between items-center mb-2">
@@ -2039,13 +2137,19 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
                         </div>
                       )}
 
-                      {targetingItem && !bot.eliminated && (
+                      {targetingItem && !bot.eliminated && !bot.isDebuffed && (
                         <div className="absolute inset-x-0 bottom-0 bg-rose-600 py-1 text-center text-[9px] font-black text-white uppercase tracking-wider animate-pulse select-none">
                           ⚡ {t('clickToAttack')}
                         </div>
                       )}
+                      {isUnselectableTarget && (
+                        <div className="absolute inset-x-0 bottom-0 bg-slate-500 py-1 text-center text-[9px] font-black text-white uppercase tracking-wider select-none">
+                          🚫 {t('targetAlreadyHit')}
+                        </div>
+                      )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
@@ -2067,7 +2171,7 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
                     <button 
                       key={idx}
                       onClick={() => initiateItemUse(item)}
-                      disabled={playerState.eliminated || targetingItem || phase === PHASES.ROUND_1}
+                      disabled={playerState.eliminated || targetingItem || phase === PHASES.ROUND_1 || playerState.hasSubmittedThisRound}
                       className={`px-4 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 transition-all shadow-sm border
                         ${targetingItem === item ? 'bg-rose-600 text-white border-rose-600 animate-pulse' : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'}
                         disabled:opacity-40 hover:scale-105 active:scale-95
