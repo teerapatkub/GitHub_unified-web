@@ -458,8 +458,16 @@ const db = {
                 cash INTEGER DEFAULT 1000,
                 is_eliminated INTEGER DEFAULT 0,
                 joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE (room_id, user_name)
             );
+        `);
+
+        // Idempotent migration: last_seen was added after the table already
+        // existed on some databases, so CREATE TABLE IF NOT EXISTS above won't
+        // retrofit it — this ADD COLUMN IF NOT EXISTS closes that gap safely.
+        await db.query(`
+            ALTER TABLE arcade_participants ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
         `);
 
         // Delivery queue for player-vs-player sabotage: an attacker inserts a row,

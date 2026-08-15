@@ -2638,6 +2638,14 @@ function generateRoomCode() {
     return code;
 }
 
+// Strips control characters and clamps length so player-entered room/user
+// names can't break the room browser UI or bloat the DB. React already
+// escapes rendered text so this isn't an XSS fix — it's the input-validation
+// pass CLAUDE.md requires at every point that accepts player input.
+function sanitizeName(raw, maxLen) {
+    return String(raw || '').replace(/[ -]/g, '').trim().slice(0, maxLen);
+}
+
 // 1. Get joinable public rooms (status = 'WAITING')
 app.get('/api/arcade/rooms', async (req, res) => {
     try {
@@ -2665,6 +2673,11 @@ app.post('/api/arcade/rooms/create', async (req, res) => {
         if (!room_name || !host_name) {
             return res.status(400).json({ error: 'กรุณาระบุชื่อห้องและชื่อผู้สร้างห้อง' });
         }
+        const cleanRoomName = sanitizeName(room_name, 60);
+        const cleanHostName = sanitizeName(host_name, 24);
+        if (!cleanRoomName || !cleanHostName) {
+            return res.status(400).json({ error: 'ชื่อห้องหรือชื่อผู้สร้างห้องไม่ถูกต้อง' });
+        }
         const maxPlayersNum = Math.min(5, Math.max(2, parseInt(max_players) || 5));
         const roomCode = generateRoomCode();
         const pwdValue = (password && password.trim().length > 0) ? await bcrypt.hash(password.trim(), 10) : null;
@@ -2672,7 +2685,7 @@ app.post('/api/arcade/rooms/create', async (req, res) => {
         const [insertResult] = await db.query(
             `INSERT INTO arcade_rooms (room_code, room_name, host_name, password, max_players, status)
              VALUES (?, ?, ?, ?, ?, 'WAITING') RETURNING room_id`,
-            [roomCode, room_name.trim(), host_name.trim(), pwdValue, maxPlayersNum]
+            [roomCode, cleanRoomName, cleanHostName, pwdValue, maxPlayersNum]
         );
 
         const roomId = insertResult[0]?.room_id || insertResult.insertId;
@@ -2680,7 +2693,7 @@ app.post('/api/arcade/rooms/create', async (req, res) => {
         // Add host as first participant
         await db.query(
             `INSERT INTO arcade_participants (room_id, user_name, is_host) VALUES (?, ?, 1)`,
-            [roomId, host_name.trim()]
+            [roomId, cleanHostName]
         );
 
         res.json({
@@ -2688,8 +2701,8 @@ app.post('/api/arcade/rooms/create', async (req, res) => {
             room: {
                 room_id: roomId,
                 room_code: roomCode,
-                room_name: room_name.trim(),
-                host_name: host_name.trim(),
+                room_name: cleanRoomName,
+                host_name: cleanHostName,
                 max_players: maxPlayersNum,
                 is_password_protected: !!pwdValue
             }
@@ -2700,51 +2713,72 @@ app.post('/api/arcade/rooms/create', async (req, res) => {
     }
 });
 
-// 3. Join room by Code or ID
+// 3. Join room by Code or ID. Runs inside a transaction with the room row
+// locked (SELECT ... FOR UPDATE) so two players racing for the last open
+// slot can't both pass the capacity check and both get inserted.
 app.post('/api/arcade/rooms/join', async (req, res) => {
+    const connection = await db.getConnection();
     try {
         const { room_code_or_id, password, user_name } = req.body;
         if (!room_code_or_id || !user_name) {
+            connection.release();
             return res.status(400).json({ error: 'กรุณาระบุรหัสห้องและชื่อผู้ใช้' });
+        }
+        const cleanUserName = sanitizeName(user_name, 24);
+        if (!cleanUserName) {
+            connection.release();
+            return res.status(400).json({ error: 'ชื่อผู้ใช้ไม่ถูกต้อง' });
         }
 
         const queryTerm = String(room_code_or_id).trim().toUpperCase();
-        const [rooms] = await db.query(
-            `SELECT * FROM arcade_rooms WHERE UPPER(room_code) = ? OR CAST(room_id AS TEXT) = ?`,
+
+        await connection.beginTransaction();
+        const [rooms] = await connection.query(
+            `SELECT * FROM arcade_rooms WHERE (UPPER(room_code) = ? OR CAST(room_id AS TEXT) = ?) FOR UPDATE`,
             [queryTerm, queryTerm]
         );
 
         if (!rooms || rooms.length === 0) {
+            await connection.rollback();
+            connection.release();
             return res.status(404).json({ error: 'ไม่พบห้องแข่งขันที่ระบุ' });
         }
 
         const room = rooms[0];
 
         if (room.status !== 'WAITING') {
+            await connection.rollback();
+            connection.release();
             return res.status(400).json({ error: 'ห้องนี้เริ่มการแข่งขันไปแล้ว ไม่สามารถเข้าร่วมได้' });
         }
 
         if (room.password && !(await bcrypt.compare(password || '', room.password))) {
+            await connection.rollback();
+            connection.release();
             return res.status(401).json({ error: 'รหัสผ่านเข้าห้องไม่ถูกต้อง' });
         }
 
-        const [participants] = await db.query(
+        const [participants] = await connection.query(
             `SELECT * FROM arcade_participants WHERE room_id = ?`,
             [room.room_id]
         );
 
         if (participants.length >= room.max_players) {
+            await connection.rollback();
+            connection.release();
             return res.status(400).json({ error: 'ห้องนี้มีผู้เล่นเต็มจำนวนแล้ว' });
         }
 
         // Add player if not already in room
-        const alreadyIn = participants.find(p => p.user_name === user_name);
+        const alreadyIn = participants.find(p => p.user_name === cleanUserName);
         if (!alreadyIn) {
-            await db.query(
+            await connection.query(
                 `INSERT INTO arcade_participants (room_id, user_name, is_host) VALUES (?, ?, 0)`,
-                [room.room_id, user_name.trim()]
+                [room.room_id, cleanUserName]
             );
         }
+        await connection.commit();
+        connection.release();
 
         const [updatedParticipants] = await db.query(
             `SELECT * FROM arcade_participants WHERE room_id = ? ORDER BY joined_at ASC`,
@@ -2758,15 +2792,26 @@ app.post('/api/arcade/rooms/join', async (req, res) => {
             participants: updatedParticipants
         });
     } catch (err) {
+        try { await connection.rollback(); } catch { /* connection already closed */ }
+        try { connection.release(); } catch { /* already released */ }
         console.error('❌ POST /api/arcade/rooms/join error:', err.message);
         res.status(500).json({ error: err.message });
     }
 });
 
-// 4. Get specific room state & participants
+// 4. Get specific room state & participants. Polled every ~2s by every
+// connected client for the whole lobby+match lifetime, so it also doubles as
+// the presence heartbeat consumed by the stale-connection sweep below.
 app.get('/api/arcade/rooms/:id', async (req, res) => {
     try {
         const roomId = req.params.id;
+        const userName = req.query.user_name;
+        if (userName) {
+            await db.query(
+                `UPDATE arcade_participants SET last_seen = CURRENT_TIMESTAMP WHERE room_id = ? AND user_name = ?`,
+                [roomId, userName]
+            );
+        }
         const [rooms] = await db.query(`SELECT * FROM arcade_rooms WHERE room_id = ?`, [roomId]);
         if (!rooms || rooms.length === 0) {
             return res.status(404).json({ error: 'ไม่พบห้องแข่งขัน' });
@@ -2793,7 +2838,7 @@ app.post('/api/arcade/rooms/:id/settings', async (req, res) => {
         if (!rooms || rooms.length === 0) return res.status(404).json({ error: 'ไม่พบห้อง' });
         if (rooms[0].host_name !== host_name) return res.status(403).json({ error: 'สิทธิ์เฉพาะหัวห้องเท่านั้น' });
 
-        const newName = room_name ? room_name.trim() : rooms[0].room_name;
+        const newName = room_name ? sanitizeName(room_name, 60) || rooms[0].room_name : rooms[0].room_name;
         const newMax = max_players ? Math.min(5, Math.max(2, parseInt(max_players))) : rooms[0].max_players;
         const newPwd = password !== undefined ? (password ? await bcrypt.hash(password.trim(), 10) : null) : rooms[0].password;
 
@@ -2914,26 +2959,35 @@ app.post('/api/arcade/rooms/:id/start', async (req, res) => {
     }
 });
 
+// Removes a participant and reassigns host / deletes an empty room. Shared
+// by the explicit "leave" action below and the stale-connection sweep, so
+// a disconnected player is cleaned up exactly the same way as one who
+// clicked Leave.
+async function leaveRoom(roomId, userName) {
+    await db.query(`DELETE FROM arcade_participants WHERE room_id = ? AND user_name = ?`, [roomId, userName]);
+
+    const [remaining] = await db.query(`SELECT * FROM arcade_participants WHERE room_id = ? ORDER BY joined_at ASC`, [roomId]);
+
+    if (!remaining || remaining.length === 0) {
+        await db.query(`DELETE FROM arcade_rooms WHERE room_id = ?`, [roomId]);
+        return;
+    }
+
+    const [rooms] = await db.query(`SELECT host_name FROM arcade_rooms WHERE room_id = ?`, [roomId]);
+    if (rooms?.[0]?.host_name === userName) {
+        const nextHost = remaining[0].user_name;
+        await db.query(`UPDATE arcade_rooms SET host_name = ? WHERE room_id = ?`, [nextHost, roomId]);
+        await db.query(`UPDATE arcade_participants SET is_host = 1 WHERE room_id = ? AND user_name = ?`, [roomId, nextHost]);
+    }
+}
+
 // 9. Leave room
 app.post('/api/arcade/rooms/:id/leave', async (req, res) => {
     try {
         const roomId = req.params.id;
         const { user_name } = req.body;
 
-        await db.query(`DELETE FROM arcade_participants WHERE room_id = ? AND user_name = ?`, [roomId, user_name]);
-
-        const [remaining] = await db.query(`SELECT * FROM arcade_participants WHERE room_id = ? ORDER BY joined_at ASC`, [roomId]);
-
-        if (!remaining || remaining.length === 0) {
-            await db.query(`DELETE FROM arcade_rooms WHERE room_id = ?`, [roomId]);
-        } else {
-            const [rooms] = await db.query(`SELECT host_name FROM arcade_rooms WHERE room_id = ?`, [roomId]);
-            if (rooms?.[0]?.host_name === user_name) {
-                const nextHost = remaining[0].user_name;
-                await db.query(`UPDATE arcade_rooms SET host_name = ? WHERE room_id = ?`, [nextHost, roomId]);
-                await db.query(`UPDATE arcade_participants SET is_host = 1 WHERE room_id = ? AND user_name = ?`, [roomId, nextHost]);
-            }
-        }
+        await leaveRoom(roomId, user_name);
 
         res.json({ success: true, message: 'ออกจากห้องเรียบร้อยแล้ว' });
     } catch (err) {
@@ -3048,6 +3102,42 @@ app.get('/api/arcade/rooms/:id/effects', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
+// ==========================================
+// Stale-connection sweep: a real player who closes the tab, loses network,
+// or crashes never calls /leave, so their row would otherwise sit in the
+// room forever. GET /api/arcade/rooms/:id doubles as a ~2s heartbeat (see
+// above), so anyone who hasn't been seen in 45s (well above normal network
+// hiccups) is treated as disconnected. Bots are excluded by name pattern —
+// they're simulated client-side and never poll on their own behalf, so
+// they'd otherwise always look stale. Runs every 20s.
+async function sweepStaleArcadeParticipants() {
+    try {
+        const [stale] = await db.query(
+            `SELECT room_id, user_name FROM arcade_participants
+             WHERE last_seen < CURRENT_TIMESTAMP - INTERVAL '45 seconds'
+               AND user_name NOT LIKE 'Bot\\_%'`
+        );
+        for (const row of stale || []) {
+            await leaveRoom(row.room_id, row.user_name);
+        }
+
+        // A room where every remaining participant is a bot has no human left
+        // to host or play it out — clean it up instead of leaving it to sit
+        // in the room list forever.
+        const [botOnlyRooms] = await db.query(`
+            SELECT room_id FROM arcade_participants
+            GROUP BY room_id
+            HAVING COUNT(*) FILTER (WHERE user_name NOT LIKE 'Bot\\_%') = 0
+        `);
+        for (const row of botOnlyRooms || []) {
+            await db.query(`DELETE FROM arcade_rooms WHERE room_id = ?`, [row.room_id]);
+        }
+    } catch (err) {
+        console.error('❌ Arcade stale-room sweep error:', err.message);
+    }
+}
+setInterval(sweepStaleArcadeParticipants, 20000);
 
 // ==========================================
 // 8. Start Server & Simulation Engine

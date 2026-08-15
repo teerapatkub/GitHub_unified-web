@@ -413,7 +413,7 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
     if (!currentRoom) return;
     const fetchRoomState = async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/arcade/rooms/${currentRoom.room_id}`);
+        const res = await fetch(`${API_BASE}/api/arcade/rooms/${currentRoom.room_id}?user_name=${encodeURIComponent(playerState.name)}`);
         const data = await res.json();
         if (data.success) {
           setCurrentRoom(data.room);
