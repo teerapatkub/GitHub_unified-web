@@ -84,8 +84,14 @@ export class BotAIEngine {
       }
     }
 
-    // 3. SHOP & SABOTAGE TICK (During shop phases or round)
-    this.evaluateItemPurchasesAndAttacks(playerState, allOpponents, onBotAttackCallback);
+    // 3. SHOP & SABOTAGE TICK — there is no shop phase before Round 1, so a
+    // bot can't have bought anything yet; skipping this during ROUND_1 means
+    // bots start the match with an empty inventory just like a real player,
+    // instead of being able to buy and immediately use items before the
+    // first shop intermission even happens.
+    if (phase !== 'ROUND_1') {
+      this.evaluateItemPurchasesAndAttacks(playerState, allOpponents, onBotAttackCallback);
+    }
   }
 
   // AI evaluates cash and uses items against player or rivals
