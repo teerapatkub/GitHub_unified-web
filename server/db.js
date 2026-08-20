@@ -1,66 +1,33 @@
-const { Pool } = require('pg');
+const path = require('path');
+
+let mysql;
+try {
+    mysql = require('mysql2/promise');
+} catch (error) {
+    mysql = require(path.resolve(__dirname, '../../game-test/server/node_modules/mysql2/promise'));
+}
 
 const DB_CONFIG = {
-    host: process.env.PGHOST || process.env.PG_HOST || process.env.DB_HOST || 'localhost',
-    user: process.env.PGUSER || process.env.PG_USER || process.env.DB_USER || 'postgres',
-    password: process.env.PGPASSWORD || process.env.PG_PASSWORD || process.env.DB_PASSWORD || '',
-    database: process.env.PGDATABASE || process.env.PG_DATABASE || process.env.DB_NAME || 'FullProjectPython',
-    port: Number(process.env.PGPORT || process.env.PG_PORT || process.env.DB_PORT || 5432),
-    max: 10,
-    connectionTimeoutMillis: 10000,
-    idleTimeoutMillis: 30000,
-    ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: false } : false,
-};
-
-const normalizePostgresQuery = (sql) => {
-    let parameterIndex = 0;
-    let normalizedSql = sql
-        .replace(/`([^`]+)`/g, '"$1"')
-        .replace(/\bDATABASE\(\)/gi, 'current_database()')
-        .replace(/\bIFNULL\s*\(/gi, 'COALESCE(')
-        .replace(/\bJSON_ARRAY\s*\(/gi, 'json_build_array(')
-        .replace(/\bint\(\d+\)/gi, 'integer')
-        .replace(/\btinyint\(1\)/gi, 'boolean')
-        .replace(/\blongtext\b/gi, 'text')
-        .replace(/\bdouble\b/gi, 'double precision')
-        .replace(/\bunsigned\b/gi, '')
-        .replace(/\s+CHARACTER SET\s+\w+/gi, '')
-        .replace(/\s+COLLATE\s+\w+/gi, '')
-        .replace(/\s+ON UPDATE\s+CURRENT_TIMESTAMP(?:\(\))?/gi, '')
-        .replace(/\s+ENGINE\s*=\s*\w+/gi, '')
-        .replace(/\s+DEFAULT CHARSET\s*=\s*\w+/gi, '')
-        .replace(/\s+COLLATE\s*=\s*\w+/gi, '')
-        .replace(/\bAUTO_INCREMENT\b/gi, '')
-        .replace(/\benum\s*\([^)]*\)/gi, 'varchar(50)')
-        .replace(/,\s*(?:UNIQUE\s+)?KEY\s+[^,(]+\s*\([^)]*\)/gi, '')
-        .replace(/,\s*CONSTRAINT\s+[^\n]+\s+FOREIGN KEY\s*\([^)]*\)\s+REFERENCES\s+[^,\n]+/gi, '')
-        .replace(/\s+CHECK\s*\(\s*json_valid\([^)]*\)\s*\)/gi, '')
-        .replace(/\bMODIFY\b/gi, 'ALTER COLUMN')
-        .replace(/\bALTER TABLE\s+([^\s]+)\s+ALTER COLUMN\s+([^\s]+)\s+boolean\s+DEFAULT\s+(0|1)/gi, (_match, table, column, value) =>
-            `ALTER TABLE ${table} ALTER COLUMN ${column} TYPE boolean USING ${column}::boolean; ALTER TABLE ${table} ALTER COLUMN ${column} SET DEFAULT ${value === '1' ? 'TRUE' : 'FALSE'}`
-        )
-        .replace(/(\b(?:is_active|is_plugged_in|is_ready|is_deleted|is_banned|is_completed|is_passed|is_resolved|auto_resolve|force_skip_day|is_available|is_verified)\s+boolean(?:\s+NOT NULL)?\s+DEFAULT\s+)([01])\b/gi, (_match, prefix, value) => `${prefix}${value === '1' ? 'TRUE' : 'FALSE'}`)
-        .replace(/,\s*\)/g, ')')
-        .replace(/current_timestamp\(\)/gi, 'CURRENT_TIMESTAMP')
-        .replace(/table_schema\s*=\s*current_database\(\)/gi, 'table_schema = current_schema()')
-        .replace(/\?/g, () => `$${++parameterIndex}`);
-
-    const booleanColumns = '(?:is_active|is_plugged_in|is_ready|is_deleted|is_banned|is_completed|is_passed|is_resolved|auto_resolve|force_skip_day|is_available|is_verified)';
-    normalizedSql = normalizedSql
-        .replace(new RegExp(`\\b${booleanColumns}\\s*=\\s*1\\b`, 'gi'), (match) => match.replace(/=\s*1/i, '= TRUE'))
-        .replace(new RegExp(`\\b${booleanColumns}\\s*=\\s*0\\b`, 'gi'), (match) => match.replace(/=\s*0/i, '= FALSE'));
-
-    return normalizedSql;
+    host: process.env.MYSQL_HOST || process.env.DB_HOST || 'localhost',
+    user: process.env.MYSQL_USER || process.env.DB_USER || 'root',
+    password: process.env.MYSQL_PASSWORD || process.env.DB_PASSWORD || '',
+    database: process.env.MYSQL_DATABASE || process.env.DB_NAME || 'FullProjectPython',
+    port: Number(process.env.MYSQL_PORT || process.env.DB_PORT || 3306),
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0,
+    multipleStatements: true,
+    enableKeepAlive: true,
+    keepAliveInitialDelay: 0,
+    connectTimeout: 10000,
 };
 
 const RECOVERABLE_ERROR_CODES = new Set([
     'ECONNREFUSED',
     'ECONNRESET',
-    '57P01',
-    '08000',
-    '08003',
-    '08006',
-    '08001',
+    'PROTOCOL_CONNECTION_LOST',
+    'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR',
+    'PROTOCOL_ENQUEUE_AFTER_QUIT',
     'ETIMEDOUT',
 ]);
 
@@ -117,8 +84,8 @@ const ensurePool = async () => {
 
     if (!poolInitPromise) {
         poolInitPromise = (async () => {
-            const nextPool = new Pool(DB_CONFIG);
-            await nextPool.query('SELECT 1');
+            const nextPool = mysql.createPool(DB_CONFIG);
+            await nextPool.execute('SELECT 1');
             pool = nextPool;
             return pool;
         })().finally(() => {
@@ -137,7 +104,7 @@ const runWithRecovery = async (operation, meta) => {
             throw error;
         }
 
-        console.warn('[db] Recoverable PostgreSQL error, recreating pool:', {
+        console.warn('[db] Recoverable MySQL error, recreating pool:', {
             code: error.code,
             message: formatDbError(error),
             context: meta?.context || 'query',
@@ -154,8 +121,7 @@ const createRunner = (clientFactory) => ({
         try {
             return await runWithRecovery(async () => {
                 const client = await clientFactory();
-                const result = await client.query(normalizePostgresQuery(sql), values);
-                return [result.rows, result.fields];
+                return client.execute(sql, values);
             }, { context: 'execute' });
         } catch (error) {
             const message = formatDbError(error);
@@ -178,21 +144,21 @@ const db = createRunner(async () => ensurePool());
 
 db.getConnection = async () => {
     const activePool = await ensurePool();
-    const connection = await activePool.connect();
+    const connection = await activePool.getConnection();
 
     try {
-        await connection.query('SELECT 1');
+        await connection.ping();
     } catch (error) {
         connection.release();
         await closePool();
-        return db.getConnection();
+        const nextPool = await ensurePool();
+        return db.getConnection(nextPool);
     }
 
     return {
         async execute(sql, values = []) {
             try {
-                const result = await connection.query(normalizePostgresQuery(sql), values);
-                return [result.rows, result.fields];
+                return await connection.execute(sql, values);
             } catch (error) {
                 const message = formatDbError(error);
                 console.error('[db.connection.execute] Query failed:', {
@@ -208,13 +174,13 @@ db.getConnection = async () => {
             return this.execute(sql, values);
         },
         async beginTransaction() {
-            await connection.query('BEGIN');
+            await connection.beginTransaction();
         },
         async commit() {
-            await connection.query('COMMIT');
+            await connection.commit();
         },
         async rollback() {
-            await connection.query('ROLLBACK');
+            await connection.rollback();
         },
         release() {
             connection.release();
@@ -224,14 +190,14 @@ db.getConnection = async () => {
 
 db.healthcheck = async () => {
     const activePool = await ensurePool();
-    await activePool.query('SELECT 1');
+    await activePool.execute('SELECT 1');
     return true;
 };
 
 (async () => {
     try {
         await db.healthcheck();
-        console.log(`Connected to PostgreSQL database "${DB_CONFIG.database}"`);
+        console.log(`Connected to MySQL database "${DB_CONFIG.database}"`);
     } catch (err) {
         console.error('Database connection failed:', formatDbError(err));
     }
