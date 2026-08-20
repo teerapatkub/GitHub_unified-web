@@ -857,7 +857,7 @@ const ensureColumnIfMissing = async (tableName, columnName, definition) => {
     );
 
     if (Number(rows[0]?.count || 0) === 0) {
-        await db.execute(`ALTER TABLE \`${tableName}\` ADD COLUMN ${definition}`);
+        await db.execute(`ALTER TABLE \`${tableName}\` ADD COLUMN IF NOT EXISTS ${definition}`);
         console.log(`✅ Added column ${tableName}.${columnName}`);
     }
 };
@@ -2238,10 +2238,10 @@ const ensureLearningAiTaskSchema = async () => {
         `);
         const [existingIndexes] = await db.execute(
             `SELECT COUNT(*) AS count
-             FROM information_schema.statistics
-             WHERE table_schema = DATABASE()
-               AND table_name = 'learning_ai_tasks'
-               AND index_name = 'idx_learning_ai_tasks_user_mode_status'`
+                         FROM pg_indexes
+                         WHERE schemaname = current_schema()
+               AND tablename = 'learning_ai_tasks'
+                             AND indexname = 'idx_learning_ai_tasks_user_mode_status'`
         );
 
         if (Number(existingIndexes[0]?.count || 0) === 0) {
