@@ -99,6 +99,7 @@ const getLevelProgress = (xp = 0) => {
 export default function LearningPage({ onNavigate, user }) {
   const [modules, setModules] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showCompleteModal, setShowCompleteModal] = useState(false);
   const { t } = useTranslation();
 
   const resolveText = (key, fallback) => {
@@ -107,6 +108,7 @@ export default function LearningPage({ onNavigate, user }) {
   };
 
   const totalXp = Number(user?.xp || 0);
+  const streakDays = Number(user?.streak_days || 0);
   const storedLevel = Number(user?.level ?? 1);
   const levelProgress = getLevelProgress(totalXp);
   const currentLevel = Math.max(storedLevel, levelProgress.level);
@@ -142,6 +144,36 @@ export default function LearningPage({ onNavigate, user }) {
 
     fetchData();
   }, [user]);
+
+  const continueLearning = () => {
+    const nextLesson = modules
+      .flatMap((module) =>
+        (module.lessons || []).map((lesson) => ({
+          ...lesson,
+          moduleData: module,
+          moduleId: Number(module.module_id || 0),
+          moduleOrder: Number(module.order_index || 0),
+        }))
+      )
+      .filter(
+        (lesson) =>
+          !lesson.post_quiz_completed &&
+          currentLevel >= Number(lesson.required_level || 0)
+      )
+      .sort(
+        (a, b) =>
+          a.moduleId - b.moduleId ||
+          a.moduleOrder - b.moduleOrder ||
+          Number(a.order_index || 0) - Number(b.order_index || 0)
+      )[0];
+
+    if (!nextLesson) {
+      setShowCompleteModal(true);
+      return;
+    }
+
+    onNavigate("lesson", nextLesson.lesson_id || nextLesson.id, nextLesson.moduleData);
+  };
 
   if (loading) {
     return (
@@ -213,14 +245,18 @@ export default function LearningPage({ onNavigate, user }) {
                     🔥
                   </span>
                   <span className="text-sm font-bold text-pysim-secondary">
-                    0 วัน
+                    {streakDays} วัน
                   </span>
                 </div>
               </div>
             </div>
 
             <div className="pt-4">
-              <button className="flex w-full items-center justify-center gap-2 rounded-lg bg-pysim-secondary-container py-3 text-sm font-bold tracking-wide text-pysim-on-secondary-container transition-all hover:opacity-90 active:scale-95">
+              <button
+                type="button"
+                onClick={continueLearning}
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-pysim-secondary-container py-3 text-sm font-bold tracking-wide text-pysim-on-secondary-container transition-all hover:opacity-90 active:scale-95"
+              >
                 เรียนต่อ
               </button>
             </div>
@@ -265,6 +301,40 @@ export default function LearningPage({ onNavigate, user }) {
           </motion.div>
         </section>
       </main>
+
+      {showCompleteModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          role="presentation"
+          onClick={() => setShowCompleteModal(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white p-8 text-center shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="learning-complete-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <CheckCircle2 className="mx-auto mb-4 h-14 w-14 text-emerald-500" />
+            <h2
+              id="learning-complete-title"
+              className="text-2xl font-extrabold text-pysim-primary"
+            >
+              เรียนครบทุกบทเรียนแล้ว
+            </h2>
+            <p className="mt-3 text-pysim-on-surface-variant">
+              ยินดีด้วย คุณทำแบบทดสอบหลังเรียนครบทุกบทเรียนแล้ว
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowCompleteModal(false)}
+              className="mt-6 rounded-lg bg-pysim-primary px-6 py-3 text-sm font-bold text-white transition-opacity hover:opacity-90"
+            >
+              ปิด
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -293,6 +363,27 @@ const ModuleAccordion = ({
   };
 
   const progress = calculateProgress();
+
+  const getLessonStatus = (lesson) => {
+    if (lesson.post_quiz_completed) {
+      return {
+        label: "เรียนเสร็จสิ้น",
+        className: "bg-emerald-100 text-emerald-700",
+      };
+    }
+
+    if (lesson.pre_quiz_completed) {
+      return {
+        label: "กำลังเรียน",
+        className: "bg-amber-100 text-amber-700",
+      };
+    }
+
+    return {
+      label: "ยังไม่เริ่ม",
+      className: "bg-pysim-surface-container text-pysim-on-surface-variant",
+    };
+  };
 
   return (
     <motion.div
@@ -395,6 +486,9 @@ const ModuleAccordion = ({
                   const lessonId = lesson.lesson_id || lesson.id;
                   const isLessonLocked =
                     userLevel < Number(lesson.required_level || 0);
+                  const lessonStatus = isLessonLocked
+                    ? { label: "ล็อกอยู่", className: "bg-pysim-surface-dim text-pysim-outline" }
+                    : getLessonStatus(lesson);
 
                   return (
                     <li
@@ -428,7 +522,12 @@ const ModuleAccordion = ({
                         </span>
                       </div>
 
-                      <div className="flex items-center space-x-5">
+                      <div className="flex items-center gap-3">
+                        <span
+                          className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-bold ${lessonStatus.className}`}
+                        >
+                          {lessonStatus.label}
+                        </span>
                         <span
                           className="min-w-[3.25rem] select-none rounded-lg border px-3 py-1 text-center text-xs font-mono font-black shadow-sm"
                           style={{
@@ -437,7 +536,7 @@ const ModuleAccordion = ({
                             color: "#111827",
                           }}
                         >
-                          {lesson.completed_count || 0}/{lesson.total_count || 0}
+                          ภาคปฏิบัติ {lesson.completed_count || 0}/{lesson.total_count || 0}
                         </span>
                       </div>
                     </li>

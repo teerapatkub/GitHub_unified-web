@@ -289,12 +289,16 @@ async function getPyodideInstance() {
 
 export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate }) {
   const params = useParams();
-  const moduleId = Number(lessonId ?? params.lessonId ?? 1);
+  const moduleId = Number(params.lessonId ?? lessonId ?? 1);
 
   const [moduleData, setModuleData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [code, setCode] = useState('print("Hello")');
+  // ไฟล์เสริมของด่านปัจจุบัน (เช่น data.txt, math_util.py) ดึงมาจาก mini_game_exercises_files
+  // เหมือนกับที่ ExercisePage.jsx ใช้ fileContents/activeFile
+  const [activeFile, setActiveFile] = useState("main.py");
+  const [fileContents, setFileContents] = useState({}); // เก็บเฉพาะไฟล์เสริม (ไม่รวม main.py ซึ่งใช้ state `code`)
   const [dialogueIndex, setDialogueIndex] = useState(0);
   const [showTerminal, setShowTerminal] = useState(false);
   const [terminalLines, setTerminalLines] = useState([]);
@@ -777,6 +781,18 @@ const loadGameData = async () => {
     if (!currentSubtopic) return;
     const progress = progressBySubtopic[currentSubtopic.exercise_id];
     setCode(progress?.submitted_code || currentSubtopic.starter_code || 'print("Hello")');
+
+    // โหลดไฟล์เสริมของด่านนี้ (data.txt, math_util.py, ฯลฯ) มาใส่แท็บไฟล์
+    const subtopicFiles = Array.isArray(currentSubtopic.files) ? currentSubtopic.files : [];
+    const extraFileContents = {};
+    subtopicFiles.forEach((file) => {
+      const name = typeof file === "string" ? file : file.name;
+      if (!name || name === "main.py") return;
+      extraFileContents[name] = typeof file === "string" ? "" : (file.content || "");
+    });
+    setFileContents(extraFileContents);
+    setActiveFile("main.py");
+
     setDialogueIndex(0);
     setShowTerminal(false);
     setTerminalLines([]);
@@ -885,7 +901,21 @@ const loadGameData = async () => {
     };
   };
 
+  // เขียนไฟล์เสริมทั้งหมด (data.txt, math_util.py, ฯลฯ) ลงใน Pyodide VFS
+  // ก่อนรันโค้ด เพื่อให้ main.py เปิด/import ไฟล์เหล่านี้ได้ เหมือนกับ ExercisePage.jsx
+  const writeExtraFilesToFS = () => {
+    if (!pyodide) return;
+    Object.entries(fileContents).forEach(([fileName, content]) => {
+      try {
+        pyodide.FS.writeFile(fileName, content || "", { encoding: "utf8" });
+      } catch (e) {
+        // ignore individual file write failures
+      }
+    });
+  };
+
   const runCodeForCheck = async (testInput = "") => {
+    writeExtraFilesToFS();
     const encoded = btoa(unescape(encodeURIComponent(code)));
     const script = `
 import sys, builtins, base64, textwrap
@@ -939,6 +969,7 @@ output.strip()
     setTerminalLines(["$ python main.py"]);
     setIsRunning(true);
     runOutputRef.current = "";
+    writeExtraFilesToFS();
 
     try {
       const pythonBody = buildAsyncPythonBody(code);
@@ -988,6 +1019,7 @@ await __main__()
     setProgramDialogue({ text: "" });
     setIsRunning(true);
     runOutputRef.current = "";
+    writeExtraFilesToFS();
 
     try {
       const pythonBody = buildAsyncPythonBody(code);
@@ -1338,7 +1370,7 @@ if (result?.is_module_completed) {
       <div className="mb-2 flex items-center justify-between rounded-xl border-b bg-white px-4 py-2 shadow-sm">
         <div className="relative flex items-center gap-2">
           <button
-            onClick={() => onNavigate?.("exercise", moduleId)}
+            onClick={() => onNavigate?.("lesson", moduleId)}
             className="flex items-center text-sm font-bold text-slate-500 transition-colors hover:text-indigo-600"
           >
             <ArrowLeft size={16} className="mr-2" /> Back
@@ -1488,9 +1520,21 @@ if (result?.is_module_completed) {
           <section className="relative flex flex-col overflow-hidden bg-white">
             <div className="flex min-h-0 flex-1 flex-col">
               <div className="flex items-center justify-between border-b bg-slate-50 px-6 py-2">
-                <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                  main.py
-                </span>
+                <div className="flex gap-2">
+                  {["main.py", ...Object.keys(fileContents)].map((fileName) => (
+                    <button
+                      key={fileName}
+                      onClick={() => setActiveFile(fileName)}
+                      className={`rounded-lg px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest transition-colors ${
+                        activeFile === fileName
+                          ? "bg-indigo-600 text-white"
+                          : "border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+                      }`}
+                    >
+                      {fileName}
+                    </button>
+                  ))}
+                </div>
                 <div className="flex gap-2">
                   <button
                     onClick={handleRunOnly}
@@ -1528,8 +1572,14 @@ if (result?.is_module_completed) {
                 height="100%"
                 defaultLanguage="python"
                 theme="light"
-                value={code}
-                onChange={(value) => setCode(value || "")}
+                value={activeFile === "main.py" ? code : (fileContents[activeFile] || "")}
+                onChange={(value) => {
+                  if (activeFile === "main.py") {
+                    setCode(value || "");
+                  } else {
+                    setFileContents((prev) => ({ ...prev, [activeFile]: value || "" }));
+                  }
+                }}
                 options={{ fontSize: 16, minimap: { enabled: false } }}
               />
             </div>

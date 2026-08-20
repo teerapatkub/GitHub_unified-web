@@ -2,72 +2,12 @@ import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, ChevronRight, Play } from "lucide-react";
 import { useParams } from "react-router-dom";
+import usePyodide from "../hooks/usePyodide";
 
 const API_BASE = "http://localhost:3001";
 
 const buildSlideCodeKey = (slide, index) =>
   `${slide?.title || "slide"}-${slide?.src || "no-src"}-${index}`;
-
-const simulatePythonOutput = (sourceCode) => {
-  const lines = String(sourceCode || "")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  const variables = {};
-  const outputs = [];
-
-  const unquote = (value) => {
-    const trimmed = value.trim();
-    if (
-      (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
-      (trimmed.startsWith("'") && trimmed.endsWith("'"))
-    ) {
-      return trimmed.slice(1, -1);
-    }
-    return trimmed;
-  };
-
-  for (const line of lines) {
-    const assignmentMatch = line.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$/);
-    if (assignmentMatch && !line.startsWith("print(")) {
-      variables[assignmentMatch[1]] = unquote(assignmentMatch[2]);
-      continue;
-    }
-
-    const printMatch = line.match(/^print\((.*)\)$/);
-    if (!printMatch) {
-      continue;
-    }
-
-    const expression = printMatch[1].trim();
-    if (!expression) {
-      outputs.push("");
-      continue;
-    }
-
-    if (
-      (expression.startsWith('"') && expression.endsWith('"')) ||
-      (expression.startsWith("'") && expression.endsWith("'"))
-    ) {
-      outputs.push(unquote(expression));
-      continue;
-    }
-
-    if (Object.prototype.hasOwnProperty.call(variables, expression)) {
-      outputs.push(String(variables[expression]));
-      continue;
-    }
-
-    outputs.push(expression);
-  }
-
-  if (outputs.length > 0) {
-    return outputs.join("\n");
-  }
-
-  return "ยังไม่พบผลลัพธ์ที่แสดงด้วย print()";
-};
 
 export default function LessonPage({
   onNavigate,
@@ -93,7 +33,7 @@ export default function LessonPage({
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState("");
   const [isRunning, setIsRunning] = useState(false);
-  const [output, setOutput] = useState(null);
+  const [terminalOutput, setTerminalOutput] = useState([]);
   const [answersByQuiz, setAnswersByQuiz] = useState({ pre: {}, post: {} });
   const [scores, setScores] = useState({ pre: null, post: null });
   const [quizMeta, setQuizMeta] = useState({ preTotal: 0, postTotal: 0 });
@@ -104,6 +44,12 @@ export default function LessonPage({
   const [showPostTestFailModal, setShowPostTestFailModal] = useState(false);
   const [editableCodes, setEditableCodes] = useState({});
   const [savingQuiz, setSavingQuiz] = useState(false);
+  const {
+    status: pyodideStatus,
+    runCode: runPythonCode,
+    clearOutput,
+    setOnOutput,
+  } = usePyodide();
 
   const slide = slides[currentSlide];
   const codeSlideKey = slide?.code
@@ -112,6 +58,18 @@ export default function LessonPage({
   const currentCode = codeSlideKey
     ? editableCodes[codeSlideKey] ?? slide?.content ?? ""
     : "";
+
+  useEffect(() => {
+    setOnOutput(setTerminalOutput);
+    return () => setOnOutput(null);
+  }, [setOnOutput]);
+
+  useEffect(() => {
+    if (!codeSlideKey) return;
+    setTerminalOutput([]);
+    clearOutput();
+    setIsRunning(false);
+  }, [codeSlideKey, clearOutput]);
 
   useEffect(() => {
     setCurrentSlide(0);
@@ -123,7 +81,7 @@ export default function LessonPage({
     setQuizStatusMessage("");
     setShowSummary(false);
     setShowPostTestFailModal(false);
-    setOutput(null);
+    setTerminalOutput([]);
     setEditableCodes({});
     setFetchError("");
     setSavingQuiz(false);
@@ -259,13 +217,16 @@ export default function LessonPage({
   }, [resolvedLessonId, user?.user_id, user?.isGuest]);
 
   const runCode = () => {
-    setIsRunning(true);
-    setOutput(null);
+    if (!codeSlideKey || !currentCode.trim() || pyodideStatus !== "ready") {
+      return;
+    }
 
-    setTimeout(() => {
-      setOutput(simulatePythonOutput(currentCode));
+    setIsRunning(true);
+    clearOutput();
+
+    runPythonCode(currentCode).finally(() => {
       setIsRunning(false);
-    }, 800);
+    });
   };
 
   const hasPrev = currentSlide > 0;
@@ -404,11 +365,6 @@ export default function LessonPage({
     setCurrentSlide((prev) => prev + 1);
   };
 
-  const gainDisplay =
-    scores.pre !== null && scores.post !== null && postTotal > 0
-      ? Math.max(0, Math.round(((scores.post - scores.pre) / postTotal) * 100))
-      : 0;
-
   const postPassingScore = postTotal > 0 ? Math.ceil(postTotal * 0.6) : 0;
   const postTestFinished = hasPostQuiz
     ? scores.post !== null
@@ -533,16 +489,35 @@ export default function LessonPage({
 
                   <button
                     onClick={runCode}
-                    disabled={isRunning}
-                    className="mt-4 flex items-center gap-2 rounded-lg bg-amber-100 px-5 py-2 text-sm font-bold text-amber-900 transition-all hover:bg-amber-200"
+                    disabled={isRunning || pyodideStatus !== "ready"}
+                    className="mt-4 flex items-center gap-2 rounded-lg bg-amber-100 px-5 py-2 text-sm font-bold text-amber-900 transition-all hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Play size={16} />
-                    Run Code
+                    {pyodideStatus === "loading"
+                      ? "กำลังโหลด Python..."
+                      : isRunning
+                        ? "กำลังรัน..."
+                        : "Run Code"}
                   </button>
 
-                  {output && (
-                    <div className="mt-3 rounded-lg bg-emerald-50 px-4 py-2 font-mono text-sm text-emerald-600">
-                      &gt; {output}
+                  {terminalOutput.length > 0 && (
+                    <div className="mt-3 max-h-64 overflow-auto rounded-lg bg-slate-950 px-4 py-3 font-mono text-sm">
+                      {terminalOutput.map((entry, index) => (
+                        <div
+                          key={`${index}-${entry.text}`}
+                          className={`whitespace-pre-wrap ${
+                            entry.type === "stderr"
+                              ? "text-red-400"
+                              : entry.type === "system"
+                                ? "text-slate-400"
+                                : entry.type === "command"
+                                  ? "text-cyan-300"
+                                  : "text-emerald-300"
+                          }`}
+                        >
+                          {entry.text}
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -691,37 +666,42 @@ export default function LessonPage({
           </div>
         </div>
 
-        <div className="mt-12 flex items-center justify-between border-t border-pysim-outline-variant/10 pt-6">
-          <button
-            onClick={() => onNavigate("learn")}
-            className="rounded-lg bg-slate-200 px-6 py-3 font-medium text-slate-700 transition-colors hover:bg-slate-300"
-          >
-            กลับ
-          </button>
+<div className="mt-12 flex items-center justify-between border-t border-pysim-outline-variant/10 pt-6">
+  {/* ปุ่มกลับ (ฝั่งซ้าย) */}
+  <button
+    onClick={() => onNavigate("learn")}
+    className="rounded-lg bg-slate-200 px-6 py-3 font-medium text-slate-700 transition-colors hover:bg-slate-300"
+  >
+    กลับ
+  </button>
 
-          <button
-            onClick={() =>
-              postTestPassed
-                ? onNavigate("exercise", resolvedLessonId)
-                : restartLesson()
-            }
-            disabled={!postTestFinished}
-            data-label={
-              postTestFinished
-                ? postTestPassed
-                  ? "ไปทำแบบฝึกหัด"
-                  : "กลับไปเรียนใหม่"
-                : "ไปทำแบบฝึกหัด"
-            }
-            className={`relative rounded-lg px-8 py-3 text-sm font-bold text-transparent before:absolute before:inset-0 before:flex before:items-center before:justify-center before:content-[attr(data-label)] ${
-              postTestFinished
-                ? "bg-blue-700 before:text-white hover:bg-blue-800"
-                : "cursor-not-allowed bg-slate-200 before:text-slate-400"
-            }`}
-          >
-            เริ่มแบบฝึกหัด
-          </button>
-        </div>
+  {/* กลุ่มปุ่มฝั่งขวา (Mini Game + ไปทำแบบภาคปฏิบัติ) */}
+  <div className="flex items-center gap-3">
+    <button
+      onClick={() => (postTestPassed ? onNavigate?.("mini-game", lessonId) : restartLesson())}
+      disabled={!postTestFinished}
+      className={`rounded-lg px-6 py-3 text-sm font-bold text-white transition-colors ${
+        postTestFinished
+          ? "bg-blue-600 hover:bg-blue-700"
+          : "cursor-not-allowed bg-slate-200 text-slate-400"
+      }`}
+    >
+      เริ่มโจทย์แบบเนื้อเรื่อง
+    </button>
+
+    <button
+      onClick={() => (postTestPassed ? onNavigate("exercise", resolvedLessonId) : restartLesson())}
+      disabled={!postTestFinished}
+      className={`rounded-lg px-6 py-3 text-sm font-bold text-white transition-colors ${
+        postTestFinished
+          ? "bg-emerald-600 hover:bg-emerald-700"
+          : "cursor-not-allowed bg-slate-200 text-slate-400"
+      }`}
+    >
+      ไปทำแบบภาคปฏิบัติ
+    </button>
+  </div>
+</div>
       </main>
 
       {showPostTestFailModal && (
@@ -774,7 +754,7 @@ export default function LessonPage({
             </p>
 
             <p className="font-bold text-pysim-secondary">
-              ระดับพัฒนาการ: {gainDisplay}%
+              ระดับพัฒนาการ: {Math.max(0, Math.round((((scores?.post ?? 0) / (postTotal || 1)) - ((scores?.pre ?? 0) / (preTotal || 1))) * 100))}%
             </p>
 
             <div className="flex justify-center gap-4 pt-4">
@@ -787,10 +767,10 @@ export default function LessonPage({
                   }
                   restartLesson();
                 }}
-                data-label={postTestPassed ? "ไปทำแบบฝึกหัด" : "กลับไปเรียนใหม่"}
+                data-label={postTestPassed ? "ไปทำแบบภาคปฏิบัติ" : "กลับไปเรียนใหม่"}
                 className="relative rounded-lg bg-blue-700 px-5 py-2 text-sm font-bold text-transparent transition-all hover:bg-blue-800 before:absolute before:inset-0 before:flex before:items-center before:justify-center before:text-white before:content-[attr(data-label)]"
               >
-                ไปทำแบบฝึกหัด
+                ไปทำแบบภาคปฏิบัติ
               </button>
               <button
                 onClick={() => setShowSummary(false)}

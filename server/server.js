@@ -29,6 +29,74 @@ const computeLevelFromXp = (xp = 0) => {
     return level;
 };
 
+// ===== ระบบสตรีค (Streak) =====
+// อิงเวลาไทย (UTC+7) เพื่อให้วันเปลี่ยนตรงกับที่ผู้ใช้เห็นจริง ไม่ใช่ timezone ของเซิร์ฟเวอร์
+const getBangkokDateString = (date = new Date()) => {
+    const bangkokMs = date.getTime() + (date.getTimezoneOffset() * 60000) + (7 * 60 * 60000);
+    const bangkokDate = new Date(bangkokMs);
+    const yyyy = bangkokDate.getFullYear();
+    const mm = String(bangkokDate.getMonth() + 1).padStart(2, '0');
+    const dd = String(bangkokDate.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+};
+
+const diffInDays = (dateStrA, dateStrB) => {
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const a = new Date(`${dateStrA}T00:00:00Z`);
+    const b = new Date(`${dateStrB}T00:00:00Z`);
+    return Math.round((a.getTime() - b.getTime()) / msPerDay);
+};
+
+// บันทึกว่าผู้ใช้ได้ XP ในวันนี้ (upsert แถวเดียวต่อคนต่อวัน)
+const logUserXpForToday = async (executor, userId, xpDelta) => {
+    if (!xpDelta || Number(xpDelta) <= 0) return;
+    const today = getBangkokDateString();
+    await executor.execute(
+        `INSERT INTO user_xp_log (user_id, xp_date, xp_earned)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE xp_earned = xp_earned + VALUES(xp_earned)`,
+        [userId, today, Number(xpDelta)]
+    );
+};
+
+// คำนวณสตรีคปัจจุบันของผู้ใช้จาก log จริง (ไม่ได้เก็บตัวเลขสตรีคไว้ตรง ๆ)
+// กติกา: ถ้าห่างจากวันนี้เกิน 1 วัน (คือขาดไปอย่างน้อย 1 วันเต็ม) ถือว่าสตรีคเป็น 0 ทันที
+const computeUserStreak = async (executor, userId) => {
+    const [rows] = await executor.execute(
+        `SELECT xp_date FROM user_xp_log
+         WHERE user_id = ?
+         ORDER BY xp_date DESC
+         LIMIT 400`,
+        [userId]
+    );
+
+    if (rows.length === 0) return 0;
+
+    const today = getBangkokDateString();
+    const dates = rows.map((row) => {
+        const value = row.xp_date instanceof Date
+            ? getBangkokDateString(row.xp_date)
+            : String(row.xp_date).slice(0, 10);
+        return value;
+    });
+
+    const gapFromToday = diffInDays(today, dates[0]);
+    if (gapFromToday > 1) return 0; // ขาดไปแล้วอย่างน้อย 1 วันเต็ม สตรีคเป็น 0
+
+    let streak = 1;
+    for (let i = 1; i < dates.length; i += 1) {
+        const gap = diffInDays(dates[i - 1], dates[i]);
+        if (gap === 1) {
+            streak += 1;
+        } else if (gap === 0) {
+            continue; // กันข้อมูลซ้ำวันเดียวกัน (ไม่ควรเกิดเพราะมี unique key)
+        } else {
+            break;
+        }
+    }
+    return streak;
+};
+
 const applyXpRewardToUser = async (executor, userId, xpDelta = 0, coinDelta = 0) => {
     const [userRows] = await executor.execute(
         'SELECT user_id, username, level, xp, virtual_currency FROM users WHERE user_id = ? LIMIT 1',
@@ -52,11 +120,16 @@ const applyXpRewardToUser = async (executor, userId, xpDelta = 0, coinDelta = 0)
         [storedXp, nextCoins, nextLevel, userId]
     );
 
+    // อัปเดต log XP วันนี้ (ใช้คำนวณสตรีค) เฉพาะตอนได้ XP เพิ่มจริง ๆ
+    await logUserXpForToday(executor, userId, xpDelta);
+    const streakDays = await computeUserStreak(executor, userId);
+
     return {
         ...currentUser,
         level: nextLevel,
         xp: storedXp,
         virtual_currency: nextCoins,
+        streak_days: streakDays,
     };
 };
 let multer;
@@ -560,1340 +633,6 @@ ensureLessonExercisesSeeded().catch((error) => {
     console.error('Failed to seed lesson exercises:', describeError(error));
 });
 
-const buildMiniGameSeedSet = (lesson) => {
-    const title = normalizeLessonTitle(lesson?.title);
-    const displayTitle = lesson?.title || 'บทเรียนนี้';
-
-    if (title.includes('comment')) {
-        return [
-            {
-                title: 'Mini 1: อธิบายโค้ดด้วยคอมเมนต์',
-                description: 'เพิ่ม comment 1 บรรทัด แล้วแสดงข้อความ "อ่านโค้ดง่ายขึ้น"',
-                starter_code: '# เขียนคำอธิบายโค้ดตรงนี้\nprint("อ่านโค้ดง่ายขึ้น")',
-                solution_code: '# แสดงข้อความว่าคอมเมนต์ช่วยให้อ่านง่าย\nprint("อ่านโค้ดง่ายขึ้น")',
-                test_cases: [{ input: '', expected: 'อ่านโค้ดง่ายขึ้น' }],
-            },
-            {
-                title: 'Mini 2: ปิดโค้ดทดลองด้วยคอมเมนต์',
-                description: 'ใช้ # ปิดบรรทัด print("debug") แล้วให้โปรแกรมแสดงเฉพาะ "พร้อมส่งงาน"',
-                starter_code: '# print("debug")\nprint("พร้อมส่งงาน")',
-                solution_code: '# print("debug")\nprint("พร้อมส่งงาน")',
-                test_cases: [{ input: '', expected: 'พร้อมส่งงาน' }],
-            },
-            {
-                title: 'Mini 3: โน้ตขั้นตอนก่อนรัน',
-                description: 'เขียน comment บอกขั้นตอนสั้น ๆ แล้วแสดงข้อความ "โค้ดนี้มีคำอธิบาย"',
-                starter_code: '# 1. เตรียมข้อความ\nprint("โค้ดนี้มีคำอธิบาย")',
-                solution_code: '# 1. เตรียมข้อความ\nprint("โค้ดนี้มีคำอธิบาย")',
-                test_cases: [{ input: '', expected: 'โค้ดนี้มีคำอธิบาย' }],
-            },
-        ];
-    }
-
-    if (title.includes('input') || title.includes('รับ')) {
-        return [
-            {
-                title: 'Mini 1: รับชื่อผู้เล่น',
-                description: 'รับชื่อ 1 ค่า แล้วแสดงคำทักทายในรูปแบบ "สวัสดี <ชื่อ>"',
-                starter_code: 'name = input("ชื่อของคุณ: ")\nprint("สวัสดี", name)',
-                solution_code: 'name = input("ชื่อของคุณ: ")\nprint("สวัสดี", name)',
-                test_cases: [
-                    { input: 'Lumi', expected: 'สวัสดี Lumi' },
-                    { input: 'PySim', expected: 'สวัสดี PySim' },
-                ],
-            },
-            {
-                title: 'Mini 2: รับของโปรด',
-                description: 'รับชื่ออาหาร 1 ค่า แล้วแสดง "ฉันชอบ <อาหาร>"',
-                starter_code: 'food = input("อาหารที่ชอบ: ")\nprint("ฉันชอบ", food)',
-                solution_code: 'food = input("อาหารที่ชอบ: ")\nprint("ฉันชอบ", food)',
-                test_cases: [
-                    { input: 'ราเมง', expected: 'ฉันชอบ ราเมง' },
-                    { input: 'ข้าวผัด', expected: 'ฉันชอบ ข้าวผัด' },
-                ],
-            },
-            {
-                title: 'Mini 3: รับตัวเลขแล้วสะท้อนผล',
-                description: 'รับตัวเลข 1 ค่า แล้วแสดง "เลขที่เลือกคือ <ตัวเลข>"',
-                starter_code: 'number = input("เลือกเลข: ")\nprint("เลขที่เลือกคือ", number)',
-                solution_code: 'number = input("เลือกเลข: ")\nprint("เลขที่เลือกคือ", number)',
-                test_cases: [
-                    { input: '7', expected: 'เลขที่เลือกคือ 7' },
-                    { input: '21', expected: 'เลขที่เลือกคือ 21' },
-                ],
-            },
-        ];
-    }
-
-    if (title.includes('ตัวแปร') || title.includes('variable')) {
-        return [
-            {
-                title: 'Mini 1: เก็บชื่อคอร์ส',
-                description: 'สร้างตัวแปร course เก็บคำว่า "Python" แล้วแสดงค่าตัวแปร',
-                starter_code: 'course = "Python"\nprint(course)',
-                solution_code: 'course = "Python"\nprint(course)',
-                test_cases: [{ input: '', expected: 'Python' }],
-            },
-            {
-                title: 'Mini 2: คำนวณคะแนนรวม',
-                description: 'สร้างตัวแปร score มีค่า 40 แล้วเพิ่มอีก 10 จากนั้นแสดงผลรวม',
-                starter_code: 'score = 40\nscore = score + 10\nprint(score)',
-                solution_code: 'score = 40\nscore = score + 10\nprint(score)',
-                test_cases: [{ input: '', expected: '50' }],
-            },
-            {
-                title: 'Mini 3: รวมข้อความจากตัวแปร',
-                description: 'สร้างตัวแปร first และ last แล้วแสดง "Lumi Python"',
-                starter_code: 'first = "Lumi"\nlast = "Python"\nprint(first, last)',
-                solution_code: 'first = "Lumi"\nlast = "Python"\nprint(first, last)',
-                test_cases: [{ input: '', expected: 'Lumi Python' }],
-            },
-        ];
-    }
-
-    if (title.includes('type conversion') || title.includes('conversion') || title.includes('ชนิดข้อมูล')) {
-        return [
-            {
-                title: 'Mini 1: แปลงข้อความเป็นจำนวนเต็ม',
-                description: 'รับตัวเลข 2 ค่า แปลงด้วย int() แล้วแสดงผลรวม',
-                starter_code: 'a = int(input())\nb = int(input())\nprint(a + b)',
-                solution_code: 'a = int(input())\nb = int(input())\nprint(a + b)',
-                test_cases: [
-                    { input: '2\n3', expected: '5' },
-                    { input: '10\n5', expected: '15' },
-                ],
-            },
-            {
-                title: 'Mini 2: แปลงเป็นทศนิยม',
-                description: 'รับราคา 1 ค่า แปลงด้วย float() แล้วแสดงราคาหลังบวก 10',
-                starter_code: 'price = float(input())\nprint(price + 10)',
-                solution_code: 'price = float(input())\nprint(price + 10)',
-                test_cases: [
-                    { input: '20', expected_any: ['30.0', '30'] },
-                    { input: '5.5', expected: '15.5' },
-                ],
-            },
-            {
-                title: 'Mini 3: แปลงตัวเลขเป็นข้อความ',
-                description: 'กำหนด age = 15 แล้วใช้ str() เพื่อแสดง "อายุ 15"',
-                starter_code: 'age = 15\nprint("อายุ " + str(age))',
-                solution_code: 'age = 15\nprint("อายุ " + str(age))',
-                test_cases: [{ input: '', expected: 'อายุ 15' }],
-            },
-        ];
-    }
-
-    if (title.includes('if') || title.includes('else') || title.includes('เงื่อนไข')) {
-        return [
-            {
-                title: 'Mini 1: ตรวจคะแนนผ่าน',
-                description: 'รับคะแนน ถ้าตั้งแต่ 50 ขึ้นไปให้แสดง "ผ่าน" ไม่เช่นนั้นแสดง "ไม่ผ่าน"',
-                starter_code: 'score = int(input())\nif score >= 50:\n    print("ผ่าน")\nelse:\n    print("ไม่ผ่าน")',
-                solution_code: 'score = int(input())\nif score >= 50:\n    print("ผ่าน")\nelse:\n    print("ไม่ผ่าน")',
-                test_cases: [
-                    { input: '80', expected: 'ผ่าน' },
-                    { input: '40', expected: 'ไม่ผ่าน' },
-                ],
-            },
-            {
-                title: 'Mini 2: เลขคู่หรือเลขคี่',
-                description: 'รับจำนวนเต็ม ถ้าหาร 2 ลงตัวให้แสดง "เลขคู่" ไม่เช่นนั้นแสดง "เลขคี่"',
-                starter_code: 'number = int(input())\nif number % 2 == 0:\n    print("เลขคู่")\nelse:\n    print("เลขคี่")',
-                solution_code: 'number = int(input())\nif number % 2 == 0:\n    print("เลขคู่")\nelse:\n    print("เลขคี่")',
-                test_cases: [
-                    { input: '8', expected: 'เลขคู่' },
-                    { input: '9', expected: 'เลขคี่' },
-                ],
-            },
-            {
-                title: 'Mini 3: ส่วนลดสมาชิก',
-                description: 'รับคำว่า yes/no ถ้าเป็น yes ให้แสดง "ได้ส่วนลด" ถ้าไม่ใช่ให้แสดง "ราคาปกติ"',
-                starter_code: 'member = input()\nif member == "yes":\n    print("ได้ส่วนลด")\nelse:\n    print("ราคาปกติ")',
-                solution_code: 'member = input()\nif member == "yes":\n    print("ได้ส่วนลด")\nelse:\n    print("ราคาปกติ")',
-                test_cases: [
-                    { input: 'yes', expected: 'ได้ส่วนลด' },
-                    { input: 'no', expected: 'ราคาปกติ' },
-                ],
-            },
-        ];
-    }
-
-    if (title.includes('for loop') || title.includes('while loop') || title.includes('loop')) {
-        return [
-            {
-                title: 'Mini 1: นับเลขตามจำนวน',
-                description: 'รับ n แล้วแสดงเลข 1 ถึง n ทีละบรรทัด',
-                starter_code: 'n = int(input())\nfor i in range(1, n + 1):\n    print(i)',
-                solution_code: 'n = int(input())\nfor i in range(1, n + 1):\n    print(i)',
-                test_cases: [
-                    { input: '3', expected: '1 2 3' },
-                    { input: '1', expected: '1' },
-                ],
-            },
-            {
-                title: 'Mini 2: รวมเลขด้วยลูป',
-                description: 'รับ n แล้วหาผลรวม 1 ถึง n จากนั้นแสดงผลรวม',
-                starter_code: 'n = int(input())\ntotal = 0\nfor i in range(1, n + 1):\n    total += i\nprint(total)',
-                solution_code: 'n = int(input())\ntotal = 0\nfor i in range(1, n + 1):\n    total += i\nprint(total)',
-                test_cases: [
-                    { input: '4', expected: '10' },
-                    { input: '5', expected: '15' },
-                ],
-            },
-            {
-                title: 'Mini 3: พิมพ์คำซ้ำ',
-                description: 'รับจำนวนครั้ง แล้วแสดงคำว่า "Python" ตามจำนวนนั้น',
-                starter_code: 'count = int(input())\nfor i in range(count):\n    print("Python")',
-                solution_code: 'count = int(input())\nfor i in range(count):\n    print("Python")',
-                test_cases: [
-                    { input: '2', expected: 'Python Python' },
-                    { input: '1', expected: 'Python' },
-                ],
-            },
-        ];
-    }
-
-    return [
-        {
-            title: `Mini 1: เริ่มโจทย์ ${displayTitle}`,
-            description: `เขียนโปรแกรม Python แสดงข้อความ "พร้อมเรียน ${displayTitle}"`,
-            starter_code: `print("พร้อมเรียน ${displayTitle}")`,
-            solution_code: `print("พร้อมเรียน ${displayTitle}")`,
-            test_cases: [{ input: '', expected: `พร้อมเรียน ${displayTitle}` }],
-        },
-        {
-            title: `Mini 2: ทบทวน ${displayTitle}`,
-            description: 'สร้างตัวแปร status เก็บคำว่า "เข้าใจแล้ว" แล้วแสดงผล',
-            starter_code: 'status = "เข้าใจแล้ว"\nprint(status)',
-            solution_code: 'status = "เข้าใจแล้ว"\nprint(status)',
-            test_cases: [{ input: '', expected: 'เข้าใจแล้ว' }],
-        },
-        {
-            title: `Mini 3: ปิดท้าย ${displayTitle}`,
-            description: 'แสดงข้อความ "ผ่านมินิเกมแล้ว" เพื่อจบบทนี้',
-            starter_code: 'print("ผ่านมินิเกมแล้ว")',
-            solution_code: 'print("ผ่านมินิเกมแล้ว")',
-            test_cases: [{ input: '', expected: 'ผ่านมินิเกมแล้ว' }],
-        },
-    ];
-};
-
-const buildStoryMiniGameSeedSet = (lesson) => {
-    const title = normalizeLessonTitle(lesson?.title);
-    const displayTitle = lesson?.title || 'บทเรียนนี้';
-
-    const makeStart = ({ title, description, starterCode, tests, storyLines, branchHigh, branchLow }) => ({
-        exercise_order: 'START',
-        title,
-        description,
-        starter_code: starterCode,
-        solution_code: starterCode,
-        test_cases: {
-            expected_format: 'แสดงตัวเลขเพื่อเลือกเส้นทาง',
-            rules: [
-                { condition: 'float > 500', branch_key: '1A' },
-                { condition: 'float <= 500', branch_key: '1B' },
-            ],
-            correctness: tests,
-        },
-        dialogues: [
-            { order: 0, speaker: 'lumi', emotion: 'smile', text: storyLines[0] },
-            { order: 1, speaker: 'lumi', emotion: 'neutral', text: storyLines[1] },
-            { order: 2, speaker: 'lumi', emotion: 'anxious', text: storyLines[2] },
-            { order: 3, speaker: 'lumi', emotion: 'smile', text: description },
-            { order: 4, speaker: 'lumi', emotion: 'happy', phase: 'post_submit', branch_key: '1A', text: branchHigh },
-            { order: 5, speaker: 'lumi', emotion: 'smile', phase: 'post_submit', branch_key: '1B', text: branchLow },
-        ],
-    });
-
-    const makeLeaf = ({ order, title, description, starterCode, tests, intro, clearText, emotion = 'smile' }) => ({
-        exercise_order: order,
-        title,
-        description,
-        starter_code: starterCode,
-        solution_code: starterCode,
-        test_cases: {
-            expected_format: 'ทำโจทย์ให้ตรงผลลัพธ์',
-            rules: [{ condition: 'value.length >= 0', branch_key: 'end' }],
-            correctness: tests,
-        },
-        dialogues: [
-            { order: 0, speaker: 'lumi', emotion, text: intro },
-            { order: 1, speaker: 'lumi', emotion: 'neutral', text: description },
-            { order: 2, speaker: 'lumi', emotion: 'happy', phase: 'post_submit', branch_key: 'end', text: clearText },
-        ],
-    });
-
-    if (title.includes('comment')) {
-        return [
-            makeStart({
-                title: 'จุดเริ่มต้น: สมุดโค้ดที่อ่านยาก',
-                description: 'Lumi เจอไฟล์โค้ดที่ไม่มีคำอธิบาย รับจำนวนบรรทัดโค้ดแล้วคำนวณคะแนนความซับซ้อน ถ้ามากกว่า 500 จะไปเส้นทาง 1A ถ้าน้อยกว่าหรือเท่ากับ 500 จะไปเส้นทาง 1B',
-                starterCode: 'lines = int(input("จำนวนบรรทัดโค้ด: "))\n# คำนวณคะแนนความซับซ้อนของไฟล์\ncomplexity = lines * 120\nprint("คะแนนความซับซ้อน:", complexity)',
-                tests: [
-                    { input: '3', expected: 'คะแนนความซับซ้อน: 360' },
-                    { input: '6', expected: 'คะแนนความซับซ้อน: 720' },
-                ],
-                storyLines: [
-                    'วันนี้ Lumi เจอสมุดโค้ดเก่าในห้องเรียน แต่แทบไม่มีใครอ่านออกเลยค่ะ',
-                    'ถ้าไฟล์ซับซ้อนมาก เราต้องช่วยทีมรีวิวด้วยคอมเมนต์ที่ชัดเจน ถ้าไฟล์เล็ก เราจะฝึกเขียนโน้ตสั้น ๆ ให้ดูดี',
-                    'ลองใช้ comment และการคำนวณง่าย ๆ เพื่อบอกระบบว่าไฟล์นี้ควรไปทางไหนนะคะ',
-                ],
-                branchHigh: 'คะแนนเกิน 500 แล้วค่ะ ไฟล์นี้ซับซ้อนมาก เราจะไปเส้นทาง 1A เพื่อเขียนคอมเมนต์ช่วยทีมรีวิวกัน',
-                branchLow: 'คะแนนไม่เกิน 500 ค่ะ ไฟล์นี้ยังพออ่านได้ เราจะไปเส้นทาง 1B เพื่อเขียนคอมเมนต์สรุปสั้น ๆ',
-            }),
-            makeLeaf({
-                order: '1A',
-                title: 'ทางแยก 1A: คอมเมนต์ช่วยทีมรีวิว',
-                description: 'เพิ่มคอมเมนต์อธิบายงานรีวิว 1 บรรทัด แล้วแสดงข้อความ "ส่งให้ทีมรีวิวแล้ว"',
-                starterCode: '# อธิบายว่าไฟล์นี้ต้องให้ทีมช่วยตรวจ\nprint("ส่งให้ทีมรีวิวแล้ว")',
-                tests: [{ input: '', expected: 'ส่งให้ทีมรีวิวแล้ว' }],
-                intro: 'เส้นทาง 1A คือไฟล์ใหญ่ค่ะ คอมเมนต์ต้องช่วยให้เพื่อนในทีมเข้าใจทันที',
-                clearText: 'ดีมากค่ะ คอมเมนต์แบบนี้ช่วยให้ทีมรีวิวไม่หลงทางแล้ว',
-            }),
-            makeLeaf({
-                order: '1B',
-                title: 'ทางแยก 1B: คอมเมนต์สรุปสั้น',
-                description: 'เพิ่มคอมเมนต์สรุปงาน 1 บรรทัด แล้วแสดงข้อความ "อ่านเองได้"',
-                starterCode: '# สรุปว่าไฟล์นี้ยังอ่านและแก้เองได้\nprint("อ่านเองได้")',
-                tests: [{ input: '', expected: 'อ่านเองได้' }],
-                intro: 'เส้นทาง 1B คือไฟล์เล็กค่ะ เราใช้คอมเมนต์สั้น ๆ ให้ตัวเองกลับมาอ่านได้ง่ายขึ้น',
-                clearText: 'เยี่ยมค่ะ คอมเมนต์สั้นแต่ช่วยให้โค้ดเป็นมิตรมากขึ้นแล้ว',
-            }),
-        ];
-    }
-
-    if (title.includes('input') || title.includes('รับ')) {
-        return [
-            makeStart({
-                title: 'จุดเริ่มต้น: ประตูห้องเรียนอัจฉริยะ',
-                description: 'รับจำนวนผู้เข้าห้องเรียน แล้วคำนวณแต้มการเตรียมห้อง ถ้าแต้มมากกว่า 500 จะไปเส้นทาง 1A ถ้าน้อยกว่าหรือเท่ากับ 500 จะไปเส้นทาง 1B',
-                starterCode: 'students = int(input("จำนวนนักเรียน: "))\nroom_points = students * 125\nprint("แต้มเตรียมห้อง:", room_points)',
-                tests: [
-                    { input: '3', expected: 'แต้มเตรียมห้อง: 375' },
-                    { input: '5', expected: 'แต้มเตรียมห้อง: 625' },
-                ],
-                storyLines: [
-                    'ประตูห้องเรียนของ Lumi ต้องรู้จำนวนนักเรียนก่อนถึงจะจัดห้องถูกค่ะ',
-                    'ถ้าคนเยอะ เราต้องเปิดโหมดห้องใหญ่ ถ้าคนน้อย เราจะจัดโต๊ะกลุ่มเล็ก',
-                    'ใช้ input() รับจำนวนคน แล้วแสดงแต้มให้ระบบตัดสินเส้นทางนะคะ',
-                ],
-                branchHigh: 'แต้มเกิน 500 แล้วค่ะ นักเรียนมาเยอะ ไปเส้นทาง 1A เพื่อรับชื่อหัวหน้าห้องกัน',
-                branchLow: 'แต้มไม่เกิน 500 ค่ะ เป็นกลุ่มเล็ก ไปเส้นทาง 1B เพื่อรับชื่อกลุ่มเรียนกัน',
-            }),
-            makeLeaf({
-                order: '1A',
-                title: 'ทางแยก 1A: รับชื่อหัวหน้าห้อง',
-                description: 'รับชื่อหัวหน้าห้อง 1 ค่า แล้วแสดง "หัวหน้าห้องคือ <ชื่อ>"',
-                starterCode: 'leader = input("ชื่อหัวหน้าห้อง: ")\nprint("หัวหน้าห้องคือ", leader)',
-                tests: [{ input: 'มะลิ', expected: 'หัวหน้าห้องคือ มะลิ' }],
-                intro: 'คนเยอะต้องมีหัวหน้าห้องช่วยประสานงานค่ะ',
-                clearText: 'รับชื่อเรียบร้อยแล้ว ห้องใหญ่พร้อมเริ่มเรียนค่ะ',
-            }),
-            makeLeaf({
-                order: '1B',
-                title: 'ทางแยก 1B: รับชื่อกลุ่มเรียน',
-                description: 'รับชื่อกลุ่ม 1 ค่า แล้วแสดง "กลุ่มนี้ชื่อ <ชื่อกลุ่ม>"',
-                starterCode: 'group_name = input("ชื่อกลุ่ม: ")\nprint("กลุ่มนี้ชื่อ", group_name)',
-                tests: [{ input: 'Python Mini', expected: 'กลุ่มนี้ชื่อ Python Mini' }],
-                intro: 'กลุ่มเล็กต้องตั้งชื่อกลุ่มให้จำง่ายค่ะ',
-                clearText: 'ชื่อกลุ่มน่ารักมากค่ะ ไปเรียนต่อกันได้เลย',
-            }),
-        ];
-    }
-
-    if (title.includes('ตัวแปร') || title.includes('variable')) {
-        return [
-            makeStart({
-                title: 'จุดเริ่มต้น: กล่องพลังงานของตัวแปร',
-                description: 'สร้างตัวแปร base และรับ bonus จากผู้ใช้ แล้วแสดงพลังงานรวม ถ้ามากกว่า 500 จะไป 1A ถ้าน้อยกว่าหรือเท่ากับ 500 จะไป 1B',
-                starterCode: 'base = 400\nbonus = int(input("โบนัสพลังงาน: "))\ntotal_power = base + bonus\nprint("พลังงานรวม:", total_power)',
-                tests: [
-                    { input: '50', expected: 'พลังงานรวม: 450' },
-                    { input: '150', expected: 'พลังงานรวม: 550' },
-                ],
-                storyLines: [
-                    'Lumi มีกล่องพลังงานที่ต้องเก็บค่าด้วยตัวแปรค่ะ',
-                    'ถ้าพลังงานรวมสูงมาก เราจะเปิดโหมดทดลองขั้นสูง ถ้ายังไม่สูง เราจะฝึกจัดเก็บข้อมูลพื้นฐาน',
-                    'ใช้ตัวแปรช่วยเก็บ base, bonus และ total_power ให้ถูกต้องนะคะ',
-                ],
-                branchHigh: 'พลังงานเกิน 500 แล้วค่ะ ไปเส้นทาง 1A เพื่อจัดตัวแปรสำหรับโหมดขั้นสูง',
-                branchLow: 'พลังงานยังไม่เกิน 500 ค่ะ ไปเส้นทาง 1B เพื่อจัดตัวแปรพื้นฐานให้เรียบร้อย',
-            }),
-            makeLeaf({
-                order: '1A',
-                title: 'ทางแยก 1A: ตัวแปรโหมดขั้นสูง',
-                description: 'สร้างตัวแปร mode เก็บคำว่า "advanced" แล้วแสดงค่าออกทางหน้าจอ',
-                starterCode: 'mode = "advanced"\nprint(mode)',
-                tests: [{ input: '', expected: 'advanced' }],
-                intro: 'โหมดขั้นสูงต้องมีตัวแปร mode บอกสถานะให้ชัดเจนค่ะ',
-                clearText: 'ตัวแปร mode พร้อมแล้วค่ะ ระบบรู้จักโหมดขั้นสูงแล้ว',
-            }),
-            makeLeaf({
-                order: '1B',
-                title: 'ทางแยก 1B: ตัวแปรโหมดพื้นฐาน',
-                description: 'สร้างตัวแปร mode เก็บคำว่า "basic" แล้วแสดงค่าออกทางหน้าจอ',
-                starterCode: 'mode = "basic"\nprint(mode)',
-                tests: [{ input: '', expected: 'basic' }],
-                intro: 'โหมดพื้นฐานก็สำคัญค่ะ เราต้องเก็บสถานะให้ชัดเจนเหมือนกัน',
-                clearText: 'ดีมากค่ะ ตัวแปร mode บอกสถานะพื้นฐานได้ถูกต้อง',
-            }),
-        ];
-    }
-
-    if (title.includes('type conversion') || title.includes('conversion') || title.includes('ชนิดข้อมูล')) {
-        return [
-            makeStart({
-                title: 'จุดเริ่มต้น: เครื่องแปลงค่าหน้าห้อง',
-                description: 'รับราคาจากผู้ใช้เป็นข้อความ แปลงเป็น float แล้วคูณ 1.07 เพื่อหาราคารวมภาษี ถ้ามากกว่า 500 ไป 1A ถ้าน้อยกว่าหรือเท่ากับ 500 ไป 1B',
-                starterCode: 'price = float(input("ราคาสินค้า: "))\nvat_total = price * 1.07\nprint("ราคารวมภาษี:", vat_total)',
-                tests: [
-                    { input: '100', expected: 'ราคารวมภาษี: 107.0' },
-                    { input: '600', expected: 'ราคารวมภาษี: 642.0' },
-                ],
-                storyLines: [
-                    'เครื่องคิดเงินของ Lumi รับข้อมูลเข้ามาเป็นข้อความเสมอค่ะ',
-                    'เราต้องแปลงชนิดข้อมูลก่อนคำนวณ ไม่อย่างนั้นระบบจะบวกเลขไม่ได้ถูกต้อง',
-                    'ใช้ float() แปลงราคาแล้วคำนวณภาษีเพื่อเลือกเส้นทางนะคะ',
-                ],
-                branchHigh: 'ราคารวมภาษีเกิน 500 แล้วค่ะ ไปเส้นทาง 1A เพื่อจัดการตัวเลขทศนิยม',
-                branchLow: 'ราคารวมภาษีไม่เกิน 500 ค่ะ ไปเส้นทาง 1B เพื่อแปลงตัวเลขเป็นข้อความรายงานผล',
-            }),
-            makeLeaf({
-                order: '1A',
-                title: 'ทางแยก 1A: ปัดเศษราคาสูง',
-                description: 'รับราคาทศนิยม 1 ค่า แปลงเป็น float แล้วแสดงราคาที่ปัดเป็นทศนิยม 2 ตำแหน่ง',
-                starterCode: 'price = float(input("ราคา: "))\nprint(round(price, 2))',
-                tests: [{ input: '123.456', expected: '123.46' }],
-                intro: 'ยอดสูงต้องแสดงผลให้อ่านง่ายและไม่ยาวเกินไปค่ะ',
-                clearText: 'ปัดเศษได้สวยมากค่ะ รายงานราคาพร้อมแล้ว',
-            }),
-            makeLeaf({
-                order: '1B',
-                title: 'ทางแยก 1B: แปลงตัวเลขเป็นข้อความ',
-                description: 'กำหนด total = 250 แล้วใช้ str() แสดงข้อความ "ยอดรวม 250"',
-                starterCode: 'total = 250\nprint("ยอดรวม " + str(total))',
-                tests: [{ input: '', expected: 'ยอดรวม 250' }],
-                intro: 'ยอดไม่สูงมาก เราจะฝึกแปลงตัวเลขเป็นข้อความสำหรับรายงานค่ะ',
-                clearText: 'เยี่ยมค่ะ str() ช่วยรวมข้อความกับตัวเลขได้ถูกต้องแล้ว',
-            }),
-        ];
-    }
-
-    if (title.includes('if') || title.includes('else') || title.includes('เงื่อนไข')) {
-        return [
-            makeStart({
-                title: 'จุดเริ่มต้น: ประตูตรวจคะแนน',
-                description: 'รับคะแนนภารกิจแล้วแสดงคะแนนออกมา ถ้ามากกว่า 500 ไป 1A ถ้าน้อยกว่าหรือเท่ากับ 500 ไป 1B',
-                starterCode: 'score = int(input("คะแนนภารกิจ: "))\nprint("คะแนน:", score)',
-                tests: [
-                    { input: '450', expected: 'คะแนน: 450' },
-                    { input: '650', expected: 'คะแนน: 650' },
-                ],
-                storyLines: [
-                    'หน้าประตูห้องเรียนมีระบบตรวจคะแนนภารกิจค่ะ',
-                    'ถ้าคะแนนสูง เราจะเข้าโหมดรางวัล ถ้าคะแนนยังไม่สูง เราจะเข้าโหมดฝึกเพิ่ม',
-                    'รับคะแนนแล้วแสดงออกมาให้ระบบใช้ if-else ต่อในเส้นทางถัดไปนะคะ',
-                ],
-                branchHigh: 'คะแนนเกิน 500 แล้วค่ะ ไปเส้นทาง 1A เพื่อเขียนเงื่อนไขโหมดรางวัล',
-                branchLow: 'คะแนนยังไม่เกิน 500 ค่ะ ไปเส้นทาง 1B เพื่อเขียนเงื่อนไขโหมดฝึกเพิ่ม',
-            }),
-            makeLeaf({
-                order: '1A',
-                title: 'ทางแยก 1A: เงื่อนไขรับรางวัล',
-                description: 'รับคะแนน ถ้าคะแนนตั้งแต่ 80 ขึ้นไปให้แสดง "รับตราดาว" ไม่เช่นนั้นให้แสดง "รับเหรียญฝึกฝน"',
-                starterCode: 'score = int(input("คะแนน: "))\nif score >= 80:\n    print("รับตราดาว")\nelse:\n    print("รับเหรียญฝึกฝน")',
-                tests: [
-                    { input: '90', expected: 'รับตราดาว' },
-                    { input: '70', expected: 'รับเหรียญฝึกฝน' },
-                ],
-                intro: 'คะแนนสูงต้องมีระบบแยกรางวัลให้เหมาะสมค่ะ',
-                clearText: 'เงื่อนไขรางวัลถูกต้องแล้วค่ะ',
-            }),
-            makeLeaf({
-                order: '1B',
-                title: 'ทางแยก 1B: เงื่อนไขฝึกเพิ่ม',
-                description: 'รับจำนวนครั้งที่ฝึก ถ้ามากกว่าหรือเท่ากับ 3 ให้แสดง "พร้อมสอบใหม่" ไม่เช่นนั้นให้แสดง "ฝึกต่ออีกนิด"',
-                starterCode: 'practice = int(input("จำนวนครั้งที่ฝึก: "))\nif practice >= 3:\n    print("พร้อมสอบใหม่")\nelse:\n    print("ฝึกต่ออีกนิด")',
-                tests: [
-                    { input: '3', expected: 'พร้อมสอบใหม่' },
-                    { input: '1', expected: 'ฝึกต่ออีกนิด' },
-                ],
-                intro: 'คะแนนยังไม่สูงไม่เป็นไรค่ะ เราใช้เงื่อนไขช่วยวางแผนฝึกเพิ่ม',
-                clearText: 'ดีมากค่ะ เงื่อนไขช่วยให้รู้ว่าควรฝึกต่อหรือพร้อมสอบใหม่',
-            }),
-        ];
-    }
-
-    if (title.includes('for loop') || title.includes('while loop') || title.includes('loop')) {
-        return [
-            makeStart({
-                title: 'จุดเริ่มต้น: เครื่องนับงานในห้องเรียน',
-                description: 'รับจำนวนงาน แล้วใช้ loop รวมแต้มงานทีละ 120 คะแนน ถ้ารวมเกิน 500 ไป 1A ถ้าน้อยกว่าหรือเท่ากับ 500 ไป 1B',
-                starterCode: 'tasks = int(input("จำนวนงาน: "))\ntotal = 0\nfor i in range(tasks):\n    total += 120\nprint("แต้มงานรวม:", total)',
-                tests: [
-                    { input: '3', expected: 'แต้มงานรวม: 360' },
-                    { input: '5', expected: 'แต้มงานรวม: 600' },
-                ],
-                storyLines: [
-                    'Lumi ต้องนับงานที่กองอยู่บนโต๊ะทีละชิ้นค่ะ',
-                    'ถ้างานเยอะ เราจะใช้ loop ช่วยสรุปชุดใหญ่ ถ้างานน้อย เราจะใช้ loop ตรวจทีละรอบ',
-                    'ใช้ loop รวมแต้มงานเพื่อให้ระบบเลือกเส้นทางนะคะ',
-                ],
-                branchHigh: 'แต้มงานเกิน 500 แล้วค่ะ ไปเส้นทาง 1A เพื่อใช้ loop สรุปงานชุดใหญ่',
-                branchLow: 'แต้มงานไม่เกิน 500 ค่ะ ไปเส้นทาง 1B เพื่อใช้ loop ตรวจงานทีละรอบ',
-            }),
-            makeLeaf({
-                order: '1A',
-                title: 'ทางแยก 1A: loop สรุปงานชุดใหญ่',
-                description: 'รับ n แล้วใช้ for loop แสดงเลขตั้งแต่ 1 ถึง n ทีละบรรทัด',
-                starterCode: 'n = int(input("จำนวนรอบ: "))\nfor i in range(1, n + 1):\n    print(i)',
-                tests: [{ input: '3', expected: '1 2 3' }],
-                intro: 'งานชุดใหญ่ต้องมี loop ช่วยนับเป็นลำดับค่ะ',
-                clearText: 'นับครบแล้วค่ะ loop ทำงานถูกต้อง',
-            }),
-            makeLeaf({
-                order: '1B',
-                title: 'ทางแยก 1B: loop ตรวจงานทีละรอบ',
-                description: 'รับ n แล้วใช้ while loop แสดงคำว่า "ตรวจแล้ว" n ครั้ง',
-                starterCode: 'n = int(input("จำนวนงาน: "))\ncount = 0\nwhile count < n:\n    print("ตรวจแล้ว")\n    count += 1',
-                tests: [{ input: '2', expected: 'ตรวจแล้ว ตรวจแล้ว' }],
-                intro: 'งานไม่เยอะ เราลองใช้ while loop ตรวจทีละชิ้นกันค่ะ',
-                clearText: 'ตรวจครบทุกชิ้นแล้วค่ะ while loop ผ่านเรียบร้อย',
-            }),
-        ];
-    }
-
-    return [
-        makeStart({
-            title: `จุดเริ่มต้น: ภารกิจ ${displayTitle}`,
-            description: `รับค่าพลังภารกิจแล้วแสดงผล ถ้ามากกว่า 500 ไป 1A ถ้าน้อยกว่าหรือเท่ากับ 500 ไป 1B`,
-            starterCode: 'power = int(input("พลังภารกิจ: "))\nprint("พลังภารกิจ:", power)',
-            tests: [
-                { input: '300', expected: 'พลังภารกิจ: 300' },
-                { input: '700', expected: 'พลังภารกิจ: 700' },
-            ],
-            storyLines: [
-                `Lumi เปิดแฟ้มภารกิจของบท ${displayTitle} แล้วค่ะ`,
-                'เราจะใช้ผลลัพธ์ของโค้ดเลือกเส้นทางการฝึกที่เหมาะกับสถานการณ์',
-                'ลองทำโจทย์เปิดทางนี้ให้ผ่านก่อนนะคะ',
-            ],
-            branchHigh: 'พลังภารกิจเกิน 500 แล้วค่ะ ไปเส้นทาง 1A กัน',
-            branchLow: 'พลังภารกิจไม่เกิน 500 ค่ะ ไปเส้นทาง 1B กัน',
-        }),
-        makeLeaf({
-            order: '1A',
-            title: `ทางแยก 1A: สรุปบท ${displayTitle}`,
-            description: 'แสดงข้อความ "ผ่านเส้นทาง 1A"',
-            starterCode: 'print("ผ่านเส้นทาง 1A")',
-            tests: [{ input: '', expected: 'ผ่านเส้นทาง 1A' }],
-            intro: 'นี่คือเส้นทางฝึกแบบเข้มข้นค่ะ',
-            clearText: 'เส้นทาง 1A ผ่านแล้วค่ะ',
-        }),
-        makeLeaf({
-            order: '1B',
-            title: `ทางแยก 1B: ทบทวนบท ${displayTitle}`,
-            description: 'แสดงข้อความ "ผ่านเส้นทาง 1B"',
-            starterCode: 'print("ผ่านเส้นทาง 1B")',
-            tests: [{ input: '', expected: 'ผ่านเส้นทาง 1B' }],
-            intro: 'นี่คือเส้นทางทบทวนแบบค่อยเป็นค่อยไปค่ะ',
-            clearText: 'เส้นทาง 1B ผ่านแล้วค่ะ',
-        }),
-    ];
-};
-
-const buildPlayerChoiceMiniGameSeedSet = (lesson) => {
-    const title = normalizeLessonTitle(lesson?.title);
-    const displayTitle = lesson?.title || 'บทเรียนนี้';
-
-    const thaiBranchRules = [
-        { condition: '/[ก-๙]/.test(value)', branch_key: '1A' },
-        { condition: '/[A-Za-z]/.test(value)', branch_key: '1B' },
-    ];
-
-    const makeStart = ({ title, description, starterCode, tests, rules, storyLines, branchA, branchB }) => ({
-        exercise_order: 'START',
-        title,
-        description,
-        starter_code: starterCode,
-        solution_code: starterCode,
-        test_cases: {
-            expected_format: 'ทำโจทย์แรกให้ผ่าน แล้วระบบจะใช้คำตอบที่พิมพ์เพื่อเลือกเส้นทาง',
-            rules,
-            correctness: tests,
-        },
-        dialogues: [
-            { order: 0, speaker: 'lumi', emotion: 'smile', text: storyLines[0] },
-            { order: 1, speaker: 'lumi', emotion: 'neutral', text: storyLines[1] },
-            { order: 2, speaker: 'lumi', emotion: 'smile', text: description },
-            { order: 3, speaker: 'lumi', emotion: 'happy', phase: 'post_submit', branch_key: '1A', text: branchA },
-            { order: 4, speaker: 'lumi', emotion: 'happy', phase: 'post_submit', branch_key: '1B', text: branchB },
-        ],
-    });
-
-    const makeLeaf = ({ order, title, description, starterCode, tests, intro, clearText, emotion = 'smile' }) => ({
-        exercise_order: order,
-        title,
-        description,
-        starter_code: starterCode,
-        solution_code: starterCode,
-        test_cases: {
-            expected_format: 'ทำโจทย์ให้ตรงผลลัพธ์',
-            rules: [{ condition: 'value.length >= 0', branch_key: 'end' }],
-            correctness: tests,
-        },
-        dialogues: [
-            { order: 0, speaker: 'lumi', emotion, text: intro },
-            { order: 1, speaker: 'lumi', emotion: 'neutral', text: description },
-            { order: 2, speaker: 'lumi', emotion: 'happy', phase: 'post_submit', branch_key: 'end', text: clearText },
-        ],
-    });
-
-    if (title.includes('comment') || title.includes('คอมเม')) {
-        return [
-            makeStart({
-                title: 'จุดเริ่มต้น: ป้ายชื่อบนสมุดโค้ด',
-                description: 'สร้างคอมเมนต์อธิบายว่าโค้ดนี้รับชื่อผู้เล่น จากนั้นรับชื่อด้วย input() แล้ว print ชื่อนั้นออกมา ถ้าพิมพ์ชื่อภาษาไทยจะไป 1A ถ้าพิมพ์ชื่อภาษาอังกฤษจะไป 1B',
-                starterCode: '# รับชื่อผู้เล่นเพื่อเขียนลงสมุดโค้ด\nname = input("name: ")\nprint(name)',
-                tests: [
-                    { input: 'สมชาย', expected: 'สมชาย' },
-                    { input: 'Lumi', expected: 'Lumi' },
-                ],
-                rules: thaiBranchRules,
-                storyLines: [
-                    'Lumi เจอสมุดโค้ดที่ยังไม่มีป้ายชื่อและไม่มีคำอธิบายค่ะ',
-                    'เริ่มจากใส่ comment ให้คนอ่านรู้ว่าโค้ดรับชื่อ แล้วให้ผู้เล่นพิมพ์ชื่อเพื่อเลือกเส้นทางถัดไป',
-                ],
-                branchA: 'ชื่อที่พิมพ์เป็นภาษาไทยค่ะ ต่อไปเราจะฝึกรับข้อมูลเป็นจำนวนเต็ม',
-                branchB: 'ชื่อที่พิมพ์เป็นภาษาอังกฤษค่ะ ต่อไปเราจะฝึกรับข้อมูลเป็นทศนิยม',
-            }),
-            makeLeaf({
-                order: '1A',
-                title: 'ทางแยก 1A: รับจำนวนเต็ม',
-                description: 'เขียนคอมเมนต์ 1 บรรทัด แล้วรับตัวเลขจำนวนเต็มด้วย int(input()) จากนั้นแสดงผลในรูปแบบ "จำนวนเต็ม: <ค่า>"',
-                starterCode: '# รับจำนวนเต็มจากผู้เล่น\nnumber = int(input("number: "))\nprint("จำนวนเต็ม:", number)',
-                tests: [{ input: '12', expected: 'จำนวนเต็ม: 12' }],
-                intro: 'เส้นทางชื่อไทยจะต่อด้วยการรับตัวเลขจำนวนเต็มค่ะ',
-                clearText: 'เยี่ยมค่ะ comment กับ int(input()) ทำงานถูกต้องแล้ว',
-            }),
-            makeLeaf({
-                order: '1B',
-                title: 'ทางแยก 1B: รับทศนิยม',
-                description: 'เขียนคอมเมนต์ 1 บรรทัด แล้วรับตัวเลขทศนิยมด้วย float(input()) จากนั้นแสดงผลในรูปแบบ "ทศนิยม: <ค่า>"',
-                starterCode: '# รับตัวเลขทศนิยมจากผู้เล่น\nscore = float(input("decimal: "))\nprint("ทศนิยม:", score)',
-                tests: [{ input: '3.5', expected: 'ทศนิยม: 3.5' }],
-                intro: 'เส้นทางชื่ออังกฤษจะต่อด้วยการรับตัวเลขทศนิยมค่ะ',
-                clearText: 'ดีมากค่ะ comment กับ float(input()) ผ่านแล้ว',
-            }),
-        ];
-    }
-
-    if (title.includes('input') || title.includes('รับ')) {
-        return [
-            makeStart({
-                title: 'จุดเริ่มต้น: เลือกช่วงเวลาเข้าห้องเรียน',
-                description: 'รับคำว่า "เช้า" หรือ "บ่าย" ด้วย input() แล้ว print คำนั้นออกมา ถ้าพิมพ์เช้าจะไป 1A ถ้าพิมพ์บ่ายจะไป 1B',
-                starterCode: 'period = input("period: ")\nprint(period)',
-                tests: [
-                    { input: 'เช้า', expected: 'เช้า' },
-                    { input: 'บ่าย', expected: 'บ่าย' },
-                ],
-                rules: [
-                    { condition: 'value.includes("เช้า")', branch_key: '1A' },
-                    { condition: 'value.includes("บ่าย")', branch_key: '1B' },
-                ],
-                storyLines: [
-                    'ประตูห้องเรียนของ Lumi ต้องรู้ก่อนว่าผู้เล่นจะเข้าเรียนช่วงไหนค่ะ',
-                    'ใช้ input() รับคำตอบจากผู้เล่น แล้วคำตอบนั้นจะพาไปฝึกคนละโจทย์',
-                ],
-                branchA: 'เลือกช่วงเช้าแล้วค่ะ ต่อไปฝึกรับจำนวนนักเรียนเป็นจำนวนเต็ม',
-                branchB: 'เลือกช่วงบ่ายแล้วค่ะ ต่อไปฝึกรับคะแนนเฉลี่ยเป็นทศนิยม',
-            }),
-            makeLeaf({
-                order: '1A',
-                title: 'ทางแยก 1A: รับจำนวนนักเรียน',
-                description: 'รับจำนวนนักเรียนเป็น int แล้วแสดง "นักเรียนทั้งหมด <จำนวน> คน"',
-                starterCode: 'students = int(input("students: "))\nprint("นักเรียนทั้งหมด", students, "คน")',
-                tests: [{ input: '25', expected: 'นักเรียนทั้งหมด 25 คน' }],
-                intro: 'ช่วงเช้าต้องนับจำนวนนักเรียนให้ครบค่ะ',
-                clearText: 'รับจำนวนเต็มจากผู้ใช้ได้ถูกต้องแล้วค่ะ',
-            }),
-            makeLeaf({
-                order: '1B',
-                title: 'ทางแยก 1B: รับคะแนนเฉลี่ย',
-                description: 'รับคะแนนเฉลี่ยเป็น float แล้วแสดง "คะแนนเฉลี่ย <ค่า>"',
-                starterCode: 'avg = float(input("average: "))\nprint("คะแนนเฉลี่ย", avg)',
-                tests: [{ input: '8.5', expected: 'คะแนนเฉลี่ย 8.5' }],
-                intro: 'ช่วงบ่ายเราจะเก็บคะแนนเฉลี่ยแบบทศนิยมค่ะ',
-                clearText: 'รับทศนิยมจากผู้ใช้ได้ถูกต้องแล้วค่ะ',
-            }),
-        ];
-    }
-
-    if (title.includes('ตัวแปร') || title.includes('variable')) {
-        return [
-            makeStart({
-                title: 'จุดเริ่มต้น: กล่องสถานะของตัวแปร',
-                description: 'รับคำว่า "พร้อม" หรือ "พัก" เก็บไว้ในตัวแปร status แล้ว print ค่าออกมา ถ้าพิมพ์พร้อมจะไป 1A ถ้าพิมพ์พักจะไป 1B',
-                starterCode: 'status = input("status: ")\nprint(status)',
-                tests: [
-                    { input: 'พร้อม', expected: 'พร้อม' },
-                    { input: 'พัก', expected: 'พัก' },
-                ],
-                rules: [
-                    { condition: 'value.includes("พร้อม")', branch_key: '1A' },
-                    { condition: 'value.includes("พัก")', branch_key: '1B' },
-                ],
-                storyLines: [
-                    'Lumi มีกล่องเก็บสถานะ และกล่องนี้คือแนวคิดของตัวแปรค่ะ',
-                    'ค่าที่ผู้เล่นใส่ลงไปจะตัดสินว่าเราจะฝึกตัวแปรแบบไหนต่อ',
-                ],
-                branchA: 'สถานะพร้อมแล้วค่ะ ไปฝึกตัวแปรข้อความกัน',
-                branchB: 'สถานะพักค่ะ ไปฝึกตัวแปรตัวเลขกัน',
-            }),
-            makeLeaf({
-                order: '1A',
-                title: 'ทางแยก 1A: ตัวแปรข้อความ',
-                description: 'กำหนดตัวแปร course ให้เก็บคำว่า "Python" แล้ว print ค่าออกมา',
-                starterCode: 'course = "Python"\nprint(course)',
-                tests: [{ input: '', expected: 'Python' }],
-                intro: 'ตัวแปรข้อความช่วยเก็บคำสำคัญของบทเรียนค่ะ',
-                clearText: 'ตัวแปรข้อความถูกต้องแล้วค่ะ',
-            }),
-            makeLeaf({
-                order: '1B',
-                title: 'ทางแยก 1B: ตัวแปรตัวเลข',
-                description: 'กำหนดตัวแปร coins ให้มีค่า 50 แล้ว print ค่าออกมา',
-                starterCode: 'coins = 50\nprint(coins)',
-                tests: [{ input: '', expected: '50' }],
-                intro: 'ตัวแปรตัวเลขช่วยเก็บแต้มและจำนวนต่าง ๆ ได้ค่ะ',
-                clearText: 'ตัวแปรตัวเลขถูกต้องแล้วค่ะ',
-            }),
-        ];
-    }
-
-    if (title.includes('type conversion') || title.includes('conversion') || title.includes('ชนิดข้อมูล')) {
-        return [
-            makeStart({
-                title: 'จุดเริ่มต้น: เครื่องคิดภาษีหน้าห้อง',
-                description: 'รับราคาสินค้าเป็นข้อความ แปลงเป็น float แล้วคำนวณ VAT 7% ถ้าราคาที่พิมพ์มากกว่า 500 จะไป 1A ถ้าน้อยกว่าหรือเท่ากับ 500 จะไป 1B',
-                starterCode: 'price = float(input("price: "))\nvat_total = price * 1.07\nprint("ราคารวมภาษี:", vat_total)',
-                tests: [
-                    { input: '100', expected: 'ราคารวมภาษี: 107.0' },
-                    { input: '600', expected: 'ราคารวมภาษี: 642.0' },
-                ],
-                rules: [
-                    { condition: 'float > 500', branch_key: '1A' },
-                    { condition: 'float <= 500', branch_key: '1B' },
-                ],
-                storyLines: [
-                    'เครื่องคิดเงินของ Lumi รับราคาจากผู้เล่นเป็นข้อความก่อนเสมอค่ะ',
-                    'เราต้องแปลงชนิดข้อมูลให้ถูก แล้วราคาที่ผู้เล่นพิมพ์จะเลือกเส้นทางถัดไป',
-                ],
-                branchA: 'ราคาที่พิมพ์มากกว่า 500 ค่ะ ต่อไปฝึกแปลงเป็น float และปัดทศนิยม',
-                branchB: 'ราคาที่พิมพ์ไม่เกิน 500 ค่ะ ต่อไปฝึกแปลงตัวเลขกลับเป็นข้อความ',
-            }),
-            makeLeaf({
-                order: '1A',
-                title: 'ทางแยก 1A: แปลงเป็นทศนิยม',
-                description: 'รับตัวเลขด้วย float(input()) แล้วแสดงค่าที่ปัดเป็นทศนิยม 2 ตำแหน่ง',
-                starterCode: 'price = float(input("price: "))\nprint(round(price, 2))',
-                tests: [{ input: '123.456', expected: '123.46' }],
-                intro: 'ราคาสูงต้องแสดงทศนิยมให้อ่านง่ายค่ะ',
-                clearText: 'แปลงและปัดทศนิยมได้ถูกต้องแล้วค่ะ',
-            }),
-            makeLeaf({
-                order: '1B',
-                title: 'ทางแยก 1B: แปลงเป็นข้อความ',
-                description: 'กำหนด total = 250 แล้วใช้ str() เพื่อแสดงข้อความ "ยอดรวม 250"',
-                starterCode: 'total = 250\nprint("ยอดรวม " + str(total))',
-                tests: [{ input: '', expected: 'ยอดรวม 250' }],
-                intro: 'ยอดไม่สูงมาก เราจะฝึกต่อข้อความกับตัวเลขค่ะ',
-                clearText: 'ใช้ str() ได้ถูกต้องแล้วค่ะ',
-            }),
-        ];
-    }
-
-    if (title.includes('if') || title.includes('else') || title.includes('เงื่อนไข')) {
-        return [
-            makeStart({
-                title: 'จุดเริ่มต้น: บัตรเลือกโหมด',
-                description: 'รับคำว่า "ผ่าน" หรือ "ฝึก" แล้ว print ออกมา ถ้าพิมพ์ผ่านจะไป 1A ถ้าพิมพ์ฝึกจะไป 1B',
-                starterCode: 'mode = input("mode: ")\nprint(mode)',
-                tests: [
-                    { input: 'ผ่าน', expected: 'ผ่าน' },
-                    { input: 'ฝึก', expected: 'ฝึก' },
-                ],
-                rules: [
-                    { condition: 'value.includes("ผ่าน")', branch_key: '1A' },
-                    { condition: 'value.includes("ฝึก")', branch_key: '1B' },
-                ],
-                storyLines: [
-                    'หน้าประตูมีบัตรสองใบให้เลือกค่ะ ใบหนึ่งคือผ่าน ใบหนึ่งคือฝึก',
-                    'คำที่ผู้เล่นพิมพ์จะพาไปเจอโจทย์ if-else คนละแบบ',
-                ],
-                branchA: 'เลือกผ่านแล้วค่ะ ต่อไปเขียนเงื่อนไขรับรางวัล',
-                branchB: 'เลือกฝึกแล้วค่ะ ต่อไปเขียนเงื่อนไขวางแผนฝึกเพิ่ม',
-            }),
-            makeLeaf({
-                order: '1A',
-                title: 'ทางแยก 1A: เงื่อนไขรับรางวัล',
-                description: 'รับคะแนน ถ้าคะแนนตั้งแต่ 80 ขึ้นไปให้แสดง "รับตราดาว" ไม่เช่นนั้นให้แสดง "รับเหรียญฝึกฝน"',
-                starterCode: 'score = int(input("score: "))\nif score >= 80:\n    print("รับตราดาว")\nelse:\n    print("รับเหรียญฝึกฝน")',
-                tests: [
-                    { input: '90', expected: 'รับตราดาว' },
-                    { input: '70', expected: 'รับเหรียญฝึกฝน' },
-                ],
-                intro: 'เส้นทางผ่านต้องใช้ if-else แยกรางวัลค่ะ',
-                clearText: 'เงื่อนไขรับรางวัลถูกต้องแล้วค่ะ',
-            }),
-            makeLeaf({
-                order: '1B',
-                title: 'ทางแยก 1B: เงื่อนไขฝึกเพิ่ม',
-                description: 'รับจำนวนครั้งที่ฝึก ถ้ามากกว่าหรือเท่ากับ 3 ให้แสดง "พร้อมสอบใหม่" ไม่เช่นนั้นให้แสดง "ฝึกต่ออีกนิด"',
-                starterCode: 'practice = int(input("practice: "))\nif practice >= 3:\n    print("พร้อมสอบใหม่")\nelse:\n    print("ฝึกต่ออีกนิด")',
-                tests: [
-                    { input: '3', expected: 'พร้อมสอบใหม่' },
-                    { input: '1', expected: 'ฝึกต่ออีกนิด' },
-                ],
-                intro: 'เส้นทางฝึกจะใช้ if-else ช่วยวางแผนค่ะ',
-                clearText: 'เงื่อนไขฝึกเพิ่มถูกต้องแล้วค่ะ',
-            }),
-        ];
-    }
-
-    if (title.includes('for loop') || title.includes('while loop') || title.includes('loop') || title.includes('ลูป')) {
-        return [
-            makeStart({
-                title: 'จุดเริ่มต้น: เลือกเครื่องนับรอบ',
-                description: 'รับคำว่า "for" หรือ "while" แล้ว print ออกมา ถ้าพิมพ์ for จะไป 1A ถ้าพิมพ์ while จะไป 1B',
-                starterCode: 'loop_type = input("loop: ")\nprint(loop_type)',
-                tests: [
-                    { input: 'for', expected: 'for' },
-                    { input: 'while', expected: 'while' },
-                ],
-                rules: [
-                    { condition: 'value.toLowerCase().includes("for")', branch_key: '1A' },
-                    { condition: 'value.toLowerCase().includes("while")', branch_key: '1B' },
-                ],
-                storyLines: [
-                    'บนโต๊ะมีเครื่องนับรอบสองแบบค่ะ แบบ for และแบบ while',
-                    'ผู้เล่นเลือกคำหนึ่งคำ แล้วเราจะไปฝึกลูปแบบนั้นต่อ',
-                ],
-                branchA: 'เลือก for แล้วค่ะ ต่อไปฝึก for loop',
-                branchB: 'เลือก while แล้วค่ะ ต่อไปฝึก while loop',
-            }),
-            makeLeaf({
-                order: '1A',
-                title: 'ทางแยก 1A: for loop นับเลข',
-                description: 'รับ n แล้วใช้ for loop แสดงเลขตั้งแต่ 1 ถึง n ทีละบรรทัด',
-                starterCode: 'n = int(input("n: "))\nfor i in range(1, n + 1):\n    print(i)',
-                tests: [{ input: '3', expected: '1 2 3' }],
-                intro: 'for loop เหมาะกับจำนวนรอบที่รู้ล่วงหน้าค่ะ',
-                clearText: 'for loop ทำงานถูกต้องแล้วค่ะ',
-            }),
-            makeLeaf({
-                order: '1B',
-                title: 'ทางแยก 1B: while loop ตรวจงาน',
-                description: 'รับ n แล้วใช้ while loop แสดงคำว่า "ตรวจแล้ว" n ครั้ง',
-                starterCode: 'n = int(input("n: "))\ncount = 0\nwhile count < n:\n    print("ตรวจแล้ว")\n    count += 1',
-                tests: [{ input: '2', expected: 'ตรวจแล้ว ตรวจแล้ว' }],
-                intro: 'while loop เหมาะกับการวนจนกว่าเงื่อนไขจะจบค่ะ',
-                clearText: 'while loop ทำงานถูกต้องแล้วค่ะ',
-            }),
-        ];
-    }
-
-    return [
-        makeStart({
-            title: `จุดเริ่มต้น: ภารกิจ ${displayTitle}`,
-            description: 'รับคำตอบภาษาไทยหรือภาษาอังกฤษแล้ว print ออกมา ถ้าพิมพ์ไทยจะไป 1A ถ้าพิมพ์อังกฤษจะไป 1B',
-            starterCode: 'answer = input("answer: ")\nprint(answer)',
-            tests: [
-                { input: 'พร้อม', expected: 'พร้อม' },
-                { input: 'ready', expected: 'ready' },
-            ],
-            rules: thaiBranchRules,
-            storyLines: [
-                `Lumi เปิดภารกิจของบท ${displayTitle} แล้วค่ะ`,
-                'คำตอบที่ผู้เล่นพิมพ์จะเลือกเส้นทางฝึกถัดไป',
-            ],
-            branchA: 'เลือกคำตอบภาษาไทยค่ะ ไปเส้นทาง 1A',
-            branchB: 'เลือกคำตอบภาษาอังกฤษค่ะ ไปเส้นทาง 1B',
-        }),
-        makeLeaf({
-            order: '1A',
-            title: `ทางแยก 1A: ฝึกบท ${displayTitle}`,
-            description: 'แสดงข้อความ "ผ่านเส้นทาง 1A"',
-            starterCode: 'print("ผ่านเส้นทาง 1A")',
-            tests: [{ input: '', expected: 'ผ่านเส้นทาง 1A' }],
-            intro: 'นี่คือเส้นทางฝึกจากคำตอบภาษาไทยค่ะ',
-            clearText: 'เส้นทาง 1A ผ่านแล้วค่ะ',
-        }),
-        makeLeaf({
-            order: '1B',
-            title: `ทางแยก 1B: ฝึกบท ${displayTitle}`,
-            description: 'แสดงข้อความ "ผ่านเส้นทาง 1B"',
-            starterCode: 'print("ผ่านเส้นทาง 1B")',
-            tests: [{ input: '', expected: 'ผ่านเส้นทาง 1B' }],
-            intro: 'นี่คือเส้นทางฝึกจากคำตอบภาษาอังกฤษค่ะ',
-            clearText: 'เส้นทาง 1B ผ่านแล้วค่ะ',
-        }),
-    ];
-};
-
-const buildSequentialMiniGameSeedSet = (lesson) => {
-    const title = normalizeLessonTitle(lesson?.title);
-    const displayTitle = lesson?.title || 'บทเรียนนี้';
-
-    const buildSolvedCode = (exerciseTitle = '') => {
-        if (exerciseTitle.includes('คอมเมนต์อธิบายโค้ด')) return '# อธิบายว่าโค้ดนี้แสดงข้อความ\nprint("อ่านโค้ดง่ายขึ้น")';
-        if (exerciseTitle.includes('คอมเมนต์ปิดโค้ดทดลอง')) return '# ปิดโค้ดทดลองไว้ก่อน\n# print("debug")\nprint("พร้อมส่งงาน")';
-        if (exerciseTitle.includes('คอมเมนต์บอกขั้นตอน')) return '# ขั้นตอนที่ 1 แสดงข้อความอธิบายโค้ด\nprint("โค้ดนี้มีคำอธิบาย")';
-        if (exerciseTitle.includes('เลือกช่วงเวลาเข้าห้องเรียน')) return 'period = input("ช่วงเวลา: ")\nprint(period)';
-        if (exerciseTitle.includes('ทักทายผู้เล่น')) return 'name = input("ชื่อ: ")\nprint("สวัสดี", name)';
-        if (exerciseTitle.includes('รับจำนวนที่นั่ง')) return 'seats = int(input("จำนวนที่นั่ง: "))\nprint("ที่นั่งทั้งหมด", seats)';
-        if (exerciseTitle.includes('ตัวแปรชื่อผู้เล่น')) return 'name = "Lumi"\nprint(name)';
-        if (exerciseTitle.includes('ตัวแปรเหรียญ')) return 'coins = 50\nprint(coins)';
-        if (exerciseTitle.includes('รวมค่าตัวแปร')) return 'xp = 15\nbonus = 5\nprint(xp + bonus)';
-        if (exerciseTitle.includes('คำนวณ VAT')) return 'price = float(input("ราคาสินค้า: "))\nvat_total = price * 1.07\nprint("ราคารวมภาษี:", vat_total)';
-        if (exerciseTitle.includes('แปลงเป็นจำนวนเต็ม')) return 'number = int(input("จำนวน: "))\nprint("จำนวน:", number)';
-        if (exerciseTitle.includes('แปลงตัวเลขเป็นข้อความ')) return 'total = 250\nprint("ยอดรวม " + str(total))';
-        if (exerciseTitle.includes('ตรวจผ่านหรือไม่ผ่าน')) return 'score = int(input("คะแนน: "))\nif score >= 50:\n    print("ผ่าน")\nelse:\n    print("ไม่ผ่าน")';
-        if (exerciseTitle.includes('เลขคู่เลขคี่')) return 'number = int(input("ตัวเลข: "))\nif number % 2 == 0:\n    print("เลขคู่")\nelse:\n    print("เลขคี่")';
-        if (exerciseTitle.includes('เลือกช่วงเวลา')) return 'period = input("ช่วงเวลา: ")\nif period == "เช้า":\n    print("เริ่มเรียน")\nelse:\n    print("ทบทวนบทเรียน")';
-        if (exerciseTitle.includes('for loop นับเลข')) return 'n = int(input("n: "))\nfor i in range(1, n + 1):\n    print(i)';
-        if (exerciseTitle.includes('รวมเลขด้วย loop')) return 'n = int(input("n: "))\ntotal = 0\nfor i in range(1, n + 1):\n    total += i\nprint(total)';
-        if (exerciseTitle.includes('while loop ตรวจงาน')) return 'n = int(input("n: "))\ncount = 0\nwhile count < n:\n    print("ตรวจแล้ว")\n    count += 1';
-        if (exerciseTitle.includes('เริ่มภารกิจ')) return 'print("เริ่มภารกิจ")';
-        if (exerciseTitle.includes('ฝึกต่อ')) return 'answer = input("คำตอบ: ")\nprint(answer)';
-        if (exerciseTitle.includes('จบบท')) return 'print("ผ่านมินิเกมแล้ว")';
-        return 'print("ผ่านมินิเกมแล้ว")';
-    };
-
-    const makeExercise = ({ order, title, description, starterCode = null, tests, intro, clearText, emotion = 'smile' }) => {
-        const solvedCode = starterCode || buildSolvedCode(title);
-
-        return {
-            exercise_order: String(order),
-            title,
-            description,
-            starter_code: solvedCode,
-            solution_code: solvedCode,
-            test_cases: {
-                expected_format: 'ทำโจทย์ให้ผ่าน แล้วไปด่านถัดไป',
-                rules: [],
-                correctness: tests,
-            },
-            dialogues: [
-                { order: 0, speaker: 'lumi', emotion, text: intro },
-                { order: 1, speaker: 'lumi', emotion: 'neutral', text: description },
-                { order: 2, speaker: 'lumi', emotion: 'happy', phase: 'post_submit', branch_key: 'default', text: clearText },
-            ],
-        };
-    };
-
-    if (title.includes('comment') || title.includes('คอมเม')) {
-        return [
-            makeExercise({
-                order: 1,
-                title: 'โจทย์ 1: คอมเมนต์อธิบายโค้ด',
-                description: 'เขียนคอมเมนต์ 1 บรรทัดเพื่ออธิบายว่าโค้ดกำลังแสดงข้อความ จากนั้นแสดงข้อความ "อ่านโค้ดง่ายขึ้น"',
-                tests: [{ input: '', expected: 'อ่านโค้ดง่ายขึ้น' }],
-                intro: 'Lumi เจอสมุดโค้ดที่ยังไม่มีคำอธิบายค่ะ บทนี้เราจะฝึกทำให้โค้ดอ่านง่ายด้วยคอมเมนต์เท่านั้น',
-                clearText: 'ดีมากค่ะ คอมเมนต์ช่วยให้คนอ่านเข้าใจเจตนาของโค้ดแล้ว',
-            }),
-            makeExercise({
-                order: 2,
-                title: 'โจทย์ 2: คอมเมนต์ปิดโค้ดทดลอง',
-                description: 'ใช้คอมเมนต์ปิดบรรทัด print("debug") ไม่ให้ทำงาน แล้วแสดงข้อความ "พร้อมส่งงาน"',
-                tests: [{ input: '', expected: 'พร้อมส่งงาน', forbidden_any: ['debug'] }],
-                intro: 'คอมเมนต์ไม่ได้มีไว้แค่อธิบาย แต่ยังใช้ปิดโค้ดทดลองชั่วคราวได้ด้วยค่ะ',
-                clearText: 'เยี่ยมค่ะ ปิดโค้ดทดลองและแสดงผลจริงได้ถูกต้องแล้ว',
-            }),
-            makeExercise({
-                order: 3,
-                title: 'โจทย์ 3: คอมเมนต์บอกขั้นตอน',
-                description: 'เขียนคอมเมนต์บอกขั้นตอนอย่างน้อย 1 บรรทัด แล้วแสดงข้อความ "โค้ดนี้มีคำอธิบาย"',
-                tests: [{ input: '', expected: 'โค้ดนี้มีคำอธิบาย' }],
-                intro: 'ด่านสุดท้ายของบทคอมเมนต์ ลองใช้คอมเมนต์บอกขั้นตอนก่อนเขียนคำสั่งจริงค่ะ',
-                clearText: 'ผ่านแล้วค่ะ บทคอมเมนต์และการเขียนโค้ดไม่หลุดไปเรื่องอื่นแล้ว',
-            }),
-        ];
-    }
-
-    if (title.includes('input') || title.includes('รับ')) {
-        return [
-            makeExercise({
-                order: 1,
-                title: 'โจทย์ 1: เลือกช่วงเวลาเข้าห้องเรียน',
-                description: 'รับคำว่า "เช้า" หรือ "บ่าย" ด้วย input() แล้ว print คำนั้นออกมา',
-                tests: [
-                    { input: 'เช้า', expected: 'เช้า' },
-                    { input: 'บ่าย', expected: 'บ่าย' },
-                ],
-                intro: 'ประตูห้องเรียนของ Lumi ต้องรู้ว่าผู้เล่นเข้าเรียนช่วงเช้าหรือบ่ายค่ะ',
-                clearText: 'รับคำตอบจากผู้ใช้และแสดงผลได้ถูกต้องแล้วค่ะ',
-            }),
-            makeExercise({
-                order: 2,
-                title: 'โจทย์ 2: ทักทายผู้เล่น',
-                description: 'รับชื่อด้วย input() แล้วแสดงผลเป็น "สวัสดี <ชื่อ>"',
-                tests: [
-                    { input: 'มะลิ', expected: 'สวัสดี มะลิ' },
-                    { input: 'Lumi', expected: 'สวัสดี Lumi' },
-                ],
-                intro: 'ต่อไปให้ห้องเรียนเรียกชื่อผู้เล่นได้ค่ะ',
-                clearText: 'ดีมากค่ะ input() รับชื่อแล้วนำไปแสดงผลได้ถูกต้อง',
-            }),
-            makeExercise({
-                order: 3,
-                title: 'โจทย์ 3: รับจำนวนที่นั่ง',
-                description: 'รับจำนวนที่นั่งเป็น int แล้วแสดงผลเป็น "ที่นั่งทั้งหมด <จำนวน>"',
-                tests: [{ input: '30', expected: 'ที่นั่งทั้งหมด 30' }],
-                intro: 'ด่านสุดท้าย ลองรับข้อมูลตัวเลขจากผู้ใช้เพื่อจัดห้องเรียนค่ะ',
-                clearText: 'ผ่านแล้วค่ะ รับตัวเลขจากผู้ใช้ได้ถูกต้อง',
-            }),
-        ];
-    }
-
-    if (title.includes('ตัวแปร') || title.includes('variable')) {
-        return [
-            makeExercise({
-                order: 1,
-                title: 'โจทย์ 1: ตัวแปรชื่อผู้เล่น',
-                description: 'สร้างตัวแปร name เก็บชื่อของคุณเป็น string แล้ว print ค่าออกมา',
-                tests: [{ input: '', expected: 'Lumi' }],
-                intro: 'บทนี้เริ่มจากกล่องเก็บข้อความ นั่นคือตัวแปรแบบ string ค่ะ',
-                clearText: 'ตัวแปรข้อความถูกต้องแล้วค่ะ',
-            }),
-            makeExercise({
-                order: 2,
-                title: 'โจทย์ 2: ตัวแปรเหรียญ',
-                description: 'สร้างตัวแปร coins ให้มีค่า 50 แล้ว print ค่าออกมา',
-                tests: [{ input: '', expected: '50' }],
-                intro: 'ตัวแปรยังเก็บตัวเลขได้ด้วย ลองเก็บจำนวนเหรียญกันค่ะ',
-                clearText: 'ตัวแปรตัวเลขถูกต้องแล้วค่ะ',
-            }),
-            makeExercise({
-                order: 3,
-                title: 'โจทย์ 3: รวมค่าตัวแปร',
-                description: 'สร้างตัวแปร xp = 15 และ bonus = 5 แล้วแสดงผลรวมเป็น 20',
-                tests: [{ input: '', expected: '20' }],
-                intro: 'ด่านสุดท้าย ลองนำค่าจากตัวแปรมาคำนวณร่วมกันค่ะ',
-                clearText: 'ผ่านแล้วค่ะ ใช้ตัวแปรคำนวณได้ถูกต้อง',
-            }),
-        ];
-    }
-
-    if (title.includes('type conversion') || title.includes('conversion') || title.includes('ชนิดข้อมูล')) {
-        return [
-            makeExercise({
-                order: 1,
-                title: 'โจทย์ 1: คำนวณ VAT',
-                description: 'รับราคาสินค้าเป็น float แล้วคำนวณ VAT 7% แสดงผลเป็น "ราคารวมภาษี: <ค่า>"',
-                tests: [
-                    { input: '100', expected: 'ราคารวมภาษี: 107.0' },
-                    { input: '500', expected: 'ราคารวมภาษี: 535.0' },
-                ],
-                intro: 'เครื่องคิดเงินรับข้อมูลเป็นข้อความก่อน เราจึงต้องแปลงเป็น float เพื่อคำนวณค่ะ',
-                clearText: 'คำนวณ VAT ด้วย float(input()) ได้ถูกต้องแล้วค่ะ',
-            }),
-            makeExercise({
-                order: 2,
-                title: 'โจทย์ 2: แปลงเป็นจำนวนเต็ม',
-                description: 'รับตัวเลขด้วย int(input()) แล้วแสดงผลเป็น "จำนวน: <ค่า>"',
-                tests: [{ input: '25', expected: 'จำนวน: 25' }],
-                intro: 'ต่อไปฝึกแปลงข้อมูลที่รับมาเป็นจำนวนเต็มค่ะ',
-                clearText: 'int(input()) ทำงานถูกต้องแล้วค่ะ',
-            }),
-            makeExercise({
-                order: 3,
-                title: 'โจทย์ 3: แปลงตัวเลขเป็นข้อความ',
-                description: 'กำหนด total = 250 แล้วใช้ str() แสดงข้อความ "ยอดรวม 250"',
-                tests: [{ input: '', expected: 'ยอดรวม 250' }],
-                intro: 'ด่านสุดท้าย ลองแปลงตัวเลขกลับเป็นข้อความเพื่อรวมกับประโยคค่ะ',
-                clearText: 'ผ่านแล้วค่ะ str() ช่วยรวมข้อความกับตัวเลขได้ถูกต้อง',
-            }),
-        ];
-    }
-
-    if (title.includes('if') || title.includes('else') || title.includes('เงื่อนไข')) {
-        return [
-            makeExercise({
-                order: 1,
-                title: 'โจทย์ 1: ตรวจผ่านหรือไม่ผ่าน',
-                description: 'รับคะแนน ถ้าคะแนนตั้งแต่ 50 ขึ้นไปให้แสดง "ผ่าน" ไม่เช่นนั้นให้แสดง "ไม่ผ่าน"',
-                tests: [
-                    { input: '80', expected: 'ผ่าน' },
-                    { input: '40', expected: 'ไม่ผ่าน' },
-                ],
-                intro: 'บทนี้ให้ประตูห้องเรียนตัดสินจากเงื่อนไขค่ะ',
-                clearText: 'if-else ตรวจผ่านหรือไม่ผ่านได้ถูกต้องแล้วค่ะ',
-            }),
-            makeExercise({
-                order: 2,
-                title: 'โจทย์ 2: เลขคู่เลขคี่',
-                description: 'รับจำนวนเต็ม ถ้าเป็นเลขคู่ให้แสดง "เลขคู่" ไม่เช่นนั้นให้แสดง "เลขคี่"',
-                tests: [
-                    { input: '8', expected: 'เลขคู่' },
-                    { input: '7', expected: 'เลขคี่' },
-                ],
-                intro: 'ต่อไปใช้เงื่อนไขแยกเลขคู่กับเลขคี่ค่ะ',
-                clearText: 'เงื่อนไขเลขคู่เลขคี่ถูกต้องแล้วค่ะ',
-            }),
-            makeExercise({
-                order: 3,
-                title: 'โจทย์ 3: เลือกช่วงเวลา',
-                description: 'รับคำว่า "เช้า" หรือ "บ่าย" ถ้าเป็นเช้าให้แสดง "เริ่มเรียน" ไม่เช่นนั้นให้แสดง "ทบทวนบทเรียน"',
-                tests: [
-                    { input: 'เช้า', expected: 'เริ่มเรียน' },
-                    { input: 'บ่าย', expected: 'ทบทวนบทเรียน' },
-                ],
-                intro: 'ด่านสุดท้าย ใช้ if-else กับข้อความที่ผู้ใช้พิมพ์ค่ะ',
-                clearText: 'ผ่านแล้วค่ะ ใช้เงื่อนไขกับข้อความได้ถูกต้อง',
-            }),
-        ];
-    }
-
-    if (title.includes('for loop') || title.includes('while loop') || title.includes('loop') || title.includes('ลูป')) {
-        return [
-            makeExercise({
-                order: 1,
-                title: 'โจทย์ 1: for loop นับเลข',
-                description: 'รับ n แล้วใช้ for loop แสดงเลขตั้งแต่ 1 ถึง n ทีละบรรทัด',
-                tests: [{ input: '3', expected: '1 2 3' }],
-                intro: 'Lumi ต้องการเครื่องนับรอบแบบ for loop ค่ะ',
-                clearText: 'for loop นับเลขได้ถูกต้องแล้วค่ะ',
-            }),
-            makeExercise({
-                order: 2,
-                title: 'โจทย์ 2: รวมเลขด้วย loop',
-                description: 'รับ n แล้วใช้ loop รวมเลขตั้งแต่ 1 ถึง n จากนั้นแสดงผลรวม',
-                tests: [{ input: '5', expected: '15' }],
-                intro: 'ต่อไปใช้ loop เพื่อสะสมผลรวมค่ะ',
-                clearText: 'รวมเลขด้วย loop ได้ถูกต้องแล้วค่ะ',
-            }),
-            makeExercise({
-                order: 3,
-                title: 'โจทย์ 3: while loop ตรวจงาน',
-                description: 'รับ n แล้วใช้ while loop แสดงคำว่า "ตรวจแล้ว" n ครั้ง',
-                tests: [{ input: '2', expected: 'ตรวจแล้ว ตรวจแล้ว' }],
-                intro: 'ด่านสุดท้าย ลองใช้ while loop วนตามเงื่อนไขค่ะ',
-                clearText: 'ผ่านแล้วค่ะ while loop ทำงานถูกต้อง',
-            }),
-        ];
-    }
-
-    return [
-        makeExercise({
-            order: 1,
-            title: `โจทย์ 1: ภารกิจ ${displayTitle}`,
-            description: 'แสดงข้อความ "เริ่มภารกิจ"',
-            tests: [{ input: '', expected: 'เริ่มภารกิจ' }],
-            intro: `Lumi เปิดภารกิจของบท ${displayTitle} แล้วค่ะ`,
-            clearText: 'โจทย์แรกผ่านแล้วค่ะ',
-        }),
-        makeExercise({
-            order: 2,
-            title: `โจทย์ 2: ฝึกต่อ ${displayTitle}`,
-            description: 'รับข้อความจากผู้ใช้แล้ว print ข้อความนั้นออกมา',
-            tests: [{ input: 'พร้อม', expected: 'พร้อม' }],
-            intro: 'ต่อไปฝึกรับข้อมูลจากผู้ใช้ค่ะ',
-            clearText: 'โจทย์ที่สองผ่านแล้วค่ะ',
-        }),
-        makeExercise({
-            order: 3,
-            title: `โจทย์ 3: จบบท ${displayTitle}`,
-            description: 'แสดงข้อความ "ผ่านมินิเกมแล้ว"',
-            tests: [{ input: '', expected: 'ผ่านมินิเกมแล้ว' }],
-            intro: 'ด่านสุดท้ายของบทนี้แล้วค่ะ',
-            clearText: 'ผ่านมินิเกมของบทนี้แล้วค่ะ',
-        }),
-    ];
-};
-
-const ensureMiniGameLessonExists = async (lessonId) => {
-    const numericLessonId = Number(lessonId);
-    if (!Number.isFinite(numericLessonId) || numericLessonId <= 0) {
-        return false;
-    }
-
-    await ensureLearningProgressSchema();
-
-    const connection = await db.getConnection();
-    const lockName = `mini_game_lesson_${numericLessonId}`;
-
-    try {
-        await connection.execute('SELECT GET_LOCK(?, 5) AS lock_result', [lockName]);
-
-        await connection.execute(
-            `INSERT INTO mini_game_npcs (npc_key, name, avatar_asset_url, description)
-             VALUES ('lumi', 'Lumi', '/data_MiNiGame/NPC_lumi', 'AI tutor for story mini games')
-             ON DUPLICATE KEY UPDATE
-                name = VALUES(name),
-                avatar_asset_url = VALUES(avatar_asset_url),
-                description = VALUES(description)`
-        );
-        await connection.execute(
-            `INSERT INTO mini_game_locations (location_key, name, description, bg_image_url)
-             VALUES ('classroom', 'Python Classroom', 'Warm classroom for story mini games', '/data_MiNiGame/locations/classroom.jpg')
-             ON DUPLICATE KEY UPDATE
-                name = VALUES(name),
-                description = VALUES(description),
-                bg_image_url = VALUES(bg_image_url)`
-        );
-
-        const [[lumiNpc]] = await connection.execute(
-            `SELECT npc_id FROM mini_game_npcs WHERE npc_key = 'lumi' LIMIT 1`
-        );
-        const [[classroomLocation]] = await connection.execute(
-            `SELECT location_id FROM mini_game_locations WHERE location_key = 'classroom' LIMIT 1`
-        );
-        const lumiNpcId = lumiNpc?.npc_id || null;
-        const classroomLocationId = classroomLocation?.location_id || null;
-
-        const [lessonRows] = await connection.execute(
-            'SELECT lesson_id, title FROM lessons WHERE lesson_id = ? LIMIT 1',
-            [numericLessonId]
-        );
-
-        if (lessonRows.length === 0) {
-            return false;
-        }
-
-        const [existingRows] = await connection.execute(
-            'SELECT exercise_order FROM mini_game_exercises WHERE lesson_id = ? AND is_active = 1',
-            [numericLessonId]
-        );
-        if (existingRows.length >= 3) {
-            return true;
-        }
-
-        const existingOrders = new Set(existingRows.map((row) => String(row.exercise_order || '').trim()));
-        const seeds = buildSequentialMiniGameSeedSet(lessonRows[0]).slice(0, 3);
-        let totalActiveExercises = existingRows.length;
-
-        for (let index = 0; index < seeds.length; index += 1) {
-            if (totalActiveExercises >= 3) {
-                break;
-            }
-
-            const seed = seeds[index];
-            const exerciseOrder = String(seed.exercise_order || index + 1);
-            if (existingOrders.has(exerciseOrder)) {
-                continue;
-            }
-
-            const [insertResult] = await connection.execute(
-                `INSERT INTO mini_game_exercises (
-                    lesson_id,
-                    exercise_order,
-                    title,
-                    description,
-                    starter_code,
-                    solution_code,
-                    test_cases_json,
-                    xp_reward,
-                    currency_reward,
-                    is_active
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-                [
-                    numericLessonId,
-                    exerciseOrder,
-                    seed.title,
-                    seed.description,
-                    seed.starter_code,
-                    seed.solution_code,
-                    JSON.stringify(seed.test_cases),
-                    15 + (index * 5),
-                    5,
-                ]
-            );
-
-            const exerciseId = insertResult.insertId;
-            for (const dialogue of seed.dialogues || []) {
-                await connection.execute(
-                    `INSERT INTO mini_game_dialogues (
-                        lesson_id,
-                        exercise_id,
-                        dialogue_order,
-                        exercise_order,
-                        dialogue_text,
-                        npc_id,
-                        npc_emotion,
-                        location_id,
-                        dialogue_phase,
-                        branch_key
-                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                    [
-                        numericLessonId,
-                        exerciseId,
-                        Number(dialogue.order || 0),
-                        exerciseOrder,
-                        dialogue.text,
-                        lumiNpcId,
-                        dialogue.emotion || 'smile',
-                        classroomLocationId,
-                        dialogue.phase || 'pre_submit',
-                        dialogue.branch_key || 'default',
-                    ]
-                );
-            }
-
-            totalActiveExercises += 1;
-        }
-
-        const [endDialogueRows] = await connection.execute(
-            `SELECT dialogue_id
-             FROM mini_game_dialogues
-             WHERE lesson_id = ?
-               AND exercise_id IS NULL
-               AND exercise_order = 'end'
-             LIMIT 1`,
-            [numericLessonId]
-        );
-
-        if (endDialogueRows.length === 0) {
-            await connection.execute(
-                `INSERT INTO mini_game_dialogues (
-                    lesson_id,
-                    exercise_id,
-                    dialogue_order,
-                    exercise_order,
-                    dialogue_text,
-                    npc_id,
-                    npc_emotion,
-                    location_id,
-                    dialogue_phase,
-                    branch_key
-                 ) VALUES
-                    (?, NULL, 0, 'end', ?, ?, 'happy', ?, 'pre_submit', 'end'),
-                    (?, NULL, 1, 'end', ?, ?, 'smile', ?, 'pre_submit', 'end')`,
-                [
-                    numericLessonId,
-                    `ยอดเยี่ยมค่ะ คุณผ่านมินิเกมของบท "${lessonRows[0].title}" แล้ว`,
-                    lumiNpcId,
-                    classroomLocationId,
-                    numericLessonId,
-                    'Lumi จะบันทึกความคืบหน้าไว้ แล้วเราไปเรียนบทต่อไปกันนะคะ',
-                    lumiNpcId,
-                    classroomLocationId,
-                ]
-            );
-        }
-
-        return true;
-    } finally {
-        try {
-            await connection.execute('SELECT RELEASE_LOCK(?)', [lockName]);
-        } catch (_) {
-            // ignore lock release failures
-        }
-        connection.release();
-    }
-};
-
 const createGuestLearningTask = async ({ userId, mode, level }) => {
     const generatedTask = await generateLearningTaskWithAI({ mode, level });
     return {
@@ -2135,62 +874,47 @@ const ensureSimulationJobTrackingSchema = async () => {
     }
 };
 
+// ... ต่อจากส่วนที่คุณเขียนค้างไว้ใน ensureMysqlStyleBooleanColumns
 const ensureMysqlStyleBooleanColumns = async () => {
     const compatibilityAlters = [
-        {
-            table: 'simulation_saves',
-            column: 'is_active',
-        },
-        {
-            table: 'simulation_saves',
-            column: 'is_plugged_in',
-        },
-        {
-            table: 'simulation_active_events',
-            column: 'is_resolved',
-        },
-        {
-            table: 'random_events',
-            column: 'force_skip_day',
-        },
-        {
-            table: 'random_events',
-            column: 'auto_resolve',
-        },
-        {
-            table: 'room_participants',
-            column: 'is_ready',
-        },
-        {
-            table: 'music_tracks',
-            column: 'is_default',
-        },
+        { table: 'simulation_saves', column: 'is_active' },
+        { table: 'simulation_saves', column: 'is_plugged_in' },
+        { table: 'room_participants', column: 'is_ready' },
     ];
 
-    for (const { table, column } of compatibilityAlters) {
-        const [rows] = await db.execute(
-            `SELECT data_type
-             FROM information_schema.columns
-             WHERE table_schema = 'public'
-               AND table_name = ?
-               AND column_name = ?
-             LIMIT 1`,
-            [table, column]
-        );
-
-        const dataType = rows[0]?.data_type;
-        if (dataType === 'boolean') {
-            await db.execute(`ALTER TABLE "${table}" ALTER COLUMN "${column}" DROP DEFAULT`);
-            await db.execute(`
-                ALTER TABLE "${table}"
-                ALTER COLUMN "${column}" TYPE integer
-                USING CASE WHEN "${column}" THEN 1 ELSE 0 END
-            `);
-            await db.execute(`ALTER TABLE "${table}" ALTER COLUMN "${column}" SET DEFAULT 0`);
-            console.log(`✅ Converted ${table}.${column} from boolean to integer compatibility mode`);
+    for (const item of compatibilityAlters) {
+        try {
+            await db.execute(`ALTER TABLE \`${item.table}\` MODIFY \`${item.column}\` TINYINT(1) DEFAULT 0`);
+            console.log(`✅ ปรับปรุงคอลัมน์ ${item.table}.${item.column} เป็น boolean เรียบร้อย`);
+        } catch (error) {
+            // กรณีคอลัมน์เป็นรูปแบบอื่นอยู่แล้ว หรือแก้ไขไปแล้ว
         }
     }
 };
+
+// สั่งรันการตั้งค่า Database
+ensureSimulationJobTrackingSchema();
+ensureMysqlStyleBooleanColumns();
+
+// --- เพิ่มส่วนสำหรับดึงข้อมูลผู้ใช้ ---
+app.get('/api/user-stats/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const [rows] = await db.execute(
+            'SELECT user_id, username, level, xp, virtual_currency FROM users WHERE user_id = ?',
+            [userId]
+        );
+
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'ไม่พบผู้ใช้ในระบบ' });
+        }
+
+        res.json(rows[0]);
+    } catch (error) {
+        logRouteError('GET /api/user-stats', error);
+        res.status(500).json({ error: 'เกิดข้อผิดพลาดในการดึงข้อมูล' });
+    }
+});
 
 const ensureAdminSchema = async () => {
     try {
@@ -3558,6 +2282,26 @@ const ensureLearningProgressSchema = async () => {
                 CONSTRAINT fk_mini_game_exercises_lesson FOREIGN KEY (lesson_id) REFERENCES lessons (lesson_id) ON DELETE SET NULL ON UPDATE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
         `);
+
+        // ==========================================
+        // 1b. สร้างตาราง user_xp_log (เก็บ log ว่าผู้ใช้ได้ XP วันไหนบ้าง
+        //     ใช้คำนวณสตรีคแบบ derive จากข้อมูลจริง)
+        // ==========================================
+        await db.execute(`
+            CREATE TABLE IF NOT EXISTS user_xp_log (
+                log_id int(11) NOT NULL AUTO_INCREMENT,
+                user_id int(11) NOT NULL,
+                xp_date date NOT NULL,
+                xp_earned int(11) NOT NULL DEFAULT 0,
+                created_at timestamp NOT NULL DEFAULT current_timestamp(),
+                updated_at timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+                PRIMARY KEY (log_id),
+                UNIQUE KEY uniq_user_date (user_id, xp_date),
+                KEY idx_user_xp_log_user (user_id, xp_date),
+                CONSTRAINT fk_user_xp_log_user FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE ON UPDATE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+        `);
+
         const [miniGameExerciseActiveColumns] = await db.execute(
             `SELECT COUNT(*) AS count
              FROM information_schema.columns
@@ -3571,6 +2315,24 @@ const ensureLearningProgressSchema = async () => {
                 'ALTER TABLE mini_game_exercises ADD COLUMN is_active tinyint(1) NOT NULL DEFAULT 1 AFTER currency_reward'
             );
         }
+
+        // ==========================================
+        // 2b. สร้างตาราง mini_game_exercises_files
+        //     ไฟล์เสริมของแต่ละด่าน (เช่น data.txt, math_util.py)
+        //     คู่หูของตาราง exercises_files แต่ผูกกับ mini_game_exercises
+        // ==========================================
+        await db.execute(`
+            CREATE TABLE IF NOT EXISTS mini_game_exercises_files (
+                file_id int(11) NOT NULL AUTO_INCREMENT,
+                exercise_id int(11) NOT NULL,
+                file_name varchar(100) NOT NULL,
+                file_content longtext DEFAULT NULL,
+                created_at timestamp NOT NULL DEFAULT current_timestamp(),
+                PRIMARY KEY (file_id),
+                KEY exercise_id (exercise_id),
+                CONSTRAINT fk_mini_game_exercises_files_exercise FOREIGN KEY (exercise_id) REFERENCES mini_game_exercises (exercise_id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+        `);
 
         // ==========================================
         // 3. สร้างตาราง mini_game_locations
@@ -4267,11 +3029,15 @@ app.get('/api/user/profile/:userId', async (req, res) => {
         } catch {
             user.mouse_effect_data = [];
         }
+
+        const streakDays = await computeUserStreak(db, req.params.userId);
+
         res.json({
             ...user,
             level: Number(user.level ?? 1),
             xp: Number(user.xp || 0),
             virtual_currency: Number(user.virtual_currency || 0),
+            streak_days: streakDays,
         });
     } catch (error) {
         console.error('❌ /api/user/profile error:', error.message);
@@ -6019,6 +4785,7 @@ app.get('/api/verify-email/:token', async (req, res) => {
 // --- Course Content ---
 app.get('/api/course-content', async (req, res) => {
     try {
+        await ensureLessonQuizAttemptSchema();
         const currentLevel = Number(req.query.user_level || req.query.userLevel || 0);
         const userId = req.query.user_id || req.query.userId || 0; // รับค่า userId จาก query
 
@@ -6040,12 +4807,26 @@ app.get('/api/course-content', async (req, res) => {
             ORDER BY l.order_index
         `, [userId]);
 
+        const [quizAttempts] = await db.execute(
+            `SELECT lesson_id, quiz_type
+             FROM lesson_quiz_attempts
+             WHERE user_id = ? AND quiz_type IN ('pre', 'post')`,
+            [userId]
+        );
+        const attemptsByLesson = quizAttempts.reduce((attempts, attempt) => {
+            const lessonAttempts = attempts[attempt.lesson_id] || {};
+            lessonAttempts[attempt.quiz_type] = true;
+            attempts[attempt.lesson_id] = lessonAttempts;
+            return attempts;
+        }, {});
+
         const moduleRows = Array.isArray(modules) ? modules : [];
         const lessonRows = Array.isArray(lessons) ? lessons : [];
 
         const data = moduleRows.map((m) => ({
             module_id: m.module_id,
             title: m.title,
+            order_index: Number(m.order_index || 0),
             required_level: m.required_level || 0,
             is_locked: currentLevel < Number(m.required_level || 0),
             lessons: lessonRows
@@ -6054,10 +4835,13 @@ app.get('/api/course-content', async (req, res) => {
                     lesson_id: l.lesson_id,
                     id: l.lesson_id,
                     title: l.title,
+                    order_index: Number(l.order_index || 0),
                     required_level: l.required_level || 0,
                     is_locked: currentLevel < Number(l.required_level || 0),
                     completed_count: Number(l.completed_count || 0),
-                    total_count: Number(l.total_count || 0)
+                    total_count: Number(l.total_count || 0),
+                    pre_quiz_completed: Boolean(attemptsByLesson[l.lesson_id]?.pre),
+                    post_quiz_completed: Boolean(attemptsByLesson[l.lesson_id]?.post)
                 }))
         }));
         
@@ -6175,19 +4959,32 @@ app.post('/api/lessons/:lessonId/quiz-results', async (req, res) => {
 // --- Lesson Exercises ---
 app.get('/api/exercises/list/:lessonId', async (req, res) => {
     try {
-        await ensureLessonExercisesSeeded();
-        await ensureLessonExerciseExists(req.params.lessonId);
         const [rows] = await db.execute(
-            `SELECT exercise_id, lesson_id, title, description, starter_code, test_cases, xp_reward, currency_reward
-             FROM exercises
-             WHERE lesson_id = ?
-             ORDER BY exercise_id ASC`,
+            `SELECT e.* FROM exercises e WHERE e.lesson_id = ? ORDER BY e.exercise_id ASC`,
             [req.params.lessonId]
         );
-        res.json(rows);
+
+        const [files] = await db.execute(
+            `SELECT ef.* FROM exercises_files ef 
+             JOIN exercises e ON ef.exercise_id = e.exercise_id 
+             WHERE e.lesson_id = ?`,
+            [req.params.lessonId]
+        );
+
+        const result = rows.map(exercise => ({
+            ...exercise,
+            // รวมโครงสร้างไฟล์ให้มีทั้งชื่อและเนื้อหา
+            files: [
+                { name: "main.py", content: exercise.starter_code || "" },
+                ...files
+                    .filter(f => f.exercise_id === exercise.exercise_id)
+                    .map(f => ({ name: f.file_name, content: f.file_content || "" }))
+            ]
+        }));
+
+        res.json(result);
     } catch (err) {
-        logRouteError('❌ Exercises list error:', err);
-        res.status(500).json({ error: describeError(err) });
+        res.status(500).json({ error: "Error loading exercises" });
     }
 });
 
@@ -6398,11 +5195,6 @@ app.post('/api/exercises/:exerciseId/submit', async (req, res) => {
 // comes from lessons and mini_game_exercises instead of legacy mini_game_lessons.
 app.get('/api/mini-game/modules', async (_req, res) => {
     try {
-        const [lessonSeedRows] = await db.execute('SELECT lesson_id FROM lessons ORDER BY order_index, lesson_id');
-        for (const lesson of lessonSeedRows) {
-            await ensureMiniGameLessonExists(lesson.lesson_id);
-        }
-
         const [rows] = await db.execute(
             `SELECT l.lesson_id AS module_id,
                     l.lesson_id,
@@ -6426,15 +5218,20 @@ app.get('/api/mini-game/modules', async (_req, res) => {
 const _miniGameModuleCache = new Map();
 
 app.get('/api/mini-game/modules/:moduleId', async (req, res) => {
-    console.log(`\n🎮 ENTER GET /api/mini-game/modules/:moduleId - params:`, req.params);
     try {
         const lessonId = Number(req.params.moduleId);
         if (!lessonId) {
             return res.status(400).json({ error: 'Invalid lessonId' });
         }
 
-        const hasMiniGame = await ensureMiniGameLessonExists(lessonId);
-        if (!hasMiniGame) {
+        const [miniGameRows] = await db.execute(
+            `SELECT exercise_id
+             FROM mini_game_exercises
+             WHERE lesson_id = ? AND is_active = 1
+             LIMIT 1`,
+            [lessonId]
+        );
+        if (miniGameRows.length === 0) {
             return res.status(404).json({ error: 'MiNi Game lesson not found' });
         }
 
@@ -6443,8 +5240,6 @@ app.get('/api/mini-game/modules/:moduleId', async (req, res) => {
         if (cached && Date.now() - cached.ts < 2000) {
             return res.json(cached.data);
         }
-
-        console.log(`🎮 GET /api/mini-game/modules/${lessonId} - Starting request`);
 
         const [lessonRows] = await db.execute(
             `SELECT lesson_id,
@@ -6462,6 +5257,11 @@ app.get('/api/mini-game/modules/:moduleId', async (req, res) => {
             return res.status(404).json({ error: 'MiNi Game lesson not found' });
         }
 
+        // หมายเหตุ: ตาราง mini_game_exercises ไม่มีคอลัมน์ required_syntax_json,
+        // required_vars_json, success_message, scene_background_image จริง ๆ
+        // (เช็คจาก schema แล้ว) ค่าด้านล่างจึงเป็นค่า default ที่ derive จากข้อมูลจริง
+        // (title) เท่าที่ทำได้ ถ้าต้องการให้แก้ไขค่าพวกนี้ผ่าน phpMyAdmin ได้
+        // ต้อง ALTER TABLE เพิ่มคอลัมน์เหล่านี้ก่อน แล้วเปลี่ยนมาดึงจากคอลัมน์จริงแทน
         const [exerciseRows] = await db.execute(
             `SELECT exercise_id AS mini_game_module_id,
                     exercise_id,
@@ -6473,7 +5273,6 @@ app.get('/api/mini-game/modules/:moduleId', async (req, res) => {
                     currency_reward AS reward_coins,
                     description AS hint,
                     starter_code,
-                    NULL AS validation_mode,
                     CASE
                         WHEN LOWER(title) LIKE '%comment%' OR title LIKE '%คอมเมน%'
                         THEN JSON_ARRAY('#', 'print')
@@ -6482,7 +5281,6 @@ app.get('/api/mini-game/modules/:moduleId', async (req, res) => {
                     JSON_ARRAY() AS required_vars_json,
                     test_cases_json,
                     'แบบฝึกหัดผ่านแล้ว' AS success_message,
-                    0 AS submit_unlock_step,
                     '/data_MiNiGame/locations/classroom.jpg' AS scene_background_image,
                     1 AS is_active
              FROM mini_game_exercises
@@ -6493,107 +5291,125 @@ app.get('/api/mini-game/modules/:moduleId', async (req, res) => {
         );
 
         if (exerciseRows.length === 0) {
-            console.log(`⚠️  No exercises found for lesson ${lessonId}`);
             return res.status(404).json({ error: 'No mini game exercises found for this lesson' });
         }
-        console.log(`✅ Found ${exerciseRows.length} exercises for lesson ${lessonId}`);
-        
-        // DEBUG: Log exerciseRows structure
-        console.log(`DEBUG exerciseRows[0]:`, JSON.stringify(exerciseRows[0], null, 2));
 
-        const exerciseIds = exerciseRows.map((row) => row.exercise_id);
-        const placeholders = exerciseIds.map(() => '?').join(',');
+        // exercise_id ของด่านทั้งหมดในบทเรียนนี้ ใช้กรอง dialogue/ไฟล์เสริมต่อ
+        const targetExerciseIds = exerciseRows.map((row) => row.exercise_id);
+        const placeholder = targetExerciseIds.length > 0 ? targetExerciseIds.map(() => '?').join(',') : 'NULL';
+        const queryValues = targetExerciseIds.length > 0 ? targetExerciseIds : [];
 
-// 1. ดึงเอา exercise_id จาก exerciseRows ที่ระบบหาเจอชัวร์ๆ ออกมาทำเป็นอาร์เรย์
-const targetExerciseIds = exerciseRows.map(row => row.exercise_id);
+        const [dialogueRows] = await db.execute(
+            `SELECT d.dialogue_id,
+                    d.exercise_id AS mini_game_module_id,
+                    d.exercise_id,
+                    d.dialogue_order AS step_index,
+                    COALESCE(n.npc_key, 'system') AS speaker,
+                    d.dialogue_text,
+                    d.npc_emotion AS emotion,
+                    COALESCE(d.dialogue_phase, 'pre_submit') AS dialogue_phase,
+                    COALESCE(d.branch_key, 'default') AS branch_key,
+                    n.avatar_asset_url,
+                    l.bg_image_url,
+                    l.location_key,
+                    l.name AS location_name
+             FROM mini_game_dialogues d
+             LEFT JOIN mini_game_npcs n ON n.npc_id = d.npc_id
+             LEFT JOIN mini_game_locations l ON l.location_id = d.location_id
+             WHERE d.exercise_id IN (${placeholder})
+             ORDER BY d.exercise_id ASC, d.dialogue_order ASC, d.dialogue_id ASC`,
+            queryValues
+        );
 
-// 2. ถ้ากรณีไม่มี exercise ในบทเรียนนี้เลย ให้เซ็ตอาร์เรย์ว่างป้องกัน Error
-const placeholder = targetExerciseIds.length > 0 ? targetExerciseIds.map(() => '?').join(',') : 'NULL';
-const queryValues = targetExerciseIds.length > 0 ? targetExerciseIds : [];
+        // ดึง end dialogues (exercise_id = NULL, exercise_order = 'end') แยก
+        // เพราะ WHERE exercise_id IN (...) กรองออกไปหมด
+        const [endDialogueRows] = await db.execute(
+            `SELECT d.dialogue_id,
+                    d.exercise_id,
+                    d.exercise_order,
+                    d.dialogue_order AS step_index,
+                    COALESCE(n.npc_key, 'system') AS speaker,
+                    d.dialogue_text,
+                    d.npc_emotion AS emotion,
+                    COALESCE(d.dialogue_phase, 'pre_submit') AS dialogue_phase,
+                    COALESCE(d.branch_key, 'default') AS branch_key,
+                    n.avatar_asset_url,
+                    l.bg_image_url,
+                    l.location_key,
+                    l.name AS location_name
+             FROM mini_game_dialogues d
+             LEFT JOIN mini_game_npcs n ON n.npc_id = d.npc_id
+             LEFT JOIN mini_game_locations l ON l.location_id = d.location_id
+             WHERE d.lesson_id = ?
+               AND d.exercise_id IS NULL
+               AND d.exercise_order = 'end'
+             ORDER BY d.dialogue_order ASC, d.dialogue_id ASC`,
+            [lessonId]
+        );
 
-const [dialogueRows] = await db.execute(`
-    SELECT d.dialogue_id,
-           d.exercise_id AS mini_game_module_id,
-           d.exercise_id,
-           d.dialogue_order AS step_index,
-           COALESCE(n.npc_key, 'system') AS speaker,
-           d.dialogue_text,
-           d.npc_emotion AS emotion,
-           COALESCE(d.dialogue_phase, 'pre_submit') AS dialogue_phase,
-           COALESCE(d.branch_key, 'default') AS branch_key,
-           n.avatar_asset_url,
-           l.bg_image_url,
-           l.location_key,
-           l.name AS location_name
-    FROM mini_game_dialogues d
-    LEFT JOIN mini_game_npcs n ON n.npc_id = d.npc_id
-    LEFT JOIN mini_game_locations l ON l.location_id = d.location_id
-    WHERE d.exercise_id IN (${placeholder})
-    ORDER BY d.exercise_id ASC, d.dialogue_order ASC, d.dialogue_id ASC
-`, queryValues);
+        // ดึงไฟล์เสริมของแต่ละด่าน (data.txt, math_util.py, ฯลฯ) เพื่อให้ MiNi_Game.jsx
+        // ดึงไฟล์มาแสดงเป็นแท็บได้เหมือนกับ ExercisePage.jsx
+        let miniGameFileRows = [];
+        if (targetExerciseIds.length > 0) {
+            const [fileRows] = await db.execute(
+                `SELECT file_id, exercise_id, file_name, file_content
+                 FROM mini_game_exercises_files
+                 WHERE exercise_id IN (${placeholder})`,
+                queryValues
+            );
+            miniGameFileRows = fileRows;
+        }
 
-// ดึง end dialogues (exercise_id = NULL, exercise_order = 'end') แยก
-// เพราะ WHERE exercise_id IN (...) กรองออกไปหมด
-const [endDialogueRows] = await db.execute(`
-    SELECT d.dialogue_id,
-           d.exercise_id,
-           d.exercise_order,
-           d.dialogue_order AS step_index,
-           COALESCE(n.npc_key, 'system') AS speaker,
-           d.dialogue_text,
-           d.npc_emotion AS emotion,
-           COALESCE(d.dialogue_phase, 'pre_submit') AS dialogue_phase,
-           COALESCE(d.branch_key, 'default') AS branch_key,
-           n.avatar_asset_url,
-           l.bg_image_url,
-           l.location_key,
-           l.name AS location_name
-    FROM mini_game_dialogues d
-    LEFT JOIN mini_game_npcs n ON n.npc_id = d.npc_id
-    LEFT JOIN mini_game_locations l ON l.location_id = d.location_id
-    WHERE d.lesson_id = ?
-      AND d.exercise_id IS NULL
-      AND d.exercise_order = 'end'
-    ORDER BY d.dialogue_order ASC, d.dialogue_id ASC
-`, [lessonId]);
+        // มินิเกมยังไม่มีระบบตัวเลือกบทสนทนา (dialogue choices) ในสคีมาปัจจุบัน
+        // เก็บไว้เป็น array ว่างเผื่ออนาคตมีตาราง mini_game_dialogue_choices
+        const choiceRows = [];
 
-        let choiceRows = [];
-// 1. จัดกลุ่มบทสนทนาตาม id ด่านไว้ล่วงหน้า (สแกนรอบเดียวจบ)
-const dialogueMap = new Map();
-dialogueRows.forEach(d => {
-    if (!dialogueMap.has(d.exercise_id)) dialogueMap.set(d.exercise_id, []);
-    dialogueMap.get(d.exercise_id).push(d);
-});
+        // 1. จัดกลุ่มบทสนทนาตาม exercise_id ไว้ล่วงหน้า (สแกนรอบเดียวจบ)
+        const dialogueMap = new Map();
+        dialogueRows.forEach((d) => {
+            if (!dialogueMap.has(d.exercise_id)) dialogueMap.set(d.exercise_id, []);
+            dialogueMap.get(d.exercise_id).push(d);
+        });
 
-// 2. จัดกลุ่มตัวเลือกตาม id บทสนทนาไว้ล่วงหน้า (สแกนรอบเดียวจบ)
-const choiceMap = new Map();
-choiceRows.forEach(c => {
-    if (!choiceMap.has(c.dialogue_id)) choiceMap.set(c.dialogue_id, []);
-    choiceMap.get(c.dialogue_id).push(c);
-});
+        // 2. จัดกลุ่มตัวเลือกตาม dialogue_id ไว้ล่วงหน้า (สแกนรอบเดียวจบ)
+        const choiceMap = new Map();
+        choiceRows.forEach((c) => {
+            if (!choiceMap.has(c.dialogue_id)) choiceMap.set(c.dialogue_id, []);
+            choiceMap.get(c.dialogue_id).push(c);
+        });
 
-// 3. ประกอบร่างข้อมูลรอบเดียวเสร็จ ไม่ต้องลูปกรองซ้ำซ้อน
-const subtopics = exerciseRows.map((row) => {
-    const currentDialogues = dialogueMap.get(row.exercise_id) || [];
-    const allChoicesForExercise = [];
+        // 3. ประกอบร่างข้อมูลรอบเดียวเสร็จ ไม่ต้องลูปกรองซ้ำซ้อน
+        const subtopics = exerciseRows.map((row) => {
+            const currentDialogues = dialogueMap.get(row.exercise_id) || [];
+            const allChoicesForExercise = [];
 
-    const dialogues = currentDialogues.map((dialogue) => {
-        const choices = choiceMap.get(dialogue.dialogue_id) || [];
-        allChoicesForExercise.push(...choices);
-        return {
-            ...dialogue,
-            choices
-        };
-    });
+            const dialogues = currentDialogues.map((dialogue) => {
+                const choices = choiceMap.get(dialogue.dialogue_id) || [];
+                allChoicesForExercise.push(...choices);
+                return {
+                    ...dialogue,
+                    choices
+                };
+            });
 
-    return {
-        ...row,
-        dialogues,
-        dialogue_choices: allChoicesForExercise,
-        dialogue_branches: [],
-        terminal_logic: [],
-    };
-});
+            const extraFiles = miniGameFileRows
+                .filter((f) => f.exercise_id === row.exercise_id)
+                .map((f) => ({ name: f.file_name, content: f.file_content || "" }));
+
+            return {
+                ...row,
+                dialogues,
+                dialogue_choices: allChoicesForExercise,
+                dialogue_branches: [],
+                terminal_logic: [],
+                // โครงสร้างไฟล์ของด่านนี้ (main.py + ไฟล์เสริม) เหมือนกับ /api/exercises/list/:lessonId
+                files: [
+                    { name: "main.py", content: row.starter_code || "" },
+                    ...extraFiles,
+                ],
+            };
+        });
+
         const rewardXp = subtopics.reduce((total, row) => total + Number(row.reward_xp || 0), 0);
         const rewardCoins = subtopics.reduce((total, row) => total + Number(row.reward_coins || 0), 0);
         const first = subtopics[0];
@@ -7933,4 +6749,3 @@ function startSimulationLoop() {
         }
     }, TICK_RATE);
 }
-
