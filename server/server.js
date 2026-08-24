@@ -15,6 +15,8 @@ const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
+const { spawn } = require('child_process');
 
 const computeLevelFromXp = (xp = 0) => {
     const numericXp = Number(xp || 0);
@@ -2135,6 +2137,79 @@ const ensureSimulationJobTrackingSchema = async () => {
     }
 };
 
+const ensureCompetitiveArenaSchema = async () => {
+    try {
+        await db.execute(`
+            CREATE TABLE IF NOT EXISTS multiplayer_challenges (
+                challenge_id int(11) NOT NULL AUTO_INCREMENT,
+                title varchar(255) NOT NULL,
+                description text NOT NULL,
+                difficulty varchar(50) NOT NULL DEFAULT 'Easy',
+                reward int(11) NOT NULL DEFAULT 300,
+                time_limit int(11) NOT NULL DEFAULT 300,
+                expires_at timestamp DEFAULT NULL,
+                test_cases longtext DEFAULT NULL,
+                created_by int(11) DEFAULT NULL,
+                is_test tinyint(1) NOT NULL DEFAULT 0,
+                created_at timestamp NOT NULL DEFAULT current_timestamp(),
+                PRIMARY KEY (challenge_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+
+        await db.execute(`
+            CREATE TABLE IF NOT EXISTS active_accepted_challenges (
+                id int(11) NOT NULL AUTO_INCREMENT,
+                user_id int(11) NOT NULL,
+                challenge_id int(11) NOT NULL,
+                code_state longtext DEFAULT NULL,
+                accepted_at timestamp NOT NULL DEFAULT current_timestamp(),
+                last_saved_at timestamp NOT NULL DEFAULT current_timestamp(),
+                PRIMARY KEY (id),
+                UNIQUE KEY uq_active_challenge_user (user_id, challenge_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+
+        await db.execute(`
+            CREATE TABLE IF NOT EXISTS multiplayer_submissions (
+                submission_id int(11) NOT NULL AUTO_INCREMENT,
+                challenge_id int(11) NOT NULL,
+                user_id int(11) NOT NULL,
+                code longtext DEFAULT NULL,
+                score int(11) NOT NULL DEFAULT 0,
+                passed_cases int(11) NOT NULL DEFAULT 0,
+                total_cases int(11) NOT NULL DEFAULT 0,
+                efficiency_ms int(11) NOT NULL DEFAULT 0,
+                ai_feedback longtext DEFAULT NULL,
+                breakdown longtext DEFAULT NULL,
+                submitted_at timestamp NOT NULL DEFAULT current_timestamp(),
+                PRIMARY KEY (submission_id),
+                UNIQUE KEY uq_multiplayer_submission_user_challenge (user_id, challenge_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+
+        await db.execute(`
+            CREATE TABLE IF NOT EXISTS user_mailbox (
+                mail_id int(11) NOT NULL AUTO_INCREMENT,
+                user_id int(11) NOT NULL,
+                title varchar(255) NOT NULL,
+                content text NOT NULL,
+                attachment_coins int(11) NOT NULL DEFAULT 0,
+                is_read tinyint(1) NOT NULL DEFAULT 0,
+                is_claimed tinyint(1) NOT NULL DEFAULT 0,
+                created_at timestamp NOT NULL DEFAULT current_timestamp(),
+                PRIMARY KEY (mail_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+
+        await ensureColumnIfMissing('active_accepted_challenges', 'accepted_at', '`accepted_at` timestamp NOT NULL DEFAULT current_timestamp()');
+        await ensureColumnIfMissing('active_accepted_challenges', 'last_saved_at', '`last_saved_at` timestamp NOT NULL DEFAULT current_timestamp()');
+        await ensureColumnIfMissing('multiplayer_submissions', 'breakdown', '`breakdown` longtext DEFAULT NULL');
+        await ensureColumnIfMissing('multiplayer_submissions', 'submitted_at', '`submitted_at` timestamp NOT NULL DEFAULT current_timestamp()');
+    } catch (error) {
+        console.error('⚠️ Failed to ensure competitive arena schema:', error.message);
+    }
+};
+
 const ensureMysqlStyleBooleanColumns = async () => {
     const compatibilityAlters = [
         {
@@ -2271,6 +2346,7 @@ app.post('/api/upload', (req, res) => {
 app.get('/api/dashboard/stats', async (_req, res) => {
     try {
         await ensureUserPresenceSchema();
+        await ensureCompetitiveArenaSchema();
         const [[totalUsersRow]] = await db.execute(
             `SELECT COUNT(*) AS count
              FROM users
@@ -2281,22 +2357,29 @@ app.get('/api/dashboard/stats', async (_req, res) => {
              FROM exercise_submissions`
         );
         const [[learnModeRow]] = await db.execute(
-            `SELECT COUNT(DISTINCT user_id) AS count
-             FROM (
-                SELECT user_id FROM exercise_submissions
-                UNION
-                SELECT user_id FROM lesson_quiz_attempts
-                UNION
-                SELECT user_id FROM mini_game_user_exercise_progress
-                UNION
-                SELECT user_id FROM learning_ai_tasks WHERE mode IN ('exercise', 'challenge')
-             ) learn_users`
+            `SELECT COUNT(DISTINCT up.user_id) AS count
+             FROM user_presence up
+             JOIN users u ON u.user_id = up.user_id
+             WHERE u.role != 'admin'
+               AND COALESCE(u.is_deleted, 0) = 0
+               AND up.last_seen >= DATE_SUB(NOW(), INTERVAL 15 MINUTE)
+               AND up.mode IN ('learn', 'lesson', 'exercise', 'mini-game', 'challenge')`
         );
         const [[storyModeRow]] = await db.execute(
-            `SELECT COUNT(DISTINCT user_id) AS count FROM room_participants`
-        );
-        const [[soloModeRow]] = await db.execute(
-            `SELECT COUNT(DISTINCT user_id) AS count FROM simulation_saves`
+            `SELECT COUNT(DISTINCT up.user_id) AS count
+             FROM user_presence up
+             JOIN users u ON u.user_id = up.user_id
+             WHERE u.role != 'admin'
+               AND COALESCE(u.is_deleted, 0) = 0
+               AND up.last_seen >= DATE_SUB(NOW(), INTERVAL 15 MINUTE)
+               AND (
+                    up.mode IN ('online', 'competitive')
+                    OR up.current_path LIKE '/competitive-arena%'
+                    OR up.current_path LIKE '/online%'
+                    OR up.current_path LIKE '/matchmaking%'
+                    OR up.current_path LIKE '/join-room%'
+                    OR up.current_path LIKE '/lobby%'
+               )`
         );
         const [onlineUsers] = await db.execute(
             `SELECT
@@ -2357,7 +2440,6 @@ app.get('/api/dashboard/stats', async (_req, res) => {
             modes: {
                 learn: Number(learnModeRow?.count || 0),
                 story: Number(storyModeRow?.count || 0),
-                endless: Number(soloModeRow?.count || 0),
             },
         });
     } catch (error) {
@@ -2486,7 +2568,7 @@ app.get('/api/dashboard/recent-activities', async (_req, res) => {
                     u.user_id,
                     u.username,
                     'simulation' AS type,
-                    'กำลังเล่นโหมดเดี่ยว' AS title,
+                    'กำลังใช้งาน Simulation' AS title,
                     CONCAT('วันที่ ', COALESCE(ss.current_day, 1), ' ใน Simulation') AS description,
                     'solo' AS mode,
                     ss.updated_at AS created_at
@@ -2501,6 +2583,261 @@ app.get('/api/dashboard/recent-activities', async (_req, res) => {
         );
 
         res.json(rows);
+    } catch (error) {
+        res.status(500).json({ error: describeError(error) });
+    }
+});
+
+app.get('/api/dashboard/learning-progress', async (_req, res) => {
+    try {
+        await ensureLessonQuizAttemptSchema();
+
+        const safeSelect = async (sql, params = []) => {
+            try {
+                const [rows] = await db.execute(sql, params);
+                return Array.isArray(rows) ? rows : [];
+            } catch (error) {
+                console.warn('Dashboard learning query skipped:', describeError(error));
+                return [];
+            }
+        };
+
+        const [students, lessons, quizRows, exerciseRows, miniGameRows] = await Promise.all([
+            safeSelect(
+                `SELECT user_id, username, created_at
+                 FROM users
+                 WHERE role != 'admin' AND COALESCE(is_deleted, 0) = 0
+                 ORDER BY username`
+            ),
+            safeSelect(
+                `SELECT
+                    l.lesson_id,
+                    l.title,
+                    l.order_index,
+                    l.module_id,
+                    COALESCE(m.title, 'ไม่ระบุหมวด') AS module_title
+                 FROM lessons l
+                 LEFT JOIN modules m ON m.module_id = l.module_id
+                 ORDER BY COALESCE(m.order_index, 0), l.order_index, l.lesson_id`
+            ),
+            safeSelect(
+                `SELECT
+                    user_id,
+                    lesson_id,
+                    MAX(CASE WHEN quiz_type = 'pre' THEN score ELSE NULL END) AS pre_score,
+                    MAX(CASE WHEN quiz_type = 'pre' THEN total_questions ELSE NULL END) AS pre_total,
+                    MAX(CASE WHEN quiz_type = 'pre' THEN completed_at ELSE NULL END) AS pre_completed_at,
+                    MAX(CASE WHEN quiz_type = 'post' THEN score ELSE NULL END) AS post_score,
+                    MAX(CASE WHEN quiz_type = 'post' THEN total_questions ELSE NULL END) AS post_total,
+                    MAX(CASE WHEN quiz_type = 'post' THEN completed_at ELSE NULL END) AS post_completed_at,
+                    MAX(updated_at) AS latest_quiz_at
+                 FROM lesson_quiz_attempts
+                 GROUP BY user_id, lesson_id`
+            ),
+            safeSelect(
+                `SELECT
+                    es.user_id,
+                    e.lesson_id,
+                    COUNT(DISTINCT es.exercise_id) AS exercise_attempts,
+                    SUM(CASE WHEN es.is_passed = 1 THEN 1 ELSE 0 END) AS passed_exercises,
+                    MAX(es.submitted_at) AS latest_exercise_at
+                 FROM exercise_submissions es
+                 JOIN exercises e ON e.exercise_id = es.exercise_id
+                 GROUP BY es.user_id, e.lesson_id`
+            ),
+            safeSelect(
+                `SELECT
+                    p.user_id,
+                    mge.lesson_id,
+                    COUNT(DISTINCT p.exercise_id) AS mini_game_attempts,
+                    SUM(CASE WHEN p.is_completed = 1 THEN 1 ELSE 0 END) AS completed_mini_games,
+                    MAX(p.updated_at) AS latest_mini_game_at
+                 FROM mini_game_user_exercise_progress p
+                 JOIN mini_game_exercises mge ON mge.exercise_id = p.exercise_id
+                 WHERE mge.lesson_id IS NOT NULL
+                 GROUP BY p.user_id, mge.lesson_id`
+            ),
+        ]);
+
+        const lessonMap = new Map(lessons.map((lesson) => [Number(lesson.lesson_id), lesson]));
+        const recordMap = new Map();
+        const makeKey = (userId, lessonId) => `${Number(userId)}:${Number(lessonId)}`;
+        const percent = (score, total) => {
+            const numericTotal = Number(total || 0);
+            if (!numericTotal) return null;
+            return Math.round((Number(score || 0) / numericTotal) * 100);
+        };
+        const latestDate = (...values) => (
+            values
+                .filter(Boolean)
+                .map((value) => new Date(value))
+                .filter((date) => Number.isFinite(date.getTime()))
+                .sort((a, b) => b.getTime() - a.getTime())[0]?.toISOString() || null
+        );
+        const getRecord = (userId, lessonId) => {
+            const key = makeKey(userId, lessonId);
+            if (!recordMap.has(key)) {
+                const lesson = lessonMap.get(Number(lessonId)) || {};
+                recordMap.set(key, {
+                    user_id: Number(userId),
+                    lesson_id: Number(lessonId),
+                    lesson_title: lesson.title || `บทเรียน #${lessonId}`,
+                    module_title: lesson.module_title || 'ไม่ระบุหมวด',
+                    pre_score: null,
+                    pre_total: null,
+                    pre_percent: null,
+                    post_score: null,
+                    post_total: null,
+                    post_percent: null,
+                    growth_percent: null,
+                    exercise_attempts: 0,
+                    passed_exercises: 0,
+                    mini_game_attempts: 0,
+                    completed_mini_games: 0,
+                    started: false,
+                    completed: false,
+                    status: 'not_started',
+                    last_activity_at: null,
+                });
+            }
+            return recordMap.get(key);
+        };
+
+        quizRows.forEach((row) => {
+            const record = getRecord(row.user_id, row.lesson_id);
+            record.pre_score = row.pre_score == null ? null : Number(row.pre_score || 0);
+            record.pre_total = row.pre_total == null ? null : Number(row.pre_total || 0);
+            record.pre_percent = percent(record.pre_score, record.pre_total);
+            record.post_score = row.post_score == null ? null : Number(row.post_score || 0);
+            record.post_total = row.post_total == null ? null : Number(row.post_total || 0);
+            record.post_percent = percent(record.post_score, record.post_total);
+            record.growth_percent = record.pre_percent == null || record.post_percent == null
+                ? null
+                : record.post_percent - record.pre_percent;
+            record.started = true;
+            record.completed = record.post_percent != null;
+            record.last_activity_at = latestDate(row.latest_quiz_at, row.pre_completed_at, row.post_completed_at);
+        });
+
+        exerciseRows.forEach((row) => {
+            const record = getRecord(row.user_id, row.lesson_id);
+            record.exercise_attempts = Number(row.exercise_attempts || 0);
+            record.passed_exercises = Number(row.passed_exercises || 0);
+            record.started = record.started || record.exercise_attempts > 0;
+            record.last_activity_at = latestDate(record.last_activity_at, row.latest_exercise_at);
+        });
+
+        miniGameRows.forEach((row) => {
+            const record = getRecord(row.user_id, row.lesson_id);
+            record.mini_game_attempts = Number(row.mini_game_attempts || 0);
+            record.completed_mini_games = Number(row.completed_mini_games || 0);
+            record.started = record.started || record.mini_game_attempts > 0;
+            record.last_activity_at = latestDate(record.last_activity_at, row.latest_mini_game_at);
+        });
+
+        recordMap.forEach((record) => {
+            record.status = record.completed ? 'completed' : record.started ? 'in_progress' : 'not_started';
+        });
+
+        const studentRows = students.map((student) => {
+            const lessonsForStudent = lessons
+                .map((lesson) => recordMap.get(makeKey(student.user_id, lesson.lesson_id)))
+                .filter(Boolean)
+                .sort((a, b) => new Date(b.last_activity_at || 0) - new Date(a.last_activity_at || 0));
+            const completedLessons = lessonsForStudent.filter((record) => record.completed).length;
+            const inProgressLessons = lessonsForStudent.filter((record) => record.status === 'in_progress').length;
+            const currentLesson = lessonsForStudent.find((record) => record.status === 'in_progress')
+                || lessonsForStudent[0]
+                || null;
+            const preScores = lessonsForStudent.map((record) => record.pre_percent).filter((value) => value != null);
+            const postScores = lessonsForStudent.map((record) => record.post_percent).filter((value) => value != null);
+            const average = (values) => values.length
+                ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length)
+                : null;
+            const avgPrePercent = average(preScores);
+            const avgPostPercent = average(postScores);
+
+            return {
+                user_id: Number(student.user_id),
+                username: student.username,
+                completed_lessons: completedLessons,
+                in_progress_lessons: inProgressLessons,
+                total_lessons: lessons.length,
+                status: currentLesson?.status || 'not_started',
+                current_lesson: currentLesson,
+                avg_pre_percent: avgPrePercent,
+                avg_post_percent: avgPostPercent,
+                growth_percent: avgPrePercent == null || avgPostPercent == null ? null : avgPostPercent - avgPrePercent,
+                last_activity_at: currentLesson?.last_activity_at || student.created_at || null,
+                lessons: lessonsForStudent,
+            };
+        });
+
+        const lessonSummaries = lessons.map((lesson) => {
+            const rows = students.map((student) => {
+                const record = recordMap.get(makeKey(student.user_id, lesson.lesson_id));
+                return {
+                    user_id: Number(student.user_id),
+                    username: student.username,
+                    ...(record || {
+                        lesson_id: Number(lesson.lesson_id),
+                        lesson_title: lesson.title,
+                        module_title: lesson.module_title,
+                        pre_score: null,
+                        pre_total: null,
+                        pre_percent: null,
+                        post_score: null,
+                        post_total: null,
+                        post_percent: null,
+                        growth_percent: null,
+                        exercise_attempts: 0,
+                        passed_exercises: 0,
+                        mini_game_attempts: 0,
+                        completed_mini_games: 0,
+                        started: false,
+                        completed: false,
+                        status: 'not_started',
+                        last_activity_at: null,
+                    }),
+                };
+            });
+            const completed = rows.filter((row) => row.status === 'completed');
+            const inProgress = rows.filter((row) => row.status === 'in_progress');
+            const notStarted = rows.filter((row) => row.status === 'not_started');
+            const prePercents = rows.map((row) => row.pre_percent).filter((value) => value != null);
+            const postPercents = rows.map((row) => row.post_percent).filter((value) => value != null);
+            const average = (values) => values.length
+                ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length)
+                : null;
+            const avgPrePercent = average(prePercents);
+            const avgPostPercent = average(postPercents);
+
+            return {
+                lesson_id: Number(lesson.lesson_id),
+                title: lesson.title,
+                module_title: lesson.module_title,
+                completed_count: completed.length,
+                in_progress_count: inProgress.length,
+                not_started_count: notStarted.length,
+                not_completed_count: students.length - completed.length,
+                avg_pre_percent: avgPrePercent,
+                avg_post_percent: avgPostPercent,
+                growth_percent: avgPrePercent == null || avgPostPercent == null ? null : avgPostPercent - avgPrePercent,
+                students: rows,
+                completed_students: completed,
+                in_progress_students: inProgress,
+                not_started_students: notStarted,
+            };
+        });
+
+        res.json({
+            total_students: students.length,
+            total_lessons: lessons.length,
+            completed_lesson_records: Array.from(recordMap.values()).filter((record) => record.completed).length,
+            in_progress_students: studentRows.filter((student) => student.status === 'in_progress').length,
+            lesson_summaries: lessonSummaries,
+            students: studentRows,
+        });
     } catch (error) {
         res.status(500).json({ error: describeError(error) });
     }
@@ -2533,10 +2870,10 @@ app.post('/api/presence', async (req, res) => {
         await db.execute(
             `INSERT INTO user_presence (user_id, mode, activity_label, current_path, last_seen)
              VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-             ON DUPLICATE KEY UPDATE
-                mode = VALUES(mode),
-                activity_label = VALUES(activity_label),
-                current_path = VALUES(current_path),
+             ON CONFLICT (user_id) DO UPDATE SET
+                mode = EXCLUDED.mode,
+                activity_label = EXCLUDED.activity_label,
+                current_path = EXCLUDED.current_path,
                 last_seen = CURRENT_TIMESTAMP`,
             [
                 numericUserId,
@@ -2554,22 +2891,48 @@ app.post('/api/presence', async (req, res) => {
 
 app.get('/api/admin/users', async (_req, res) => {
     try {
+        await ensureCompetitiveArenaSchema();
+        await ensureLearningProgressSchema();
+
         const [rows] = await db.execute(
-            `SELECT
-                user_id,
-                username,
-                email,
-                role,
-                level,
-                xp,
-                virtual_currency AS coins,
-                0 AS high_score,
-                COALESCE(is_deleted, 0) AS is_deleted,
-                COALESCE(is_banned, 0) AS is_banned,
-                ban_until,
-                created_at
-             FROM users
-             ORDER BY created_at DESC`
+            `WITH competitive_scores AS (
+                SELECT
+                    user_id,
+                    COALESCE(SUM(score), 0) AS competitive_score
+                FROM multiplayer_submissions
+                GROUP BY user_id
+             ),
+             arcade_scores AS (
+                SELECT
+                    user_id,
+                    COALESCE(SUM(
+                        CASE
+                            WHEN is_completed = 1 AND COALESCE(score, 0) = 0 THEN 100
+                            ELSE COALESCE(score, 0)
+                        END
+                    ), 0) AS arcade_score
+                FROM mini_game_user_exercise_progress
+                GROUP BY user_id
+             )
+             SELECT
+                u.user_id,
+                u.username,
+                u.email,
+                u.role,
+                u.level,
+                u.xp,
+                u.virtual_currency AS coins,
+                COALESCE(cs.competitive_score, 0) AS competitive_score,
+                COALESCE(a.arcade_score, 0) AS arcade_score,
+                COALESCE(cs.competitive_score, 0) + COALESCE(a.arcade_score, 0) AS high_score,
+                COALESCE(u.is_deleted, 0) AS is_deleted,
+                COALESCE(u.is_banned, 0) AS is_banned,
+                u.ban_until,
+                u.created_at
+             FROM users u
+             LEFT JOIN competitive_scores cs ON cs.user_id = u.user_id
+             LEFT JOIN arcade_scores a ON a.user_id = u.user_id
+             ORDER BY high_score DESC, u.level DESC, u.virtual_currency DESC, u.created_at DESC`
         );
         res.json(rows);
     } catch (error) {
@@ -3691,6 +4054,7 @@ const ensureLearningProgressSchema = async () => {
                 user_id int(11) NOT NULL,
                 exercise_id int(11) NOT NULL,
                 is_completed tinyint(1) NOT NULL DEFAULT 0,
+                score int(11) NOT NULL DEFAULT 0,
                 xp_reward int(11) NOT NULL DEFAULT 0,
                 currency_reward int(11) NOT NULL DEFAULT 0,
                 selected_branch_key varchar(80) NOT NULL DEFAULT 'default',
@@ -3744,6 +4108,21 @@ const ensureLearningProgressSchema = async () => {
             await db.execute(
                 `ALTER TABLE mini_game_user_exercise_progress
                  ADD COLUMN is_completed tinyint(1) NOT NULL DEFAULT 0 AFTER exercise_id`
+            );
+        }
+
+        const [miniGameProgressScoreColumns] = await db.execute(
+            `SELECT COUNT(*) AS count
+             FROM information_schema.columns
+             WHERE table_schema = DATABASE()
+               AND table_name = 'mini_game_user_exercise_progress'
+               AND column_name = 'score'`
+        );
+
+        if (Number(miniGameProgressScoreColumns[0]?.count || 0) === 0) {
+            await db.execute(
+                `ALTER TABLE mini_game_user_exercise_progress
+                 ADD COLUMN score int(11) NOT NULL DEFAULT 0 AFTER is_completed`
             );
         }
 
@@ -3944,6 +4323,22 @@ const emailTransporter = nodemailer.createTransport({
 
 // ถ้าไม่มี config ให้ใช้ Console Mode
 const EMAIL_CONFIGURED = !!(process.env.EMAIL_USER && process.env.EMAIL_PASS);
+const CLIENT_URL = String(process.env.CLIENT_URL || 'http://localhost:5173').replace(/\/$/, '');
+
+const sendAppEmail = async ({ to, subject, html }) => {
+    if (!EMAIL_CONFIGURED) {
+        return false;
+    }
+
+    await emailTransporter.sendMail({
+        from: process.env.EMAIL_USER,
+        to,
+        subject,
+        html,
+    });
+
+    return true;
+};
 
 // ==========================================
 // NVIDIA AI routes (active)
@@ -4563,6 +4958,137 @@ app.post('/api/register', async (req, res) => {
     } catch (err) {
         console.error('❌ Register Error:', err.message);
         res.status(500).json({ message: 'Server error' });
+    }
+});
+
+app.post('/api/password/forgot', async (req, res) => {
+    const email = String(req.body?.email || '').trim();
+    const genericMessage = 'ถ้าอีเมลนี้มีบัญชีอยู่ในระบบ เราจะส่งลิงก์สำหรับเปลี่ยนรหัสผ่านให้ทันที';
+
+    if (!email || !email.includes('@')) {
+        return res.status(400).json({ message: 'กรุณากรอกอีเมลให้ถูกต้อง' });
+    }
+
+    try {
+        const [users] = await db.execute(
+            'SELECT user_id, username, email FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1',
+            [email]
+        );
+
+        if (users.length === 0) {
+            return res.json({ message: genericMessage, emailSent: false });
+        }
+
+        const user = users[0];
+        const resetToken = crypto.randomBytes(32).toString('hex');
+        const tokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+        const resetUrl = `${CLIENT_URL}/login?reset=${resetToken}`;
+
+        await db.execute(
+            'UPDATE password_reset_tokens SET used_at = CURRENT_TIMESTAMP WHERE user_id = ? AND used_at IS NULL',
+            [user.user_id]
+        );
+        await db.execute(
+            'INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES (?, ?, DATE_ADD(CURRENT_TIMESTAMP, INTERVAL 1 HOUR))',
+            [user.user_id, tokenHash]
+        );
+
+        const emailSent = await sendAppEmail({
+            to: user.email,
+            subject: 'เปลี่ยนรหัสผ่าน PySim',
+            html: `<div style="font-family:sans-serif;max-width:560px;margin:auto;padding:24px;color:#0f172a">
+                <h2 style="margin:0 0 12px">เปลี่ยนรหัสผ่านของคุณ</h2>
+                <p>สวัสดี ${user.username || ''}</p>
+                <p>เราได้รับคำขอให้เปลี่ยนรหัสผ่านบัญชี PySim ของคุณ กดปุ่มด้านล่างเพื่อตั้งรหัสผ่านใหม่</p>
+                <a href="${resetUrl}" style="display:inline-block;margin:16px 0;padding:12px 22px;background:#2563eb;color:white;text-decoration:none;border-radius:12px;font-weight:700">ตั้งรหัสผ่านใหม่</a>
+                <p style="font-size:13px;color:#64748b">ลิงก์นี้จะหมดอายุใน 1 ชั่วโมง หากคุณไม่ได้เป็นคนขอเปลี่ยนรหัสผ่าน สามารถละเว้นอีเมลนี้ได้</p>
+                <p style="font-size:12px;color:#94a3b8;word-break:break-all">หากปุ่มใช้งานไม่ได้ ให้คัดลอกลิงก์นี้ไปเปิดในเบราว์เซอร์: ${resetUrl}</p>
+            </div>`
+        });
+
+        if (!emailSent) {
+            console.log(`[MOCK] Password reset link for ${user.email}: ${resetUrl}`);
+        }
+
+        res.json({
+            message: genericMessage,
+            emailSent,
+            ...(emailSent ? {} : { debugResetUrl: resetUrl }),
+        });
+    } catch (err) {
+        console.error('Password forgot error:', err.message);
+        res.status(500).json({ message: 'ไม่สามารถส่งอีเมลเปลี่ยนรหัสผ่านได้' });
+    }
+});
+
+app.get('/api/password/reset/:token', async (req, res) => {
+    const resetToken = String(req.params.token || '').trim();
+    const tokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+
+    try {
+        const [rows] = await db.execute(
+            `SELECT prt.id, prt.user_id, u.email
+             FROM password_reset_tokens prt
+             JOIN users u ON u.user_id = prt.user_id
+             WHERE prt.token_hash = ?
+               AND prt.used_at IS NULL
+               AND prt.expires_at > CURRENT_TIMESTAMP
+             LIMIT 1`,
+            [tokenHash]
+        );
+
+        if (rows.length === 0) {
+            return res.status(400).json({ message: 'ลิงก์เปลี่ยนรหัสผ่านไม่ถูกต้องหรือหมดอายุแล้ว' });
+        }
+
+        res.json({ valid: true, email: rows[0].email });
+    } catch (err) {
+        console.error('Password reset token check error:', err.message);
+        res.status(500).json({ message: 'ตรวจสอบลิงก์ไม่สำเร็จ' });
+    }
+});
+
+app.post('/api/password/reset', async (req, res) => {
+    const resetToken = String(req.body?.token || '').trim();
+    const password = String(req.body?.password || '');
+    const tokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+
+    if (!resetToken || !password) {
+        return res.status(400).json({ message: 'ข้อมูลไม่ครบถ้วน' });
+    }
+
+    const passwordErrors = validatePassword(password);
+    if (passwordErrors.length > 0) {
+        return res.status(400).json({ message: `รหัสผ่านไม่ผ่านเกณฑ์: ${passwordErrors.join(', ')}` });
+    }
+
+    try {
+        const [rows] = await db.execute(
+            `SELECT prt.id, prt.user_id
+             FROM password_reset_tokens prt
+             WHERE prt.token_hash = ?
+               AND prt.used_at IS NULL
+               AND prt.expires_at > CURRENT_TIMESTAMP
+             LIMIT 1`,
+            [tokenHash]
+        );
+
+        if (rows.length === 0) {
+            return res.status(400).json({ message: 'ลิงก์เปลี่ยนรหัสผ่านไม่ถูกต้องหรือหมดอายุแล้ว' });
+        }
+
+        const passwordHash = await bcrypt.hash(password, 10);
+        await db.execute('UPDATE users SET password_hash = ? WHERE user_id = ?', [passwordHash, rows[0].user_id]);
+        await db.execute('UPDATE password_reset_tokens SET used_at = CURRENT_TIMESTAMP WHERE id = ?', [rows[0].id]);
+        await db.execute(
+            'UPDATE password_reset_tokens SET used_at = CURRENT_TIMESTAMP WHERE user_id = ? AND used_at IS NULL',
+            [rows[0].user_id]
+        );
+
+        res.json({ message: 'เปลี่ยนรหัสผ่านสำเร็จ กรุณาเข้าสู่ระบบด้วยรหัสผ่านใหม่' });
+    } catch (err) {
+        console.error('Password reset error:', err.message);
+        res.status(500).json({ message: 'เปลี่ยนรหัสผ่านไม่สำเร็จ' });
     }
 });
 
@@ -5739,6 +6265,143 @@ app.post('/simulation/move-location', async (req, res) => {
 // 6. API: Shop & Inventory
 // ==========================================
 
+const ensureShopSchema = async () => {
+    await db.execute(`
+        CREATE TABLE IF NOT EXISTS shop_items (
+            item_id int(11) NOT NULL AUTO_INCREMENT,
+            name varchar(100) NOT NULL,
+            description text DEFAULT NULL,
+            type varchar(50) NOT NULL DEFAULT 'THEME',
+            item_type varchar(50) NOT NULL DEFAULT 'THEME',
+            rarity varchar(50) NOT NULL DEFAULT 'COMMON',
+            price decimal(10,2) NOT NULL DEFAULT 0.00,
+            asset_url text DEFAULT NULL,
+            preview_image text DEFAULT NULL,
+            preview_data longtext DEFAULT NULL,
+            effects longtext DEFAULT NULL,
+            is_available tinyint(1) NOT NULL DEFAULT 1,
+            is_active tinyint(1) NOT NULL DEFAULT 1,
+            created_at timestamp NOT NULL DEFAULT current_timestamp(),
+            PRIMARY KEY (item_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    `);
+
+    await db.execute(`
+        CREATE TABLE IF NOT EXISTS user_inventory (
+            id int(11) NOT NULL AUTO_INCREMENT,
+            user_id int(11) NOT NULL,
+            item_id int(11) NOT NULL,
+            purchased_at timestamp NOT NULL DEFAULT current_timestamp(),
+            PRIMARY KEY (id),
+            UNIQUE KEY uq_user_inventory_user_item (user_id, item_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    `);
+
+    const [[countRow]] = await db.execute('SELECT COUNT(*) AS count FROM shop_items');
+    if (Number(countRow?.count || 0) > 0) {
+        return;
+    }
+
+    const defaultItems = [
+        {
+            name: 'Cherry Blossom Theme',
+            description: 'Soft sakura learning theme',
+            type: 'THEME',
+            rarity: 'COMMON',
+            price: 0,
+            assetUrl: '/uploads/1783150903242-763142402.png',
+            effects: { css_class: 'theme-sakura' },
+        },
+        {
+            name: 'Ocean Theme',
+            description: 'Calm blue study theme',
+            type: 'THEME',
+            rarity: 'RARE',
+            price: 50,
+            assetUrl: '/uploads/ocean-theme.png',
+            effects: { css_class: 'theme-ocean' },
+        },
+        {
+            name: 'Space Theme',
+            description: 'Deep space coding theme',
+            type: 'THEME',
+            rarity: 'EPIC',
+            price: 80,
+            assetUrl: '/uploads/space-theme.png',
+            effects: { css_class: 'theme-space' },
+        },
+        {
+            name: 'Spark Cursor',
+            description: 'Small sparkle trail for the mouse',
+            type: 'MOUSE_EFFECT',
+            rarity: 'RARE',
+            price: 35,
+            effects: [{ visual: '*', color: '#38bdf8' }],
+        },
+        {
+            name: 'Clean Profile Frame',
+            description: 'Simple profile border',
+            type: 'PROFILE_FRAME',
+            rarity: 'COMMON',
+            price: 25,
+            effects: { border: '2px solid #38bdf8' },
+        },
+    ];
+
+    for (const item of defaultItems) {
+        const effectsJson = JSON.stringify(item.effects || {});
+        await db.execute(
+            `INSERT INTO shop_items (
+                name, description, type, item_type, rarity, price,
+                asset_url, preview_image, preview_data, effects, is_available, is_active
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
+            [
+                item.name,
+                item.description,
+                item.type,
+                item.type,
+                item.rarity,
+                item.price,
+                item.assetUrl || '',
+                item.assetUrl || '',
+                effectsJson,
+                effectsJson,
+            ]
+        );
+    }
+};
+
+const ensurePasswordResetSchema = async () => {
+    try {
+        await db.execute(`
+            CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                id int(11) NOT NULL AUTO_INCREMENT,
+                user_id int(11) NOT NULL,
+                token_hash varchar(255) NOT NULL,
+                expires_at timestamp NOT NULL,
+                used_at timestamp DEFAULT NULL,
+                created_at timestamp NOT NULL DEFAULT current_timestamp(),
+                PRIMARY KEY (id),
+                UNIQUE KEY uq_password_reset_token_hash (token_hash)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+    } catch (error) {
+        console.error('Failed to ensure password reset schema:', error.message);
+    }
+};
+
+const normalizeShopPreviewData = (value) => {
+    if (!value || typeof value !== 'string') {
+        return value;
+    }
+
+    try {
+        return JSON.parse(value);
+    } catch (_) {
+        return value;
+    }
+};
+
 // ดึงสินค้าทั้งหมดในร้าน
 app.get('/shop/items', async (req, res) => {
     const { type } = req.query;
@@ -5755,12 +6418,14 @@ app.get('/shop/items', async (req, res) => {
     }
     sql += ' ORDER BY item_type, price ASC';
     try {
+        await ensureShopSchema();
         const [items] = await db.execute(sql, params);
         items.forEach(i => {
-            if (typeof i.preview_data === 'string') i.preview_data = JSON.parse(i.preview_data);
+            i.preview_data = normalizeShopPreviewData(i.preview_data);
         });
         res.json(items);
     } catch (err) {
+        console.error('Shop items error:', err);
         res.status(500).json({ error: 'Failed to fetch shop items' });
     }
 });
@@ -5769,6 +6434,7 @@ app.get('/shop/items', async (req, res) => {
 app.get('/shop/inventory/:userId', async (req, res) => {
     const { userId } = req.params;
     try {
+        await ensureShopSchema();
         const [items] = await db.execute(`
             SELECT si.item_id, si.name, si.description, si.item_type AS type, si.price, si.asset_url, si.preview_image,
                    si.effects AS preview_data, si.is_active AS is_available, ui.purchased_at
@@ -5778,10 +6444,11 @@ app.get('/shop/inventory/:userId', async (req, res) => {
             ORDER BY ui.purchased_at DESC
         `, [userId]);
         items.forEach(i => {
-            if (typeof i.preview_data === 'string') i.preview_data = JSON.parse(i.preview_data);
+            i.preview_data = normalizeShopPreviewData(i.preview_data);
         });
         res.json(items);
     } catch (err) {
+        console.error('Shop inventory error:', err);
         res.status(500).json({ error: 'Failed to fetch inventory' });
     }
 });
@@ -5789,6 +6456,7 @@ app.get('/shop/inventory/:userId', async (req, res) => {
 // ซื้อสินค้า
 app.post('/shop/buy', async (req, res) => {
     const { userId, itemId } = req.body;
+    await ensureShopSchema();
     const connection = await db.getConnection();
     try {
         await connection.beginTransaction();
@@ -5869,24 +6537,32 @@ app.post('/shop/buy', async (req, res) => {
 // สวมใส่ cosmetic
 app.post('/shop/equip', async (req, res) => {
     const { userId, itemId, type } = req.body;
+    const rawTypeUpper = String(type || '').toUpperCase();
+    const requestedType = rawTypeUpper.replace(/[\s_-]/g, '');
+    const canonicalType = requestedType === 'UITHEME' ? 'THEME' : requestedType;
     const columnMap = {
         'THEME': 'equipped_theme_id',
-        'MOUSE_EFFECT': 'equipped_mouse_effect_id',
-        'PROFILE_FRAME': 'equipped_profile_frame_id',
-        'PROFILE_BACKGROUND': 'equipped_profile_frame_id'
+        'MOUSEEFFECT': 'equipped_mouse_effect_id',
+        'PROFILEFRAME': 'equipped_profile_frame_id',
+        'PROFILEBACKGROUND': 'equipped_profile_frame_id'
     };
-    const column = columnMap[type];
+    const column = columnMap[canonicalType];
     if (!column) return res.status(400).json({ error: 'Invalid type' });
 
     try {
+        await ensureShopSchema();
         // ตรวจสอบว่าเป็นเจ้าของ
         if (itemId) {
+            const itemTypeAliases = canonicalType === 'THEME'
+                ? ['THEME', 'UI_THEME', 'UI THEME', 'UI-THEME']
+                : [rawTypeUpper];
+            const itemTypePlaceholders = itemTypeAliases.map(() => '?').join(', ');
             const [owned] = await db.execute(`
                 SELECT si.item_id
                 FROM user_inventory ui
                 JOIN shop_items si ON si.item_id = ui.item_id
-                WHERE ui.user_id = ? AND ui.item_id = ? AND si.item_type = ? AND si.is_active = 1
-            `, [userId, itemId, type]);
+                WHERE ui.user_id = ? AND ui.item_id = ? AND UPPER(si.item_type) IN (${itemTypePlaceholders}) AND si.is_active = 1
+            `, [userId, itemId, ...itemTypeAliases]);
             if (owned.length === 0) return res.status(400).json({ error: 'คุณไม่มีไอเทมนี้' });
         }
 
@@ -6640,7 +7316,10 @@ const [rows] = await db.execute(
        p.exercise_id AS mini_game_module_id,
        e.lesson_id,
        s.submitted_code,
-       0 AS score,
+       CASE
+           WHEN p.is_completed = 1 AND COALESCE(p.score, 0) = 0 THEN 100
+           ELSE COALESCE(p.score, 0)
+       END AS score,
        s.submitted_code AS last_terminal_input,
        "" AS last_terminal_reply,
        COALESCE(p.selected_branch_key, "") AS selected_branch_key,
@@ -6672,7 +7351,7 @@ app.post('/api/mini-game/modules/:moduleId/progress', async (req, res) => {
         user_id,
         submitted_code = '',
         is_completed = false,
-        score = 0,
+        score,
         selected_branch_key = 'default',
         last_terminal_reply = null,
     } = req.body || {};
@@ -6695,6 +7374,10 @@ app.post('/api/mini-game/modules/:moduleId/progress', async (req, res) => {
         }
 
         const exercise = exerciseRows[0];
+        const submittedScore = Number(score);
+        const normalizedScore = Number.isFinite(submittedScore)
+            ? Math.max(0, Math.min(100, Math.round(submittedScore)))
+            : (Boolean(is_completed) ? 100 : 0);
 
         if (isGuestUserId(user_id)) {
             return res.json({
@@ -6708,16 +7391,16 @@ app.post('/api/mini-game/modules/:moduleId/progress', async (req, res) => {
         }
 
         const [existingProgressRows] = await db.execute(
-            `SELECT progress_id, xp_reward, currency_reward
+            `SELECT progress_id, is_completed, xp_reward, currency_reward, score
              FROM mini_game_user_exercise_progress
              WHERE user_id = ? AND exercise_id = ?
              LIMIT 1`,
             [user_id, exercise.exercise_id]
         );
         const existingProgress = existingProgressRows[0] || null;
-        const shouldGrantReward = Boolean(is_completed) && !existingProgress;
+        const shouldGrantReward = Boolean(is_completed) && !Boolean(existingProgress?.is_completed);
 
-        const [submissionResult] = await db.execute(
+        await db.execute(
             `INSERT INTO mini_game_exercise_submissions (
                 user_id, exercise_id, submitted_code
              ) VALUES (?, ?, ?)
@@ -6731,25 +7414,41 @@ app.post('/api/mini-game/modules/:moduleId/progress', async (req, res) => {
             ]
         );
 
-        await db.execute(
-            `INSERT INTO mini_game_user_exercise_progress (
-                user_id, exercise_id, is_completed, xp_reward, currency_reward, selected_branch_key
-             ) VALUES (?, ?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE
-                is_completed = GREATEST(is_completed, VALUES(is_completed)),
-                xp_reward = GREATEST(xp_reward, VALUES(xp_reward)),
-                currency_reward = GREATEST(currency_reward, VALUES(currency_reward)),
-                selected_branch_key = VALUES(selected_branch_key),
-                updated_at = CURRENT_TIMESTAMP`,
-            [
-                user_id,
-                exercise.exercise_id,
-                Boolean(is_completed) ? 1 : 0,
-                shouldGrantReward ? Number(exercise.xp_reward || 0) : 0,
-                shouldGrantReward ? Number(exercise.currency_reward || 0) : 0,
-                selected_branch_key || 'default',
-            ]
-        );
+        if (existingProgress) {
+            await db.execute(
+                `UPDATE mini_game_user_exercise_progress
+                 SET is_completed = GREATEST(is_completed, ?),
+                     score = GREATEST(COALESCE(score, 0), ?),
+                     xp_reward = GREATEST(xp_reward, ?),
+                     currency_reward = GREATEST(currency_reward, ?),
+                     selected_branch_key = ?,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE progress_id = ?`,
+                [
+                    Boolean(is_completed) ? 1 : 0,
+                    normalizedScore,
+                    shouldGrantReward ? Number(exercise.xp_reward || 0) : 0,
+                    shouldGrantReward ? Number(exercise.currency_reward || 0) : 0,
+                    selected_branch_key || 'default',
+                    existingProgress.progress_id,
+                ]
+            );
+        } else {
+            await db.execute(
+                `INSERT INTO mini_game_user_exercise_progress (
+                    user_id, exercise_id, is_completed, score, xp_reward, currency_reward, selected_branch_key
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    user_id,
+                    exercise.exercise_id,
+                    Boolean(is_completed) ? 1 : 0,
+                    normalizedScore,
+                    shouldGrantReward ? Number(exercise.xp_reward || 0) : 0,
+                    shouldGrantReward ? Number(exercise.currency_reward || 0) : 0,
+                    selected_branch_key || 'default',
+                ]
+            );
+        }
 
         let xpReward = 0;
         let coinReward = 0;
@@ -7650,6 +8349,1086 @@ app.post('/simulation/new-game', async (req, res) => {
 });
 
 // ==========================================
+// 7.6 API: Competitive Arena (Simulation Mode)
+// ==========================================
+
+const clampScore = (value, min, max) => Math.max(min, Math.min(max, Math.round(Number(value || 0))));
+
+const normalizeCompetitiveTestCases = (testCases = []) => {
+    if (!Array.isArray(testCases)) return [];
+    return testCases
+        .map((testCase) => ({
+            input: String(testCase?.input ?? ''),
+            expected: String(testCase?.expected ?? testCase?.output ?? ''),
+        }))
+        .filter((testCase) => testCase.expected.trim() !== '');
+};
+
+const parseCompetitiveTestCases = (rawTestCases) => {
+    if (!rawTestCases) return [];
+    if (Array.isArray(rawTestCases)) return normalizeCompetitiveTestCases(rawTestCases);
+
+    try {
+        const parsed = typeof rawTestCases === 'string'
+            ? JSON.parse(rawTestCases)
+            : rawTestCases;
+        return normalizeCompetitiveTestCases(parsed);
+    } catch (_) {
+        return [];
+    }
+};
+
+const isCompetitiveChallengeExpired = (challenge, acceptedAt) => {
+    if (!challenge || Number(challenge.is_test) === 1) return false;
+    const timeLimit = Number(challenge.time_limit || 0);
+    if (!timeLimit || !acceptedAt) return false;
+    const acceptedAtMs = new Date(acceptedAt).getTime();
+    if (!Number.isFinite(acceptedAtMs)) return false;
+    return Date.now() - acceptedAtMs >= timeLimit * 1000;
+};
+
+const buildCompetitiveTimeUpScore = (testCases = []) => ({
+    score: 0,
+    passedCases: 0,
+    totalCases: Array.isArray(testCases) ? testCases.length : 0,
+    breakdown: {
+        correctness: 0,
+        complexity: 0,
+        cleanCode: 0,
+        speedBonus: 0,
+        elapsedSeconds: null,
+        timeExpired: true,
+    },
+    feedback: 'Time limit exceeded. This challenge receives 0 score.',
+});
+
+const COMPETITIVE_AI_REWARD_THRESHOLD = 70;
+
+const normalizeOutput = (value = '') => String(value ?? '').replace(/\r\n/g, '\n').trim();
+
+const resolvePythonBin = () => {
+    const configuredPython = process.env.PYTHON_BIN || process.env.PYTHON;
+    if (configuredPython) return configuredPython;
+
+    const bundledPython = path.join(
+        os.homedir(),
+        '.cache',
+        'codex-runtimes',
+        'codex-primary-runtime',
+        'dependencies',
+        'python',
+        'python.exe'
+    );
+
+    if (fs.existsSync(bundledPython)) return bundledPython;
+    return 'python';
+};
+
+const runPythonCase = ({ code, input, expected, timeoutMs = 4000 }) => new Promise((resolve) => {
+    const pythonBin = resolvePythonBin();
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pysim-arena-'));
+    const filePath = path.join(tempDir, 'solution.py');
+    fs.writeFileSync(filePath, String(code || ''), 'utf8');
+
+    const child = spawn(pythonBin, [filePath], {
+        cwd: tempDir,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        child.kill();
+        fs.rm(tempDir, { recursive: true, force: true }, () => {});
+        resolve({
+            input,
+            expected,
+            actual: stdout,
+            error: 'Execution timed out',
+            passed: false,
+        });
+    }, timeoutMs);
+
+    child.stdout.on('data', (chunk) => {
+        stdout += chunk.toString();
+    });
+
+    child.stderr.on('data', (chunk) => {
+        stderr += chunk.toString();
+    });
+
+    child.on('error', (error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        fs.rm(tempDir, { recursive: true, force: true }, () => {});
+        resolve({
+            input,
+            expected,
+            actual: stdout,
+            error: `Python runner failed (${pythonBin}): ${error.message}`,
+            passed: false,
+        });
+    });
+
+    child.on('close', () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        fs.rm(tempDir, { recursive: true, force: true }, () => {});
+        const actual = normalizeOutput(stdout);
+        const normalizedExpected = normalizeOutput(expected);
+        resolve({
+            input,
+            expected,
+            actual,
+            error: stderr.trim(),
+            passed: !stderr.trim() && actual === normalizedExpected,
+        });
+    });
+
+    child.stdin.write(String(input || ''));
+    if (!String(input || '').endsWith('\n')) child.stdin.write('\n');
+    child.stdin.end();
+});
+
+const runCompetitivePythonTests = async ({ code, testCases }) => {
+    const normalizedCases = normalizeCompetitiveTestCases(testCases);
+    if (normalizedCases.length === 0) {
+        return {
+            total: 0,
+            passed: 0,
+            results: [],
+            runnerAvailable: true,
+        };
+    }
+
+    const results = [];
+    for (const testCase of normalizedCases.slice(0, 8)) {
+        // Run cases serially so one heavy submission cannot fan out into many processes.
+        // eslint-disable-next-line no-await-in-loop
+        results.push(await runPythonCase({
+            code,
+            input: testCase.input,
+            expected: testCase.expected,
+        }));
+    }
+
+    return {
+        total: results.length,
+        passed: results.filter((result) => result.passed).length,
+        results,
+        runnerAvailable: !results.some((result) => String(result.error || '').startsWith('Python runner failed')),
+    };
+};
+
+const scoreCompetitiveSubmission = ({ code = '', testCases = [], acceptedAt = null, testResult = null }) => {
+    const source = String(code || '');
+    const trimmed = source.trim();
+    const lines = trimmed ? trimmed.split(/\r?\n/) : [];
+    const nonEmptyLines = lines.filter((line) => line.trim());
+    const expectedCaseCount = Array.isArray(testCases) && testCases.length > 0 ? testCases.length : 1;
+
+    let correctness;
+    if (testResult && Number(testResult.total || 0) > 0) {
+        correctness = (Number(testResult.passed || 0) / Number(testResult.total || 1)) * 50;
+    } else {
+        correctness = trimmed ? 28 : 5;
+        if (/\bprint\s*\(/.test(source)) correctness += 8;
+        if (/\binput\s*\(/.test(source)) correctness += 5;
+        if (/\breturn\b/.test(source) || /\bdef\s+\w+\s*\(/.test(source)) correctness += 4;
+        if (!/\bpass\b/.test(source) && !/TODO/i.test(source)) correctness += 5;
+    }
+    correctness = clampScore(correctness, 0, 50);
+
+    const loopCount = (source.match(/\b(for|while)\b/g) || []).length;
+    const nestedLoopLikely = /\b(for|while)\b[\s\S]*\n\s{4,}\b(for|while)\b/.test(source);
+    let complexity = 12;
+    if (/\b(dict|set)\s*\(/.test(source) || /[\w\]]\s*\[.+\]\s*=/.test(source)) complexity += 4;
+    if (/\bsort(?:ed)?\s*\(/.test(source)) complexity += 2;
+    if (loopCount <= 1) complexity += 3;
+    if (nestedLoopLikely) complexity -= 5;
+    complexity = clampScore(complexity, 0, 20);
+
+    let cleanCode = 16;
+    if (nonEmptyLines.length > 0 && nonEmptyLines.length <= 35) cleanCode += 4;
+    if (/\b[a-z_][a-z0-9_]*\b/.test(source)) cleanCode += 3;
+    if (!/\beval\s*\(|\bexec\s*\(/.test(source)) cleanCode += 4;
+    if (nonEmptyLines.every((line) => line.length <= 100)) cleanCode += 3;
+    cleanCode = clampScore(cleanCode, 0, 30);
+
+    const acceptedTime = acceptedAt ? new Date(acceptedAt).getTime() : NaN;
+    const elapsedSeconds = Number.isFinite(acceptedTime) ? Math.max(0, Math.round((Date.now() - acceptedTime) / 1000)) : null;
+    const speedBonus = elapsedSeconds == null
+        ? 0
+        : elapsedSeconds <= 60
+            ? 3
+            : elapsedSeconds <= 180
+                ? 2
+                : elapsedSeconds <= 300
+                    ? 1
+                    : 0;
+
+    const baseScore = correctness + complexity + cleanCode;
+    const score = clampScore(baseScore + speedBonus, 0, 100);
+
+    return {
+        score,
+        passedCases: testResult ? Number(testResult.passed || 0) : (correctness >= 35 ? expectedCaseCount : Math.max(0, expectedCaseCount - 1)),
+        totalCases: testResult ? Number(testResult.total || 0) : expectedCaseCount,
+        breakdown: {
+            correctness,
+            complexity,
+            cleanCode,
+            speedBonus,
+            elapsedSeconds,
+        },
+        feedback: `Rubric score: correctness ${correctness}/50, complexity ${complexity}/20, clean code ${cleanCode}/30. ${speedBonus ? `Speed tie-breaker +${speedBonus}.` : 'No speed bonus.'}`,
+    };
+};
+
+const parseCompetitiveAiReview = ({ rawText, fallbackScore, testResult }) => {
+    const jsonText = extractFirstJsonBlock(rawText);
+    const parsed = safeJsonParse(jsonText, null);
+    if (!parsed || typeof parsed !== 'object') {
+        throw new Error('AI review response is not valid JSON');
+    }
+
+    const allTestsPassed = Number(testResult?.total || 0) > 0
+        ? Number(testResult?.passed || 0) === Number(testResult?.total || 0)
+        : false;
+    const maxCorrectness = Number(testResult?.total || 0) > 0
+        ? (Number(testResult?.passed || 0) / Number(testResult?.total || 1)) * 50
+        : 50;
+    const correctness = clampScore(Math.min(Number(parsed.correctness ?? fallbackScore.breakdown.correctness), maxCorrectness), 0, 50);
+    const complexity = clampScore(Number(parsed.complexity ?? fallbackScore.breakdown.complexity), 0, 20);
+    const cleanCode = clampScore(Number(parsed.cleanCode ?? fallbackScore.breakdown.cleanCode), 0, 30);
+    const speedBonus = clampScore(fallbackScore.breakdown.speedBonus || 0, 0, 3);
+    const score = clampScore(correctness + complexity + cleanCode + speedBonus, 0, 100);
+    const parsedApproved = parsed.approved === true || String(parsed.approved).toLowerCase() === 'true';
+    const aiApproved = parsedApproved && allTestsPassed && score >= COMPETITIVE_AI_REWARD_THRESHOLD;
+
+    return {
+        score,
+        passedCases: Number(testResult?.passed || fallbackScore.passedCases || 0),
+        totalCases: Number(testResult?.total || fallbackScore.totalCases || 0),
+        breakdown: {
+            correctness,
+            complexity,
+            cleanCode,
+            speedBonus,
+            elapsedSeconds: fallbackScore.breakdown.elapsedSeconds,
+            aiReviewed: true,
+            aiApproved,
+            aiVerdict: aiApproved ? 'approved' : 'needs_fix',
+        },
+        feedback: String(parsed.feedback || fallbackScore.feedback || '').slice(0, 1200),
+    };
+};
+
+const reviewCompetitiveSubmissionWithAI = async ({ challenge, code, testCases, testResult, fallbackScore }) => {
+    const visibleCases = normalizeCompetitiveTestCases(testCases).slice(0, 6);
+    const testSummary = {
+        passed: Number(testResult?.passed || 0),
+        total: Number(testResult?.total || 0),
+        cases: (testResult?.results || []).slice(0, 6).map((result) => ({
+            input: result.input,
+            expected: result.expected,
+            actual: result.actual,
+            passed: Boolean(result.passed),
+            error: result.error || '',
+        })),
+    };
+
+    try {
+        const rawText = await callNvidiaChat({
+            messages: [
+                {
+                    role: 'system',
+                    content: `You are a strict Python code reviewer for a Thai coding challenge game.
+Return ONLY valid JSON. Do not use markdown.
+Score with this rubric:
+- correctness: 0-50, must respect provided test results and cannot ignore failing tests.
+- complexity: 0-20, judge time/space complexity and whether the approach fits the problem.
+- cleanCode: 0-30, judge readability, simplicity, naming, and risky code.
+approved must be true only when the solution satisfies the prompt, passes all tests, and is safe to reward.
+JSON shape: {"correctness":0,"complexity":0,"cleanCode":0,"approved":false,"feedback":"short Thai feedback"}`
+                },
+                {
+                    role: 'user',
+                    content: JSON.stringify({
+                        title: challenge.title,
+                        description: challenge.description,
+                        reward: Number(challenge.reward || 0),
+                        testCases: visibleCases,
+                        testSummary,
+                        code: String(code || '').slice(0, AI_MAX_CODE_LENGTH),
+                    })
+                }
+            ],
+            temperature: 0.2,
+            maxTokens: 1200,
+            thinking: false,
+        });
+
+        return parseCompetitiveAiReview({ rawText, fallbackScore, testResult });
+    } catch (error) {
+        console.error('Competitive AI review failed:', error.response?.data || error.message || error);
+        return {
+            ...fallbackScore,
+            breakdown: {
+                ...fallbackScore.breakdown,
+                aiReviewed: false,
+                aiApproved: Number(testResult?.total || 0) > 0 && Number(testResult?.passed || 0) === Number(testResult?.total || 0),
+                aiVerdict: 'fallback',
+                aiUnavailable: true,
+            },
+            feedback: `${fallbackScore.feedback} AI review is temporarily unavailable, so this score used automated test results and local rubric fallback.`,
+        };
+    }
+};
+
+const calculateCompetitiveSolverReward = (challenge, scored) => {
+    if (scored?.breakdown?.timeExpired) return 0;
+    const reward = Number(challenge?.reward || 0);
+    const score = Number(scored?.score || 0);
+    if (!reward || !score) return 0;
+    if (scored?.breakdown?.aiReviewed) {
+        return scored?.breakdown?.aiApproved ? reward : 0;
+    }
+    return Math.max(0, Math.round((reward * score) / 100));
+};
+
+const calculateCompetitiveCreatorBonus = (challenge, solverUserId) => {
+    const creatorId = Number(challenge?.created_by || 0);
+    if (!creatorId || creatorId === Number(solverUserId)) return 0;
+    const reward = Number(challenge?.reward || 0);
+    return Math.max(10, Math.round(reward * 0.15));
+};
+
+const createCompetitiveMailbox = async ({ userId, title, content, coins = 0 }) => {
+    if (!userId) return;
+    await db.execute(`
+        INSERT INTO user_mailbox (user_id, title, content, attachment_coins, is_read, is_claimed)
+        VALUES (?, ?, ?, ?, 0, 0)
+    `, [userId, title, content, Math.max(0, Math.round(Number(coins || 0)))]);
+};
+
+const sendCompetitiveResultMail = async ({ challenge, userId, scored, testResult, timedOut }) => {
+    const rewardCoins = timedOut ? 0 : calculateCompetitiveSolverReward(challenge, scored);
+    const passed = Number(testResult?.passed || scored?.passedCases || 0);
+    const total = Number(testResult?.total || scored?.totalCases || 0);
+    const aiReviewed = Boolean(scored?.breakdown?.aiReviewed);
+    const aiApproved = Boolean(scored?.breakdown?.aiApproved);
+    const title = timedOut
+        ? `สรุปโจทย์ไม่สำเร็จ: ${challenge.title}`
+        : aiReviewed && !aiApproved
+            ? `AI ตรวจแล้วต้องแก้ไข: ${challenge.title}`
+        : `สรุปโจทย์สำเร็จ: ${challenge.title}`;
+    const content = timedOut
+        ? `คุณทำโจทย์ "${challenge.title}" ไม่ทันเวลาที่กำหนด จึงได้รับคะแนน 0 และรางวัล 0 เหรียญ`
+        : aiReviewed && !aiApproved
+            ? `AI ตรวจโค้ดโจทย์ "${challenge.title}" แล้ว คะแนนรวม ${scored.score}/100 ผ่าน test cases ${passed}/${total} ยังไม่ผ่านเกณฑ์รับรางวัล จึงได้รับ 0 เหรียญ\n\nFeedback: ${scored.feedback}`
+        : `คุณส่งโจทย์ "${challenge.title}" แล้ว คะแนนรวม ${scored.score}/100 ผ่าน test cases ${passed}/${total} ได้รับรางวัล ${rewardCoins} เหรียญ`;
+
+    await createCompetitiveMailbox({
+        userId,
+        title,
+        content,
+        coins: rewardCoins,
+    });
+
+    return rewardCoins;
+};
+
+const sendCompetitiveCreatorBonusMail = async ({ challenge, solverUserId, scored }) => {
+    const creatorId = Number(challenge?.created_by || 0);
+    const bonusCoins = calculateCompetitiveCreatorBonus(challenge, solverUserId);
+    if (!creatorId || bonusCoins <= 0) return 0;
+
+    await createCompetitiveMailbox({
+        userId: creatorId,
+        title: `มีคนทำโจทย์ของคุณแล้ว: ${challenge.title}`,
+        content: `มีผู้เล่นส่งคำตอบโจทย์ "${challenge.title}" ของคุณแล้ว คะแนนที่ได้คือ ${scored.score}/100 คุณได้รับโบนัสผู้สร้างโจทย์ ${bonusCoins} เหรียญ`,
+        coins: bonusCoins,
+    });
+
+    return bonusCoins;
+};
+
+const finalizeExpiredCompetitiveChallenges = async (userId) => {
+    if (!userId) return;
+
+    const [activeRows] = await db.execute(`
+        SELECT a.challenge_id, a.code_state, a.accepted_at, c.*
+        FROM active_accepted_challenges a
+        JOIN multiplayer_challenges c ON c.challenge_id = a.challenge_id
+        LEFT JOIN multiplayer_submissions s
+          ON s.challenge_id = a.challenge_id
+         AND s.user_id = a.user_id
+        WHERE a.user_id = ?
+          AND s.submission_id IS NULL
+    `, [userId]);
+
+    for (const row of activeRows) {
+        if (!isCompetitiveChallengeExpired(row, row.accepted_at)) continue;
+
+        const parsedTestCases = parseCompetitiveTestCases(row.test_cases);
+        const scored = buildCompetitiveTimeUpScore(parsedTestCases);
+        const breakdownJson = JSON.stringify(scored.breakdown);
+        const feedbackJson = JSON.stringify({ review: scored.feedback });
+
+        try {
+            await db.execute(`
+                INSERT INTO multiplayer_submissions
+                    (challenge_id, user_id, code, score, passed_cases, total_cases, efficiency_ms, ai_feedback, breakdown)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `, [
+                row.challenge_id,
+                userId,
+                row.code_state || '',
+                0,
+                0,
+                parsedTestCases.length,
+                Number(row.time_limit || 0) * 1000,
+                feedbackJson,
+                breakdownJson,
+            ]);
+
+            await sendCompetitiveResultMail({
+                challenge: row,
+                userId,
+                scored,
+                testResult: { total: parsedTestCases.length, passed: 0, results: [] },
+                timedOut: true,
+            });
+        } catch (error) {
+            if (!String(error.message || '').toLowerCase().includes('duplicate')) {
+                throw error;
+            }
+        }
+
+        await db.execute(
+            'DELETE FROM active_accepted_challenges WHERE user_id = ? AND challenge_id = ?',
+            [userId, row.challenge_id]
+        );
+    }
+};
+
+app.get('/api/competitive/challenges', async (req, res) => {
+    const userId = Number(req.query.userId);
+
+    try {
+        if (Number.isFinite(userId) && userId > 0) {
+            await finalizeExpiredCompetitiveChallenges(userId);
+        }
+
+        const [challenges] = await db.execute(`
+            SELECT c.*,
+                   COALESCE(u.username, 'Admin') AS creator_name,
+                   (
+                       SELECT COUNT(*)
+                       FROM active_accepted_challenges a
+                       WHERE a.challenge_id = c.challenge_id
+                   ) AS active_count,
+                   (
+                       SELECT COUNT(*)
+                       FROM multiplayer_submissions s
+                       WHERE s.challenge_id = c.challenge_id
+                   ) AS submission_count
+            FROM multiplayer_challenges c
+            LEFT JOIN users u ON c.created_by = u.user_id
+            ORDER BY c.challenge_id DESC
+        `);
+
+        if (Number.isFinite(userId) && userId > 0) {
+            const [accepted] = await db.execute(
+                'SELECT challenge_id, code_state, accepted_at FROM active_accepted_challenges WHERE user_id = ?',
+                [userId]
+            );
+            const [submitted] = await db.execute(
+                'SELECT challenge_id, score, passed_cases, total_cases FROM multiplayer_submissions WHERE user_id = ?',
+                [userId]
+            );
+
+            const acceptedIds = new Set(accepted.map((item) => item.challenge_id));
+            const acceptedMap = Object.fromEntries(accepted.map((item) => [item.challenge_id, item]));
+            const submittedIds = new Set(submitted.map((item) => item.challenge_id));
+
+            for (const challenge of challenges) {
+                challenge.is_accepted = acceptedIds.has(challenge.challenge_id) ? 1 : 0;
+                challenge.code_state = acceptedMap[challenge.challenge_id]?.code_state || '';
+                challenge.accepted_at = acceptedMap[challenge.challenge_id]?.accepted_at || null;
+                challenge.is_submitted = submittedIds.has(challenge.challenge_id) ? 1 : 0;
+            }
+        } else {
+            for (const challenge of challenges) {
+                challenge.is_accepted = 0;
+                challenge.code_state = '';
+                challenge.accepted_at = null;
+                challenge.is_submitted = 0;
+            }
+        }
+
+        res.json(challenges);
+    } catch (err) {
+        console.error('Competitive challenges fetch error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/competitive/challenges', async (req, res) => {
+    const {
+        title,
+        description,
+        difficulty,
+        reward,
+        time_limit: timeLimit,
+        expires_at: expiresAt,
+        test_cases: testCases,
+        created_by: createdBy,
+    } = req.body;
+
+    if (!title || !description) {
+        return res.status(400).json({ error: 'title and description are required' });
+    }
+
+    try {
+        const expires = expiresAt || new Date(Date.now() + 24 * 3600000).toISOString();
+        const tests = testCases
+            ? (typeof testCases === 'string' ? testCases : JSON.stringify(testCases))
+            : '[]';
+
+        const [result] = await db.execute(`
+            INSERT INTO multiplayer_challenges
+                (title, description, difficulty, reward, time_limit, expires_at, test_cases, created_by, is_test)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+        `, [
+            title,
+            description,
+            difficulty || 'Easy',
+            Number(reward || 500),
+            Number(timeLimit || 300),
+            expires,
+            tests,
+            createdBy || null,
+        ]);
+
+        res.status(201).json({
+            message: 'Challenge created successfully',
+            challenge_id: result.insertId,
+        });
+    } catch (err) {
+        console.error('Competitive challenge create error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/competitive/challenges/:id/accept', async (req, res) => {
+    const challengeId = Number(req.params.id);
+    const { user_id: userId } = req.body;
+
+    if (!challengeId || !userId) {
+        return res.status(400).json({ error: 'challengeId and user_id are required' });
+    }
+
+    try {
+        const [existing] = await db.execute(
+            'SELECT 1 FROM active_accepted_challenges WHERE user_id = ? AND challenge_id = ?',
+            [userId, challengeId]
+        );
+
+        if (existing.length > 0) {
+            return res.json({ success: true, message: 'Already accepted' });
+        }
+
+        await db.execute(`
+            INSERT INTO active_accepted_challenges (user_id, challenge_id, code_state)
+            VALUES (?, ?, '')
+        `, [userId, challengeId]);
+
+        res.json({ success: true, message: 'Challenge accepted successfully' });
+    } catch (err) {
+        console.error('Competitive challenge accept error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/competitive/challenges/:id/save-draft', async (req, res) => {
+    const challengeId = Number(req.params.id);
+    const { user_id: userId, code } = req.body;
+
+    if (!challengeId || !userId) {
+        return res.status(400).json({ error: 'challengeId and user_id are required' });
+    }
+
+    try {
+        await db.execute(`
+            UPDATE active_accepted_challenges
+            SET code_state = ?, last_saved_at = CURRENT_TIMESTAMP
+            WHERE user_id = ? AND challenge_id = ?
+        `, [code || '', userId, challengeId]);
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Competitive draft save error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/competitive/challenges/:id/run-tests', async (req, res) => {
+    const challengeId = Number(req.params.id);
+    const { user_id: userId, code } = req.body;
+
+    if (!challengeId) {
+        return res.status(400).json({ error: 'challengeId is required' });
+    }
+
+    try {
+        const [challenges] = await db.execute(
+            'SELECT challenge_id, title, reward, created_by, test_cases, time_limit, is_test FROM multiplayer_challenges WHERE challenge_id = ?',
+            [challengeId]
+        );
+
+        if (challenges.length === 0) {
+            return res.status(404).json({ error: 'Challenge not found' });
+        }
+
+        if (userId) {
+            const [acceptedRows] = await db.execute(
+                'SELECT accepted_at FROM active_accepted_challenges WHERE user_id = ? AND challenge_id = ?',
+                [userId, challengeId]
+            );
+            if (isCompetitiveChallengeExpired(challenges[0], acceptedRows[0]?.accepted_at)) {
+                return res.status(400).json({ error: 'Time limit exceeded. This challenge is lost.' });
+            }
+        }
+
+        const parsedTestCases = parseCompetitiveTestCases(challenges[0].test_cases);
+        if (parsedTestCases.length === 0) {
+            return res.status(400).json({ error: 'This challenge has no runnable test cases.' });
+        }
+
+        const testResult = await runCompetitivePythonTests({
+            code,
+            testCases: parsedTestCases,
+        });
+
+        res.json({
+            success: true,
+            passed: testResult.passed,
+            total: testResult.total,
+            results: testResult.results,
+            runnerAvailable: testResult.runnerAvailable,
+        });
+    } catch (err) {
+        console.error('Competitive test run error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/competitive/challenges/:id/submit', async (req, res) => {
+    const challengeId = Number(req.params.id);
+    const { user_id: userId, code } = req.body;
+
+    if (!challengeId || !userId) {
+        return res.status(400).json({ error: 'challengeId and user_id are required' });
+    }
+
+    try {
+        const [challenges] = await db.execute(
+            'SELECT * FROM multiplayer_challenges WHERE challenge_id = ?',
+            [challengeId]
+        );
+
+        if (challenges.length === 0) {
+            return res.status(404).json({ error: 'Challenge not found' });
+        }
+
+        const [acceptedRows] = await db.execute(
+            'SELECT accepted_at FROM active_accepted_challenges WHERE user_id = ? AND challenge_id = ?',
+            [userId, challengeId]
+        );
+        const parsedTestCases = parseCompetitiveTestCases(challenges[0].test_cases);
+        const timedOut = isCompetitiveChallengeExpired(challenges[0], acceptedRows[0]?.accepted_at);
+        const testResult = timedOut
+            ? { total: parsedTestCases.length, passed: 0, results: [], runnerAvailable: true }
+            : await runCompetitivePythonTests({
+                code,
+                testCases: parsedTestCases,
+            });
+
+        const preliminaryScore = timedOut
+            ? buildCompetitiveTimeUpScore(parsedTestCases)
+            : scoreCompetitiveSubmission({
+                code,
+                testCases: parsedTestCases,
+                acceptedAt: acceptedRows[0]?.accepted_at,
+                testResult,
+            });
+        const scored = timedOut
+            ? preliminaryScore
+            : await reviewCompetitiveSubmissionWithAI({
+                challenge: challenges[0],
+                code,
+                testCases: parsedTestCases,
+                testResult,
+                fallbackScore: preliminaryScore,
+            });
+        const breakdownJson = JSON.stringify(scored.breakdown);
+        const feedbackJson = JSON.stringify({ review: scored.feedback });
+
+        const [existing] = await db.execute(
+            'SELECT submission_id FROM multiplayer_submissions WHERE user_id = ? AND challenge_id = ?',
+            [userId, challengeId]
+        );
+
+        const isNewSubmission = existing.length === 0;
+
+        if (existing.length > 0) {
+            await db.execute(`
+                UPDATE multiplayer_submissions
+                SET code = ?, score = ?, passed_cases = ?, total_cases = ?, efficiency_ms = ?, ai_feedback = ?, breakdown = ?, submitted_at = CURRENT_TIMESTAMP
+                WHERE submission_id = ?
+            `, [
+                code || '',
+                scored.score,
+                scored.passedCases,
+                scored.totalCases,
+                Number(scored.breakdown.elapsedSeconds || 0) * 1000,
+                feedbackJson,
+                breakdownJson,
+                existing[0].submission_id,
+            ]);
+        } else {
+            await db.execute(`
+                INSERT INTO multiplayer_submissions
+                    (challenge_id, user_id, code, score, passed_cases, total_cases, efficiency_ms, ai_feedback, breakdown)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `, [
+                challengeId,
+                userId,
+                code || '',
+                scored.score,
+                scored.passedCases,
+                scored.totalCases,
+                Number(scored.breakdown.elapsedSeconds || 0) * 1000,
+                feedbackJson,
+                breakdownJson,
+            ]);
+        }
+
+        if (isNewSubmission) {
+            await sendCompetitiveResultMail({
+                challenge: challenges[0],
+                userId,
+                scored,
+                testResult,
+                timedOut,
+            });
+
+            if (!timedOut && (!scored.breakdown?.aiReviewed || scored.breakdown?.aiApproved)) {
+                await sendCompetitiveCreatorBonusMail({
+                    challenge: challenges[0],
+                    solverUserId: userId,
+                    scored,
+                });
+            }
+        }
+
+        await db.execute(
+            'DELETE FROM active_accepted_challenges WHERE user_id = ? AND challenge_id = ?',
+            [userId, challengeId]
+        );
+
+        res.json({
+            success: true,
+            score: scored.score,
+            passed: scored.passedCases,
+            total: scored.totalCases,
+            breakdown: scored.breakdown,
+            feedback: scored.feedback,
+            timeExpired: timedOut,
+            rewardCoins: calculateCompetitiveSolverReward(challenges[0], scored),
+            testResults: testResult.results,
+        });
+    } catch (err) {
+        console.error('Competitive challenge submit error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/competitive/challenges/:id/force-summary', async (req, res) => {
+    const challengeId = Number(req.params.id);
+
+    if (!challengeId) {
+        return res.status(400).json({ error: 'challengeId is required' });
+    }
+
+    try {
+        const [challenges] = await db.execute(
+            'SELECT * FROM multiplayer_challenges WHERE challenge_id = ?',
+            [challengeId]
+        );
+
+        if (challenges.length === 0) {
+            return res.status(404).json({ error: 'Challenge not found' });
+        }
+
+        const challenge = challenges[0];
+        if (Number(challenge.is_test) !== 1) {
+            return res.status(400).json({ error: 'Only test challenges can be summarized instantly.' });
+        }
+
+        const [participants] = await db.execute(`
+            SELECT DISTINCT
+                u.user_id,
+                u.username,
+                COALESCE(s.score, 0) AS score,
+                COALESCE(s.efficiency_ms, 999999999) AS efficiency_ms
+            FROM (
+                SELECT user_id FROM active_accepted_challenges WHERE challenge_id = ?
+                UNION
+                SELECT user_id FROM multiplayer_submissions WHERE challenge_id = ?
+            ) p
+            JOIN users u ON p.user_id = u.user_id
+            LEFT JOIN multiplayer_submissions s
+                ON s.user_id = p.user_id
+               AND s.challenge_id = ?
+            ORDER BY score DESC, efficiency_ms ASC
+        `, [challengeId, challengeId, challengeId]);
+
+        for (let index = 0; index < participants.length; index += 1) {
+            const participant = participants[index];
+            const rank = index + 1;
+            let coins = 0;
+
+            if (rank === 1) coins = Number(challenge.reward || 0);
+            else if (rank === 2) coins = Math.round(Number(challenge.reward || 0) * 0.5);
+            else if (rank === 3) coins = Math.round(Number(challenge.reward || 0) * 0.25);
+            else if (rank <= 10) coins = 15;
+
+            await db.execute(`
+                INSERT INTO user_mailbox (user_id, title, content, attachment_coins, is_read, is_claimed)
+                VALUES (?, ?, ?, ?, 0, 0)
+            `, [
+                participant.user_id,
+                `Challenge Summary: ${challenge.title}`,
+                `Congratulations! You placed rank ${rank} in '${challenge.title}'. Your score is ${participant.score}/100 and you received ${coins} Code Coins.`,
+                coins,
+            ]);
+        }
+
+        await db.execute('DELETE FROM active_accepted_challenges WHERE challenge_id = ?', [challengeId]);
+        await db.execute('DELETE FROM multiplayer_submissions WHERE challenge_id = ?', [challengeId]);
+
+        res.json({
+            success: true,
+            message: `Evaluated and generated mail rewards for ${participants.length} users. Challenge resets.`,
+        });
+    } catch (err) {
+        console.error('Competitive force summary error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/competitive/leaderboard', async (_req, res) => {
+    try {
+        const [rows] = await db.execute(`
+            SELECT
+                s.user_id,
+                COALESCE(u.username, 'Coder') AS username,
+                SUM(s.score) AS score,
+                COUNT(DISTINCT s.challenge_id) AS challenge_count,
+                COALESCE(ROUND(AVG(s.score)), 0) AS avg_score,
+                MAX(s.score) AS best_score,
+                MIN(s.efficiency_ms) AS best_efficiency_ms,
+                MAX(s.submitted_at) AS last_submitted_at,
+                split_part(string_agg(c.title::text, '||' ORDER BY s.submitted_at DESC), '||', 1) AS title
+            FROM multiplayer_submissions s
+            JOIN multiplayer_challenges c ON c.challenge_id = s.challenge_id
+            LEFT JOIN users u ON u.user_id = s.user_id
+            GROUP BY s.user_id, u.username
+            ORDER BY score DESC, best_score DESC, best_efficiency_ms ASC, last_submitted_at ASC
+            LIMIT 20
+        `);
+
+        res.json(rows);
+    } catch (err) {
+        console.error('Competitive leaderboard error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/competitive/admin/overview', async (_req, res) => {
+    try {
+        const [[stats]] = await db.execute(`
+            SELECT
+                (SELECT COUNT(*) FROM multiplayer_challenges) AS total_challenges,
+                (SELECT COUNT(*) FROM active_accepted_challenges) AS active_accepts,
+                (SELECT COUNT(*) FROM multiplayer_submissions) AS total_submissions,
+                (SELECT COALESCE(SUM(attachment_coins), 0) FROM user_mailbox WHERE title LIKE '%โจทย์%' OR title LIKE '%Challenge%') AS pending_mail_coins
+        `);
+
+        const [challenges] = await db.execute(`
+            SELECT
+                c.challenge_id,
+                c.title,
+                c.reward,
+                c.time_limit,
+                c.created_at,
+                COALESCE(u.username, 'Admin') AS creator_name,
+                (
+                    SELECT COUNT(*)
+                    FROM active_accepted_challenges a
+                    WHERE a.challenge_id = c.challenge_id
+                ) AS active_count,
+                (
+                    SELECT COUNT(*)
+                    FROM multiplayer_submissions s
+                    WHERE s.challenge_id = c.challenge_id
+                ) AS submission_count,
+                (
+                    SELECT COALESCE(ROUND(AVG(s.score)), 0)
+                    FROM multiplayer_submissions s
+                    WHERE s.challenge_id = c.challenge_id
+                ) AS avg_score
+            FROM multiplayer_challenges c
+            LEFT JOIN users u ON c.created_by = u.user_id
+            ORDER BY c.challenge_id DESC
+            LIMIT 12
+        `);
+
+        const [creators] = await db.execute(`
+            SELECT
+                c.created_by AS user_id,
+                COALESCE(u.username, 'Admin') AS username,
+                COUNT(DISTINCT c.challenge_id) AS challenge_count,
+                COUNT(s.submission_id) AS submission_count,
+                (
+                    SELECT COALESCE(SUM(m.attachment_coins), 0)
+                    FROM user_mailbox m
+                    WHERE m.user_id = c.created_by
+                      AND m.title LIKE 'มีคนทำโจทย์ของคุณแล้ว:%'
+                ) AS creator_bonus_coins
+            FROM multiplayer_challenges c
+            LEFT JOIN users u ON u.user_id = c.created_by
+            LEFT JOIN multiplayer_submissions s ON s.challenge_id = c.challenge_id
+            GROUP BY c.created_by, u.username
+            ORDER BY submission_count DESC, challenge_count DESC
+            LIMIT 8
+        `);
+
+        res.json({
+            stats: {
+                totalChallenges: Number(stats?.total_challenges || 0),
+                activeAccepts: Number(stats?.active_accepts || 0),
+                totalSubmissions: Number(stats?.total_submissions || 0),
+                pendingMailCoins: Number(stats?.pending_mail_coins || 0),
+            },
+            challenges,
+            creators,
+        });
+    } catch (err) {
+        console.error('Competitive admin overview error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/mailbox/:userId', async (req, res) => {
+    const userId = Number(req.params.userId);
+
+    if (!userId) {
+        return res.status(400).json({ error: 'userId is required' });
+    }
+
+    try {
+        const [mails] = await db.execute(
+            'SELECT * FROM user_mailbox WHERE user_id = ? ORDER BY created_at DESC',
+            [userId]
+        );
+        res.json(mails);
+    } catch (err) {
+        console.error('Mailbox fetch error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/mailbox/:userId/read-all', async (req, res) => {
+    const userId = Number(req.params.userId);
+
+    if (!userId) {
+        return res.status(400).json({ error: 'userId is required' });
+    }
+
+    try {
+        await db.execute(
+            'UPDATE user_mailbox SET is_read = 1 WHERE user_id = ? AND is_read = 0',
+            [userId]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Mailbox read-all error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/mailbox/:mailId/claim', async (req, res) => {
+    const mailId = Number(req.params.mailId);
+    const { user_id: userId } = req.body;
+
+    if (!mailId || !userId) {
+        return res.status(400).json({ error: 'mailId and user_id are required' });
+    }
+
+    try {
+        const [mails] = await db.execute(
+            'SELECT * FROM user_mailbox WHERE mail_id = ? AND user_id = ?',
+            [mailId, userId]
+        );
+
+        if (mails.length === 0) {
+            return res.status(404).json({ error: 'Mail message not found' });
+        }
+
+        const mail = mails[0];
+        if (Number(mail.is_claimed) === 1) {
+            return res.status(400).json({ error: 'Coins already claimed from this message.' });
+        }
+
+        const coins = Number(mail.attachment_coins || 0);
+        const connection = await db.getConnection();
+
+        try {
+            await connection.beginTransaction();
+            await connection.execute(
+                'UPDATE user_mailbox SET is_claimed = 1, is_read = 1 WHERE mail_id = ?',
+                [mailId]
+            );
+            await connection.execute(
+                'UPDATE users SET virtual_currency = virtual_currency + ? WHERE user_id = ?',
+                [coins, userId]
+            );
+            await connection.commit();
+        } catch (trxErr) {
+            await connection.rollback();
+            throw trxErr;
+        } finally {
+            connection.release();
+        }
+
+        res.json({ success: true, claimed_coins: coins });
+    } catch (err) {
+        console.error('Mailbox claim error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ==========================================
 // 8. Start Server & Simulation Engine
 // ==========================================
 
@@ -7666,9 +9445,11 @@ const initializeBackgroundServices = async () => {
         await db.healthcheck();
         await ensureSimulationJobTrackingSchema();
         await ensureAdminSchema();
+        await ensurePasswordResetSchema();
         await ensureLearningAiTaskSchema();
         await ensureLearningProgressSchema();
         await ensureLessonQuizAttemptSchema();
+        await ensureCompetitiveArenaSchema();
 
         if (!simulationLoopStarted) {
             console.log("Starting Simulation Engine...");

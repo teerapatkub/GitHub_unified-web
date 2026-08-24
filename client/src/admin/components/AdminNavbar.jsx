@@ -6,6 +6,7 @@ import {
   Users,
   Palette,
   BookPlus,
+  ClipboardList,
   Globe,
   LogOut,
 } from "lucide-react";
@@ -30,6 +31,7 @@ export default function AdminNavbar() {
 
   const navItems = [
     { name: t("navbar.dashboard", "แดชบอร์ด"), icon: LayoutDashboard, path: "/admin/dashboard" },
+    { name: t("navbar.competitiveChallenge", "สร้างโจทย์แข่ง"), icon: ClipboardList, path: "/admin/competitive-challenge" },
     { name: t("navbar.leaderboard", "ตารางอันดับ"), icon: Trophy, path: "/admin/leaderboard" },
     { name: t("navbar.manageAccount", "จัดการบัญชี"), icon: Users, path: "/admin/manage-account" },
     { name: t("navbar.theme", "ธีม"), icon: Palette, path: "/admin/theme" },

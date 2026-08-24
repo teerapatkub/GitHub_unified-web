@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Eye, EyeOff, Check, X, AlertCircle, Code, Hexagon } from "lucide-react";
+import { Eye, EyeOff, Check, X, AlertCircle, Code, Hexagon, Mail, KeyRound, ArrowLeft } from "lucide-react";
 import { Typewriter } from "../components/ui/typewriter-text";
 
 // ======================================================
@@ -38,10 +38,16 @@ export default function LoginPage({ onLoginSuccess }) {
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [email, setEmail] = useState("");
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetToken, setResetToken] = useState("");
+  const [resetEmailHint, setResetEmailHint] = useState("");
   const [isRegister, setIsRegister] = useState(false);
   const [loggedInUser, setLoggedInUser] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [tokenChecking, setTokenChecking] = useState(false);
+  const [resetTokenValid, setResetTokenValid] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -60,6 +66,31 @@ export default function LoginPage({ onLoginSuccess }) {
         .catch(() => setError("โหลดข้อมูลล้มเหลว"));
     }
   }, [step]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("reset");
+    if (!token) return;
+
+    setResetToken(token);
+    setStep("resetPassword");
+    setError("");
+    setSuccess("");
+    setTokenChecking(true);
+
+    fetch(`http://localhost:3001/api/password/reset/${encodeURIComponent(token)}`)
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.message || "ลิงก์เปลี่ยนรหัสผ่านไม่ถูกต้องหรือหมดอายุแล้ว");
+        setResetTokenValid(true);
+        setResetEmailHint(data.email || "");
+      })
+      .catch((err) => {
+        setResetTokenValid(false);
+        setError(err.message || "ลิงก์เปลี่ยนรหัสผ่านไม่ถูกต้องหรือหมดอายุแล้ว");
+      })
+      .finally(() => setTokenChecking(false));
+  }, []);
 
   // ======================================================
   // Submit Login / Register
@@ -136,6 +167,86 @@ export default function LoginPage({ onLoginSuccess }) {
       }
     } catch (err) {
       setError(err.message || "เกิดข้อผิดพลาด");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const goToLogin = () => {
+    setStep("login");
+    setIsRegister(false);
+    setError("");
+    setSuccess("");
+    setPassword("");
+    setConfirmPassword("");
+    setShowPasswordRules(false);
+
+    if (window.location.search.includes("reset=")) {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  };
+
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+    setError("");
+    setSuccess("");
+
+    if (!resetEmail || !resetEmail.includes("@")) {
+      setError("กรุณากรอกอีเมลให้ถูกต้อง");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch("http://localhost:3001/api/password/forgot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: resetEmail }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "ส่งอีเมลไม่สำเร็จ");
+      setSuccess(data.message || "ส่งลิงก์เปลี่ยนรหัสผ่านแล้ว");
+      if (data.debugResetUrl) {
+        setSuccess(`${data.message} (โหมดทดสอบ: ${data.debugResetUrl})`);
+      }
+    } catch (err) {
+      setError(err.message || "ส่งอีเมลไม่สำเร็จ");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    setError("");
+    setSuccess("");
+
+    const allPassed = PASSWORD_RULES.every((r) => r.test(password));
+    if (!allPassed) {
+      setError("รหัสผ่านใหม่ยังไม่ผ่านเกณฑ์ความปลอดภัย");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("รหัสผ่านทั้งสองช่องไม่ตรงกัน");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch("http://localhost:3001/api/password/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: resetToken, password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "เปลี่ยนรหัสผ่านไม่สำเร็จ");
+      setSuccess(data.message || "เปลี่ยนรหัสผ่านสำเร็จ");
+      setResetTokenValid(false);
+      setPassword("");
+      setConfirmPassword("");
+      window.history.replaceState({}, "", window.location.pathname);
+    } catch (err) {
+      setError(err.message || "เปลี่ยนรหัสผ่านไม่สำเร็จ");
     } finally {
       setLoading(false);
     }
@@ -421,7 +532,247 @@ export default function LoginPage({ onLoginSuccess }) {
   // ======================================================
   // RENDER: Login / Register Form
   // ======================================================
-  const strength = isRegister ? getPasswordStrength(password) : null;
+  const strength = (isRegister || step === "resetPassword") ? getPasswordStrength(password) : null;
+
+  if (step === "forgotPassword") {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="w-full max-w-md relative z-10">
+          <div className="absolute inset-0 bg-pysim-primary/10 blur-3xl rounded-[3rem] -z-10"></div>
+          <div className="bg-white/80 backdrop-blur-2xl rounded-[2.5rem] whisper-shadow p-8 space-y-8 border border-white/50 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-amber-100/40 to-transparent -rotate-45 pointer-events-none blur-xl"></div>
+
+            <div className="text-center">
+              <div className={`w-16 h-16 mx-auto rounded-2xl flex items-center justify-center mb-6 shadow-xl relative group ${primaryGradientClass}`}>
+                <Mail className="w-6 h-6 text-white transition-transform duration-500 group-hover:scale-110" />
+              </div>
+              <Typewriter
+                text="ลืมรหัสผ่าน"
+                speed={50}
+                className="text-2xl font-bold text-pysim-on-surface"
+              />
+              <p className="text-pysim-on-surface-variant text-sm mt-2">
+                กรอกอีเมลของบัญชี แล้วเราจะส่งลิงก์สำหรับตั้งรหัสผ่านใหม่ให้
+              </p>
+            </div>
+
+            <form onSubmit={handleForgotPassword} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-pysim-primary mb-1.5 uppercase tracking-wider ml-1">อีเมล</label>
+                <input
+                  type="email"
+                  placeholder="your@email.com"
+                  className="w-full p-3.5 bg-pysim-surface-low/50 border border-pysim-outline-variant/30 rounded-2xl outline-none focus:ring-2 focus:ring-pysim-primary/30 focus:border-pysim-primary text-pysim-on-surface transition-all placeholder:text-pysim-outline"
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                  required
+                />
+              </div>
+
+              {error && (
+                <div className="flex items-center gap-2 p-3 bg-pysim-error-container border border-pysim-error/20 rounded-xl text-pysim-error text-sm">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  {error}
+                </div>
+              )}
+
+              {success && (
+                <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm break-words">
+                  <Check className="w-4 h-4 flex-shrink-0" />
+                  {success}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className={`w-full py-4 mt-6 rounded-2xl font-bold hover:-translate-y-0.5 active:translate-y-0 transition-all duration-300 tracking-wide disabled:opacity-50 disabled:transform-none ${primaryGradientClass}`}
+              >
+                {loading ? "กำลังส่งอีเมล..." : "ส่งลิงก์เปลี่ยนรหัสผ่าน"}
+              </button>
+            </form>
+
+            <button
+              type="button"
+              onClick={goToLogin}
+              className="w-full flex items-center justify-center gap-2 text-sm font-bold text-pysim-primary hover:text-pysim-primary-container transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              กลับไปเข้าสู่ระบบ
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === "resetPassword") {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="w-full max-w-md relative z-10">
+          <div className="absolute inset-0 bg-pysim-primary/10 blur-3xl rounded-[3rem] -z-10"></div>
+          <div className="bg-white/80 backdrop-blur-2xl rounded-[2.5rem] whisper-shadow p-8 space-y-8 border border-white/50 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-amber-100/40 to-transparent -rotate-45 pointer-events-none blur-xl"></div>
+
+            <div className="text-center">
+              <div className={`w-16 h-16 mx-auto rounded-2xl flex items-center justify-center mb-6 shadow-xl relative group ${primaryGradientClass}`}>
+                <KeyRound className="w-6 h-6 text-white transition-transform duration-500 group-hover:scale-110" />
+              </div>
+              <Typewriter
+                text="ตั้งรหัสผ่านใหม่"
+                speed={50}
+                className="text-2xl font-bold text-pysim-on-surface"
+              />
+              <p className="text-pysim-on-surface-variant text-sm mt-2">
+                {resetEmailHint ? `บัญชี ${resetEmailHint}` : "ตั้งรหัสผ่านใหม่สำหรับบัญชีของคุณ"}
+              </p>
+            </div>
+
+            {tokenChecking ? (
+              <div className="flex items-center justify-center gap-3 py-8 text-pysim-on-surface-variant">
+                <div className="w-5 h-5 border-2 border-pysim-primary/20 border-t-pysim-primary rounded-full animate-spin"></div>
+                กำลังตรวจสอบลิงก์...
+              </div>
+            ) : resetTokenValid ? (
+              <form onSubmit={handleResetPassword} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-pysim-primary mb-1.5 uppercase tracking-wider ml-1">รหัสผ่านใหม่</label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      placeholder="••••••••"
+                      className="w-full p-3.5 pr-12 bg-pysim-surface-low/50 border border-pysim-outline-variant/30 rounded-2xl outline-none focus:ring-2 focus:ring-pysim-primary/30 focus:border-pysim-primary text-pysim-on-surface transition-all placeholder:text-pysim-outline"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      onFocus={() => setShowPasswordRules(true)}
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-pysim-outline hover:text-pysim-on-surface-variant"
+                    >
+                      {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
+
+                  {password.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-2 bg-pysim-surface-container rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-500 ${strength.color}`}
+                            style={{ width: `${strength.percent}%` }}
+                          ></div>
+                        </div>
+                        <span className={`text-xs font-bold ${strength.color.replace('bg-', 'text-')}`}>
+                          {strength.text}
+                        </span>
+                      </div>
+
+                      {showPasswordRules && (
+                        <div className="bg-pysim-surface-low rounded-xl p-3 space-y-1.5">
+                          {PASSWORD_RULES.map((rule, i) => {
+                            const passed = rule.test(password);
+                            return (
+                              <div key={i} className="flex items-center gap-2 text-xs">
+                                {passed ? (
+                                  <Check className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
+                                ) : (
+                                  <X className="w-3.5 h-3.5 text-slate-300 flex-shrink-0" />
+                                )}
+                                <span className={passed ? "text-green-600" : "text-slate-400"}>
+                                  {rule.label}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-pysim-primary mb-1.5 uppercase tracking-wider ml-1">ยืนยันรหัสผ่านใหม่</label>
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    placeholder="••••••••"
+                    className="w-full p-3.5 bg-pysim-surface-low/50 border border-pysim-outline-variant/30 rounded-2xl outline-none focus:ring-2 focus:ring-pysim-primary/30 focus:border-pysim-primary text-pysim-on-surface transition-all placeholder:text-pysim-outline"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                  />
+                </div>
+
+                {error && (
+                  <div className="flex items-center gap-2 p-3 bg-pysim-error-container border border-pysim-error/20 rounded-xl text-pysim-error text-sm">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                    {error}
+                  </div>
+                )}
+
+                {success && (
+                  <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm">
+                    <Check className="w-4 h-4 flex-shrink-0" />
+                    {success}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className={`w-full py-4 mt-6 rounded-2xl font-bold hover:-translate-y-0.5 active:translate-y-0 transition-all duration-300 tracking-wide disabled:opacity-50 disabled:transform-none ${primaryGradientClass}`}
+                >
+                  {loading ? "กำลังเปลี่ยนรหัสผ่าน..." : "บันทึกรหัสผ่านใหม่"}
+                </button>
+              </form>
+            ) : (
+              <div className="space-y-4">
+                {success && (
+                  <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm">
+                    <Check className="w-4 h-4 flex-shrink-0" />
+                    {success}
+                  </div>
+                )}
+
+                {error && (
+                  <div className="flex items-center gap-2 p-3 bg-pysim-error-container border border-pysim-error/20 rounded-xl text-pysim-error text-sm">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                    {error}
+                  </div>
+                )}
+
+                {!success && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStep("forgotPassword");
+                      setError("");
+                      setSuccess("");
+                      window.history.replaceState({}, "", window.location.pathname);
+                    }}
+                    className={`w-full py-4 rounded-2xl font-bold transition-all duration-300 ${primaryGradientClass}`}
+                  >
+                    ขอส่งลิงก์ใหม่
+                  </button>
+                )}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={goToLogin}
+              className="w-full flex items-center justify-center gap-2 text-sm font-bold text-pysim-primary hover:text-pysim-primary-container transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              กลับไปเข้าสู่ระบบ
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
@@ -524,6 +875,23 @@ export default function LoginPage({ onLoginSuccess }) {
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
+
+              {!isRegister && (
+                <div className="mt-2 text-right">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStep("forgotPassword");
+                      setResetEmail(email);
+                      setError("");
+                      setSuccess("");
+                    }}
+                    className="text-xs font-bold text-pysim-primary hover:text-pysim-primary-container transition-colors"
+                  >
+                    ลืมรหัสผ่าน?
+                  </button>
+                </div>
+              )}
 
               {/* Password Strength Indicator */}
               {isRegister && password.length > 0 && (

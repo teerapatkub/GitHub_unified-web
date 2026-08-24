@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Shuffle, PlusSquare, Users, Settings, User, X } from 'lucide-react';
+import { Shuffle, PlusSquare, Users, Settings, User, X, Trophy } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import SettingsModal from '../components/SettingsModal';
 
@@ -47,6 +47,7 @@ export default function OnlineMenu() {
     };
 
     const actionPrimary = { name: t('onlineMenu.quickJoin'), sub: "Auto-Matchmaking", icon: <Shuffle size={32} className="opacity-80" />, color: "python-gradient", action: () => navigate('/matchmaking') };
+    const actionArena = { name: 'Competitive Arena', sub: 'Ranked Challenges', icon: <Trophy size={32} className="opacity-90" />, action: () => navigate('/competitive-arena') };
     
     const actionGrid = [
         { name: t('onlineMenu.createRoom'), sub: "Host Session", icon: <PlusSquare size={24} />, color: "bg-gradient-to-br from-green-500 to-green-600", action: () => setShowCreateModal(true) },
@@ -114,6 +115,22 @@ export default function OnlineMenu() {
                                         <span className="text-[11px] font-medium opacity-70">{actionPrimary.sub}</span>
                                     </div>
                                 </div>
+                            </button>
+
+                            <button onClick={actionArena.action}
+                                className={`w-full h-20 rounded-lg flex items-center justify-between px-8 text-white transition-all active:scale-[0.98] group relative overflow-hidden bg-gradient-to-br from-blue-600 to-indigo-700 shadow-lg shadow-blue-500/20
+                                    ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
+                                style={{ transitionDelay: '360ms' }}>
+                                <div className="flex items-center space-x-6">
+                                    {actionArena.icon}
+                                    <div className="text-left">
+                                        <span className="block text-lg font-black tracking-tight leading-none uppercase">{actionArena.name}</span>
+                                        <span className="text-[11px] font-medium opacity-80">{actionArena.sub}</span>
+                                    </div>
+                                </div>
+                                <span className="rounded-full bg-white/15 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-white/90">
+                                    Mode 1
+                                </span>
                             </button>
 
                             {/* Secondary Actions Grid */}

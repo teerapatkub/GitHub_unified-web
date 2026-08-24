@@ -40,7 +40,7 @@ export default function Leaderboard() {
   });
 
   const tabs = [
-    { key: "score",  label: "คะแนน",    icon: <Trophy   size={14} /> },
+    { key: "score",  label: "คะแนนรวม", icon: <Trophy   size={14} /> },
     { key: "level",  label: "เลเวล",    icon: <Star     size={14} /> },
     { key: "coins",  label: "เหรียญ",   icon: <Medal    size={14} /> },
   ];
@@ -68,7 +68,7 @@ export default function Leaderboard() {
                 </div>
                 <div>
                   <h1 className="text-xl font-bold text-white">ตารางอันดับ</h1>
-                  <p className="text-yellow-100 text-xs mt-0.5">Leaderboard — อันดับผู้เล่นทั้งหมด</p>
+                  <p className="text-yellow-100 text-xs mt-0.5">Leaderboard — คะแนนรวมจาก Competitive Arena และ Arcade Coding Battle Royale</p>
                 </div>
               </div>
               <button
@@ -177,7 +177,7 @@ export default function Leaderboard() {
                           {statValue(user)}
                         </p>
                         <p className="text-xs text-slate-400 capitalize">
-                          {tab === "score" ? "high score" : tab === "level" ? "level" : "coins"}
+                          {tab === "score" ? "total score" : tab === "level" ? "level" : "coins"}
                         </p>
                       </div>
                     </div>

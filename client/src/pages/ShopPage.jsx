@@ -8,6 +8,12 @@ const API_BASE = 'http://localhost:3001';
 
 const resolveAssetUrl = (value) => (value?.startsWith('/uploads') ? `${API_BASE}${value}` : value);
 const userThemeKey = (user) => `game_theme:user:${user.user_id}`;
+const normalizeItemType = (type) => String(type || '').toUpperCase().replace(/[\s_-]/g, '');
+const isThemeType = (type) => ['THEME', 'UITHEME', 'THEMES'].includes(normalizeItemType(type));
+const isMouseEffectType = (type) => normalizeItemType(type) === 'MOUSEEFFECT';
+const isProfileItemType = (type) => ['PROFILEFRAME', 'PROFILEBACKGROUND'].includes(normalizeItemType(type));
+const isThemeItem = (item) => item?.category === 'themes' || isThemeType(item?.type);
+const isWidePreviewItem = (item) => isThemeItem(item) || normalizeItemType(item?.type) === 'PROFILEBACKGROUND';
 const getShopThemePalette = (item) => {
     const themeText = `${item?.name || ''} ${item?.assetUrl || ''} ${item?.previewImage || ''}`.toLowerCase();
     if (themeText.includes('ocean')) {
@@ -61,8 +67,8 @@ const getShopThemePalette = (item) => {
     };
 };
 const itemSlot = (type) => {
-    if (type === 'THEME') return 'THEME';
-    if (type === 'MOUSE_EFFECT') return 'MOUSE_EFFECT';
+    if (isThemeType(type)) return 'THEME';
+    if (isMouseEffectType(type)) return 'MOUSE_EFFECT';
     return 'PROFILE_FRAME';
 };
 
@@ -166,8 +172,9 @@ export default function ShopPage() {
     };
 
     const getCategoryFromType = (type) => {
-        if (type === 'MOUSE_EFFECT') return 'effects';
-        if (type === 'PROFILE_FRAME' || type === 'PROFILE_BACKGROUND') return 'avatars';
+        if (isMouseEffectType(type)) return 'effects';
+        if (isProfileItemType(type)) return 'avatars';
+        if (isThemeType(type)) return 'themes';
         return 'themes';
     };
 
@@ -200,8 +207,8 @@ export default function ShopPage() {
             return { type: 'text', value: visual };
         }
 
-        if (item.type === 'MOUSE_EFFECT') return { type: 'text', value: '*' };
-        if (item.type === 'PROFILE_FRAME' || item.type === 'PROFILE_BACKGROUND') return { type: 'text', value: '[]' };
+        if (isMouseEffectType(item.type)) return { type: 'text', value: '*' };
+        if (isProfileItemType(item.type)) return { type: 'text', value: '[]' };
         return { type: 'text', value: '#' };
     };
 
@@ -241,7 +248,7 @@ export default function ShopPage() {
             setItems(nextItems);
 
             const equippedThemeId = Number(user?.equipped_theme_id || 0);
-            const equippedTheme = nextItems.find((item) => item.type === 'THEME' && item.itemId === equippedThemeId);
+            const equippedTheme = nextItems.find((item) => isThemeItem(item) && item.itemId === equippedThemeId);
             if (equippedTheme) {
                 registerTheme(createShopTheme(equippedTheme));
             }
@@ -457,7 +464,7 @@ export default function ShopPage() {
                                         <img
                                             src={item.icon.value.startsWith('/uploads') ? `${API_BASE}${item.icon.value}` : item.icon.value}
                                             alt={item.name}
-                                            className={item.type === 'THEME'
+                                            className={isWidePreviewItem(item)
                                                 ? 'h-full w-full object-cover group-hover:scale-105 transition-transform duration-300'
                                                 : 'h-20 w-20 object-contain group-hover:scale-110 transition-transform duration-300'}
                                         />

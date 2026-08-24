@@ -25,6 +25,7 @@ import Lobby from './pages/Lobby';
 import JoinRoom from './pages/JoinRoom';
 import Achievements from './pages/Achievements';
 import ChallengePage from './pages/ChallengePage';
+import CompetitiveArena from './pages/CompetitiveArena';
 import DesktopPage from './pages/DesktopPage';
 import AiTaskPage from './components/learning/AiTaskPage';
 import Dashboard from './admin/pages/Dashboard';
@@ -32,6 +33,7 @@ import ManageAccount from './admin/pages/ManageAccount';
 import ThemePage from './admin/pages/ThemePage';
 import AddLesson from './admin/pages/AddLesson';
 import Leaderboard from './admin/pages/Leaderboard';
+import CompetitiveChallengePage from './admin/pages/CompetitiveChallengePage';
 
 // ######################################################################
 // ### MAIN APP
@@ -116,6 +118,9 @@ function AppContent() {
     if (pathname.startsWith('/challenge')) {
       return { mode: 'challenge', activityLabel: 'กำลังทำความท้าทาย' };
     }
+    if (pathname.startsWith('/competitive-arena')) {
+      return { mode: 'online', activityLabel: 'กำลังเล่น Competitive Arena' };
+    }
     if (
       pathname.startsWith('/online') ||
       pathname.startsWith('/matchmaking') ||
@@ -125,7 +130,7 @@ function AppContent() {
       return { mode: 'online', activityLabel: 'กำลังเล่นโหมดออนไลน์' };
     }
     if (pathname.startsWith('/menu') || pathname.startsWith('/simulation')) {
-      return { mode: 'solo', activityLabel: 'กำลังเล่นโหมดเดี่ยว' };
+      return { mode: 'solo', activityLabel: 'กำลังใช้งาน Simulation' };
     }
     if (pathname.startsWith('/shop')) {
       return { mode: 'shop', activityLabel: 'กำลังดูร้านค้า' };
@@ -253,7 +258,17 @@ function AppContent() {
 
     sendPresence();
     const interval = setInterval(sendPresence, 30000);
-    return () => clearInterval(interval);
+    const handleVisibilityChange = () => {
+      if (!document.hidden) sendPresence();
+    };
+    window.addEventListener('focus', sendPresence);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', sendPresence);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [getPresenceInfo, location.pathname, user?.isGuest, user?.user_id]);
 
   // === Login Success ===
@@ -306,7 +321,7 @@ function AppContent() {
 
   // === Which pages show the Navbar ===
   const hideNavbar = location.pathname === '/login';
-  const simulationRoutes = ['/simulation', '/menu', '/online', '/matchmaking', '/join-room', '/achievements'];
+  const simulationRoutes = ['/simulation', '/menu', '/online', '/competitive-arena', '/matchmaking', '/join-room', '/achievements'];
   const isSimulationMode = simulationRoutes.some(r => location.pathname.startsWith(r)) || location.pathname.startsWith('/lobby');
   const isCodingWorkspace = ['/exercise', '/mini-game', '/challenge', '/debug']
     .some(route => location.pathname.startsWith(route));
@@ -444,6 +459,7 @@ function AppContent() {
               {/* Simulation Pages */}
               <Route path="/menu" element={<MainMenu user={user} />} />
               <Route path="/online" element={<OnlineMenu />} />
+              <Route path="/competitive-arena" element={requireStudent(<CompetitiveArena user={user} />)} />
               <Route path="/matchmaking" element={<Matchmaking />} />
               <Route path="/lobby/:roomId" element={<Lobby />} />
               <Route path="/join-room" element={<JoinRoom />} />
@@ -464,6 +480,10 @@ function AppContent() {
               <Route
                 path="/admin/add-lesson"
                 element={requireAdmin(<AddLesson />)}
+              />
+              <Route
+                path="/admin/competitive-challenge"
+                element={requireAdmin(<CompetitiveChallengePage />)}
               />
               <Route
                 path="/admin/leaderboard"

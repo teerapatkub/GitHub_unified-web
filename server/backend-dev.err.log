@@ -1,0 +1,36 @@
+⚠️ Sim Error (จะไม่แสดงซ้ำ): Expected property name or '}' in JSON at position 1 (line 1 column 2)
+Competitive test case generation error: {
+  status: 404,
+  title: 'Not Found',
+  detail: "Function '23d4f03a-b8a6-4adb-a183-7daa083a09cc': Not found for account 'Sf1yQ2Q-1phRzPlGrq6ziuUQFl3yOiPvWLINmcE9RVc'"
+}
+Competitive test case generation error: {
+  status: 404,
+  title: 'Not Found',
+  detail: "Function '23d4f03a-b8a6-4adb-a183-7daa083a09cc': Not found for account 'Sf1yQ2Q-1phRzPlGrq6ziuUQFl3yOiPvWLINmcE9RVc'"
+}
+Competitive test case generation error: {
+  status: 404,
+  title: 'Not Found',
+  detail: "Function '23d4f03a-b8a6-4adb-a183-7daa083a09cc': Not found for account 'Sf1yQ2Q-1phRzPlGrq6ziuUQFl3yOiPvWLINmcE9RVc'"
+}
+Competitive test case generation error: {
+  status: 404,
+  title: 'Not Found',
+  detail: "Function '23d4f03a-b8a6-4adb-a183-7daa083a09cc': Not found for account 'Sf1yQ2Q-1phRzPlGrq6ziuUQFl3yOiPvWLINmcE9RVc'"
+}
+Competitive test case generation error: {
+  status: 404,
+  title: 'Not Found',
+  detail: "Function '23d4f03a-b8a6-4adb-a183-7daa083a09cc': Not found for account 'Sf1yQ2Q-1phRzPlGrq6ziuUQFl3yOiPvWLINmcE9RVc'"
+}
+Competitive test case generation error: {
+  status: 404,
+  title: 'Not Found',
+  detail: "Function '23d4f03a-b8a6-4adb-a183-7daa083a09cc': Not found for account 'Sf1yQ2Q-1phRzPlGrq6ziuUQFl3yOiPvWLINmcE9RVc'"
+}
+Competitive AI review failed: {
+  status: 404,
+  title: 'Not Found',
+  detail: "Function '23d4f03a-b8a6-4adb-a183-7daa083a09cc': Not found for account 'Sf1yQ2Q-1phRzPlGrq6ziuUQFl3yOiPvWLINmcE9RVc'"
+}
