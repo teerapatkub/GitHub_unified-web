@@ -229,11 +229,15 @@ view `exercises`, `mini_game_exercises`, `multiplayer_challenges` เพิ่�
 | ใช้ทำอะไร | ฟังก์ชัน | ตั้งค่าที่ |
 |---|---|---|
 | แชทบอท Lumi + สร้างโจทย์ฝึก | `callAiChat()` | `NVIDIA_API_KEY`, `NVIDIA_AI_MODEL` |
-| ตรวจคุณภาพโค้ดใน Arcade | `judgeCodeQuality()` | `NVIDIA_CODE_JUDGE_API_KEY` |
-| ให้คะแนนคำตอบใน Competitive Arena | `reviewCompetitiveSubmissionWithAI()` | ใช้ `callAiChat()` ร่วมกัน |
+| ตรวจคุณภาพโค้ดใน Arcade | `judgeCodeQuality()` | `NVIDIA_CODE_JUDGE_API_KEY`, `NVIDIA_CODE_JUDGE_MODEL` |
+| ให้คะแนนคำตอบใน Competitive Arena | `reviewCompetitiveSubmissionWithAI()` | ใช้ชุดเดียวกับตัวตรวจโค้ด ผ่าน `callCodeJudgeChat()` |
 
-**ห้ามชี้ตัวตรวจโค้ด Arcade ไปที่โมเดลเดียวกับแชทบอท** — ตัวตรวจทำงานทุกครั้งที่จบรอบของทุกแมตช์
-ที่กำลังเล่นอยู่ โควตาโทเคนของมันไม่ใช่ที่ว่างให้งานอื่นมาใช้ร่วม
+**สองแถวล่างใช้คีย์และโมเดลเดียวกัน** (ย้ายมาเมื่อ 2026-08-25) เพราะทั้งคู่คือการตรวจโค้ด
+ในแมตช์ที่กำลังเล่นอยู่ ส่วนแถวบนแยกขาดจากสองแถวล่างเสมอ
+**ถ้าปล่อยคีย์หรือชื่อโมเดลของตัวตรวจว่าง ทั้งสองที่จะให้คะแนนในเครื่องแทนโดยไม่ส่งโค้ดออกนอกเครื่อง**
+
+**ห้ามชี้ตัวตรวจโค้ดไปที่โมเดลเดียวกับแชทบอท** — ตัวตรวจทำงานทุกครั้งที่จบรอบของทุกแมตช์
+ที่กำลังเล่นอยู่ และทุกครั้งที่มีคนส่งคำตอบในโหมดแข่ง โควตาโทเคนของมันไม่ใช่ที่ว่างให้งานอื่นมาใช้ร่วม
 
 ชื่อโมเดลและคีย์ต้องอ่านจาก `.env` เสมอ ห้าม hardcode เป็น fallback ในโค้ด (ทั้งโปรเจคของ Person 1
 และ Person 2 เคยทำแบบนั้น ทำให้คีย์จริงหลุดเข้า git และเปลี่ยนโมเดลทีต้องแก้โค้ด)
@@ -270,3 +274,13 @@ view `exercises`, `mini_game_exercises`, `multiplayer_challenges` เพิ่�
 - สิ่งที่ยังไม่เสร็จหรือต้องทดสอบเพิ่มเติม (ถ้ามี)
 
 ตั้งชื่อไฟล์บันทึกในรูปแบบ: `project_logs/YYYY-MM-DD/HHMM-สรุปสั้นๆ.md`
+
+## Agent skills
+
+### Issue tracker
+
+Issues live as GitHub Issues on the `origin` remote (`github.com/teerapatkub/GitHub_unified-web`), using the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` and `docs/adr/` live at the repo root. See `docs/agents/domain.md`.

@@ -8,7 +8,7 @@ Description:
    - Solution: Instead of introducing another npm package dependency (openai), we wrapped the endpoint call natively inside `callAiChat` using the already imported and functional `axios` library.
    - Details:
      * Pointed requests to baseURL: 'https://integrate.api.nvidia.com/v1/chat/completions'.
-     * Configured headers with the new Authorization key ('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').
+     * Configured headers with the new Authorization key ('[คีย์ถูกลบออกเมื่อ 2026-08-25 - ยังใช้งานได้อยู่ ต้องเพิกถอนที่ NVIDIA]').
      * Configured model to use: 'z-ai/glm-5.2'.
      * Cleaned up the deprecated `@google/generative-ai` package import from server.js.
      * Replaced all previous AI caller references with `callAiChat`.

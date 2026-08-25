@@ -45,5 +45,12 @@ Thumbs.db
 *.dump
 /20.8.2569.sql
 
-# Local agent configuration and downloaded skills.
+# Local agent configuration and downloaded skills. skills-lock.json IS tracked -
+# it is the manifest, these are the downloaded contents (package-lock vs node_modules).
 /.claude/
+/.agents/
+
+# Copies of .env made before editing it. These hold real credentials in plain
+# text and must never reach the repository.
+.env.backup*
+*.env.backup*

@@ -2289,11 +2289,15 @@ app.get('/api/verify-email/:token', async (req, res) => {
 
 // One deliberate change from their source: the AI review below calls our
 
-// callAiChat() rather than their callNvidiaChat(). The two take the same
+// callCodeJudgeChat() rather than their callNvidiaChat(). Theirs fell back to a
 
-// arguments, but ours reads its key and model from .env instead of falling
+// key written into the file; ours reads key and model from .env. It was moved
 
-// back to a key written into the file.
+// onto the code-judge model on 2026-08-25 - grading a submission in a ranked
+
+// match is the same job as Arcade's code judging, and neither belongs on the
+
+// chatbot's budget.
 
 // ===========================================================================
 
@@ -2971,7 +2975,12 @@ const reviewCompetitiveSubmissionWithAI = async ({ challenge, code, testCases, t
     };
 
     try {
-        const rawText = await callAiChat({
+        // Judged by the code-judge model, not the chatbot's. This is code
+        // grading inside a live ranked match, the same job as Arcade's
+        // judgeCodeQuality(), so it belongs on that key and model - see the AI
+        // Models table in CLAUDE.md. (Defined further down the file; that is
+        // fine because this only runs on a request, long after module load.)
+        const rawText = await callCodeJudgeChat({
             messages: [
                 {
                     role: 'system',
@@ -2999,6 +3008,9 @@ JSON shape: {"correctness":0,"complexity":0,"cleanCode":0,"approved":false,"feed
             temperature: 0.2,
             maxTokens: 1200,
             thinking: false,
+            // Longer than Arcade's 8s: a competitive submission is graded once
+            // when the player submits, not while a 60-second round is closing.
+            timeoutMs: 30000,
         });
 
         return parseCompetitiveAiReview({ rawText, fallbackScore, testResult });
@@ -4914,33 +4926,85 @@ function heuristicCodeQualityScore(code) {
 // extended thinking off: this sits in a live match's round-finalize path, so
 // a fast, deterministic JSON answer matters more than the reasoning trace a
 // streaming/thinking response would add.
-const nvidiaCodeJudgeClient = process.env.NVIDIA_CODE_JUDGE_API_KEY
-    ? new OpenAI({ apiKey: process.env.NVIDIA_CODE_JUDGE_API_KEY, baseURL: 'https://integrate.api.nvidia.com/v1' })
+//
+// The key and the model name both come from .env. The model name used to be
+// hard-coded here, which meant this could not be pointed elsewhere or turned
+// off without editing code - and CLAUDE.md already required model names to live
+// in .env for exactly this reason. Leaving either value empty disables the AI
+// path entirely: both callers fall back to scoring in-process, and no player's
+// code leaves the machine.
+//
+// TWO callers share this client and this budget: judgeCodeQuality() below
+// (Arcade round code) and reviewCompetitiveSubmissionWithAI() further up
+// (Competitive Arena submissions). Both are code judging, both run inside a
+// live match, and both are deliberately kept off the chatbot's key and model -
+// see the AI Models table in CLAUDE.md.
+const NVIDIA_CODE_JUDGE_MODEL = String(process.env.NVIDIA_CODE_JUDGE_MODEL || '').trim();
+const NVIDIA_CODE_JUDGE_KEY = String(process.env.NVIDIA_CODE_JUDGE_API_KEY || '').trim();
+
+const nvidiaCodeJudgeClient = (NVIDIA_CODE_JUDGE_KEY && NVIDIA_CODE_JUDGE_MODEL)
+    ? new OpenAI({ apiKey: NVIDIA_CODE_JUDGE_KEY, baseURL: 'https://integrate.api.nvidia.com/v1', maxRetries: 0 })
     : null;
+
+if (!nvidiaCodeJudgeClient) {
+    console.warn('ℹ️  ตัวตรวจโค้ดด้วย AI ปิดอยู่ (NVIDIA_CODE_JUDGE_API_KEY/MODEL ว่าง) - Arcade และโหมดแข่งจะให้คะแนนในเครื่องแทน');
+} else {
+    console.log(`✅ ตัวตรวจโค้ดด้วย AI: ${NVIDIA_CODE_JUDGE_MODEL}`);
+}
+
+// Same call shape as callAiChat() so a caller moves between the chatbot model
+// and the judge model by changing one word. Throws when unconfigured or on any
+// API error - every caller already has a non-AI fallback and must use it rather
+// than failing the request, because both sit in a live match's critical path.
+const callCodeJudgeChat = async ({ messages, systemInstruction = '', temperature = 0.3, maxTokens = 1200, thinking = false, timeoutMs = 8000 }) => {
+    if (!nvidiaCodeJudgeClient) {
+        throw new Error('NVIDIA_CODE_JUDGE_API_KEY/MODEL is not set, so no code-judging model is configured');
+    }
+
+    const apiMessages = [];
+    if (systemInstruction) apiMessages.push({ role: 'system', content: systemInstruction });
+    for (const message of (Array.isArray(messages) ? messages : [])) {
+        apiMessages.push({ role: message?.role || 'user', content: String(message?.content ?? '') });
+    }
+
+    let completion;
+    try {
+        completion = await nvidiaCodeJudgeClient.chat.completions.create({
+            model: NVIDIA_CODE_JUDGE_MODEL,
+            messages: apiMessages,
+            temperature,
+            top_p: 0.95,
+            max_tokens: maxTokens,
+            // Reasoning off and streaming off on purpose: this runs while a round
+            // is finalising, so a fast deterministic JSON answer beats a
+            // reasoning trace nobody reads.
+            chat_template_kwargs: { enable_thinking: Boolean(thinking) },
+            stream: false,
+        }, { timeout: timeoutMs });
+    } catch (error) {
+        const status = error?.status || error?.response?.status;
+        const detail = error?.response?.data?.detail || error?.message || 'unknown error';
+        throw new Error(`Code-judge model "${NVIDIA_CODE_JUDGE_MODEL}" failed${status ? ` (HTTP ${status})` : ''}: ${detail}`);
+    }
+
+    // Reasoning models split their answer: `content` holds the reply,
+    // `reasoning_content` the scratch work. Only the reply is returned - the
+    // scratch work would break JSON parsing outright.
+    return String(completion?.choices?.[0]?.message?.content || '').trim();
+};
 
 async function judgeCodeQuality(code) {
     if (!nvidiaCodeJudgeClient) {
         return { score: heuristicCodeQualityScore(code), source: 'fallback' };
     }
     try {
-        const completion = await nvidiaCodeJudgeClient.chat.completions.create(
-            {
-                model: 'nvidia/nemotron-3.5-lightning-30b-a3b',
-                messages: [
-                    {
-                        role: 'system',
-                        content: 'You are a strict but fair code reviewer grading Python code for a coding competition. Judge BOTH readability/beauty (naming, structure, consistency, comments) AND efficiency (algorithmic complexity, unnecessary work) combined into one score — never judge correctness. If the code is empty, only a stub (e.g. just "pass"), or otherwise has nothing substantive to evaluate, score it low (0-10). Respond with ONLY a JSON object, no markdown: {"score": <integer 0-100>, "reason": "<one short sentence in Thai>"}',
-                    },
-                    { role: 'user', content: code || '' }
-                ],
-                temperature: 0.3,
-                max_tokens: 300,
-                chat_template_kwargs: { enable_thinking: false },
-                stream: false
-            },
-            { timeout: 8000 }
-        );
-        const text = String(completion.choices?.[0]?.message?.content || '').trim();
+        const text = await callCodeJudgeChat({
+            systemInstruction: 'You are a strict but fair code reviewer grading Python code for a coding competition. Judge BOTH readability/beauty (naming, structure, consistency, comments) AND efficiency (algorithmic complexity, unnecessary work) combined into one score — never judge correctness. If the code is empty, only a stub (e.g. just "pass"), or otherwise has nothing substantive to evaluate, score it low (0-10). Respond with ONLY a JSON object, no markdown: {"score": <integer 0-100>, "reason": "<one short sentence in Thai>"}',
+            messages: [{ role: 'user', content: code || '' }],
+            temperature: 0.3,
+            maxTokens: 300,
+            timeoutMs: 8000,
+        });
         const jsonMatch = text.match(/\{[\s\S]*\}/);
         const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : text);
         const score = Math.max(0, Math.min(100, Math.round(Number(parsed.score))));
