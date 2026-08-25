@@ -481,6 +481,31 @@ const db = {
         await db.query(`
             ALTER TABLE arcade_participants ADD COLUMN IF NOT EXISTS has_submitted INTEGER DEFAULT 0;
         `);
+        // What the player actually submitted, kept until the round closes.
+        //
+        // The browser used to judge its own code and send a finished score; the
+        // server could only clamp it, so anyone who could edit a request won
+        // every match without writing Python. Now the browser sends only the
+        // code, and finalizeArcadePhase() grades it - correctness, AI code
+        // quality, and time taken from the server's own clock - when the round
+        // ends. See docs/adr/0001-server-owns-the-verdict.md.
+        //
+        // Judging at round close rather than on arrival is deliberate: what a
+        // player must do in time is SEND their code, and how long grading takes
+        // is the server's problem, not theirs. Nobody loses a round to a slow
+        // network.
+        await db.query(`
+            ALTER TABLE arcade_participants ADD COLUMN IF NOT EXISTS submitted_code TEXT DEFAULT NULL;
+        `);
+        await db.query(`
+            ALTER TABLE arcade_participants ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMP DEFAULT NULL;
+        `);
+        // Still reported by the browser, because item effects live there and
+        // nowhere else. It only ever doubles a score the server computed, and
+        // moving the shop inventory server-side is its own piece of work.
+        await db.query(`
+            ALTER TABLE arcade_participants ADD COLUMN IF NOT EXISTS score_multiplier_active SMALLINT DEFAULT 0;
+        `);
         // Gold this player was paid for the finished match, written once when the
         // room reaches RESULT. Stored on the participant rather than derived on the
         // client so the RESULT screen shows what was actually credited, not a

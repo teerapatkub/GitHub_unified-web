@@ -71,9 +71,16 @@ export const TRANSLATIONS = {
     codeOutput: "Console output",
     runTests: "Run local tests",
     submitCode: "Submit solution",
-    testsPassed: "All tests passed! Ready for submission.",
+    // testsPassed is gone: the button it belonged to printed a fixed "all
+    // tests passed" line without running anything, so it told every player
+    // their code was correct. A trial run now shows real output and leaves the
+    // verdict to the server.
     codeEmpty: "Please write some code before submitting.",
-    judgingCode: "🧪 Judging your code...",
+    judgingCode: "🧪 Sending your code...",
+    submittedWaitingForResult: "✅ Submitted. Your result comes with the round summary.",
+    running: "Running your code...",
+    noOutput: "Your code ran and printed nothing.",
+    pyodideLoading: "Python is still loading, try again in a moment.",
     exampleLabel: "Examples",
     exampleHint: "Only some of the hidden test cases are shown.",
     pythonFile: "arcade_main.py",
@@ -311,9 +318,12 @@ export const TRANSLATIONS = {
     codeOutput: "ผลการรันโปรแกรม",
     runTests: "ทดสอบโค้ด",
     submitCode: "ส่งคำตอบ",
-    testsPassed: "โค้ดผ่านการทดสอบทั้งหมด! กดส่งได้เลย",
     codeEmpty: "กรุณาเขียนโค้ดก่อนทำการส่งคำตอบ",
-    judgingCode: "🧪 กำลังตรวจโค้ด...",
+    judgingCode: "🧪 กำลังส่งโค้ด...",
+    submittedWaitingForResult: "✅ ส่งแล้ว ผลจะออกตอนสรุปรอบ",
+    running: "กำลังรันโค้ด...",
+    noOutput: "โค้ดรันแล้วแต่ไม่ได้พิมพ์อะไรออกมา",
+    pyodideLoading: "Python ยังโหลดไม่เสร็จ รออีกสักครู่แล้วลองใหม่",
     exampleLabel: "ตัวอย่าง",
     exampleHint: "แสดงเพียงบางส่วนของชุดทดสอบที่ใช้ตรวจจริง",
     pythonFile: "arcade_main.py",

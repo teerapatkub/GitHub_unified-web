@@ -5,10 +5,13 @@
 // change, only relocated.
 import { useState, useRef, useEffect, useCallback } from 'react';
 import usePyodide from '../../../hooks/usePyodide.js';
-import { PHASES, TASKS, TASK_TEST_CASES, ROUND_4_FALLBACK_TASK, phaseDurationsFor,
+import { PHASES, TASKS, TASK_TEST_CASES, ROUND_4_FALLBACK_TASK,
          FINALE_POOL_BY_DIFFICULTY } from '../constants.js';
 
-export default function useRoundJudging({ playerState, setPlayerState, phase, timeLeft, currentRoom, notify, t, lang, checkEffectActive, API_BASE }) {
+// `phase` and `timeLeft` used to be needed here to work out the round's task
+// and the time leg of the score. Both are the server's business now, so the
+// hook no longer takes them.
+export default function useRoundJudging({ playerState, setPlayerState, currentRoom, notify, t, lang, checkEffectActive, API_BASE }) {
   // PostgreSQL Tasks State (Bilingual TH/EN)
   const [dbTasks, setDbTasks] = useState({ easy: [], medium: [], hard: [] });
   const [isGrading, setIsGrading] = useState(false);
@@ -130,73 +133,21 @@ export default function useRoundJudging({ playerState, setPlayerState, phase, ti
   // submitMyRound() call's own async work (Pyodide run + quality-judge
   // fetch) hasn't resolved yet.
   const submittingRoundRef = useRef(false);
-
-  // Wraps the player's code in a small harness that calls the round's target
-  // function against each test case and prints a single marker line with a
-  // JSON array of booleans — parsed back out of Pyodide's stdout below.
-  // Test cases/inputs are base64-embedded so no quoting/escaping in the
-  // player's own code can ever break the harness itself.
-  const buildTestHarness = (code, functionName, cases) => {
-    const json = JSON.stringify(cases);
-    const b64 = btoa(unescape(encodeURIComponent(json)));
-    return `${code}\n\nimport json as __json, base64 as __b64\n__tc = __json.loads(__b64.b64decode("${b64}").decode("utf-8"))\n__results = []\nfor __case in __tc:\n    try:\n        __actual = ${functionName}(*__case["input"])\n        __results.append(bool(__actual == __case["output"]))\n    except Exception:\n        __results.append(False)\nprint("__ARCADE_JUDGE__" + __json.dumps(__results))\n`;
-  };
-
-  // Runs the player's real code through Pyodide (reusing Person 1's
-  // usePyodide hook as-is) and reads back how many test cases it passed.
-  // Never throws — an empty task, a not-yet-loaded runtime, a syntax error,
-  // or a missing marker line all just resolve to 0/total so a bad submission
-  // can't get the player stuck instead of simply scoring zero.
-  const runCorrectnessCheck = async (functionName, cases) => {
-    const totalCount = cases.length;
-    if (!functionName || totalCount === 0) return { passCount: 0, totalCount: 0 };
-    if (pyodideStatus !== 'ready') return { passCount: 0, totalCount };
-
-    clearPyOutput();
-    const harness = buildTestHarness(playerState.code, functionName, cases);
-    await runPyCode(harness);
-
-    const marker = '__ARCADE_JUDGE__';
-    const line = pyOutputRef.current.find(l => l.type === 'stdout' && l.text.startsWith(marker));
-    if (!line) return { passCount: 0, totalCount };
-    try {
-      const results = JSON.parse(line.text.slice(marker.length));
-      return { passCount: results.filter(Boolean).length, totalCount };
-    } catch {
-      return { passCount: 0, totalCount };
-    }
-  };
-
-  // Asks the server's NVIDIA-based judge for a code quality score (beauty +
-  // efficiency combined, 0-100). Falls back to a neutral default client-side
-  // if the request itself fails (the server endpoint already has its own
-  // AI-unavailable fallback — this is only for when the request can't even
-  // reach it).
-  const requestQualityScore = async (code) => {
-    try {
-      const res = await fetch(`${API_BASE}/api/arcade/rooms/${currentRoom.room_id}/judge-round`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code })
-      });
-      const data = await res.json();
-      if (data.success && Number.isFinite(data.qualityScore)) return data.qualityScore;
-      return 50;
-    } catch {
-      return 50;
-    }
-  };
-
-  // Judges MY OWN code for the current round (Pyodide correctness + server
-  // quality judge) and reports the result to the server instead of computing
-  // rankings/cash/elimination locally — the server's
-  // tickArcadeMatches()/finalizeArcadePhase() (server/server.js) is what
-  // turns every submitted round_score into real score/cash/elimination once
-  // the round's timer actually runs out, the same way for every player (bots
-  // included — their round score is synthesized server-side on the same
-  // scale). Round score is an equal-weight sum of 3 dimensions, each scored
-  // 0-100: test-case pass rate, AI-judged code quality (beauty + efficiency),
-  // and time remaining when submitted — max 300, doubled by scoreMultiplier.
+  // Sends MY code to the server and stops there.
+  //
+  // Everything that decides the round - how many tests passed, the code-quality
+  // score, how long it took - is worked out by the server when the round closes
+  // (finalizeArcadePhase in server/server.js). The browser used to compute all
+  // three and send a finished number, which meant anyone able to edit a request
+  // could win every match without writing Python. See
+  // docs/adr/0001-server-owns-the-verdict.md.
+  //
+  // Only the score-multiplier flag still comes from here, because item effects
+  // live in the browser and nowhere else. It can only double a score the server
+  // computed itself.
+  //
+  // What has to happen before the timer runs out is the SEND. Grading happens
+  // afterwards, so a slow connection can no longer cost a player their round.
   const submitMyRound = async () => {
     if (submittingRoundRef.current || playerState.hasSubmittedThisRound || playerState.eliminated) return;
     submittingRoundRef.current = true;
@@ -204,32 +155,7 @@ export default function useRoundJudging({ playerState, setPlayerState, phase, ti
     setIsGrading(true);
     notify(t('judgingCode'), "info");
     try {
-      const roundNum = parseInt(String(phase).split('_')[1], 10);
-      const poolTask = roundNum === 4 ? getRound4Task() : getPoolTask(roundNum);
-      const { functionName, cases } = poolTask
-        ? { functionName: poolTask.functionName, cases: poolTask.testCases }
-        : TASK_TEST_CASES[`ROUND_${roundNum}`];
-      const roundDuration = phaseDurationsFor(currentRoom)[`ROUND_${roundNum}`];
-      const timeUsedSeconds = Math.max(0, Math.min(roundDuration, roundDuration - timeLeft));
-
-      const { passCount, totalCount } = await runCorrectnessCheck(functionName, cases);
-      const qualityScore = await requestQualityScore(playerState.code);
-
       const isMultiplierActive = checkEffectActive('scoreMultiplier');
-      const passRatio = totalCount === 0 ? 0 : passCount / totalCount;
-      const testScore = passRatio * 100;
-      // Speed only counts for work that actually runs. Awarding the time
-      // component flat meant a player who submitted an untouched starter the
-      // instant the round opened banked close to 100 points for it, while one
-      // who fought to a real 3-of-5 finish near the deadline earned about 17 —
-      // the rules paid better for giving up than for trying, and the players
-      // most likely to have nothing to submit are exactly the beginners this
-      // mode is for. synthesizeBotRoundScore() in server/server.js applies the
-      // identical scaling, so bots cannot keep a free time score humans lost.
-      const timeScore = passRatio * ((roundDuration - timeUsedSeconds) / roundDuration) * 100;
-      let roundScore = testScore + qualityScore + timeScore;
-      if (isMultiplierActive) roundScore *= 2;
-
       setPlayerState(prev => ({
         ...prev,
         activeEffects: prev.activeEffects.filter(e => e.type !== 'scoreMultiplier')
@@ -239,24 +165,15 @@ export default function useRoundJudging({ playerState, setPlayerState, phase, ti
         await fetch(`${API_BASE}/api/arcade/rooms/${currentRoom.room_id}/submit-round`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          // Phase 8.3: the score breakdown and the code itself ride along so
-          // the server can keep a per-round history row for the RESULT
-          // screen's review panel. The server treats all of these as
-          // optional — they only enrich the history record, they never
-          // affect the score, which stays `round_score` exactly as before.
           body: JSON.stringify({
             user_name: playerState.name,
-            round_score: roundScore,
             code: playerState.code,
-            pass_count: passCount,
-            total_count: totalCount,
-            quality_score: qualityScore,
-            time_used_seconds: timeUsedSeconds
+            score_multiplier_active: isMultiplierActive
           })
         });
       }
 
-      notify(`✅ ${passCount}/${totalCount} tests | 📖 ${Math.round(qualityScore)}/100 | ⏱ ${timeUsedSeconds}s`, "success");
+      notify(t('submittedWaitingForResult'), "success");
     } catch (err) {
       console.error('submitMyRound error:', err);
     } finally {
@@ -265,13 +182,33 @@ export default function useRoundJudging({ playerState, setPlayerState, phase, ti
     }
   };
 
-  const runCodeTests = () => {
+  // A trial run: shows what the code actually prints, and says nothing about
+  // whether it is right.
+  //
+  // This used to print "[PASS] Test Case 1 / [PASS] Test Case 2 / [SUCCESS]
+  // Code compiled successfully!" as a fixed string, without running anything at
+  // all - so it told every player their code had passed, including players
+  // whose code did not even compile. Whether an answer is correct is the
+  // server's call, and it arrives with the round summary.
+  const runCodeTests = async () => {
     if (playerState.code.trim().length === 0) {
-      setConsoleOutput("SyntaxError: Empty program. Please write code to test.");
+      setConsoleOutput(t('codeEmpty'));
       return;
     }
-    setConsoleOutput(`Running local tests for ${t(phase === PHASES.ROUND_1 ? 'task1Title' : phase === PHASES.ROUND_2 ? 'task2Title' : 'task3Title')}...\n[PASS] Test Case 1\n[PASS] Test Case 2\n[SUCCESS] Code compiled successfully!`);
-    notify(t('testsPassed'), "success");
+    if (pyodideStatus !== 'ready') {
+      setConsoleOutput(t('pyodideLoading'));
+      return;
+    }
+
+    clearPyOutput();
+    setConsoleOutput(t('running'));
+    await runPyCode(playerState.code);
+
+    const printed = pyOutputRef.current
+      .filter(l => l.type === 'stdout' || l.type === 'stderr')
+      .map(l => l.text)
+      .join('\n');
+    setConsoleOutput(printed.trim() || t('noOutput'));
   };
 
   // Submitting judges the code and reports the result to the server

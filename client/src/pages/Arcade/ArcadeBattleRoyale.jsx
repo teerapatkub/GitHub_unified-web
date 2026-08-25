@@ -179,7 +179,7 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
   const {
     getRound4Task, getPoolTask, submitMyRound, runCodeTests, handleManualSubmit,
     isGrading, consoleOutput, tasksReady
-  } = useRoundJudging({ playerState, setPlayerState, phase, timeLeft, currentRoom, notify, t, lang, checkEffectActive, API_BASE });
+  } = useRoundJudging({ playerState, setPlayerState, currentRoom, notify, t, lang, checkEffectActive, API_BASE });
 
   const {
     shopState, rollShop, canBuyItem, buyItem, sellItem
@@ -464,12 +464,13 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
       }
 
       // Safety net for a player who never pressed submit. Fires with
-      // AUTO_SUBMIT_LEAD_SECONDS to spare rather than at 0, because
-      // submitMyRound() has to run the code through Pyodide and call the AI
-      // quality judge before it can POST — several seconds of async work — and
-      // POST /submit-round refuses anything that arrives after the server has
-      // already finalized the round. Firing at exactly 0 meant the request was
-      // always too late and the round silently scored 0 (confirmed live).
+      // AUTO_SUBMIT_LEAD_SECONDS to spare rather than at 0 because
+      // POST /submit-round refuses anything arriving after the server has
+      // already finalized the round, and the request still has a network trip
+      // to make. Firing at exactly 0 meant it was always too late and the round
+      // silently scored 0 (confirmed live). The lead used to also cover several
+      // seconds of Pyodide and AI work in the browser; that is the server's job
+      // now, so the margin is only for the network.
       // Re-entry once a second across the lead window is harmless:
       // submitMyRound() sets hasSubmittedThisRound up front and also guards on
       // its own in-flight ref, so only the first call does any work.

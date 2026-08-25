@@ -2786,35 +2786,30 @@ const COMPETITIVE_AI_REWARD_THRESHOLD = 70;
 // had already drifted: this one never set PYTHONIOENCODING, so any competitive
 // answer that printed Thai died with UnicodeEncodeError, produced empty output,
 // and was marked wrong. Now there is one runner, in server/pythonRunner.js.
-const { normalizeOutput, runPythonCase } = require('./pythonRunner');
+const { normalizeOutput } = require('./pythonRunner');
 
 const runCompetitivePythonTests = async ({ code, testCases }) => {
     const normalizedCases = normalizeCompetitiveTestCases(testCases);
     if (normalizedCases.length === 0) {
-        return {
-            total: 0,
-            passed: 0,
-            results: [],
-            runnerAvailable: true,
-        };
+        return { total: 0, passed: 0, results: [], runnerAvailable: true };
     }
 
-    const results = [];
-    for (const testCase of normalizedCases.slice(0, 8)) {
-        // Run cases serially so one heavy submission cannot fan out into many processes.
-        // eslint-disable-next-line no-await-in-loop
-        results.push(await runPythonCase({
-            code,
-            input: testCase.input,
-            expected: testCase.expected,
-        }));
-    }
+    // Through the one grader, the same one the lessons and mini-games use.
+    // This path used to loop over runPythonCase itself, which meant the
+    // Competitive Arena quietly missed anything the grader learned later - the
+    // `regexp:` expected values its own problems are written with, and the
+    // several-accepted-answers shape. Capped at 8 cases as before so one heavy
+    // submission cannot fan out into an unbounded number of processes.
+    const verdict = await gradeSubmission({
+        problem: { test_kind: 'stdio', test_cases: normalizedCases.slice(0, 8) },
+        code,
+    });
 
     return {
-        total: results.length,
-        passed: results.filter((result) => result.passed).length,
-        results,
-        runnerAvailable: !results.some((result) => String(result.error || '').startsWith('Python runner failed')),
+        total: verdict.total,
+        passed: verdict.passed,
+        results: verdict.results,
+        runnerAvailable: !verdict.results.some((r) => String(r.error || '').startsWith('Python runner failed')),
     };
 };
 
@@ -5226,6 +5221,114 @@ async function awardArcadeMatchCoins(roomId, userName, rank) {
 // finale); SUMMARY_N opens the shop; SHOP_N starts the next round. Called
 // only from tickArcadeMatches() below, never from a client request, so there
 // is exactly one place in the whole system that decides a room's phase.
+// Grade everything a round's human players submitted, at the moment the round
+// closes.
+//
+// This is the whole point of ADR 0001: the browser sends code, and every number
+// that decides a match is worked out here. Correctness comes from running the
+// code against the round's real test cases through the one grader; quality from
+// the code-quality judge; and time from the server's own clock, by comparing
+// when the submission arrived against when the round started.
+//
+// The three legs are scored 0-100 each and summed, exactly as the browser used
+// to compute them, so scores stay on the same scale as synthesizeBotRoundScore()
+// and as every match already played.
+async function gradeArcadeRoundSubmissions({ room, roundNum, participants, roundDuration }) {
+    const graded = new Map();
+    const humans = (participants || []).filter(
+        (p) => !p.user_name.startsWith('Bot_') && p.has_submitted && typeof p.submitted_code === 'string'
+    );
+    if (humans.length === 0) return graded;
+
+    const drawn = Array.isArray(room.round_task_ids) ? room.round_task_ids : null;
+    const taskId = drawn ? drawn[roundNum - 1] : undefined;
+    let problem = null;
+    if (taskId !== undefined) {
+        const [rows] = await db.query(
+            `SELECT p.test_kind, p.test_cases, p.solution_code, p.starter_code
+               FROM problem_modes m JOIN problems p ON p.problem_id = m.problem_id
+              WHERE m.mode = 'arcade' AND m.entry_id = ?`,
+            [taskId]
+        );
+        problem = rows?.[0] || null;
+    }
+
+    // The round's timer is the source of truth for when it started: the server
+    // set phase_deadline itself when the round opened.
+    const deadlineMs = room.phase_deadline ? new Date(room.phase_deadline).getTime() : null;
+    const startedMs = deadlineMs ? deadlineMs - roundDuration * 1000 : null;
+
+    // In parallel: four players each cost one Python run and one judge call,
+    // and the tick loop is serial, so doing these one after another would hold
+    // the whole match up.
+    await Promise.all(humans.map(async (p) => {
+        const code = p.submitted_code || '';
+        let passCount = 0;
+        let totalCount = 0;
+
+        if (problem) {
+            try {
+                const verdict = await gradeSubmission({ problem, code });
+                passCount = verdict.passed;
+                totalCount = verdict.total;
+            } catch (err) {
+                console.error(`⚠️ Arcade grading failed for ${p.user_name}:`, describeError(err));
+            }
+        }
+
+        let quality = 0;
+        try {
+            const judged = await judgeCodeQuality(code.slice(0, 4000));
+            quality = Number(judged?.score || 0);
+        } catch (err) {
+            console.error(`⚠️ Arcade quality judge failed for ${p.user_name}:`, describeError(err));
+        }
+
+        const submittedMs = p.submitted_at ? new Date(p.submitted_at).getTime() : null;
+        const timeUsed = (startedMs && submittedMs)
+            ? Math.max(0, Math.min(roundDuration, Math.round((submittedMs - startedMs) / 1000)))
+            : roundDuration;
+
+        const passRatio = totalCount === 0 ? 0 : passCount / totalCount;
+        const testScore = passRatio * 100;
+        // Speed only counts for work that actually runs, the same rule the
+        // browser used: paying the time leg flat rewarded submitting an
+        // untouched starter the second the round opened.
+        const timeScore = passRatio * ((roundDuration - timeUsed) / roundDuration) * 100;
+        let roundScore = testScore + quality + timeScore;
+        if (Number(p.score_multiplier_active) === 1) roundScore *= 2;
+
+        graded.set(p.id, {
+            roundScore: Math.max(0, Math.min(arcadeConfig.maxSubmittableRoundScore, Math.round(roundScore))),
+            passCount, totalCount, quality: Math.round(quality), timeUsed, code,
+        });
+    }));
+
+    // The RESULT screen's review panel reads these. Written here rather than on
+    // submission because this is where the numbers finally exist. Never allowed
+    // to fail the round: a player's result matters more than its history row.
+    await Promise.all([...graded.entries()].map(async ([participantId, g]) => {
+        const p = humans.find((h) => h.id === participantId);
+        try {
+            await db.query(
+                `INSERT INTO arcade_round_history
+                    (room_id, room_code, room_name, difficulty, round_duration_mode, user_name, round_num,
+                     code, pass_count, total_count, quality_score, time_used_seconds, round_score)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 ON CONFLICT (room_id, user_name, round_num) DO NOTHING`,
+                [room.room_id, room.room_code, room.room_name,
+                 room.difficulty || 'default', room.round_duration_mode || 'standard',
+                 p.user_name, roundNum, g.code.slice(0, 20000),
+                 g.passCount, g.totalCount, g.quality, g.timeUsed, g.roundScore]
+            );
+        } catch (historyErr) {
+            console.error('⚠️ arcade_round_history insert failed (round result still stands):', historyErr.message);
+        }
+    }));
+
+    return graded;
+}
+
 async function finalizeArcadePhase(room) {
     const roomId = room.room_id;
     const phase = room.phase;
@@ -5288,11 +5391,17 @@ async function finalizeArcadePhase(room) {
         // least 1 survivor to be the match's eventual winner).
         const safeEliminateCount = Math.min(eliminateCount, Math.max(0, alive.length - 1));
 
+        // Grade the humans now, from what they submitted. Until ADR 0001 this
+        // read pending_round_score - a number the browser had computed and sent.
+        const graded = await gradeArcadeRoundSubmissions({
+            room, roundNum, participants: alive, roundDuration,
+        });
+
         const roundResults = alive.map(p => {
             const isBot = p.user_name.startsWith('Bot_');
             const roundScore = isBot
                 ? synthesizeBotRoundScore(totalCount, roundDuration, room.difficulty)
-                : (p.has_submitted ? (p.pending_round_score || 0) : 0);
+                : (graded.get(p.id)?.roundScore || 0);
             return { participant: p, roundScore };
         });
 
@@ -5302,7 +5411,7 @@ async function finalizeArcadePhase(room) {
             const cashGain = ARCADE_RANK_CASH_REWARDS[i] || 0;
             const { participant, roundScore } = roundResults[i];
             await db.query(
-                `UPDATE arcade_participants SET score = score + ?, cash = cash + ?, has_submitted = 0, pending_round_score = NULL WHERE id = ?`,
+                `UPDATE arcade_participants SET score = score + ?, cash = cash + ?, has_submitted = 0, pending_round_score = NULL, submitted_code = NULL, submitted_at = NULL, score_multiplier_active = 0 WHERE id = ?`,
                 [roundScore, cashGain, participant.id]
             );
         }
@@ -5796,7 +5905,7 @@ app.post('/api/arcade/rooms/:id/start', async (req, res) => {
             [deadline, drawnTasks ? JSON.stringify(drawnTasks) : null, roomId]
         );
         await db.query(
-            `UPDATE arcade_participants SET score = 0, cash = 0, is_eliminated = 0, has_submitted = 0, pending_round_score = NULL WHERE room_id = ?`,
+            `UPDATE arcade_participants SET score = 0, cash = 0, is_eliminated = 0, has_submitted = 0, pending_round_score = NULL, submitted_code = NULL, submitted_at = NULL, score_multiplier_active = 0 WHERE room_id = ?`,
             [roomId]
         );
 
@@ -5812,7 +5921,8 @@ app.post('/api/arcade/rooms/:id/start', async (req, res) => {
 // Pyodide exactly as before — the server has no Python runtime to re-check
 // it, the same trust boundary Person 1's learning-system exercises already
 // rely on). tickArcadeMatches()/finalizeArcadePhase() is the only thing that
-// ever reads pending_round_score back out and turns it into real score/cash.
+// ever turns a round's result into real score/cash. (pending_round_score is
+// no longer written: the score is computed at finalize from submitted_code.)
 app.post('/api/arcade/rooms/:id/submit-round', async (req, res) => {
     try {
         const roomId = req.params.id;
@@ -5821,8 +5931,14 @@ app.post('/api/arcade/rooms/:id/submit-round', async (req, res) => {
         // player what they actually wrote each round. All optional — an older
         // client that only sends round_score still works exactly as before,
         // it just records a history row with zeroed detail.
-        const { user_name, round_score, code, pass_count, total_count, quality_score, time_used_seconds } = req.body;
-        if (!user_name || !Number.isFinite(round_score)) {
+        // Only the code, and a flag for an item effect the server cannot see.
+        // round_score/pass_count/total_count/quality_score/time_used_seconds
+        // used to arrive here fully computed by the browser; they are no longer
+        // read at all, because a value the server cannot recompute is a value a
+        // player can choose. finalizeArcadePhase() works all of them out when
+        // the round closes. See docs/adr/0001-server-owns-the-verdict.md.
+        const { user_name, code, score_multiplier_active } = req.body;
+        if (!user_name || typeof code !== 'string') {
             return res.status(400).json({ error: 'ข้อมูลการส่งคำตอบไม่ถูกต้อง' });
         }
 
@@ -5843,63 +5959,21 @@ app.post('/api/arcade/rooms/:id/submit-round', async (req, res) => {
             return res.json({ success: true, message: 'ส่งคำตอบไปแล้วสำหรับรอบนี้' });
         }
 
-        // Everything below this line is attacker-controlled: it arrives in a
-        // request body and the server cannot recompute any of it. So each field
-        // is bounded to what the game can actually produce rather than stored
-        // as sent. See _scoreSubmissionComment in shared/arcadeConfig.json for
-        // why the score ceiling in particular matters.
-        const clampedScore = Math.max(0, Math.min(arcadeConfig.maxSubmittableRoundScore, Math.round(round_score)));
-
-        // The pass/total pair is only ever displayed, but it was stored exactly
-        // as sent — so a history row could read "7/5 tests passed", which is
-        // not a thing that can happen and makes the review screen untrustworthy.
-        // Clamped rather than rejected: these describe the round, they do not
-        // decide it, and refusing a real submission over a display field would
-        // cost the player their round.
-        const safeTotal = Number.isFinite(total_count) ? Math.max(0, Math.round(total_count)) : 0;
-        const safePass = Number.isFinite(pass_count) ? Math.min(safeTotal, Math.max(0, Math.round(pass_count))) : 0;
-        const safeQuality = Number.isFinite(quality_score) ? Math.max(0, Math.min(100, Math.round(quality_score))) : 0;
-        // A round cannot have taken longer than the round itself.
-        const roundSeconds = arcadePhaseDurations(rooms[0])[rooms[0].phase] || 0;
-        const safeTimeUsed = Number.isFinite(time_used_seconds)
-            ? Math.max(0, Math.min(roundSeconds, Math.round(time_used_seconds)))
-            : 0;
+        // The submission is stored, not scored. finalizeArcadePhase() grades it
+        // when the round's timer runs out: it runs the code against the round's
+        // real test cases, asks the code-quality judge, and takes the time from
+        // the server's own clock. Nothing a player sends can raise their score.
+        //
+        // What the player has to do in time is SEND. Grading happens later, so
+        // a slow network cannot cost anyone a round.
+        const multiplierActive = score_multiplier_active ? 1 : 0;
         await db.query(
-            `UPDATE arcade_participants SET pending_round_score = ?, has_submitted = 1 WHERE id = ?`,
-            [clampedScore, participant.id]
+            `UPDATE arcade_participants
+                SET submitted_code = ?, submitted_at = CURRENT_TIMESTAMP,
+                    has_submitted = 1, score_multiplier_active = ?
+              WHERE id = ?`,
+            [String(code).slice(0, 20000), multiplierActive, participant.id]
         );
-
-        // Phase 8.3 — record what was submitted for the RESULT-screen review
-        // panel. ON CONFLICT DO NOTHING because (room_id, user_name, round_num)
-        // is unique and the has_submitted guard above already makes a second
-        // submission for the same round a no-op; this just makes the history
-        // write agree with that rather than erroring. Never allowed to fail the
-        // submission itself — a player's round result matters more than its
-        // history row, so a problem here is logged and swallowed.
-        const roundNum = parseInt(String(rooms[0].phase).split('_')[1], 10);
-        if (Number.isFinite(roundNum)) {
-            try {
-                await db.query(
-                    `INSERT INTO arcade_round_history
-                        (room_id, room_code, room_name, difficulty, round_duration_mode, user_name, round_num, code, pass_count, total_count, quality_score, time_used_seconds, round_score)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                     ON CONFLICT (room_id, user_name, round_num) DO NOTHING`,
-                    [
-                        roomId, rooms[0].room_code, rooms[0].room_name,
-                        rooms[0].difficulty || 'default', rooms[0].round_duration_mode || 'standard',
-                        user_name, roundNum,
-                        typeof code === 'string' ? code.slice(0, 20000) : null,
-                        safePass,
-                        safeTotal,
-                        safeQuality,
-                        safeTimeUsed,
-                        clampedScore
-                    ]
-                );
-            } catch (historyErr) {
-                console.error('⚠️ arcade_round_history insert failed (submission itself still recorded):', historyErr.message);
-            }
-        }
 
         res.json({ success: true });
     } catch (err) {
@@ -6199,7 +6273,7 @@ app.post('/api/arcade/rooms/:id/finish-choice', async (req, res) => {
             await db.query(`DELETE FROM arcade_participants WHERE room_id = ? AND user_name = ?`, [roomId, user_name]);
         } else if (choice === 'REMAIN') {
             await db.query(
-                `UPDATE arcade_participants SET score = 0, cash = 0, is_eliminated = 0, has_submitted = 0, pending_round_score = NULL WHERE room_id = ? AND user_name = ?`,
+                `UPDATE arcade_participants SET score = 0, cash = 0, is_eliminated = 0, has_submitted = 0, pending_round_score = NULL, submitted_code = NULL, submitted_at = NULL, score_multiplier_active = 0 WHERE room_id = ? AND user_name = ?`,
                 [roomId, user_name]
             );
             await db.query(
@@ -6302,23 +6376,11 @@ app.get('/api/arcade/rooms/:id/effects', async (req, res) => {
     }
 });
 
-// 13. Judge a submitted round's code for the quality (beauty + efficiency)
-// leg of ranking. Correctness (pass_count/total_count) is already checked
-// client-side via Pyodide before this is called — this endpoint only adds
-// the quality score, since that's the piece that needs a server-side AI call.
-app.post('/api/arcade/rooms/:id/judge-round', async (req, res) => {
-    try {
-        const { code } = req.body;
-        if (typeof code !== 'string') {
-            return res.status(400).json({ error: 'กรุณาส่งโค้ดที่จะตรวจ' });
-        }
-        const judged = await judgeCodeQuality(code.slice(0, 4000));
-        res.json({ success: true, qualityScore: judged.score, source: judged.source });
-    } catch (err) {
-        console.error('❌ POST /api/arcade/rooms/:id/judge-round error:', err.message);
-        res.status(500).json({ error: err.message });
-    }
-});
+// The old POST /rooms/:id/judge-round is gone. It existed so the browser could
+// fetch a quality score and fold it into a round score it computed itself;
+// finalizeArcadePhase() does both now. Left in place it would have been an
+// unauthenticated endpoint that runs a paid AI call on any code posted to it,
+// with nothing in the product still calling it.
 
 // ==========================================
 // Stale-connection sweep: a real player who closes the tab, loses network,
