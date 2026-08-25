@@ -91,6 +91,14 @@ const modeMeta = {
     bg: "bg-emerald-50",
     text: "text-emerald-700",
   },
+  arcade: {
+    label: "โหมดออนไลน์",
+    short: "ออนไลน์",
+    icon: Radio,
+    color: "from-emerald-400 to-teal-500",
+    bg: "bg-emerald-50",
+    text: "text-emerald-700",
+  },
   challenge: {
     label: "ความท้าทาย",
     short: "Challenge",
@@ -142,6 +150,7 @@ const formatTime = (value) => {
 };
 
 const getInitial = (username = "?") => username.trim().charAt(0).toUpperCase() || "?";
+const onlineModeKeys = new Set(["online", "competitive", "arcade", "story", "solo"]);
 
 export default function Dashboard() {
   const [data, setData] = useState(null);
@@ -217,11 +226,14 @@ export default function Dashboard() {
   const selectedNotStarted = selectedLessonStudents.filter((student) => student.status === "not_started");
 
   const usageStats = useMemo(() => {
-    const modes = data?.modes || {};
-    const usageTotal = Number(data?.totalUsers || 0);
+    const usageTotal = Number(data?.activeUsers ?? onlineUsers.length ?? 0);
+    const onlineCount = onlineUsers.filter((user) => (
+      onlineModeKeys.has(String(user.mode || "").toLowerCase())
+    )).length;
+    const learnCount = Math.max(0, usageTotal - onlineCount);
     const rows = [
-      { key: "learn", count: Number(modes.learn || 0) },
-      { key: "online", count: Number(modes.story || modes.online || 0) },
+      { key: "learn", count: learnCount },
+      { key: "online", count: onlineCount },
     ];
 
     return {
@@ -232,7 +244,7 @@ export default function Dashboard() {
         meta: modeMeta[row.key],
       })),
     };
-  }, [data?.modes, data?.totalUsers]);
+  }, [data?.activeUsers, onlineUsers]);
 
   const formatPercentValue = (value) => (
     value == null || Number.isNaN(Number(value)) ? "—" : `${Number(value)}%`

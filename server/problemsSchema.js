@@ -246,6 +246,8 @@ const VIEWS = {
                p.created_by                            AS created_by,
                p.created_at                            AS created_at,
                COALESCE((m.extra->>'is_test')::integer, 0)   AS is_test,
+               COALESCE(NULLIF(m.extra->>'challenge_type', ''), 'standard') AS challenge_type,
+               COALESCE(NULLIF(m.extra->>'challenge_scope', ''), 'standard') AS challenge_scope,
                m.expires_at                            AS expires_at
           FROM problem_modes m
           JOIN problems p ON p.problem_id = m.problem_id
@@ -333,7 +335,11 @@ function projectLegacyRow(mode, row) {
                 xp_reward: 0, coin_reward: Number(row.reward || 0),
                 time_limit_sec: row.time_limit === null || row.time_limit === undefined ? null : Number(row.time_limit),
                 expires_at: row.expires_at ?? null,
-                extra: { is_test: Number(row.is_test || 0) },
+                extra: {
+                    is_test: Number(row.is_test || 0),
+                    challenge_type: row.challenge_type || 'standard',
+                    challenge_scope: row.challenge_scope || 'standard',
+                },
                 is_active: 1,
             },
         };
