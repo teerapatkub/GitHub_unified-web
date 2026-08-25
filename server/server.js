@@ -2145,6 +2145,8 @@ const ensureCompetitiveArenaSchema = async () => {
                 title varchar(255) NOT NULL,
                 description text NOT NULL,
                 difficulty varchar(50) NOT NULL DEFAULT 'Easy',
+                challenge_type varchar(40) NOT NULL DEFAULT 'standard',
+                challenge_scope varchar(40) NOT NULL DEFAULT 'standard',
                 reward int(11) NOT NULL DEFAULT 300,
                 time_limit int(11) NOT NULL DEFAULT 300,
                 expires_at timestamp DEFAULT NULL,
@@ -2205,6 +2207,8 @@ const ensureCompetitiveArenaSchema = async () => {
         await ensureColumnIfMissing('active_accepted_challenges', 'last_saved_at', '`last_saved_at` timestamp NOT NULL DEFAULT current_timestamp()');
         await ensureColumnIfMissing('multiplayer_submissions', 'breakdown', '`breakdown` longtext DEFAULT NULL');
         await ensureColumnIfMissing('multiplayer_submissions', 'submitted_at', '`submitted_at` timestamp NOT NULL DEFAULT current_timestamp()');
+        await ensureColumnIfMissing('multiplayer_challenges', 'challenge_type', '`challenge_type` varchar(40) NOT NULL DEFAULT \'standard\' AFTER difficulty');
+        await ensureColumnIfMissing('multiplayer_challenges', 'challenge_scope', '`challenge_scope` varchar(40) NOT NULL DEFAULT \'standard\' AFTER challenge_type');
     } catch (error) {
         console.error('⚠️ Failed to ensure competitive arena schema:', error.message);
     }
@@ -8378,6 +8382,31 @@ const parseCompetitiveTestCases = (rawTestCases) => {
     }
 };
 
+const normalizeCompetitiveChallengeScope = (scope) => {
+    const normalized = String(scope || '').trim().toLowerCase();
+    return ['daily', 'weekly'].includes(normalized) ? normalized : 'standard';
+};
+
+const normalizeCompetitiveChallengeType = (type, scope) => {
+    const normalized = String(type || '').trim().toLowerCase();
+    if (normalized === 'scheduled' || scope !== 'standard') return 'scheduled';
+    return 'standard';
+};
+
+const calculateCompetitiveTimeAdjustedScore = ({ challenge, elapsedSeconds, defaultScore = 100 }) => {
+    const scope = normalizeCompetitiveChallengeScope(challenge?.challenge_scope);
+    if (!['daily', 'weekly'].includes(scope) || elapsedSeconds == null) {
+        return clampScore(defaultScore, 0, 100);
+    }
+
+    const timeLimit = Number(challenge?.time_limit || 0);
+    if (!timeLimit) return clampScore(defaultScore, 0, 100);
+
+    const usedRatio = Math.max(0, Math.min(1, Number(elapsedSeconds || 0) / timeLimit));
+    const timePenalty = Math.round(usedRatio * 25);
+    return clampScore(defaultScore - timePenalty, 75, 100);
+};
+
 const isCompetitiveChallengeExpired = (challenge, acceptedAt) => {
     if (!challenge || Number(challenge.is_test) === 1) return false;
     const timeLimit = Number(challenge.time_limit || 0);
@@ -8401,6 +8430,39 @@ const buildCompetitiveTimeUpScore = (testCases = []) => ({
     },
     feedback: 'Time limit exceeded. This challenge receives 0 score.',
 });
+
+const buildCompetitivePerfectTestScore = ({ challenge, testResult, acceptedAt = null }) => {
+    const acceptedTime = acceptedAt ? new Date(acceptedAt).getTime() : NaN;
+    const elapsedSeconds = Number.isFinite(acceptedTime)
+        ? Math.max(0, Math.round((Date.now() - acceptedTime) / 1000))
+        : null;
+    const score = calculateCompetitiveTimeAdjustedScore({
+        challenge,
+        elapsedSeconds,
+        defaultScore: 100,
+    });
+
+    return {
+        score,
+        passedCases: Number(testResult?.passed || 0),
+        totalCases: Number(testResult?.total || 0),
+        breakdown: {
+            correctness: 50,
+            complexity: 20,
+            cleanCode: 30,
+            speedBonus: 0,
+            elapsedSeconds,
+            timeAdjustedScore: score,
+            allTestsPassed: true,
+            aiReviewed: false,
+            aiApproved: true,
+            aiVerdict: 'approved',
+        },
+        feedback: score === 100
+            ? 'ผ่าน test cases ครบทุกข้อและส่งได้เร็ว ได้คะแนน 100/100'
+            : `ผ่าน test cases ครบทุกข้อ คะแนนปรับตามเวลาที่ใช้ ${score}/100`,
+    };
+};
 
 const COMPETITIVE_AI_REWARD_THRESHOLD = 70;
 
@@ -8842,6 +8904,12 @@ app.get('/api/competitive/challenges', async (req, res) => {
                    ) AS submission_count
             FROM multiplayer_challenges c
             LEFT JOIN users u ON c.created_by = u.user_id
+            WHERE COALESCE(c.challenge_scope, 'standard') <> 'special'
+              AND (
+                  c.is_test = 1
+                  OR c.expires_at IS NULL
+                  OR c.expires_at > CURRENT_TIMESTAMP
+              )
             ORDER BY c.challenge_id DESC
         `);
 
@@ -8891,6 +8959,8 @@ app.post('/api/competitive/challenges', async (req, res) => {
         expires_at: expiresAt,
         test_cases: testCases,
         created_by: createdBy,
+        challenge_type: challengeType,
+        challenge_scope: challengeScope,
     } = req.body;
 
     if (!title || !description) {
@@ -8898,6 +8968,8 @@ app.post('/api/competitive/challenges', async (req, res) => {
     }
 
     try {
+        const normalizedScope = normalizeCompetitiveChallengeScope(challengeScope);
+        const normalizedType = normalizeCompetitiveChallengeType(challengeType, normalizedScope);
         const expires = expiresAt || new Date(Date.now() + 24 * 3600000).toISOString();
         const tests = testCases
             ? (typeof testCases === 'string' ? testCases : JSON.stringify(testCases))
@@ -8905,12 +8977,14 @@ app.post('/api/competitive/challenges', async (req, res) => {
 
         const [result] = await db.execute(`
             INSERT INTO multiplayer_challenges
-                (title, description, difficulty, reward, time_limit, expires_at, test_cases, created_by, is_test)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+                (title, description, difficulty, challenge_type, challenge_scope, reward, time_limit, expires_at, test_cases, created_by, is_test)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
         `, [
             title,
             description,
             difficulty || 'Easy',
+            normalizedType,
+            normalizedScope,
             Number(reward || 500),
             Number(timeLimit || 300),
             expires,
@@ -8937,6 +9011,24 @@ app.post('/api/competitive/challenges/:id/accept', async (req, res) => {
     }
 
     try {
+        const [challengeRows] = await db.execute(
+            'SELECT challenge_id, expires_at, is_test, challenge_scope FROM multiplayer_challenges WHERE challenge_id = ?',
+            [challengeId]
+        );
+
+        if (challengeRows.length === 0) {
+            return res.status(404).json({ error: 'challenge not found' });
+        }
+
+        if (String(challengeRows[0]?.challenge_scope || '').toLowerCase() === 'special') {
+            return res.status(410).json({ error: 'challenge is no longer available' });
+        }
+
+        const expiresAt = challengeRows[0]?.expires_at ? new Date(challengeRows[0].expires_at).getTime() : NaN;
+        if (Number(challengeRows[0]?.is_test) !== 1 && Number.isFinite(expiresAt) && expiresAt <= Date.now()) {
+            return res.status(410).json({ error: 'challenge is no longer available' });
+        }
+
         const [existing] = await db.execute(
             'SELECT 1 FROM active_accepted_challenges WHERE user_id = ? AND challenge_id = ?',
             [userId, challengeId]
@@ -9061,9 +9153,18 @@ app.post('/api/competitive/challenges/:id/submit', async (req, res) => {
                 code,
                 testCases: parsedTestCases,
             });
+        const allTestsPassed = !timedOut
+            && Number(testResult.total || 0) > 0
+            && Number(testResult.passed || 0) === Number(testResult.total || 0);
 
         const preliminaryScore = timedOut
             ? buildCompetitiveTimeUpScore(parsedTestCases)
+            : allTestsPassed
+                ? buildCompetitivePerfectTestScore({
+                    challenge: challenges[0],
+                    testResult,
+                    acceptedAt: acceptedRows[0]?.accepted_at,
+                })
             : scoreCompetitiveSubmission({
                 code,
                 testCases: parsedTestCases,
@@ -9072,6 +9173,8 @@ app.post('/api/competitive/challenges/:id/submit', async (req, res) => {
             });
         const scored = timedOut
             ? preliminaryScore
+            : allTestsPassed
+                ? preliminaryScore
             : await reviewCompetitiveSubmissionWithAI({
                 challenge: challenges[0],
                 code,
@@ -9268,9 +9371,15 @@ app.get('/api/competitive/admin/overview', async (_req, res) => {
     try {
         const [[stats]] = await db.execute(`
             SELECT
-                (SELECT COUNT(*) FROM multiplayer_challenges) AS total_challenges,
-                (SELECT COUNT(*) FROM active_accepted_challenges) AS active_accepts,
-                (SELECT COUNT(*) FROM multiplayer_submissions) AS total_submissions,
+                (SELECT COUNT(*) FROM multiplayer_challenges WHERE COALESCE(challenge_scope, 'standard') <> 'special') AS total_challenges,
+                (SELECT COUNT(*)
+                 FROM active_accepted_challenges a
+                 JOIN multiplayer_challenges c ON c.challenge_id = a.challenge_id
+                 WHERE COALESCE(c.challenge_scope, 'standard') <> 'special') AS active_accepts,
+                (SELECT COUNT(*)
+                 FROM multiplayer_submissions s
+                 JOIN multiplayer_challenges c ON c.challenge_id = s.challenge_id
+                 WHERE COALESCE(c.challenge_scope, 'standard') <> 'special') AS total_submissions,
                 (SELECT COALESCE(SUM(attachment_coins), 0) FROM user_mailbox WHERE title LIKE '%โจทย์%' OR title LIKE '%Challenge%') AS pending_mail_coins
         `);
 
@@ -9280,6 +9389,9 @@ app.get('/api/competitive/admin/overview', async (_req, res) => {
                 c.title,
                 c.reward,
                 c.time_limit,
+                c.expires_at,
+                c.challenge_type,
+                c.challenge_scope,
                 c.created_at,
                 COALESCE(u.username, 'Admin') AS creator_name,
                 (
@@ -9299,6 +9411,7 @@ app.get('/api/competitive/admin/overview', async (_req, res) => {
                 ) AS avg_score
             FROM multiplayer_challenges c
             LEFT JOIN users u ON c.created_by = u.user_id
+            WHERE COALESCE(c.challenge_scope, 'standard') <> 'special'
             ORDER BY c.challenge_id DESC
             LIMIT 12
         `);
@@ -9318,6 +9431,7 @@ app.get('/api/competitive/admin/overview', async (_req, res) => {
             FROM multiplayer_challenges c
             LEFT JOIN users u ON u.user_id = c.created_by
             LEFT JOIN multiplayer_submissions s ON s.challenge_id = c.challenge_id
+            WHERE COALESCE(c.challenge_scope, 'standard') <> 'special'
             GROUP BY c.created_by, u.username
             ORDER BY submission_count DESC, challenge_count DESC
             LIMIT 8

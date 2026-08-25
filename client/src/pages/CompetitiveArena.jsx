@@ -6,6 +6,7 @@ import {
   BookOpen, 
   User, 
   ArrowLeft,
+  CalendarDays,
   Mail,
   Play,
   Send,
@@ -22,7 +23,8 @@ import {
   Sparkles,
   ListChecks,
   Trash2,
-  ShoppingBag
+  ShoppingBag,
+  Flame
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Editor from '@monaco-editor/react';
@@ -61,7 +63,7 @@ const arenaFallbacks = {
 
 const scoringRubric = [
   { key: 'correctness', label: 'Correctness', weight: 50, icon: ShieldCheck, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-  { key: 'complexity', label: 'Complexity / Big-O', weight: 20, icon: Gauge, color: 'text-blue-600', bg: 'bg-blue-50' },
+  { key: 'complexity', label: 'Efficiency', weight: 20, icon: Gauge, color: 'text-blue-600', bg: 'bg-blue-50' },
   { key: 'cleanCode', label: 'Clean Code', weight: 30, icon: Sparkles, color: 'text-violet-600', bg: 'bg-violet-50' },
 ];
 
@@ -80,11 +82,30 @@ const challengeTemplates = [
   { category: 'Math', guide: 'เหมาะกับโจทย์คำนวณ เช่น สูตรพื้นฐาน หารลงตัว จำนวนเฉพาะ หรือเลขลำดับ' },
 ];
 
+const challengeScopeMeta = {
+  daily: {
+    th: 'โจทย์รายวัน',
+    en: 'Daily',
+    className: 'bg-sky-50 text-sky-700 border-sky-100',
+    icon: CalendarDays,
+  },
+  weekly: {
+    th: 'โจทย์รายสัปดาห์',
+    en: 'Weekly',
+    className: 'bg-orange-50 text-orange-700 border-orange-100',
+    icon: Flame,
+  },
+};
+
+const getChallengeScopeMeta = (challenge) => (
+  challengeScopeMeta[String(challenge?.challenge_scope || '').toLowerCase()] || null
+);
+
 const getInputLines = (value) => String(value ?? '').split(/\r?\n/);
 
 const buildScoreLine = (scoreBreakdown) => {
   if (!scoreBreakdown) return 'Rubric pending.';
-  return `Correctness ${scoreBreakdown.correctness}/50 | Big-O ${scoreBreakdown.complexity}/20 | Clean ${scoreBreakdown.cleanCode}/30 | Speed ${scoreBreakdown.speedBonus || 0}`;
+  return `Correctness ${scoreBreakdown.correctness}/50 | Efficiency ${scoreBreakdown.complexity}/20 | Clean ${scoreBreakdown.cleanCode}/30 | Speed ${scoreBreakdown.speedBonus || 0}`;
 };
 
 const buildAiReviewLine = (scoreBreakdown) => {
@@ -136,6 +157,27 @@ const formatRemainingTime = (seconds) => {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${mins}:${String(secs).padStart(2, '0')}`;
+};
+
+const formatChallengeTimeLimit = (seconds) => {
+  const totalSeconds = Number(seconds || 0);
+  if (!totalSeconds) return 'No limit';
+  if (totalSeconds < 3600) return `${Math.round(totalSeconds / 60)} min`;
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.round((totalSeconds % 3600) / 60);
+  return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+};
+
+const formatChallengeExpiresAt = (value, language) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '';
+  return new Intl.DateTimeFormat(language === 'th' ? 'th-TH' : 'en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
 };
 
 const getCreatorBonus = (challenge, userId) => {
@@ -981,6 +1023,8 @@ export default function CompetitiveArena() {
               challenges.map((c) => {
                 const testCases = parseChallengeTestCases(c);
                 const creatorBonus = getCreatorBonus(c, user?.user_id);
+                const scopeMeta = getChallengeScopeMeta(c);
+                const ScopeIcon = scopeMeta?.icon;
                 return (
                   <div key={c.challenge_id} className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden hover:border-slate-300 transition-colors">
                     
@@ -998,6 +1042,12 @@ export default function CompetitiveArena() {
                         </div>
                       </div>
                       <div className="flex flex-wrap items-center justify-end gap-2 text-[10px] font-black uppercase">
+                        {scopeMeta && ScopeIcon && (
+                          <span className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 ${scopeMeta.className}`}>
+                            <ScopeIcon className="h-3 w-3" />
+                            {i18n.language === 'th' ? scopeMeta.th : scopeMeta.en}
+                          </span>
+                        )}
                         <span className="rounded-full bg-blue-50 px-3 py-1 text-blue-600">
                           รับแล้ว {Number(c.active_count || 0)}
                         </span>
@@ -1021,9 +1071,17 @@ export default function CompetitiveArena() {
                         <span className="flex items-center space-x-1">
                           <Clock className="h-3.5 w-3.5 text-blue-500" />
                           <span className="text-slate-600">
-                            {c.is_test ? t('arena.unlimitedTime') : `${t('arena.timeRemaining')}: ${c.time_limit}s`}
+                            {c.is_test ? t('arena.unlimitedTime') : `${t('arena.timeRemaining')}: ${formatChallengeTimeLimit(c.time_limit)}`}
                           </span>
                         </span>
+                        {c.expires_at && (
+                          <span className="flex items-center space-x-1">
+                            <CalendarDays className="h-3.5 w-3.5 text-violet-500" />
+                            <span className="text-slate-600">
+                              {i18n.language === 'th' ? 'ปิดรับ' : 'Closes'} {formatChallengeExpiresAt(c.expires_at, i18n.language)}
+                            </span>
+                          </span>
+                        )}
                         {creatorBonus > 0 && (
                           <span className="flex items-center space-x-1">
                             <Sparkles className="h-3.5 w-3.5 text-amber-500" />

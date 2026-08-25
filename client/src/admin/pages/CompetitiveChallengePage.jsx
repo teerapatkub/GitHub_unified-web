@@ -1,7 +1,9 @@
 import { useState } from "react";
 import {
+  CalendarDays,
   Clock3,
   Coins,
+  Flame,
   ListChecks,
   Loader2,
   Plus,
@@ -14,6 +16,37 @@ const API_BASE = "http://localhost:3001";
 
 const emptyCase = () => ({ lines: [""], expected: "" });
 
+const challengePlans = [
+  {
+    key: "daily",
+    label: "โจทย์รายวัน",
+    shortLabel: "รายวัน",
+    description: "เวลา 30 นาที เปิดรับ 1 วัน",
+    reward: 800,
+    timeLimit: 1800,
+    durationDays: 1,
+    difficulty: "Daily Hard",
+    icon: CalendarDays,
+  },
+  {
+    key: "weekly",
+    label: "โจทย์รายสัปดาห์",
+    shortLabel: "รายสัปดาห์",
+    description: "เวลา 90 นาที เปิดรับ 7 วัน",
+    reward: 2500,
+    timeLimit: 5400,
+    durationDays: 7,
+    difficulty: "Weekly Expert",
+    icon: Flame,
+  },
+];
+
+const getChallengePlan = (key) => challengePlans.find((plan) => plan.key === key) || challengePlans[0];
+
+const buildExpiresAt = (durationDays) => (
+  new Date(Date.now() + Number(durationDays || 1) * 24 * 60 * 60 * 1000).toISOString()
+);
+
 const inputCls =
   "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100";
 
@@ -24,8 +57,9 @@ export default function CompetitiveChallengePage() {
   const [form, setForm] = useState({
     title: "",
     description: "",
-    reward: 300,
-    timeLimit: 300,
+    challengeScope: "daily",
+    reward: challengePlans[0].reward,
+    timeLimit: challengePlans[0].timeLimit,
     category: "Python",
     testCases: [emptyCase()],
   });
@@ -34,6 +68,16 @@ export default function CompetitiveChallengePage() {
 
   const updateForm = (field, value) => {
     setForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const applyChallengePlan = (planKey) => {
+    const plan = getChallengePlan(planKey);
+    setForm((current) => ({
+      ...current,
+      challengeScope: plan.key,
+      reward: plan.reward,
+      timeLimit: plan.timeLimit,
+    }));
   };
 
   const updateCase = (caseIndex, field, value) => {
@@ -122,6 +166,7 @@ export default function CompetitiveChallengePage() {
     setNotice("");
     try {
       const adminUser = JSON.parse(localStorage.getItem("user") || "null");
+      const plan = getChallengePlan(form.challengeScope);
       const res = await fetch(`${API_BASE}/api/competitive/challenges`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -130,8 +175,11 @@ export default function CompetitiveChallengePage() {
           description: form.description,
           reward: Number(form.reward || 300),
           time_limit: Number(form.timeLimit || 300),
+          expires_at: buildExpiresAt(plan.durationDays),
+          challenge_type: "scheduled",
+          challenge_scope: plan.key,
           created_by: adminUser?.user_id || null,
-          difficulty: "Admin",
+          difficulty: plan.difficulty,
           test_cases: testCases,
         }),
       });
@@ -144,12 +192,13 @@ export default function CompetitiveChallengePage() {
       setForm({
         title: "",
         description: "",
-        reward: 300,
-        timeLimit: 300,
+        challengeScope: "daily",
+        reward: challengePlans[0].reward,
+        timeLimit: challengePlans[0].timeLimit,
         category: "Python",
         testCases: [emptyCase()],
       });
-      setNotice(`โพสต์โจทย์สำเร็จแล้ว #${data.challenge_id}`);
+      setNotice(`โพสต์${plan.label}สำเร็จแล้ว #${data.challenge_id}`);
     } catch (err) {
       console.error(err);
       alert("เชื่อมต่อ Competitive Arena ไม่สำเร็จ");
@@ -223,6 +272,36 @@ export default function CompetitiveChallengePage() {
 
             <aside className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
               <div className="space-y-4">
+                <div>
+                  <span className="mb-2 block text-xs font-black uppercase tracking-widest text-slate-400">ประเภทโจทย์</span>
+                  <div className="grid gap-2">
+                    {challengePlans.map((plan) => {
+                      const Icon = plan.icon;
+                      const selected = form.challengeScope === plan.key;
+                      return (
+                        <button
+                          key={plan.key}
+                          type="button"
+                          onClick={() => applyChallengePlan(plan.key)}
+                          className={`flex items-center gap-3 rounded-2xl border px-4 py-3 text-left transition ${
+                            selected
+                              ? "border-blue-500 bg-blue-50 text-blue-700 ring-4 ring-blue-100"
+                              : "border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:bg-blue-50/40"
+                          }`}
+                        >
+                          <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${selected ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"}`}>
+                            <Icon className="h-4 w-4" />
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block text-sm font-black">{plan.label}</span>
+                            <span className="block text-xs font-bold text-slate-400">{plan.description}</span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 <label className="block">
                   <span className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-400">
                     <Coins className="h-4 w-4 text-amber-500" />
@@ -250,6 +329,15 @@ export default function CompetitiveChallengePage() {
                     className={inputCls}
                   />
                 </label>
+
+                <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3">
+                  <p className="text-xs font-black uppercase tracking-widest text-amber-700">
+                    {getChallengePlan(form.challengeScope).shortLabel}
+                  </p>
+                  <p className="mt-1 text-sm font-bold text-amber-900">
+                    เปิดรับ {getChallengePlan(form.challengeScope).durationDays} วัน • รางวัลสูงสำหรับโจทย์ยาก
+                  </p>
+                </div>
 
                 <label className="block">
                   <span className="mb-2 block text-xs font-black uppercase tracking-widest text-slate-400">หมวด</span>
