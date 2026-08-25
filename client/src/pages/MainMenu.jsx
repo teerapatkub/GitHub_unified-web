@@ -19,12 +19,31 @@ import { motion } from 'framer-motion';
 export default function MainMenu() {
   const navigate = useNavigate();
   const [userData, setUserData] = useState(null);
+  // null while the first request is in flight, so the card can say it is
+  // checking rather than flashing a confident "0 playing" at someone who
+  // opened the page half a second ago.
+  const [activePlayers, setActivePlayers] = useState(null);
 
   useEffect(() => {
     const userStr = localStorage.getItem('user');
     if (userStr) {
       setUserData(JSON.parse(userStr));
     }
+  }, []);
+
+  // Refreshed while the menu is open: this is a "right now" number, and a
+  // stale one is the problem it was written to fix.
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      fetch('/api/stats/active-players')
+        .then((res) => res.json())
+        .then((data) => { if (!cancelled) setActivePlayers(Number(data?.count || 0)); })
+        .catch(() => { if (!cancelled) setActivePlayers(0); });
+    };
+    load();
+    const interval = setInterval(load, 15000);
+    return () => { cancelled = true; clearInterval(interval); };
   }, []);
 
   const handleLogout = () => {
@@ -240,10 +259,18 @@ export default function MainMenu() {
 
         </div>
 
-        {/* 4. BOTTOM QUICK LINKS GRID */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-          
-          <div className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-sm flex items-center space-x-4">
+        {/* 4. BOTTOM QUICK LINKS GRID
+            Two of these were decoration: cards that looked like buttons and did
+            nothing when clicked. They lead somewhere now, and the third states a
+            number it actually measured instead of a hardcoded 244. The old
+            "Developer Log — อัปเดตระบบ v2.0" card is gone; there was no log to
+            open and no v2.0 to read about. */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+
+          <button
+            onClick={() => navigate('/shop')}
+            className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-sm flex items-center space-x-4 text-left transition-all hover:border-amber-300 hover:shadow-md active:scale-[0.99]"
+          >
             <div className="bg-amber-50 p-3 rounded-xl text-amber-600">
               <Sparkles className="h-5 w-5" />
             </div>
@@ -251,9 +278,12 @@ export default function MainMenu() {
               <span className="block text-xs font-bold text-slate-700">Custom Shop</span>
               <span className="block text-[10px] text-slate-400 mt-0.5">ร้านค้าแฟชั่น</span>
             </div>
-          </div>
+          </button>
 
-          <div className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-sm flex items-center space-x-4">
+          <button
+            onClick={() => navigate('/leaderboard')}
+            className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-sm flex items-center space-x-4 text-left transition-all hover:border-emerald-300 hover:shadow-md active:scale-[0.99]"
+          >
             <div className="bg-emerald-50 p-3 rounded-xl text-emerald-600">
               <Trophy className="h-5 w-5" />
             </div>
@@ -261,7 +291,7 @@ export default function MainMenu() {
               <span className="block text-xs font-bold text-slate-700">Leaderboard</span>
               <span className="block text-[10px] text-slate-400 mt-0.5">ตารางเกียรติยศ</span>
             </div>
-          </div>
+          </button>
 
           <div className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-sm flex items-center space-x-4">
             <div className="bg-blue-50 p-3 rounded-xl text-blue-600">
@@ -269,17 +299,9 @@ export default function MainMenu() {
             </div>
             <div>
               <span className="block text-xs font-bold text-slate-700">Active Players</span>
-              <span className="block text-[10px] text-slate-400 mt-0.5">244 กำลังเล่นอยู่</span>
-            </div>
-          </div>
-
-          <div className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-sm flex items-center space-x-4">
-            <div className="bg-indigo-50 p-3 rounded-xl text-indigo-600">
-              <BookOpen className="h-5 w-5" />
-            </div>
-            <div>
-              <span className="block text-xs font-bold text-slate-700">Developer Log</span>
-              <span className="block text-[10px] text-slate-400 mt-0.5">อัปเดตระบบ v2.0</span>
+              <span className="block text-[10px] text-slate-400 mt-0.5">
+                {activePlayers === null ? 'กำลังตรวจสอบ...' : `${activePlayers} คนกำลังเล่นอยู่`}
+              </span>
             </div>
           </div>
 

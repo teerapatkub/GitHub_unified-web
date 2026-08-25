@@ -521,6 +521,25 @@ const db = {
         await db.query(`
             ALTER TABLE arcade_participants ADD COLUMN IF NOT EXISTS score_multiplier_active SMALLINT DEFAULT 0;
         `);
+        // The player's work IN PROGRESS, resent every few seconds while a round
+        // is open. Separate from submitted_code on purpose: submitted_code is
+        // the answer being graded and must never move again once written,
+        // while this is a live draft that changes on every keystroke.
+        //
+        // It exists so a player who has already sent their answer can watch how
+        // far the others have got - the spectator view is only readable by
+        // someone who can no longer act on what they see (already submitted, or
+        // eliminated), which is what keeps it from being a way to copy.
+        //
+        // It also gives a player whose connection drops mid-round something to
+        // come back to.
+        await db.query(`
+            ALTER TABLE arcade_participants ADD COLUMN IF NOT EXISTS draft_code TEXT DEFAULT NULL;
+        `);
+        await db.query(`
+            ALTER TABLE arcade_participants ADD COLUMN IF NOT EXISTS draft_updated_at TIMESTAMP DEFAULT NULL;
+        `);
+
         // Gold this player was paid for the finished match, written once when the
         // room reaches RESULT. Stored on the participant rather than derived on the
         // client so the RESULT screen shows what was actually credited, not a
@@ -729,6 +748,44 @@ const db = {
         if (movedSummary) {
             console.log(`\u2705 merged problem bank: ${movedSummary}`);
         }
+
+        // The learning system's per-learner task slot, used by the Challenge and
+        // Debug Lab pages. It arrived with the imported SQL dump and was never
+        // part of any boot-time schema, so a database created from scratch had
+        // no such table and both pages failed outright - created here so a
+        // fresh deployment works.
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS learning_ai_tasks (
+                task_id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                mode VARCHAR(20) NOT NULL,
+                title VARCHAR(255) NOT NULL,
+                section_label VARCHAR(100),
+                subtitle VARCHAR(100),
+                accent VARCHAR(20),
+                instructions_json TEXT NOT NULL,
+                example_input TEXT,
+                example_output TEXT,
+                starter_code TEXT NOT NULL,
+                test_cases_json TEXT NOT NULL,
+                reward_xp INTEGER NOT NULL DEFAULT 100,
+                reward_coins INTEGER NOT NULL DEFAULT 20,
+                rerolls_used INTEGER NOT NULL DEFAULT 0,
+                max_rerolls INTEGER NOT NULL DEFAULT 3,
+                status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
+                ai_payload TEXT,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                completed_at TIMESTAMP
+            );
+        `);
+        // Which problem from the bank this task was drawn from, when it came
+        // from the bank rather than from the model. Two jobs: it says where a
+        // task came from, and it is how the draw avoids handing the same
+        // learner the same problem twice in a row.
+        await db.query(`
+            ALTER TABLE learning_ai_tasks ADD COLUMN IF NOT EXISTS problem_id INTEGER DEFAULT NULL;
+        `);
 
         // Problem titles used to carry their position in the bank ("1. เลขฟีโบนัชชี").
         // Rounds draw at random from the whole bank, so the number never matched

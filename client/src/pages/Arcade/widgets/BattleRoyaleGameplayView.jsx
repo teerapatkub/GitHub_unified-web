@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Shield, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Shield, AlertTriangle, ChevronDown, ChevronUp, Eye, ArrowLeft } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 import { EXAMPLE_CASES_SHOWN } from '../constants.js';
 
@@ -71,9 +71,21 @@ export default function BattleRoyaleGameplayView({
   opponents,
   handleTargetClick,
   initiateItemUse,
-  setTargetingItem
+  setTargetingItem,
+  watchedPlayer,
+  setWatchedPlayer,
+  watchedCode
 }) {
   const [collapsed, setCollapsed] = useState(readCollapsed);
+
+  // Once the answer is in it cannot be changed, so the editor stops being an
+  // editor: it locks, and the rest of the round is spent watching. Items are
+  // deliberately still usable - sending an answer early is meant to buy time to
+  // play the sabotage game, not to end the round for that player.
+  const spectating = Boolean(playerState.hasSubmittedThisRound) && !playerState.eliminated;
+  const editorLocked = spectating
+    || checkEffectActive('timeFreeze')
+    || checkEffectActive('blackout');
 
   const togglePanel = (key) => {
     setCollapsed((prev) => {
@@ -233,6 +245,17 @@ export default function BattleRoyaleGameplayView({
           })()}
         </div>
 
+        {/* Spectator banner. Above the editor rather than inside the problem
+            card, because the problem card folds away and this has to explain
+            why the editor stopped accepting keystrokes wherever the player
+            has put their panels. */}
+        {spectating && (
+          <div className="shrink-0 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-xs font-bold text-indigo-800 flex items-center gap-2">
+            <Eye className="h-4 w-4 shrink-0" />
+            <span>{t('spectatorBanner')}</span>
+          </div>
+        )}
+
         {/* Code Editor Frame with Debuff Effects */}
         <div className={`flex-1 min-h-[300px] relative rounded-3xl border-2 overflow-hidden bg-white flex flex-col shadow-sm transition-all duration-300
           ${checkEffectActive('inkFog') ? 'border-slate-800' : 'border-slate-200'}
@@ -257,15 +280,58 @@ export default function BattleRoyaleGameplayView({
           <div className="flex-1 w-full h-full relative overflow-hidden flex flex-col">
             {/* Tab header */}
             <div className="h-10 bg-slate-50 border-b border-slate-200 px-4 flex items-center justify-between text-xs text-slate-400 font-bold shrink-0">
-              <span>{t('pythonFile')}</span>
-              {checkEffectActive('shield') && (
+              {watchedPlayer ? (
+                <button
+                  type="button"
+                  onClick={() => setWatchedPlayer(null)}
+                  className="flex items-center gap-2 text-indigo-600 hover:text-indigo-700"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  {t('backToMyCode')}
+                </button>
+              ) : (
+                <span>{t('pythonFile')}</span>
+              )}
+
+              {watchedPlayer ? (
+                <span className="flex items-center gap-1.5 text-indigo-600">
+                  <Eye className="h-3.5 w-3.5" />
+                  {t('watchingTitle')} {watchedPlayer}
+                  {watchedCode && !watchedCode.error && (
+                    <span className="text-slate-400 font-medium">
+                      · {watchedCode.has_submitted ? t('watchingSubmitted') : t('watchingTyping')}
+                    </span>
+                  )}
+                </span>
+              ) : checkEffectActive('shield') && (
                 <span className="flex items-center gap-1 text-blue-600">
                   <Shield className="h-3.5 w-3.5" /> Firewall Active
                 </span>
               )}
             </div>
 
-            {/* Monaco Editor Component */}
+            {/* Someone else's editor. Read-only by construction: this is a
+                <pre>, not a Monaco instance, so there is nothing here that
+                could write back into the watched player's answer. Debuff
+                classes are deliberately not applied - a debuff belongs to the
+                player who was hit by it, and blurring someone else's code
+                while watching would just look like a bug. */}
+            {watchedPlayer ? (
+              <div className="flex-1 w-full relative overflow-auto no-scrollbar bg-slate-50">
+                {watchedCode?.error ? (
+                  <div className="p-6 text-xs font-bold text-slate-400">{watchedCode.error}</div>
+                ) : watchedCode?.is_bot ? (
+                  <div className="p-6 text-xs font-bold text-slate-400">{t('watchingBot')}</div>
+                ) : watchedCode?.code ? (
+                  <pre className="p-4 text-[13px] leading-[22px] font-mono text-slate-700 whitespace-pre">
+                    {watchedCode.code}
+                  </pre>
+                ) : (
+                  <div className="p-6 text-xs font-bold text-slate-400">{t('watchingEmpty')}</div>
+                )}
+              </div>
+            ) : (
+            /* Monaco Editor Component */
             <div className={`flex-1 w-full relative overflow-hidden transition-all duration-300
               ${checkEffectActive('inkFog') ? 'blur-md pointer-events-none' : ''}
               ${checkEffectActive('blackout') ? 'brightness-[0.05] pointer-events-none' : ''}
@@ -285,8 +351,8 @@ export default function BattleRoyaleGameplayView({
                   lineHeight: 22,
                   fontFamily: 'Fira Code, monospace',
                   padding: { top: 12 },
-                  domReadOnly: checkEffectActive('timeFreeze') || checkEffectActive('blackout'),
-                  readOnly: checkEffectActive('timeFreeze') || checkEffectActive('blackout')
+                  domReadOnly: editorLocked,
+                  readOnly: editorLocked
                 }}
               />
 
@@ -313,6 +379,7 @@ export default function BattleRoyaleGameplayView({
                 </div>
               )}
             </div>
+            )}
           </div>
 
           {/* Monaco Editor Textarea Listener for Keyboard Attacks (Backspace Lock) */}
@@ -357,10 +424,10 @@ export default function BattleRoyaleGameplayView({
 
           <button
             onClick={handleManualSubmit}
-            disabled={isGrading}
+            disabled={isGrading || spectating}
             className="px-8 py-2.5 bg-rose-600 hover:bg-rose-500 active:scale-[0.98] text-white rounded-xl text-xs font-black transition-all shadow-md shadow-rose-500/10 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
           >
-            {isGrading ? t('judgingCode') : t('submitCode')}
+            {isGrading ? t('judgingCode') : spectating ? t('submittedBadge') : t('submitCode')}
           </button>
         </div>
       </div>
@@ -374,6 +441,11 @@ export default function BattleRoyaleGameplayView({
         `}>
           <h3 className="text-sm font-black text-slate-800 border-b border-slate-100 pb-3 mb-4 flex justify-between items-center tracking-wider uppercase">
             <span>{t('lobbyStatus')}</span>
+            {spectating && !targetingItem && (
+              <span className="text-[10px] text-indigo-600 font-black bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-full normal-case tracking-normal">
+                👁 {t('watchHint')}
+              </span>
+            )}
             {targetingItem && (
               <span className="text-[10px] text-rose-600 font-black animate-pulse bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-full">
                 🎯 {t('pickTarget')}
@@ -418,18 +490,23 @@ export default function BattleRoyaleGameplayView({
               return (
               <div
                 key={i}
-                onClick={() => handleTargetClick(i)}
+                onClick={() => {
+                  if (targetingItem) { handleTargetClick(i); return; }
+                  if (spectating) setWatchedPlayer(bot.name);
+                }}
                 title={isUnselectableTarget ? t('targetAlreadyHit') : undefined}
                 className={`p-4 rounded-2xl border transition-all relative overflow-hidden
                   ${bot.eliminated ? 'bg-slate-50 border-slate-200 opacity-60 grayscale' : 'bg-white border-slate-200 shadow-sm hover:border-slate-300'}
                   ${targetingItem && !bot.eliminated && !bot.isDebuffed ? 'cursor-crosshair bg-rose-50/50 border-rose-300 hover:bg-rose-50 hover:border-rose-500 shadow-md hover:scale-[1.02]' : ''}
+                  ${!targetingItem && spectating ? 'cursor-pointer hover:border-indigo-300' : ''}
+                  ${watchedPlayer === bot.name ? 'ring-2 ring-indigo-400 border-indigo-300' : ''}
                   ${isUnselectableTarget ? 'opacity-50 grayscale cursor-not-allowed' : ''}
                 `}
               >
                 <div className="flex justify-between items-center mb-2">
                   <div className="flex items-center space-x-2">
                     <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs ${bot.eliminated ? 'bg-slate-200 text-slate-400' : 'bg-slate-100 text-slate-600'}`}>
-                      B
+                      {bot.isBot ? 'B' : (bot.name || '?').charAt(0).toUpperCase()}
                     </div>
                     <div>
                       <span className={`text-xs font-black ${bot.eliminated ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
@@ -444,7 +521,12 @@ export default function BattleRoyaleGameplayView({
                   <span className="text-[10px] font-black text-emerald-600 font-mono">🪙 {bot.cash}</span>
                 </div>
 
-                {!bot.eliminated && (
+                {/* The progress bar is a BOT's bar and only a bot's: its value
+                    comes from the local bot simulation, which knows nothing
+                    about a human opponent and would show every real player
+                    frozen at 0% forever. A human gets the one fact that is
+                    actually known about them - whether their answer is in. */}
+                {!bot.eliminated && bot.isBot && (
                   <div className="space-y-1">
                     <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
                       <div
@@ -456,6 +538,12 @@ export default function BattleRoyaleGameplayView({
                       <span>{bot.hasSubmitted ? t('submittedBadge') : 'Round Progress'}</span>
                       <span>{bot.hasSubmitted ? '✅' : `${Math.round(Math.min(100, bot.progress))}%`}</span>
                     </div>
+                  </div>
+                )}
+
+                {!bot.eliminated && !bot.isBot && (
+                  <div className={`text-[9px] font-black uppercase tracking-wider ${bot.hasSubmitted ? 'text-emerald-600' : 'text-slate-400'}`}>
+                    {bot.hasSubmitted ? `✅ ${t('submittedBadge')}` : `✍️ ${t('watchingTyping')}`}
                   </div>
                 )}
 
@@ -493,7 +581,7 @@ export default function BattleRoyaleGameplayView({
               <button
                 key={idx}
                 onClick={() => initiateItemUse(item)}
-                disabled={playerState.eliminated || targetingItem || phase === PHASES.ROUND_1 || playerState.hasSubmittedThisRound}
+                disabled={playerState.eliminated || targetingItem || phase === PHASES.ROUND_1}
                 className={`px-4 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 transition-all shadow-sm border
                   ${targetingItem === item ? 'bg-rose-600 text-white border-rose-600 animate-pulse' : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'}
                   disabled:opacity-40 hover:scale-105 active:scale-95

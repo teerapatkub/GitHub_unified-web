@@ -95,6 +95,23 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
   const [connectionLost, setConnectionLost] = useState(false);
   const failedPollsRef = useRef(0);
 
+  // Spectating. Once this player has sent their answer they can no longer
+  // change it, so the rest of the round is theirs to watch: `watchedPlayer` is
+  // whose editor they are looking at (null = their own, frozen), and
+  // `watchedCode` is what the server last handed back for that player. The
+  // server decides whether they are allowed to look at all - see
+  // GET /rooms/:id/code/:user_name - so a refusal is shown here rather than
+  // guessed at.
+  // One piece of state, not two: choosing someone to watch and forgetting the
+  // last person's code are the same event, and splitting them meant clearing
+  // the code from inside an effect - a render cascade React rightly complains
+  // about, and a frame in which the previous player's code is shown under the
+  // new player's name.
+  const [watched, setWatched] = useState({ player: null, data: null });
+  const watchPlayer = useCallback((name) => {
+    setWatched((prev) => ({ player: prev.player === name ? null : name, data: null }));
+  }, []);
+
   const timerRef = useRef(null);
   // Absolute wall-clock deadline (ms since epoch) for when the current phase
   // should end — set from the server's own `phase_deadline` every time the
@@ -346,6 +363,9 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
         if (serverPhase === appliedPhaseRef.current) return;
         appliedPhaseRef.current = serverPhase;
         setPhase(serverPhase);
+        // A new round means a new problem for whoever was being watched, and
+        // this player's own editor comes back.
+        setWatched({ player: null, data: null });
         setTimeLeft(Math.max(0, Math.ceil((phaseDeadlineRef.current - Date.now()) / 1000)));
 
         if (serverPhase === PHASES.ROUND_1) {
@@ -488,6 +508,78 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
     timerRef.current = setInterval(tick, 1000);
     return () => clearInterval(timerRef.current);
   }, [phase, setPlayerState, setOpponents]);
+
+  // Keeps the server's copy of this player's unfinished work roughly current
+  // while a round is open. It is what makes the spectator view possible at all
+  // (the server used to see a player's code for the first time when they
+  // pressed submit) and it doubles as crash recovery.
+  //
+  // Every 4 seconds rather than on every keystroke, and only when the text has
+  // actually changed since the last send: this is a nice-to-have running
+  // underneath a live match, and it must never become the reason a round feels
+  // slow. Stops the moment the answer is in - after that the draft would only
+  // disagree with what was submitted.
+  const lastDraftSentRef = useRef(null);
+  useEffect(() => {
+    if (!roomId || !String(phase).startsWith('ROUND_')) return;
+    lastDraftSentRef.current = null;
+
+    const send = async () => {
+      // Read through the tick mirror, never from a captured playerState: the
+      // code changes on every keystroke, so naming it as a dependency would
+      // tear this interval down and rebuild it on every character typed - and
+      // a 4s interval that restarts every 200ms never fires at all.
+      const ps = tickRef.current.playerState;
+      if (!ps || ps.hasSubmittedThisRound || ps.eliminated) return;
+      const code = ps.code || '';
+      if (code === lastDraftSentRef.current) return;
+      lastDraftSentRef.current = code;
+      try {
+        await fetch(`${API_BASE}/api/arcade/rooms/${roomId}/code-draft`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_name: ps.name, code })
+        });
+      } catch {
+        // A dropped draft is not worth telling the player about; the next
+        // tick resends, and the answer itself goes through submit-round.
+        lastDraftSentRef.current = null;
+      }
+    };
+
+    const interval = setInterval(send, 4000);
+    return () => clearInterval(interval);
+  }, [roomId, phase, API_BASE]);
+
+  // Whoever the player is watching, refreshed on the same 2s beat as the rest
+  // of the room so a watched editor keeps up with the person typing in it.
+  const watchedPlayer = watched.player;
+  useEffect(() => {
+    if (!roomId || !watchedPlayer) return;
+    let cancelled = false;
+
+    const load = async () => {
+      let next;
+      try {
+        const res = await fetch(
+          `${API_BASE}/api/arcade/rooms/${roomId}/code/${encodeURIComponent(watchedPlayer)}`
+          + `?viewer=${encodeURIComponent(playerState.name)}`
+        );
+        const data = await res.json();
+        next = res.ok ? data : { error: data?.error || t('watchUnavailable') };
+      } catch {
+        next = { error: t('watchUnavailable') };
+      }
+      if (cancelled) return;
+      // Guarded on the player still being the one asked for, so a slow reply
+      // for the previous player cannot land under the current one's name.
+      setWatched((prev) => (prev.player === watchedPlayer ? { ...prev, data: next } : prev));
+    };
+
+    load();
+    const interval = setInterval(load, 2000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [roomId, watchedPlayer, playerState.name, API_BASE, t]);
 
   // Phase 8.4 — the warning threshold has to scale with the room's round
   // length. A flat 16s warning is fine on a 60s round but would cover more
@@ -791,6 +883,9 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
             handleTargetClick={handleTargetClick}
             initiateItemUse={initiateItemUse}
             setTargetingItem={setTargetingItem}
+            watchedPlayer={watched.player}
+            setWatchedPlayer={watchPlayer}
+            watchedCode={watched.data}
           />
         )}
 

@@ -1109,6 +1109,94 @@ Rules:
     }
 };
 
+// Draw a real problem out of the shared bank for the Challenge / Debug Lab
+// pages, in the same shape generateLearningTaskWithAI() returns.
+//
+// Those two pages used to ask the model for a brand new problem every time.
+// That has two costs a learner pays directly: a generated problem has never
+// been run by anyone, so it can be unsolvable or its expected output can be
+// wrong; and it burns chatbot tokens on every page load. The bank's 94
+// auto-gradable lesson problems have all been verified against their own
+// reference solutions by `npm run test:tasks`, so a problem drawn from here is
+// known to be solvable.
+//
+// Restricted to `stdio` problems on purpose: this task record has no column
+// saying how to run its test cases, and the submit endpoint grades everything
+// as stdin/stdout. A `function` problem drawn in here would mark correct
+// answers wrong.
+//
+// Returns null when the bank has nothing to offer, and the caller falls back to
+// the model.
+const drawLearningTaskFromBank = async ({ userId, mode, level }) => {
+    const config = getLearningModeConfig(mode);
+    // Later chapters unlock as the learner levels up, so a beginner is not
+    // handed a problem about decorators on their first visit. The gate is
+    // dropped entirely if it leaves nothing to draw.
+    const lessonCeiling = Math.max(3, Math.min(24, Number(level || 1) * 3));
+
+    const select = async (useGate) => {
+        const [rows] = await db.query(
+            `SELECT m.problem_id, m.xp_reward, m.coin_reward, m.lesson_id,
+                    p.title_th, p.desc_th, p.starter_code, p.test_cases
+               FROM problem_modes m
+               JOIN problems p ON p.problem_id = m.problem_id
+              WHERE m.mode = 'lesson'
+                AND COALESCE(m.is_active, 1) = 1
+                AND p.is_auto_gradable = 1
+                AND p.test_kind = 'stdio'
+                AND jsonb_array_length(p.test_cases) > 0
+                ${useGate ? 'AND m.lesson_id <= ?' : ''}
+                AND p.problem_id NOT IN (
+                    SELECT problem_id FROM learning_ai_tasks
+                     WHERE user_id = ? AND problem_id IS NOT NULL
+                     ORDER BY updated_at DESC LIMIT 8
+                )
+              ORDER BY random()
+              LIMIT 1`,
+            useGate ? [lessonCeiling, userId] : [userId]
+        );
+        return rows?.[0] || null;
+    };
+
+    const row = (await select(true)) || (await select(false));
+    if (!row) return null;
+
+    const cases = Array.isArray(row.test_cases) ? row.test_cases : safeJsonParse(row.test_cases, []);
+    if (!Array.isArray(cases) || cases.length === 0) return null;
+
+    // The description is one block of prose; the page renders a numbered list.
+    // Splitting on blank lines keeps the author's own paragraphing instead of
+    // inventing steps that were never written.
+    const instructions = String(row.desc_th || '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+    const [xpMin] = config.rewardXpRange;
+    const [coinMin] = config.rewardCoinsRange;
+
+    return {
+        problemId: Number(row.problem_id),
+        title: row.title_th,
+        sectionLabel: config.sectionLabel,
+        subtitle: config.subtitle,
+        accent: config.accent,
+        instructions: instructions.length ? instructions : [String(row.desc_th || '').trim()],
+        example: {
+            input: String(cases[0]?.input ?? ''),
+            output: String(cases[0]?.expected ?? ''),
+        },
+        starterCode: row.starter_code || '',
+        testCases: cases,
+        // The bank's own reward for the problem, so the same problem is worth
+        // the same wherever it is met. Floored at the mode's minimum, since a
+        // Hard Challenge paying a first-chapter lesson's six coins would read
+        // as broken.
+        rewardXp: Math.max(Number(row.xp_reward || 0), xpMin),
+        rewardCoins: Math.max(Number(row.coin_reward || 0), coinMin),
+    };
+};
+
 const serializeLearningTask = (row) => {
     const instructions = safeJsonParse(row.instructions_json, []);
     const testCases = safeJsonParse(row.test_cases_json, []);
@@ -1138,12 +1226,16 @@ const serializeLearningTask = (row) => {
 };
 
 const createLearningTaskRecord = async (executor, { userId, mode, level }) => {
-    const generatedTask = await generateLearningTaskWithAI({ mode, level });
+    // The bank first, the model only when the bank has nothing left to give.
+    // A banked problem has been run against its own reference solution; a
+    // generated one has never been run by anybody.
+    const generatedTask = (await drawLearningTaskFromBank({ userId, mode, level }))
+        || await generateLearningTaskWithAI({ mode, level });
     const config = getLearningModeConfig(mode);
     const [insertResult] = await executor.execute(
         `INSERT INTO learning_ai_tasks
-        (user_id, mode, title, section_label, subtitle, accent, instructions_json, example_input, example_output, starter_code, test_cases_json, reward_xp, reward_coins, rerolls_used, max_rerolls, status, ai_payload)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 3, 'ACTIVE', ?) RETURNING task_id`,
+        (user_id, mode, title, section_label, subtitle, accent, instructions_json, example_input, example_output, starter_code, test_cases_json, reward_xp, reward_coins, rerolls_used, max_rerolls, status, ai_payload, problem_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 3, 'ACTIVE', ?, ?) RETURNING task_id`,
         [
             userId,
             config.mode,
@@ -1159,6 +1251,7 @@ const createLearningTaskRecord = async (executor, { userId, mode, level }) => {
             generatedTask.rewardXp,
             generatedTask.rewardCoins,
             JSON.stringify(generatedTask),
+            generatedTask.problemId ?? null,
         ]
     );
 
@@ -1601,13 +1694,18 @@ app.post('/api/learning/ai-task/reroll', async (req, res) => {
         }
         const [users] = await db.execute('SELECT level FROM users WHERE user_id = ? LIMIT 1', [userId]);
         const level = Number(users[0]?.level || 1);
-        const generatedTask = await generateLearningTaskWithAI({ mode: normalizedMode, level });
+        // Same order as the first draw: bank, then model. The draw skips the
+        // learner's last few problems, so a reroll actually changes the
+        // problem rather than handing back what they just rejected.
+        const generatedTask = (await drawLearningTaskFromBank({ userId, mode: normalizedMode, level }))
+            || await generateLearningTaskWithAI({ mode: normalizedMode, level });
         const nextRerollCount = rerollsUsed + 1;
 
         await db.execute(
             `UPDATE learning_ai_tasks
              SET title = ?, section_label = ?, subtitle = ?, accent = ?, instructions_json = ?, example_input = ?, example_output = ?,
-                 starter_code = ?, test_cases_json = ?, reward_xp = ?, reward_coins = ?, rerolls_used = ?, ai_payload = ?, updated_at = CURRENT_TIMESTAMP
+                 starter_code = ?, test_cases_json = ?, reward_xp = ?, reward_coins = ?, rerolls_used = ?, ai_payload = ?,
+                 problem_id = ?, updated_at = CURRENT_TIMESTAMP
              WHERE task_id = ?`,
             [
                 generatedTask.title,
@@ -1623,6 +1721,7 @@ app.post('/api/learning/ai-task/reroll', async (req, res) => {
                 generatedTask.rewardCoins,
                 nextRerollCount,
                 JSON.stringify(generatedTask),
+                generatedTask.problemId ?? null,
                 currentTask.task_id,
             ]
         );
@@ -4068,6 +4167,76 @@ app.get('/api/competitive/leaderboard', async (_req, res) => {
     }
 });
 
+// The learner-facing leaderboard, behind the main menu's Leaderboard card.
+//
+// Separate from /api/competitive/leaderboard, which ranks people by their
+// scores in one mode. This ranks the whole game: XP is earned in lessons,
+// exercises, mini-games and matches alike, so it is the only number that means
+// the same thing to every player.
+//
+// Only fields a player is already shown about other players go out: name,
+// level, XP, coins. Never the email, and never a row for a deleted or banned
+// account. The admin roster endpoint (/api/admin/users) returns far more than
+// this and must not be what a student page calls.
+app.get('/api/leaderboard', async (req, res) => {
+    try {
+        const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100);
+        const [rows] = await db.query(
+            `SELECT username, COALESCE(level, 1) AS level, COALESCE(xp, 0) AS xp,
+                    COALESCE(virtual_currency, 0) AS coins
+               FROM users
+              WHERE COALESCE(is_deleted, 0) = 0
+                AND COALESCE(is_banned, 0) = 0
+                AND role <> 'admin'
+              ORDER BY xp DESC, level DESC, username ASC
+              LIMIT ?`,
+            [limit]
+        );
+        res.json(rows.map((r, i) => ({ rank: i + 1, ...r })));
+    } catch (err) {
+        console.error('❌ GET /api/leaderboard error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// How many people are playing RIGHT NOW. The main menu used to state a
+// hardcoded 244, which is worse than showing nothing: a player who opens an
+// empty room browser has been told a number that was never true.
+//
+// "Playing" means measurable activity, not a session that was opened once:
+// someone whose Arcade client is still polling (last_seen inside the same
+// staleness window the room sweeper uses), or someone holding an accepted
+// Competitive Arena challenge. If the honest answer is 0, 0 is what it says.
+app.get('/api/stats/active-players', async (_req, res) => {
+    try {
+        const staleSeconds = Number(arcadeConfig.staleParticipantSeconds) || 150;
+        const [arcadeRows] = await db.query(
+            `SELECT COUNT(DISTINCT user_name)::int AS n
+               FROM arcade_participants
+              WHERE last_seen > CURRENT_TIMESTAMP - (? * INTERVAL '1 second')`,
+            [staleSeconds]
+        );
+        // Bounded by the challenge's own time limit, so an accepted challenge
+        // whose clock ran out weeks ago stops counting as somebody playing.
+        // Capped at an hour on top of that: the system-test challenges carry a
+        // deliberately enormous limit, and without the cap a single old row
+        // would inflate this number forever.
+        const [competitiveRows] = await db.query(
+            `SELECT COUNT(DISTINCT a.user_id)::int AS n
+               FROM active_accepted_challenges a
+               JOIN multiplayer_challenges c ON c.challenge_id = a.challenge_id
+              WHERE a.accepted_at > CURRENT_TIMESTAMP
+                    - (LEAST(GREATEST(COALESCE(c.time_limit, 0), 60), 3600) * INTERVAL '1 second')`
+        );
+        const arcade = Number(arcadeRows?.[0]?.n || 0);
+        const competitive = Number(competitiveRows?.[0]?.n || 0);
+        res.json({ count: arcade + competitive, arcade, competitive });
+    } catch (err) {
+        console.error('❌ GET /api/stats/active-players error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.get('/api/competitive/admin/overview', async (_req, res) => {
     try {
         const [[stats]] = await db.execute(`
@@ -5430,7 +5599,7 @@ async function finalizeArcadePhase(room) {
             const cashGain = ARCADE_RANK_CASH_REWARDS[i] || 0;
             const { participant, roundScore } = roundResults[i];
             await db.query(
-                `UPDATE arcade_participants SET score = score + ?, cash = cash + ?, has_submitted = 0, pending_round_score = NULL, submitted_code = NULL, submitted_at = NULL, score_multiplier_active = 0 WHERE id = ?`,
+                `UPDATE arcade_participants SET score = score + ?, cash = cash + ?, has_submitted = 0, pending_round_score = NULL, submitted_code = NULL, submitted_at = NULL, score_multiplier_active = 0, draft_code = NULL, draft_updated_at = NULL WHERE id = ?`,
                 [roundScore, cashGain, participant.id]
             );
         }
@@ -5924,7 +6093,7 @@ app.post('/api/arcade/rooms/:id/start', async (req, res) => {
             [deadline, drawnTasks ? JSON.stringify(drawnTasks) : null, roomId]
         );
         await db.query(
-            `UPDATE arcade_participants SET score = 0, cash = 0, is_eliminated = 0, has_submitted = 0, pending_round_score = NULL, submitted_code = NULL, submitted_at = NULL, score_multiplier_active = 0 WHERE room_id = ?`,
+            `UPDATE arcade_participants SET score = 0, cash = 0, is_eliminated = 0, has_submitted = 0, pending_round_score = NULL, submitted_code = NULL, submitted_at = NULL, score_multiplier_active = 0, draft_code = NULL, draft_updated_at = NULL WHERE room_id = ?`,
             [roomId]
         );
 
@@ -5997,6 +6166,95 @@ app.post('/api/arcade/rooms/:id/submit-round', async (req, res) => {
         res.json({ success: true });
     } catch (err) {
         console.error('❌ POST /api/arcade/rooms/:id/submit-round error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// The player's current draft, resent every few seconds while a round is open.
+// Accepted only during a coding round, and only from a player who has not
+// already submitted - once an answer is in, the draft stops moving so the
+// spectator view keeps showing what was actually sent rather than whatever the
+// editor still happens to contain.
+//
+// Deliberately not part of submit-round: what gets graded is submitted_code and
+// nothing else. A draft can never become an answer by itself.
+app.post('/api/arcade/rooms/:id/code-draft', async (req, res) => {
+    try {
+        const roomId = req.params.id;
+        const { user_name, code } = req.body;
+        if (!user_name || typeof code !== 'string') {
+            return res.status(400).json({ error: 'ข้อมูลไม่ถูกต้อง' });
+        }
+
+        const [rooms] = await db.query(`SELECT status, phase FROM arcade_rooms WHERE room_id = ?`, [roomId]);
+        if (!rooms || rooms.length === 0) return res.status(404).json({ error: 'ไม่พบห้อง' });
+        if (rooms[0].status !== 'PLAYING' || !String(rooms[0].phase).startsWith('ROUND_')) {
+            return res.json({ success: true, ignored: true });
+        }
+
+        await db.query(
+            `UPDATE arcade_participants
+                SET draft_code = ?, draft_updated_at = CURRENT_TIMESTAMP
+              WHERE room_id = ? AND user_name = ? AND has_submitted = 0 AND is_eliminated = 0`,
+            [String(code).slice(0, 20000), roomId, user_name]
+        );
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('❌ POST /api/arcade/rooms/:id/code-draft error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Read another player's code during a match - the spectator view.
+//
+// The permission rule is the whole point: only a viewer who has already
+// submitted this round, or who is out of the match, may look. Anyone still able
+// to edit their own answer would simply be copying, so they are refused even
+// when the player they want to watch has finished. A viewer may always read
+// their own row back, which is what makes this double as reconnect recovery.
+//
+// Bots have no code. They are answered honestly rather than with an empty
+// editor that reads like a player who has written nothing.
+app.get('/api/arcade/rooms/:id/code/:user_name', async (req, res) => {
+    try {
+        const roomId = req.params.id;
+        const target = req.params.user_name;
+        const viewer = req.query.viewer;
+        if (!viewer) return res.status(400).json({ error: 'ต้องระบุผู้ขอดู' });
+
+        const [rows] = await db.query(
+            `SELECT user_name, draft_code, submitted_code, has_submitted, is_eliminated, draft_updated_at
+               FROM arcade_participants WHERE room_id = ? AND user_name IN (?, ?)`,
+            [roomId, viewer, target]
+        );
+        const viewerRow = rows.find((r) => r.user_name === viewer);
+        const targetRow = rows.find((r) => r.user_name === target);
+        if (!viewerRow) return res.status(404).json({ error: 'ไม่พบผู้ขอดูในห้องนี้' });
+        if (!targetRow) return res.status(404).json({ error: 'ไม่พบผู้เล่นคนนี้ในห้อง' });
+
+        const lookingAtSelf = viewer === target;
+        const mayWatch = lookingAtSelf
+            || Number(viewerRow.has_submitted) === 1
+            || Number(viewerRow.is_eliminated) === 1;
+        if (!mayWatch) {
+            return res.status(403).json({ error: 'ดูโค้ดของผู้เล่นคนอื่นได้หลังจากส่งคำตอบแล้วเท่านั้น' });
+        }
+
+        if (String(target).startsWith('Bot_')) {
+            return res.json({ user_name: target, is_bot: true, code: null, has_submitted: Number(targetRow.has_submitted) === 1 });
+        }
+
+        const submitted = Number(targetRow.has_submitted) === 1;
+        res.json({
+            user_name: target,
+            is_bot: false,
+            has_submitted: submitted,
+            code: (submitted ? targetRow.submitted_code : targetRow.draft_code) || '',
+            updated_at: targetRow.draft_updated_at,
+        });
+    } catch (err) {
+        console.error('❌ GET /api/arcade/rooms/:id/code/:user_name error:', err.message);
         res.status(500).json({ error: err.message });
     }
 });
@@ -6292,7 +6550,7 @@ app.post('/api/arcade/rooms/:id/finish-choice', async (req, res) => {
             await db.query(`DELETE FROM arcade_participants WHERE room_id = ? AND user_name = ?`, [roomId, user_name]);
         } else if (choice === 'REMAIN') {
             await db.query(
-                `UPDATE arcade_participants SET score = 0, cash = 0, is_eliminated = 0, has_submitted = 0, pending_round_score = NULL, submitted_code = NULL, submitted_at = NULL, score_multiplier_active = 0 WHERE room_id = ? AND user_name = ?`,
+                `UPDATE arcade_participants SET score = 0, cash = 0, is_eliminated = 0, has_submitted = 0, pending_round_score = NULL, submitted_code = NULL, submitted_at = NULL, score_multiplier_active = 0, draft_code = NULL, draft_updated_at = NULL WHERE room_id = ? AND user_name = ?`,
                 [roomId, user_name]
             );
             await db.query(

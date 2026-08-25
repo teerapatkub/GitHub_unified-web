@@ -39,6 +39,11 @@ Thumbs.db
 # rebuild it on boot.
 *.dump
 
+# The same thing in plain SQL. pysim_database_backup_*.sql was found staged for
+# commit on 2026-08-25 carrying real email addresses and bcrypt password hashes;
+# a dump is a backup, never a repository artefact.
+pysim_database_backup_*.sql
+
 # Local agent configuration and downloaded skills. skills-lock.json IS tracked -
 # it is the manifest, these are the downloaded contents (package-lock vs node_modules).
 /.claude/

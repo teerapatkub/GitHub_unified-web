@@ -18,6 +18,7 @@ import MiNi_Game from './pages/MiNi_Game';
 import FriendLogin from './pages/FriendLogin';
 import ShopPage from './pages/ShopPage';
 import Achievements from './pages/Achievements';
+import LeaderboardPage from './pages/LeaderboardPage';
 
 // --- Your Original Pages ---
 import MainMenu from './pages/MainMenu';
@@ -487,6 +488,7 @@ function AppContent() {
               <Route path="/profile/:userId" element={requireStudent(<ProfilePage user={user} />)} />
               <Route path="/menu" element={<MainMenu user={user} />} />
               <Route path="/achievements" element={<Achievements />} />
+              <Route path="/leaderboard" element={<LeaderboardPage user={user} />} />
               <Route path="/online" element={isAuthenticated ? <CompetitiveArena user={user} /> : <Navigate to="/login" replace />} />
               {/* Person 2 reached the Competitive Arena at /competitive-arena on their
                   branch; kept as a second path so links and bookmarks from there

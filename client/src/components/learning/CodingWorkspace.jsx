@@ -372,39 +372,43 @@ output.strip()
   return (
     <div className="h-full min-h-0 overflow-hidden">
       <div className="mx-auto flex h-full max-w-[1560px] overflow-hidden rounded-[24px] border border-white/70 bg-white/88 shadow-[0_24px_60px_rgba(15,23,42,0.12)] backdrop-blur-xl">
-        <aside className="hidden w-[290px] shrink-0 border-r border-slate-200 bg-slate-50/90 xl:flex xl:flex-col">
-          <div className="min-h-0 flex-1 overflow-y-auto p-6">
-            <p className={`mb-4 text-sm font-black uppercase tracking-[0.24em] ${accentStyles.text}`}>{sectionLabel}</p>
-            <h1 className="mb-6 text-3xl font-black tracking-tight text-slate-900 2xl:text-4xl">{title}</h1>
+        {/* The brief. Everything here was a size or two too large for the
+            space it had: a 3xl-to-4xl title in a 290px column turned a short
+            problem name into three stacked lines, and 16px instructions at
+            28px line height pushed the worked example below the fold. */}
+        <aside className="hidden w-[300px] shrink-0 border-r border-slate-200 bg-slate-50/90 xl:flex xl:flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto p-5">
+            <p className={`mb-2 text-[11px] font-black uppercase tracking-[0.22em] ${accentStyles.text}`}>{sectionLabel}</p>
+            <h1 className="mb-5 text-xl font-black leading-tight tracking-tight text-slate-900 2xl:text-2xl">{title}</h1>
 
-            <h2 className={`mb-4 inline-block border-b-4 pb-1 text-xl font-black ${accentStyles.text} ${accentStyles.border}`}>
+            <h2 className={`mb-3 inline-block border-b-2 pb-0.5 text-sm font-black ${accentStyles.text} ${accentStyles.border}`}>
               Instructions
             </h2>
 
-            <div className="space-y-4 text-base leading-7 text-slate-700">
+            <div className="space-y-3 text-[13px] leading-6 text-slate-700">
               {instructions.map((instruction) => (
                 <p key={instruction}>{instruction}</p>
               ))}
             </div>
 
-            <div className="mt-6 rounded-3xl border border-slate-200 bg-slate-900 px-5 py-4 font-mono text-sm text-slate-100 shadow-inner">
-              <p className="mb-3 text-xs font-bold text-emerald-400">// Example output</p>
-              <p className="mb-2 text-slate-300">Input: {example.input}</p>
-              <p className="text-base font-bold text-white">Output: {example.output}</p>
+            <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-900 px-4 py-3 font-mono text-[12px] text-slate-100 shadow-inner">
+              <p className="mb-2 text-[11px] font-bold text-emerald-400">// Example output</p>
+              <p className="mb-1.5 whitespace-pre-wrap text-slate-300">Input: {example.input}</p>
+              <p className="whitespace-pre-wrap font-bold text-white">Output: {example.output}</p>
             </div>
           </div>
 
-          <div className="border-t border-slate-200 bg-white/80 p-5">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-base font-black text-slate-900">{progressLabel}</p>
-                <p className="mt-1 text-sm text-slate-500">{progressMeta}</p>
+          <div className="border-t border-slate-200 bg-white/80 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[13px] font-black text-slate-900">{progressLabel}</p>
+                <p className="mt-0.5 text-[11px] leading-4 text-slate-500">{progressMeta}</p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex shrink-0 items-center gap-2">
                 {(rewardXp > 0 || rewardCoins > 0) ? (
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-right text-xs font-semibold text-slate-600">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-right text-[10px] font-semibold text-slate-600">
                     <div>Reward</div>
-                    <div className="mt-1 font-black text-slate-900">+{rewardXp} XP • +{rewardCoins} Coins</div>
+                    <div className="mt-0.5 whitespace-nowrap font-black text-slate-900">+{rewardXp} XP • +{rewardCoins}</div>
                   </div>
                 ) : null}
                 {nextLabel ? (
@@ -418,33 +422,73 @@ output.strip()
         </aside>
 
         <section className="flex min-w-0 flex-1 flex-col bg-white">
-          <div className="border-b border-slate-200 bg-white/90 px-5 py-4">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className={`text-sm font-black uppercase tracking-[0.22em] ${accentStyles.text}`}>{sectionLabel}</p>
-                <div className="mt-1 flex items-center gap-3">
-                  <h2 className="text-2xl font-black text-slate-900">{title}</h2>
+          {/* On a wide screen the sidebar beside this already carries the
+              section label and the title, so repeating both here cost a whole
+              band of vertical space to say the same thing twice. Below xl the
+              sidebar is hidden and this is the only place the learner can read
+              what they are being asked to do, so it stays. */}
+          <div className="border-b border-slate-200 bg-white/90 px-4 py-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0 xl:hidden">
+                <p className={`text-[10px] font-black uppercase tracking-[0.22em] ${accentStyles.text}`}>{sectionLabel}</p>
+                <div className="mt-0.5 flex items-center gap-2">
+                  <h2 className="truncate text-base font-black text-slate-900">{title}</h2>
                   {subtitle ? (
-                    <span className={`rounded-full px-3 py-1 text-xs font-bold ${accentStyles.tag}`}>{subtitle}</span>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${accentStyles.tag}`}>{subtitle}</span>
                   ) : null}
                 </div>
+              </div>
+              <div className="hidden min-w-0 items-center gap-2 xl:flex">
+                {subtitle ? (
+                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${accentStyles.tag}`}>{subtitle}</span>
+                ) : null}
               </div>
               <button
                 type="button"
                 onClick={() => setIsAiOpen((value) => !value)}
-                className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-bold shadow-sm transition-colors ${isAiOpen ? `${accentStyles.button} text-white` : `border border-slate-200 bg-white ${accentStyles.buttonSoft}`}`}
+                className={`inline-flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold shadow-sm transition-colors ${isAiOpen ? `${accentStyles.button} text-white` : `border border-slate-200 bg-white ${accentStyles.buttonSoft}`}`}
               >
-                <MessageSquareCode size={18} />
+                <MessageSquareCode size={16} />
                 {isAiOpen ? 'Hide AI' : 'Open AI Helper'}
               </button>
             </div>
           </div>
 
+          {/* The problem statement, for every screen narrower than xl.
+              The sidebar that carries it is hidden below that width, which left
+              the learner looking at a code editor and a title with no way to
+              read what they had been asked to do - the instructions existed in
+              exactly one place and that place was not on screen. A <details>
+              rather than a state flag: it opens and closes on its own, and it
+              is keyboard-reachable without any extra work. */}
+          <details open className="shrink-0 border-b border-slate-200 bg-slate-50/80 xl:hidden">
+            <summary className="cursor-pointer px-4 py-2 text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 hover:text-slate-700">
+              โจทย์
+            </summary>
+            <div className="space-y-2 px-4 pb-3 text-[13px] leading-6 text-slate-700">
+              {instructions.map((instruction) => (
+                <p key={instruction}>{instruction}</p>
+              ))}
+
+              <div className="rounded-xl border border-slate-200 bg-slate-900 px-3 py-2 font-mono text-[11px] text-slate-100">
+                <p className="mb-1 font-bold text-emerald-400">// Example output</p>
+                <p className="whitespace-pre-wrap text-slate-300">Input: {example.input}</p>
+                <p className="whitespace-pre-wrap font-bold text-white">Output: {example.output}</p>
+              </div>
+
+              {(rewardXp > 0 || rewardCoins > 0) ? (
+                <p className="text-[11px] font-bold text-slate-500">
+                  {progressLabel}: +{rewardXp} XP • +{rewardCoins} Coins
+                </p>
+              ) : null}
+            </div>
+          </details>
+
           <div className={`relative flex-1 min-h-0 transition-[padding] duration-300 ${isAiOpen ? 'pr-0 lg:pr-[336px]' : ''}`}>
-            <div className="flex h-full min-h-0 flex-col p-3">
-              <div className="rounded-t-2xl border border-slate-200 bg-slate-100/80 px-4 py-2.5 shadow-sm">
+            <div className="flex h-full min-h-0 flex-col p-2.5">
+              <div className="rounded-t-xl border border-slate-200 bg-slate-100/80 px-3 py-1.5 shadow-sm">
                 <div className="flex items-center justify-between gap-3">
-                  <span className="font-mono text-sm font-bold text-slate-700">main.py</span>
+                  <span className="font-mono text-xs font-bold text-slate-700">main.py</span>
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
@@ -460,7 +504,7 @@ output.strip()
                 </div>
               </div>
 
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-b-2xl border border-t-0 border-slate-200 bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]">
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-b-xl border border-t-0 border-slate-200 bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]">
                 <div className="relative min-h-0 flex-1 overflow-hidden bg-white">
                   <Editor
                     height="100%"
@@ -495,68 +539,69 @@ output.strip()
                     </div>
                   ) : null}
 
-                  <div className="absolute bottom-5 left-5 flex gap-2.5">
+                </div>
+
+                {/* The action bar used to float ON TOP of the editor, pinned to
+                    its bottom corners. On anything shorter than a desktop
+                    monitor that put Run / Run Tests / Submit directly over the
+                    learner's own code - seen on screen sitting across lines 8
+                    to 10 of a ten-line answer. It is a real row in the layout
+                    now, so it can never cover the code again. */}
+                <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-slate-50/80 px-3 py-2">
+                  <div className="flex gap-1.5">
                     <button
                       type="button"
                       onClick={copyCode}
-                      className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 shadow-sm transition-colors hover:border-slate-300 hover:text-slate-800"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition-colors hover:border-slate-300 hover:text-slate-800"
                       title="Copy code"
                     >
-                      <Copy size={16} />
+                      <Copy size={14} />
                     </button>
                     <button
                       type="button"
-                      className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 shadow-sm transition-colors hover:border-slate-300 hover:text-slate-800"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition-colors hover:border-slate-300 hover:text-slate-800"
                       title="Screenshot"
                     >
-                      <Camera size={16} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsAiOpen((value) => !value)}
-                      className={`flex h-10 w-10 items-center justify-center rounded-2xl shadow-sm transition-colors ${isAiOpen ? `${accentStyles.button} text-white` : `border border-slate-200 bg-white ${accentStyles.buttonSoft}`}`}
-                      title="Open AI helper"
-                    >
-                      <MessageSquareCode size={16} />
+                      <Camera size={14} />
                     </button>
                   </div>
 
-                  <div className="absolute bottom-5 right-5 flex gap-2.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     <button
                       type="button"
                       onClick={handleRun}
                       disabled={isRunning || isLoading}
-                      className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm transition-colors hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm transition-colors hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      <Play size={16} fill="currentColor" />
+                      <Play size={14} fill="currentColor" />
                       Run
                     </button>
                     <button
                       type="button"
                       onClick={handleRunTests}
                       disabled={isRunning || isLoading}
-                      className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-bold text-white shadow-lg transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${isSuccess ? 'bg-emerald-500 hover:bg-emerald-600' : accentStyles.button}`}
+                      className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold text-white shadow transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${isSuccess ? 'bg-emerald-500 hover:bg-emerald-600' : accentStyles.button}`}
                     >
-                      {isSuccess ? <CheckCircle2 size={18} /> : null}
+                      {isSuccess ? <CheckCircle2 size={14} /> : null}
                       {isSuccess ? 'Tests Passed' : 'Run Tests'}
                     </button>
                     <button
                       type="button"
                       onClick={handleSubmit}
                       disabled={isRunning || isLoading || isSubmitting || !hasPassedTests}
-                      className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-bold text-white shadow-lg transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${accentStyles.button}`}
+                      className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold text-white shadow transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${accentStyles.button}`}
                     >
-                      {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : null}
+                      {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : null}
                       {submitLabel}
                     </button>
                   </div>
                 </div>
 
-                <div className="h-48 shrink-0 border-t border-slate-200 bg-slate-950 text-slate-100">
-                  <div className="border-b border-slate-800 px-5 py-2.5 text-[11px] font-black uppercase tracking-[0.22em] text-slate-400">
+                <div className="h-36 shrink-0 border-t border-slate-200 bg-slate-950 text-slate-100">
+                  <div className="border-b border-slate-800 px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">
                     Terminal
                   </div>
-                  <div ref={terminalRef} className="h-[calc(100%-43px)] overflow-y-auto p-5 font-mono text-[12px]">
+                  <div ref={terminalRef} className="h-[calc(100%-29px)] overflow-y-auto p-4 font-mono text-[12px]">
                     {terminalLines.length === 0 ? (
                       <div className="flex h-full flex-col items-center justify-center space-y-3 text-slate-500">
                         <ChevronsRight size={24} />
