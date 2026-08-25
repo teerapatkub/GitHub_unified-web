@@ -49,7 +49,7 @@ The project is divided among three team members. **Always respect these boundari
 - `client/` — React 19 + Vite frontend (port 5174, dev-proxies `/api` to `http://localhost:3001`).
 - `server/` — Node/Express backend (port 3001), main API in `server/server.js`.
 - `project_logs/` — Work logs and master project description doc (`project_logs/YYYY-MM-DD/`).
-- `docs/` — `adr/` การตัดสินใจเชิงสถาปัตยกรรม · `arcade-solutions.md` เฉลยโจทย์ Arcade ทุกข้อ · `archive/` เอกสารที่ถูกแทนที่แล้ว
+- `docs/` — `adr/` การตัดสินใจเชิงสถาปัตยกรรม · `arcade-map.md` แผนผังโหมด Arcade ทั้งโหมด (หน้าจอ · เฟส · API · ตาราง · กติกา) · `arcade-solutions.md` เฉลยโจทย์ Arcade ทุกข้อ · `archive/` เอกสารที่ถูกแทนที่แล้ว
 - `specs/` — สเปกของงานที่ยังทำไม่เสร็จ
 - `_archive/` — ของเก่าที่ไม่ได้ใช้แล้ว (ไม่อยู่ใน git ดู `_archive/README.md`)
 
