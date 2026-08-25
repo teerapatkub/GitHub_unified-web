@@ -15,6 +15,34 @@ const { spawn } = require('child_process');
 // Trailing whitespace and \r\n differences are not wrong answers.
 const normalizeOutput = (value = '') => String(value ?? '').replace(/\r\n/g, '\n').trim();
 
+// Most problems state one exact answer. A few cannot: Competitive Arena's
+// "Password Generator" asks for a random 4-digit PIN, so its stored expected
+// value is the pattern `regexp:\d{4}` instead of a literal. The prefix is a
+// convention the data has used since before the merge, and nothing in the code
+// had ever implemented it - so those problems compared a real answer against
+// the literal string "regexp:..." and could never be passed.
+//
+// Lives here rather than in the grader because BOTH callers need it: the lesson
+// and mini-game grader goes through runPythonCase, and so does Competitive
+// Arena's own test runner.
+const EXPECTED_PATTERN_PREFIX = 'regexp:';
+
+const matchesExpected = (actual, expected) => {
+    const want = String(expected ?? '');
+    if (!want.startsWith(EXPECTED_PATTERN_PREFIX)) {
+        return actual === normalizeOutput(want);
+    }
+    const source = want.slice(EXPECTED_PATTERN_PREFIX.length).trim();
+    try {
+        return new RegExp(source).test(actual);
+    } catch {
+        // A pattern that does not compile is a broken problem. Reject, so it
+        // shows up as a problem nobody can pass rather than one everybody
+        // passes without writing anything.
+        return false;
+    }
+};
+
 const resolvePythonBin = () => {
     const configuredPython = process.env.PYTHON_BIN || process.env.PYTHON;
     if (configuredPython) return configuredPython;
@@ -34,10 +62,16 @@ const resolvePythonBin = () => {
  * set, because every caller here wants to score the attempt rather than fail
  * the request.
  */
-const runPythonScript = ({ code, input = '', timeoutMs = 4000 }) => new Promise((resolve) => {
+const runPythonScript = ({ code, input = '', timeoutMs = 4000, files = {}, mainFileName = 'solution.py' }) => new Promise((resolve) => {
     const pythonBin = resolvePythonBin();
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pysim-run-'));
-    const filePath = path.join(tempDir, 'solution.py');
+    // Extra files let a caller run the learner's code as its OWN module rather
+    // than pasted into a bigger script. That is what keeps the line numbers in
+    // an error message the same as the ones in the learner's editor.
+    for (const [name, contents] of Object.entries(files || {})) {
+        fs.writeFileSync(path.join(tempDir, path.basename(name)), String(contents ?? ''), 'utf8');
+    }
+    const filePath = path.join(tempDir, mainFileName);
     fs.writeFileSync(filePath, String(code || ''), 'utf8');
 
     const cleanup = () => fs.rm(tempDir, { recursive: true, force: true }, () => {});
@@ -61,7 +95,7 @@ const runPythonScript = ({ code, input = '', timeoutMs = 4000 }) => new Promise(
         });
     } catch (error) {
         cleanup();
-        resolve({ stdout: '', stderr: '', error: `Python runner failed (${pythonBin}): ${error.message}`, timedOut: false });
+        resolve({ stdout: '', stderr: '', exitCode: null, error: `Python runner failed (${pythonBin}): ${error.message}`, timedOut: false });
         return;
     }
 
@@ -78,16 +112,28 @@ const runPythonScript = ({ code, input = '', timeoutMs = 4000 }) => new Promise(
 
     const timer = setTimeout(() => {
         child.kill();
-        finish({ stdout, stderr, error: 'Execution timed out', timedOut: true });
+        finish({ stdout, stderr, exitCode: null, error: 'Execution timed out', timedOut: true });
     }, timeoutMs);
 
     child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
     child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
     child.on('error', (error) => {
-        finish({ stdout, stderr, error: `Python runner failed (${pythonBin}): ${error.message}`, timedOut: false });
+        finish({ stdout, stderr, exitCode: null, error: `Python runner failed (${pythonBin}): ${error.message}`, timedOut: false });
     });
-    child.on('close', () => {
-        finish({ stdout, stderr, error: stderr.trim(), timedOut: false });
+    child.on('close', (code) => {
+        // Whether the program FAILED is the exit status, not whether it wrote
+        // anything to stderr. Python puts warnings there too, and a learner may
+        // print their own debugging there, neither of which makes a correct
+        // answer wrong. `error` still carries the traceback when the program
+        // really did fail, because that is what the learner needs to read.
+        const exitCode = Number.isInteger(code) ? code : 0;
+        finish({
+            stdout,
+            stderr,
+            exitCode,
+            error: exitCode === 0 ? '' : (stderr.trim() || `โปรแกรมจบด้วยรหัส ${exitCode}`),
+            timedOut: false,
+        });
     });
 
     try {
@@ -103,16 +149,23 @@ const runPythonScript = ({ code, input = '', timeoutMs = 4000 }) => new Promise(
  * One stdin/stdout test case. Kept with the exact result shape the Competitive
  * Arena already builds its feedback from.
  */
-const runPythonCase = async ({ code, input, expected, timeoutMs = 4000 }) => {
-    const run = await runPythonScript({ code, input, timeoutMs });
+const runPythonCase = async ({ code, input, expected, timeoutMs = 4000, files, mainFileName }) => {
+    const run = await runPythonScript({ code, input, timeoutMs, files, mainFileName });
     const actual = normalizeOutput(run.stdout);
+    // A case passes when the program finished cleanly AND printed the expected
+    // output. Both halves matter: `passed` used to be gated on stderr being
+    // empty, which failed correct answers that emitted a warning, and it never
+    // looked at the exit status at all, so a program that printed the right
+    // thing and then crashed was counted as passing.
+    const ranCleanly = !run.timedOut && run.exitCode === 0;
     return {
         input,
         expected,
         actual,
+        stderr: run.stderr || '',
         error: run.error || '',
-        passed: !run.error && actual === normalizeOutput(expected),
+        passed: ranCleanly && matchesExpected(actual, expected),
     };
 };
 
-module.exports = { normalizeOutput, resolvePythonBin, runPythonScript, runPythonCase };
+module.exports = { normalizeOutput, matchesExpected, resolvePythonBin, runPythonScript, runPythonCase };

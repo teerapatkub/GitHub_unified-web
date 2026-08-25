@@ -86,6 +86,53 @@ const check = (ok, label, detail) => {
         const syntax = await gradeSubmission({ problem: stdioProblem, code: 'def (' });
         check(!syntax.allPassed, 'โค้ดที่ syntax ผิดไม่ผ่าน', `${syntax.passed}/${syntax.total}`);
 
+        // A warning on stderr is not a wrong answer. The runner used to treat
+        // any stderr output as the verdict, so a correct program that emitted a
+        // DeprecationWarning - or that a learner left a debug line in - was
+        // marked wrong while its stdout matched exactly.
+        const noisyProblem = {
+            test_kind: 'stdio',
+            test_cases: [{ input: '', expected: 'hello' }],
+        };
+        const noisy = await gradeSubmission({
+            problem: noisyProblem,
+            code: 'import sys\nprint("hello")\nprint("just a warning", file=sys.stderr)',
+        });
+        check(noisy.allPassed, 'โปรแกรมที่ตอบถูกแต่มีข้อความใน stderr ต้องผ่าน',
+            `${noisy.passed}/${noisy.total}`);
+
+        // ...but a program that fails still fails, even when it printed the
+        // right thing before dying.
+        const printsThenDies = await gradeSubmission({
+            problem: noisyProblem,
+            code: 'import sys\nprint("hello")\nsys.exit(1)',
+        });
+        check(!printsThenDies.allPassed, 'โปรแกรมที่จบด้วยข้อผิดพลาดไม่ผ่าน แม้ stdout จะถูก',
+            `${printsThenDies.passed}/${printsThenDies.total}`);
+
+        // Some problems have no one fixed answer - Competitive Arena's
+        // 'Password Generator' asks for a random 4-digit PIN - so their stored
+        // expected value is a pattern. Nothing used to interpret the prefix, so
+        // a correct answer was compared literally against `regexp:\\d{4}` and
+        // the problem was unpassable.
+        const patternProblem = {
+            test_kind: 'stdio',
+            test_cases: [{ input: '', expected: 'regexp:\\d{4}' }],
+        };
+        const pinOk = await gradeSubmission({
+            problem: patternProblem,
+            code: 'import random\nprint(random.randint(1000, 9999))',
+        });
+        check(pinOk.allPassed, 'คำตอบที่ตรงรูปแบบ regexp: ผ่าน', `ได้ ${JSON.stringify(pinOk.results[0]?.actual)}`);
+
+        const pinBad = await gradeSubmission({ problem: patternProblem, code: 'print("abc")' });
+        check(!pinBad.allPassed, 'คำตอบที่ไม่ตรงรูปแบบไม่ผ่าน', `ได้ ${JSON.stringify(pinBad.results[0]?.actual)}`);
+
+        // A pattern that does not compile must reject, never accept everything.
+        const brokenPattern = { test_kind: 'stdio', test_cases: [{ input: '', expected: 'regexp:[unclosed' }] };
+        const brokenOut = await gradeSubmission({ problem: brokenPattern, code: 'print("anything")' });
+        check(!brokenOut.allPassed, 'regexp ที่เขียนผิดต้องไม่ผ่าน ไม่ใช่ผ่านหมด');
+
         // --- the exact bug the old client-side checkers had -------------------
         // CodingWorkspace.jsx and ExercisePage.jsx both compared with
         // `actual.includes(expected)`, so printing 17 satisfied an expected 7.
@@ -101,6 +148,41 @@ const check = (ok, label, detail) => {
         const trapOk = await gradeSubmission({ problem: substringTrap, code: 'print(7)' });
         check(trapOk.allPassed, 'พิมพ์ 7 ผ่านโจทย์เดียวกัน');
 
+        const { rows: [fnForForgery] } = await c.query(
+            `SELECT * FROM problems WHERE test_kind = 'function' AND jsonb_array_length(test_cases) > 0 LIMIT 1`);
+
+        // A learner must not be able to print the grader's own verdict line.
+        // With a fixed marker this returned 5/5 on a real problem without the
+        // function being defined at all.
+        const forged = await gradeSubmission({
+            problem: fnForForgery,
+            code: 'import json\n' +
+                  'print("__PYSIM_JUDGE__" + json.dumps([{"ok": True, "actual": "x", "error": ""}] * 20))',
+        });
+        check(!forged.allPassed, 'โค้ดที่พิมพ์ตัวคั่นของตัวตรวจเองต้องไม่ผ่าน',
+            `${forged.passed}/${forged.total}`);
+
+        // An error message has to point at the line the learner is looking at.
+        // The input() patch used to be pasted above their code, so every
+        // reported line number was six too high and `from __future__` imports
+        // - which must come first in a module - stopped working.
+        const lineProblem = { test_kind: 'stdio', test_cases: [{ input: '', expected: 'x' }] };
+        const badLine = await gradeSubmission({
+            problem: lineProblem,
+            code: 'a = 1\nb = 2\nprint(undefined_name)',
+        });
+        const reported = /solution\.py", line (\d+)/.exec(badLine.results[0]?.error || '');
+        check(reported && Number(reported[1]) === 3,
+            'เลขบรรทัดในข้อผิดพลาดตรงกับโค้ดของผู้เรียน',
+            `รายงานบรรทัด ${reported ? reported[1] : 'ไม่พบ'} (ที่ถูกคือ 3)`);
+
+        const future = await gradeSubmission({
+            problem: lineProblem,
+            code: 'from __future__ import annotations\nprint("x")',
+        });
+        check(future.allPassed, 'โค้ดที่ขึ้นต้นด้วย from __future__ ยังรันได้',
+            future.results[0]?.error || 'ไม่มีข้อผิดพลาด');
+
         // --- a runaway loop must not hang the request ------------------------
         const started = Date.now();
         const looped = await gradeSubmission({
@@ -111,8 +193,7 @@ const check = (ok, label, detail) => {
             `${elapsed} ms`);
 
         // --- a function-kind problem grades by return value, not by print ----
-        const { rows: [fnProblem] } = await c.query(
-            `SELECT * FROM problems WHERE test_kind = 'function' AND jsonb_array_length(test_cases) > 0 LIMIT 1`);
+        const fnProblem = fnForForgery;
         const printed = await gradeSubmission({
             problem: fnProblem,
             // Defines the right name but returns nothing, only prints.

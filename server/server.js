@@ -17,7 +17,7 @@ const { spawn } = require('child_process');
 const arcadeConfig = require('../shared/arcadeConfig.json');
 // The single answer-checker. See server/problemGrader.js for why there is only
 // one now, and server/problemsSchema.js for the problem bank it grades against.
-const { gradeSubmission } = require('./problemGrader');
+const { gradeSubmission, screenUnverifiedSubmission } = require('./problemGrader');
 
 const app = express();
 app.use(cors());
@@ -1645,10 +1645,45 @@ app.post('/api/learning/ai-task/submit', async (req, res) => {
     }
 
     const normalizedMode = getLearningModeConfig(mode).mode;
+
+    // Read and grade BEFORE opening a transaction. Grading spawns Python once
+    // per test case, serially, each with its own timeout, so doing it inside a
+    // transaction pinned a pooled connection for the whole run - ten slow
+    // submissions were enough to starve every other request on the site.
+    const [preTaskRows] = await db.execute(
+        `SELECT * FROM learning_ai_tasks
+         WHERE task_id = ? AND user_id = ? AND mode = ? AND status = 'ACTIVE'
+         LIMIT 1`,
+        [taskId, userId, normalizedMode]
+    );
+    if (preTaskRows.length === 0) {
+        return res.status(404).json({ error: 'Active task not found' });
+    }
+
+    const gradedVerdict = await judgeLearnerSubmission({
+        problem: {
+            test_kind: 'stdio',
+            test_cases: safeJsonParse(preTaskRows[0].test_cases_json, []),
+            is_auto_gradable: 1,
+        },
+        code,
+    });
+    if (!gradedVerdict.accepted) {
+        return res.status(400).json({
+            error: 'ยังผ่านไม่ครบทุกเทสเคส',
+            detail: gradedVerdict.reason,
+            passed: gradedVerdict.passedCount ?? 0,
+            total: gradedVerdict.totalCount ?? 0,
+            results: gradedVerdict.results || [],
+        });
+    }
+
     const connection = await db.getConnection();
     try {
         await connection.beginTransaction();
 
+        // Re-read inside the transaction: another request may have completed
+        // this task while Python was running.
         const [taskRows] = await connection.execute(
             `SELECT * FROM learning_ai_tasks
              WHERE task_id = ? AND user_id = ? AND mode = ? AND status = 'ACTIVE'
@@ -1662,27 +1697,6 @@ app.post('/api/learning/ai-task/submit', async (req, res) => {
         }
 
         const task = taskRows[0];
-
-        // AI-generated tasks are always plain stdin/stdout, and their cases are
-        // stored in the same {input, expected} shape the merged bank uses.
-        const verdict = await judgeLearnerSubmission({
-            problem: {
-                test_kind: 'stdio',
-                test_cases: safeJsonParse(task.test_cases_json, []),
-                is_auto_gradable: 1,
-            },
-            code,
-        });
-        if (!verdict.accepted) {
-            await connection.rollback();
-            return res.status(400).json({
-                error: 'ยังผ่านไม่ครบทุกเทสเคส',
-                detail: verdict.reason,
-                passed: verdict.passedCount ?? 0,
-                total: verdict.totalCount ?? 0,
-                results: verdict.results || [],
-            });
-        }
 
         await connection.execute(
             `UPDATE learning_ai_tasks
@@ -1755,30 +1769,53 @@ async function createProblem(mode, {
     xpReward = 0, coinReward = 0, timeLimitSec = null, expiresAt = null,
     extra = {}, createdBy = null, isActive = 1,
 } = {}) {
-    const [ins] = await db.execute(
-        `INSERT INTO problems (title_th, title_en, desc_th, desc_en, hint_th, hint_en,
-                               starter_code, solution_code, test_kind, test_cases, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?) RETURNING problem_id`,
-        [titleTh, titleEn, descTh, descEn, hintTh, hintEn,
-         starterCode, solutionCode, testKind,
-         typeof testCases === 'string' ? testCases : JSON.stringify(testCases),
-         createdBy]
-    );
-    const problemId = ins.insertId;
+    // One transaction, and one writer at a time per mode.
+    //
+    // This used to be two independent statements: insert the problem, then read
+    // COALESCE(MAX(entry_id), 0) + 1 and insert the registration. Two admins
+    // creating a problem at the same moment read the same maximum, so the
+    // second INSERT hit the (mode, entry_id) primary key and returned 500 -
+    // leaving a problem row with no registration behind: invisible in every
+    // mode, while permanently holding an id the schema says can never be reused.
+    //
+    // The advisory lock is released when the transaction ends and is scoped to
+    // the mode, so creating in two different modes still runs in parallel.
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+        await connection.execute('SELECT pg_advisory_xact_lock(hashtext(?))', [`problem_modes:${mode}`]);
 
-    const [nextRows] = await db.execute(
-        `SELECT COALESCE(MAX(entry_id), 0) + 1 AS id FROM problem_modes WHERE mode = ?`, [mode]);
-    const entryId = Number(nextRows[0].id);
+        const [ins] = await connection.execute(
+            `INSERT INTO problems (title_th, title_en, desc_th, desc_en, hint_th, hint_en,
+                                   starter_code, solution_code, test_kind, test_cases, created_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?) RETURNING problem_id`,
+            [titleTh, titleEn, descTh, descEn, hintTh, hintEn,
+             starterCode, solutionCode, testKind,
+             typeof testCases === 'string' ? testCases : JSON.stringify(testCases),
+             createdBy]
+        );
+        const problemId = ins.insertId;
 
-    await db.execute(
-        `INSERT INTO problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty,
-                                    xp_reward, coin_reward, time_limit_sec, expires_at, extra, is_active)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?)`,
-        [mode, entryId, problemId, lessonId, orderIndex, difficulty,
-         xpReward, coinReward, timeLimitSec, expiresAt, JSON.stringify(extra), isActive]
-    );
+        const [nextRows] = await connection.execute(
+            `SELECT COALESCE(MAX(entry_id), 0) + 1 AS id FROM problem_modes WHERE mode = ?`, [mode]);
+        const entryId = Number(nextRows[0].id);
 
-    return { problemId, entryId };
+        await connection.execute(
+            `INSERT INTO problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty,
+                                        xp_reward, coin_reward, time_limit_sec, expires_at, extra, is_active)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?)`,
+            [mode, entryId, problemId, lessonId, orderIndex, difficulty,
+             xpReward, coinReward, timeLimitSec, expiresAt, JSON.stringify(extra), isActive]
+        );
+
+        await connection.commit();
+        return { problemId, entryId };
+    } catch (error) {
+        await connection.rollback();
+        throw error;
+    } finally {
+        connection.release();
+    }
 }
 
 // Judge a submission on the server.
@@ -1801,7 +1838,15 @@ async function judgeLearnerSubmission({ problem, code }) {
         return { accepted: false, graded: false, reason: 'ไม่พบโจทย์ข้อนี้' };
     }
     if (Number(problem.is_auto_gradable ?? 1) === 0) {
-        return { accepted: true, graded: false, reason: 'โจทย์ข้อนี้ตรวจอัตโนมัติไม่ได้ จึงรับคำตอบไว้' };
+        // Accepted without a verdict, but not accepted unconditionally: an
+        // empty string used to collect the full reward here. See
+        // screenUnverifiedSubmission() for what still has to hold.
+        const screened = await screenUnverifiedSubmission({ problem, code });
+        return {
+            accepted: screened.accepted,
+            graded: false,
+            reason: screened.reason || (screened.accepted ? 'โจทย์ข้อนี้ตรวจอัตโนมัติไม่ได้ จึงรับคำตอบไว้' : ''),
+        };
     }
 
     const result = await gradeSubmission({ problem, code });
@@ -2734,97 +2779,14 @@ const buildCompetitiveTimeUpScore = (testCases = []) => ({
 
 const COMPETITIVE_AI_REWARD_THRESHOLD = 70;
 
-const normalizeOutput = (value = '') => String(value ?? '').replace(/\r\n/g, '\n').trim();
-
-const resolvePythonBin = () => {
-    const configuredPython = process.env.PYTHON_BIN || process.env.PYTHON;
-    if (configuredPython) return configuredPython;
-
-    const bundledPython = path.join(
-        os.homedir(),
-        '.cache',
-        'codex-runtimes',
-        'codex-primary-runtime',
-        'dependencies',
-        'python',
-        'python.exe'
-    );
-
-    if (fs.existsSync(bundledPython)) return bundledPython;
-    return 'python';
-};
-
-const runPythonCase = ({ code, input, expected, timeoutMs = 4000 }) => new Promise((resolve) => {
-    const pythonBin = resolvePythonBin();
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pysim-arena-'));
-    const filePath = path.join(tempDir, 'solution.py');
-    fs.writeFileSync(filePath, String(code || ''), 'utf8');
-
-    const child = spawn(pythonBin, [filePath], {
-        cwd: tempDir,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        windowsHide: true,
-    });
-
-    let stdout = '';
-    let stderr = '';
-    let settled = false;
-    const timer = setTimeout(() => {
-        if (settled) return;
-        settled = true;
-        child.kill();
-        fs.rm(tempDir, { recursive: true, force: true }, () => {});
-        resolve({
-            input,
-            expected,
-            actual: stdout,
-            error: 'Execution timed out',
-            passed: false,
-        });
-    }, timeoutMs);
-
-    child.stdout.on('data', (chunk) => {
-        stdout += chunk.toString();
-    });
-
-    child.stderr.on('data', (chunk) => {
-        stderr += chunk.toString();
-    });
-
-    child.on('error', (error) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        fs.rm(tempDir, { recursive: true, force: true }, () => {});
-        resolve({
-            input,
-            expected,
-            actual: stdout,
-            error: `Python runner failed (${pythonBin}): ${error.message}`,
-            passed: false,
-        });
-    });
-
-    child.on('close', () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        fs.rm(tempDir, { recursive: true, force: true }, () => {});
-        const actual = normalizeOutput(stdout);
-        const normalizedExpected = normalizeOutput(expected);
-        resolve({
-            input,
-            expected,
-            actual,
-            error: stderr.trim(),
-            passed: !stderr.trim() && actual === normalizedExpected,
-        });
-    });
-
-    child.stdin.write(String(input || ''));
-    if (!String(input || '').endsWith('\n')) child.stdin.write('\n');
-    child.stdin.end();
-});
+// The Competitive Arena used to carry its own copy of normalizeOutput,
+// resolvePythonBin and runPythonCase, written before the merge. Two copies of
+// "spawn python, feed stdin, kill it after N seconds" is how this project ended
+// up with five disagreeing answer-checkers in the first place, and the copies
+// had already drifted: this one never set PYTHONIOENCODING, so any competitive
+// answer that printed Thai died with UnicodeEncodeError, produced empty output,
+// and was marked wrong. Now there is one runner, in server/pythonRunner.js.
+const { normalizeOutput, runPythonCase } = require('./pythonRunner');
 
 const runCompetitivePythonTests = async ({ code, testCases }) => {
     const normalizedCases = normalizeCompetitiveTestCases(testCases);

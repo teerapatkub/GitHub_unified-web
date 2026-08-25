@@ -96,6 +96,35 @@ const check = (ok, label, detail) => {
             'ตอบถูกแล้วได้รางวัลจริง',
             `xp ${before.xp}→${afterReal.xp}, coins ${before.coins}→${afterReal.coins}`);
 
+        // The 26 problems that cannot be auto-graded are the other half of this
+        // hole, and the half this test used to miss entirely by selecting
+        // `is_auto_gradable = 1` above. They are accepted WITHOUT a verdict, so
+        // for a long time an empty string collected the full reward on them.
+        const { rows: [ungraded] } = await c.query(`
+            SELECT m.entry_id, p.title_th, p.starter_code
+              FROM problem_modes m JOIN problems p ON p.problem_id = m.problem_id
+             WHERE m.mode = 'lesson' AND p.is_auto_gradable = 0
+             ORDER BY m.entry_id LIMIT 1`);
+
+        if (ungraded) {
+            const walletBefore = await wallet();
+
+            const blankUngraded = await call('POST', `/api/exercises/${ungraded.entry_id}/submit`,
+                { user_id: userId, submitted_code: '' });
+            check(blankUngraded.status >= 400, 'โจทย์ที่ตรวจอัตโนมัติไม่ได้: ส่งโค้ดว่างถูกปฏิเสธ',
+                `HTTP ${blankUngraded.status} · ${String(ungraded.title_th).slice(0, 28)}`);
+
+            const untouched = await call('POST', `/api/exercises/${ungraded.entry_id}/submit`,
+                { user_id: userId, submitted_code: ungraded.starter_code || '' });
+            check(untouched.status >= 400, 'โจทย์ที่ตรวจอัตโนมัติไม่ได้: ส่งโค้ดตั้งต้นเดิมถูกปฏิเสธ',
+                `HTTP ${untouched.status} ${untouched.d?.detail || ''}`);
+
+            const walletAfter = await wallet();
+            check(walletAfter.xp === walletBefore.xp && walletAfter.coins === walletBefore.coins,
+                'โจทย์ที่ตรวจอัตโนมัติไม่ได้: ส่งมั่วแล้วไม่ได้รางวัล',
+                `xp ${walletBefore.xp}→${walletAfter.xp}, coins ${walletBefore.coins}→${walletAfter.coins}`);
+        }
+
         // The AI-task endpoint must no longer take the client's word.
         const claimed = await call('POST', '/api/learning/ai-task/submit',
             { userId, taskId: 1, mode: 'exercise', passed: true });

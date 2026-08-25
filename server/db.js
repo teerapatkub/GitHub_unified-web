@@ -37,6 +37,31 @@ const { Pool, types } = require('pg');
 types.setTypeParser(20, (value) => (value === null ? null : Number(value)));   // int8
 types.setTypeParser(1700, (value) => (value === null ? null : Number(value))); // numeric
 
+// `timestamp without time zone` is read back as UTC, not as this machine's
+// local time.
+//
+// PostgreSQL runs here with TimeZone = Etc/UTC, so every value written by
+// `current_timestamp` - which is how this schema fills its 54 plain timestamp
+// columns - holds UTC wall-clock digits. pg's default parser for this type
+// builds a JS Date from those digits as if they were local, so on a UTC+7
+// machine every timestamp came back seven hours in the past.
+//
+// It surfaced as a mode nobody could play: Competitive Arena measures how long
+// a player has held a challenge by subtracting `accepted_at` from now, against
+// a 300-second limit. A seven-hour head start meant the first submission was
+// always ruled "time expired", scored 0, and never reached the AI review.
+//
+// Fixed here rather than at each call site because all 54 columns share the
+// fault, and the ones nobody has tested yet would keep it. `timestamptz`
+// columns already round-trip correctly and are untouched. Anything writing a
+// JS Date into one of these columns must write UTC too, which is what an ISO
+// string with a Z does.
+types.setTypeParser(1114, (value) => {
+    if (value === null) return null;
+    // '2026-08-25 10:15:52.673' -> '2026-08-25T10:15:52.673Z'
+    return new Date(`${String(value).replace(' ', 'T')}Z`);
+});
+
 const DB_CONFIG = {
     host: process.env.PGHOST || 'localhost',
     port: Number(process.env.PGPORT || 5432),
