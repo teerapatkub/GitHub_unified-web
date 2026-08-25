@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Shield, AlertTriangle, ChevronDown, ChevronUp, Eye, ArrowLeft } from 'lucide-react';
 import Editor from '@monaco-editor/react';
-import { EXAMPLE_CASES_SHOWN } from '../constants.js';
+import { EXAMPLE_CASES_SHOWN, pyLiteral } from '../constants.js';
 
 // Whether the problem card and the output panel are folded away, remembered
 // across rounds and across matches. A player who folds the problem card to get
@@ -30,20 +30,6 @@ function PanelToggle({ open, label, onToggle }) {
       {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
     </button>
   );
-}
-
-// Renders a value the way the player would write it in Python, not the way JS
-// prints it — a beginner reading `true` or `null` under a Python problem is
-// being told to type something that does not exist in the language.
-function pyLiteral(value) {
-  if (value === null || value === undefined) return 'None';
-  if (value === true) return 'True';
-  if (value === false) return 'False';
-  if (Array.isArray(value)) return `[${value.map(pyLiteral).join(', ')}]`;
-  if (typeof value === 'object') {
-    return `{${Object.entries(value).map(([k, v]) => `${JSON.stringify(k)}: ${pyLiteral(v)}`).join(', ')}}`;
-  }
-  return JSON.stringify(value);
 }
 
 export default function BattleRoyaleGameplayView({

@@ -873,7 +873,7 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
             editorRef={editorRef}
             handleEditorKeyDown={handleEditorKeyDown}
             consoleOutput={consoleOutput}
-            runCodeTests={runCodeTests}
+            runCodeTests={() => runCodeTests(activeRoundTask)}
             handleManualSubmit={handleManualSubmit}
             isGrading={isGrading}
             autoSubmitLeadSeconds={AUTO_SUBMIT_LEAD_SECONDS}

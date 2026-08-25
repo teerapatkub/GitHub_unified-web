@@ -6,11 +6,13 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import usePyodide from '../../../hooks/usePyodide.js';
 import { PHASES, TASKS, TASK_TEST_CASES, ROUND_4_FALLBACK_TASK,
-         FINALE_POOL_BY_DIFFICULTY } from '../constants.js';
+         FINALE_POOL_BY_DIFFICULTY, EXAMPLE_CASES_SHOWN, pyLiteral,
+         TRIAL_MARKER, TRIAL_NO_FN, TRIAL_CODE_ERROR, buildTrialHarness } from '../constants.js';
 
 // `phase` and `timeLeft` used to be needed here to work out the round's task
 // and the time leg of the score. Both are the server's business now, so the
 // hook no longer takes them.
+
 export default function useRoundJudging({ playerState, setPlayerState, currentRoom, notify, t, lang, checkEffectActive, API_BASE }) {
   // PostgreSQL Tasks State (Bilingual TH/EN)
   const [dbTasks, setDbTasks] = useState({ easy: [], medium: [], hard: [] });
@@ -190,7 +192,7 @@ export default function useRoundJudging({ playerState, setPlayerState, currentRo
   // all - so it told every player their code had passed, including players
   // whose code did not even compile. Whether an answer is correct is the
   // server's call, and it arrives with the round summary.
-  const runCodeTests = async () => {
+  const runCodeTests = async (task) => {
     if (playerState.code.trim().length === 0) {
       setConsoleOutput(t('codeEmpty'));
       return;
@@ -206,15 +208,93 @@ export default function useRoundJudging({ playerState, setPlayerState, currentRo
     let captured = [];
     setPyOnOutput((lines) => { pyOutputRef.current = lines; captured = lines; });
 
+    // Arcade problems are answered by DEFINING a function, so simply executing
+    // the file prints nothing and the player was told "your code ran but did not
+    // print anything" for a perfectly correct answer. The button says "test your
+    // code", so it calls the function with the round's own cases and reports
+    // what came back.
+    //
+    // Still only a trial run: it happens in the player's browser and awards
+    // nothing. The verdict is the server's, at round close - see
+    // docs/adr/0001-server-owns-the-verdict.md.
+    const cases = Array.isArray(task?.testCases) ? task.testCases : [];
+    const fnName = task?.functionName;
+    const canRunCases = Boolean(fnName) && cases.length > 0;
+
     clearPyOutput();
     setConsoleOutput(t('running'));
-    await runPyCode(playerState.code);
+    await runPyCode(canRunCases ? buildTrialHarness(playerState.code, fnName, cases) : playerState.code);
 
-    const printed = (captured.length ? captured : pyOutputRef.current)
+    const lines = (captured.length ? captured : pyOutputRef.current)
       .filter(l => l.type === 'stdout' || l.type === 'stderr')
-      .map(l => l.text)
-      .join('\n');
-    setConsoleOutput(printed.trim() || t('noOutput'));
+      .map(l => l.text);
+
+    if (!canRunCases) {
+      setConsoleOutput(lines.join('\n').trim() || t('noOutput'));
+      return;
+    }
+
+    const resultLine = lines.find(l => l.startsWith(TRIAL_MARKER));
+    const errorLine = lines.find(l => l.startsWith(TRIAL_CODE_ERROR));
+    const printed = lines
+      .filter(l => !l.startsWith(TRIAL_MARKER) && !l.startsWith(TRIAL_NO_FN) && !l.startsWith(TRIAL_CODE_ERROR))
+      .join('\n').trim();
+
+    if (errorLine) {
+      // The code could not even be loaded - a syntax error, or something that
+      // raised while the file was being run. No case ever got a chance.
+      setConsoleOutput([t('trialCodeError'), errorLine.slice(TRIAL_CODE_ERROR.length), printed]
+        .filter(Boolean).join('\n'));
+      return;
+    }
+    if (lines.some(l => l.startsWith(TRIAL_NO_FN))) {
+      setConsoleOutput(t('trialNoFunction').replace('{{name}}', fnName));
+      return;
+    }
+    if (!resultLine) {
+      // The harness never reached its report, so the player's own code raised
+      // before any case ran. Whatever Python said is the useful thing to show.
+      setConsoleOutput(printed || t('noOutput'));
+      return;
+    }
+
+    let results;
+    try {
+      results = JSON.parse(resultLine.slice(TRIAL_MARKER.length));
+    } catch {
+      setConsoleOutput(printed || t('noOutput'));
+      return;
+    }
+
+    const passed = results.filter(r => r.ok).length;
+    const report = [];
+
+    results.forEach((result, i) => {
+      const call = `${fnName}(${(cases[i]?.input || []).map(pyLiteral).join(', ')})`;
+      const mark = result.ok ? '\u2705' : '\u274c';
+      // Only the cases already shown on the problem card are spelled out. The
+      // rest report pass or fail and nothing else - printing their inputs here
+      // would hand over the hidden half of the test set, which is the one thing
+      // the card is careful not to do.
+      if (i < EXAMPLE_CASES_SHOWN) {
+        report.push(`${mark} ${t('trialCase')} ${i + 1}: ${call}`);
+        report.push(`   ${t('trialExpected')} ${pyLiteral(cases[i]?.output)}`);
+        report.push(`   ${t('trialActual')} ${result.got}`);
+      } else {
+        report.push(`${mark} ${t('trialCase')} ${i + 1} ${result.ok ? t('trialPassed') : t('trialFailed')}`);
+      }
+    });
+
+    report.push('');
+    report.push(`${t('trialSummary').replace('{{passed}}', String(passed)).replace('{{total}}', String(results.length))}`);
+    report.push(t('trialNotVerdict'));
+    if (printed) {
+      report.push('');
+      report.push(t('trialPrinted'));
+      report.push(printed);
+    }
+
+    setConsoleOutput(report.join('\n'));
   };
 
   // Submitting judges the code and reports the result to the server

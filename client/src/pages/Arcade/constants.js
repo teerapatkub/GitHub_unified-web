@@ -22,6 +22,66 @@ export function parseUtcTimestamp(raw) {
   return new Date(iso.endsWith('Z') ? iso : `${iso}Z`).getTime();
 }
 
+// Renders a value the way a player would write it in Python, not the way JS
+// prints it: a beginner reading `true` or `null` under a Python problem is being
+// told to type something that does not exist in the language. Shared by the
+// worked examples on the problem card and by the trial-run report, so the two
+// can never disagree about how the same value looks.
+export function pyLiteral(value) {
+  if (value === null || value === undefined) return 'None';
+  if (value === true) return 'True';
+  if (value === false) return 'False';
+  if (Array.isArray(value)) return `[${value.map(pyLiteral).join(', ')}]`;
+  if (typeof value === 'object') {
+    return `{${Object.entries(value).map(([k, v]) => `${JSON.stringify(k)}: ${pyLiteral(v)}`).join(', ')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+// Marker lines the trial harness below prints, and which never appear in a
+// player's own output by accident.
+export const TRIAL_MARKER = '__PYSIM_TRIAL__';
+export const TRIAL_NO_FN = '__PYSIM_NO_FUNCTION__';
+export const TRIAL_CODE_ERROR = '__PYSIM_CODE_ERROR__';
+
+// Wraps the player's code so their function is actually CALLED with the round's
+// test cases, and reports the outcome on one machine-readable line.
+//
+// The code is exec'd into a FRESH namespace rather than being pasted at the top
+// of this script, because Pyodide keeps one interpreter alive for the whole
+// match: a function defined by an earlier trial run is still in globals(), so a
+// player who renamed or deleted theirs was shown the old one passing. Caught on
+// screen - the report did not change at all after the function was renamed.
+//
+// Every name introduced here is dunder-prefixed so it cannot collide with
+// anything a learner would write.
+export const buildTrialHarness = (code, fnName, cases) => [
+  'import json as __pysim_json',
+  `__pysim_src = ${JSON.stringify(code)}`,
+  `__pysim_cases = __pysim_json.loads(${JSON.stringify(JSON.stringify(cases))})`,
+  '__pysim_ns = {"__name__": "__main__"}',
+  'try:',
+  '    exec(compile(__pysim_src, "solution.py", "exec"), __pysim_ns)',
+  'except Exception as __pysim_err:',
+  `    print(${JSON.stringify(TRIAL_CODE_ERROR)} + type(__pysim_err).__name__ + ": " + str(__pysim_err))`,
+  'else:',
+  `    __pysim_fn = __pysim_ns.get(${JSON.stringify(fnName)})`,
+  '    if __pysim_fn is None:',
+  `        print(${JSON.stringify(TRIAL_NO_FN)})`,
+  '    else:',
+  '        __pysim_out = []',
+  '        for __pysim_c in __pysim_cases:',
+  '            try:',
+  '                __pysim_got = __pysim_fn(*__pysim_c["input"])',
+  '                __pysim_ok = __pysim_got == __pysim_c["output"]',
+  '                __pysim_shown = repr(__pysim_got)',
+  '            except Exception as __pysim_err:',
+  '                __pysim_ok = False',
+  '                __pysim_shown = type(__pysim_err).__name__ + ": " + str(__pysim_err)',
+  '            __pysim_out.append({"ok": bool(__pysim_ok), "got": __pysim_shown})',
+  `        print(${JSON.stringify(TRIAL_MARKER)} + __pysim_json.dumps(__pysim_out))`,
+].join('\n');
+
 export const PHASES = {
   LOBBY: 'LOBBY',
   ROUND_1: 'ROUND_1',
