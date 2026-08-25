@@ -64,8 +64,8 @@ export const TASKS = {
 // pool's first hard task, so it's only ever visibly different from the DB
 // version if the fetch hasn't completed or failed entirely.
 export const ROUND_4_FALLBACK_TASK = {
-  title_th: '1. ผลรวมย่อยสูงสุด (Kadane Algorithm)',
-  title_en: '1. Maximum Subarray Sum',
+  title_th: 'ผลรวมย่อยสูงสุด (Kadane Algorithm)',
+  title_en: 'Maximum Subarray Sum',
   desc_th: 'เขียนฟังก์ชัน `max_sub_array(nums)` หาผลรวมของอาร์เรย์ย่อยที่มีค่ามากที่สุด (Kadane Algorithm)',
   desc_en: 'Write a function `max_sub_array(nums)` finding the maximum contiguous subarray sum.',
   initial_code: 'def max_sub_array(nums):\n    # Write your python code here\n    pass',
