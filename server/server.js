@@ -4178,21 +4178,123 @@ app.get('/api/competitive/leaderboard', async (_req, res) => {
 // level, XP, coins. Never the email, and never a row for a deleted or banned
 // account. The admin roster endpoint (/api/admin/users) returns far more than
 // this and must not be what a student page calls.
+//
+// SIX BOARDS, ONE SHAPE. Every board returns the same row - name, level, xp,
+// coins, plus `metric` (the number this board is actually sorted by) and
+// `metricDetail` (the raw counts behind it, so a percentage can show its own
+// working). The client renders one table and only changes the column header.
+//
+// Every board is built from the same eligible-players base: no deleted
+// accounts, no banned accounts, no admins. A board that quietly used a
+// different population would rank the same people differently for no visible
+// reason.
+const eligiblePlayers = (t = '') => `COALESCE(${t}is_deleted, 0) = 0
+                                 AND COALESCE(${t}is_banned, 0) = 0
+                                 AND ${t}role <> 'admin'`;
+const LEADERBOARD_ELIGIBLE = eligiblePlayers();
+const LEADERBOARD_ELIGIBLE_U = eligiblePlayers('u.');
+
+// A win rate needs a floor under it or it means nothing: one match won is
+// 100%, and that player would sit above someone who has won forty out of
+// sixty for the rest of time. Three matches is low enough that a new player
+// can appear within an evening and high enough that a single lucky match
+// cannot top the board.
+const ARCADE_WINRATE_MIN_MATCHES = 3;
+
+const LEADERBOARD_BOARDS = {
+    // XP - the original board, and still the default. It is the only number
+    // earned in every mode, so it is the one that compares everybody.
+    xp: {
+        sql: `SELECT username, COALESCE(level, 1) AS level, COALESCE(xp, 0) AS xp,
+                     COALESCE(virtual_currency, 0) AS coins,
+                     COALESCE(xp, 0) AS metric, NULL AS metric_detail
+                FROM users
+               WHERE ${LEADERBOARD_ELIGIBLE}
+               ORDER BY metric DESC, level DESC, username ASC
+               LIMIT ?`,
+    },
+    level: {
+        sql: `SELECT username, COALESCE(level, 1) AS level, COALESCE(xp, 0) AS xp,
+                     COALESCE(virtual_currency, 0) AS coins,
+                     COALESCE(level, 1) AS metric, NULL AS metric_detail
+                FROM users
+               WHERE ${LEADERBOARD_ELIGIBLE}
+               ORDER BY metric DESC, xp DESC, username ASC
+               LIMIT ?`,
+    },
+    // Arcade win rate, as a percentage with its counts carried alongside.
+    // arcade_player_stats is keyed by the arcade display name, which is the
+    // username - an INNER JOIN, so a stats row left behind by a name that no
+    // longer has an account cannot appear on a player-facing board.
+    arcade_winrate: {
+        sql: `SELECT u.username, COALESCE(u.level, 1) AS level, COALESCE(u.xp, 0) AS xp,
+                     COALESCE(u.virtual_currency, 0) AS coins,
+                     ROUND((s.wins::numeric * 100) / NULLIF(s.matches_played, 0), 1) AS metric,
+                     json_build_object('wins', s.wins, 'matches', s.matches_played) AS metric_detail
+                FROM arcade_player_stats s
+                JOIN users u ON u.username = s.user_name
+               WHERE ${LEADERBOARD_ELIGIBLE_U}
+                 AND s.matches_played >= ?
+               ORDER BY metric DESC, s.matches_played DESC, u.username ASC
+               LIMIT ?`,
+        params: [ARCADE_WINRATE_MIN_MATCHES],
+    },
+    // Distinct challenges solved in the Competitive Arena. DISTINCT because a
+    // player may submit the same challenge more than once, and re-submitting
+    // one problem is not the same achievement as solving another.
+    competitive: {
+        sql: `SELECT u.username, COALESCE(u.level, 1) AS level, COALESCE(u.xp, 0) AS xp,
+                     COALESCE(u.virtual_currency, 0) AS coins,
+                     COUNT(DISTINCT m.challenge_id) AS metric, NULL AS metric_detail
+                FROM multiplayer_submissions m
+                JOIN users u ON u.user_id = m.user_id
+               WHERE ${LEADERBOARD_ELIGIBLE_U}
+               GROUP BY u.username, u.level, u.xp, u.virtual_currency
+               ORDER BY metric DESC, u.xp DESC, u.username ASC
+               LIMIT ?`,
+    },
+    coins: {
+        sql: `SELECT username, COALESCE(level, 1) AS level, COALESCE(xp, 0) AS xp,
+                     COALESCE(virtual_currency, 0) AS coins,
+                     COALESCE(virtual_currency, 0) AS metric, NULL AS metric_detail
+                FROM users
+               WHERE ${LEADERBOARD_ELIGIBLE}
+               ORDER BY metric DESC, xp DESC, username ASC
+               LIMIT ?`,
+    },
+    // Cosmetics owned. Counted from user_inventory rather than from anything
+    // the shop page holds, so it reflects what the account actually owns.
+    cosmetics: {
+        sql: `SELECT u.username, COALESCE(u.level, 1) AS level, COALESCE(u.xp, 0) AS xp,
+                     COALESCE(u.virtual_currency, 0) AS coins,
+                     COUNT(i.item_id) AS metric, NULL AS metric_detail
+                FROM user_inventory i
+                JOIN users u ON u.user_id = i.user_id
+               WHERE ${LEADERBOARD_ELIGIBLE_U}
+               GROUP BY u.username, u.level, u.xp, u.virtual_currency
+               ORDER BY metric DESC, u.xp DESC, u.username ASC
+               LIMIT ?`,
+    },
+};
+
 app.get('/api/leaderboard', async (req, res) => {
     try {
         const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100);
-        const [rows] = await db.query(
-            `SELECT username, COALESCE(level, 1) AS level, COALESCE(xp, 0) AS xp,
-                    COALESCE(virtual_currency, 0) AS coins
-               FROM users
-              WHERE COALESCE(is_deleted, 0) = 0
-                AND COALESCE(is_banned, 0) = 0
-                AND role <> 'admin'
-              ORDER BY xp DESC, level DESC, username ASC
-              LIMIT ?`,
-            [limit]
-        );
-        res.json(rows.map((r, i) => ({ rank: i + 1, ...r })));
+        // An unknown board name falls back to xp rather than erroring: this is
+        // a page a learner lands on, and an empty screen with a 400 behind it
+        // helps nobody. The key is looked up in a fixed table, never
+        // interpolated, so no query text can arrive from the URL.
+        const boardKey = Object.prototype.hasOwnProperty.call(LEADERBOARD_BOARDS, String(req.query.board || ''))
+            ? String(req.query.board)
+            : 'xp';
+        const board = LEADERBOARD_BOARDS[boardKey];
+
+        const [rows] = await db.query(board.sql, [...(board.params || []), limit]);
+        res.json({
+            board: boardKey,
+            minMatches: boardKey === 'arcade_winrate' ? ARCADE_WINRATE_MIN_MATCHES : undefined,
+            rows: rows.map((r, i) => ({ rank: i + 1, ...r, metric: Number(r.metric) || 0 })),
+        });
     } catch (err) {
         console.error('❌ GET /api/leaderboard error:', err.message);
         res.status(500).json({ error: err.message });

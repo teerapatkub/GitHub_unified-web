@@ -26,6 +26,21 @@ const BOT_ITEM_USE_INTERVAL_MS = arcadeConfig.botItemUseIntervalMs;
 // (2200ms) usually runs out of time, which is the ordering the profiles
 // describe. The range is what stops several bots sharing a profile from
 // finishing on the same second.
+// Item ids a player uses ON THEMSELVES. They are stored in the very same
+// activeEffects list as incoming sabotage, so a target filter that only asks
+// "does this player have any active effect" reads a player's own shield as
+// "already sabotaged" and skips them — permanently, because a shield is stored
+// with a ~27-hour expiry rather than a real duration. Reported from a real
+// match on 2026-08-26: the human led the whole way and was never once attacked,
+// and buying a shield is exactly what the player in the lead does.
+const SELF_BUFF_EFFECT_IDS = new Set(
+  SHOP_CATALOG.filter(item => item.type === 'buff').map(item => item.id)
+);
+
+// Is this player currently carrying sabotage someone else put on them?
+const isSabotaged = (effects = []) =>
+  effects.some(e => e.expiresAt > Date.now() && !SELF_BUFF_EFFECT_IDS.has(e.type));
+
 const BOT_STEPS_TO_FINISH_MIN = 22;
 const BOT_STEPS_TO_FINISH_MAX = 34;
 const rollStepsToFinish = () =>
@@ -112,8 +127,12 @@ export class BotAIEngine {
     return { blocked: false, msg: `💥 ${this.name} โดนโจมตีด้วยไอเทม ${item.name || item.type}!` };
   }
 
-  // Main AI Tick update called inside game interval loop
-  update(phase, playerState, allOpponents, onBotAttackCallback) {
+  // Main AI Tick update called inside game interval loop.
+  //
+  // `scoreboard` is { playerName: authoritativeScore } built by botManager from
+  // the server's own numbers. See pickAttackTarget for why the bot cannot use
+  // its own idea of everyone's score to decide who is winning.
+  update(phase, playerState, allOpponents, onBotAttackCallback, scoreboard = null) {
     if (this.eliminated) return;
 
     const now = Date.now();
@@ -172,7 +191,7 @@ export class BotAIEngine {
     // SHOP_*/ROUND_1 here (rather than just "not ROUND_1") stops bots from
     // firing items during the round-summary auto-advance screen or the shop.
     if (phase.startsWith('ROUND_') && phase !== 'ROUND_1') {
-      this.maybeUseItem(phase, playerState, allOpponents, onBotAttackCallback);
+      this.maybeUseItem(phase, playerState, allOpponents, onBotAttackCallback, scoreboard);
     }
   }
 
@@ -241,14 +260,28 @@ export class BotAIEngine {
   // human player's own target picker grays out anyone already hit. Priority:
   // an active revenge grudge first, otherwise whoever currently has the
   // highest score (the actual leader), not a hardcoded human target.
-  pickAttackTarget(playerState, allOpponents) {
+  //
+  // "Highest score" has to be read off ONE scoreboard. A bot's own this.score
+  // is a local invention that grows by 100-500 every round it "finishes",
+  // while the human's playerState.score is the real server-computed one and
+  // tops out near 300 a round. Comparing the two directly meant a bot's
+  // imaginary score beat the leading human's real one almost every time, and
+  // the item went to another bot — which is what a player saw as "the bots
+  // never attack me". `scoreboard` carries the server's numbers for everyone;
+  // the local values are kept only as a fallback for a name it does not cover.
+  pickAttackTarget(playerState, allOpponents, scoreboard = null) {
+    const scoreOf = (name, fallback) => {
+      const authoritative = scoreboard ? Number(scoreboard[name]) : NaN;
+      return Number.isFinite(authoritative) ? authoritative : (Number(fallback) || 0);
+    };
+
     const candidates = [];
-    if (!playerState.eliminated && !(playerState.activeEffects || []).some(e => e.expiresAt > Date.now())) {
-      candidates.push({ name: playerState.name, score: playerState.score });
+    if (!playerState.eliminated && !isSabotaged(playerState.activeEffects)) {
+      candidates.push({ name: playerState.name, score: scoreOf(playerState.name, playerState.score) });
     }
     allOpponents.forEach(bot => {
       if (bot === this || bot.eliminated || bot.isDebuffed()) return;
-      candidates.push({ name: bot.name, score: bot.score });
+      candidates.push({ name: bot.name, score: scoreOf(bot.name, bot.score) });
     });
     if (candidates.length === 0) return null;
 
@@ -278,7 +311,7 @@ export class BotAIEngine {
   // buffs and AOE are always usable, but an `attack` item is skipped (left
   // in the bag for later) if no eligible, undebuffed target exists yet,
   // instead of being wasted on a blocked target.
-  maybeUseItem(phase, playerState, allOpponents, onBotAttackCallback) {
+  maybeUseItem(phase, playerState, allOpponents, onBotAttackCallback, scoreboard = null) {
     if (phase === 'ROUND_1' || this.inventory.length === 0) return;
     // Same reasoning as maybeBuyItem: this used to be a bare per-call roll, so
     // at ~164 calls/second a bot dumped its entire inventory on the player
@@ -303,7 +336,7 @@ export class BotAIEngine {
         return;
       }
 
-      const target = this.pickAttackTarget(playerState, allOpponents);
+      const target = this.pickAttackTarget(playerState, allOpponents, scoreboard);
       if (target) {
         this.inventory.splice(idx, 1);
         onBotAttackCallback(this.name, target.name, item);

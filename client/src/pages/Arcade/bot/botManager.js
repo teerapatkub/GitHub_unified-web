@@ -67,6 +67,17 @@ class BotManager {
 
     const allOpponentsArray = Array.from(this.botMap.values());
 
+    // The one scoreboard every bot decides "who is winning" from. `opponents`
+    // is mirrored straight off the server's arcade_participants rows and
+    // playerState.score is the same row for the human, so every name in here
+    // is measured on the same scale. Without it each bot compared its own
+    // locally-invented score against the human's real one and concluded
+    // another bot was always ahead — see pickAttackTarget in botAI.js.
+    const scoreboard = { [playerState.name]: Number(playerState.score) || 0 };
+    for (const opp of opponents) {
+      scoreboard[opp.name] = Number(opp.score) || 0;
+    }
+
     for (const bot of this.botMap.values()) {
       bot.update(phase, playerState, allOpponentsArray, (attackerName, targetName, item) => {
         // CALLBACK: BOT ATTACKS/AFFECTS A TARGET!
@@ -134,7 +145,7 @@ class BotManager {
           const result = targetBot.receiveAttack(attackerName, item);
           notify(result.msg, "warning");
         }
-      });
+      }, scoreboard);
     }
 
     // Sync ONLY cosmetic display fields back onto opponents — progress (the

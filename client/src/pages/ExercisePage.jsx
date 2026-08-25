@@ -744,7 +744,7 @@ builtins.input = custom_input
   <div className="flex flex-wrap justify-end gap-3">
     <button
       onClick={() => onNavigate?.("lesson", lessonId)}
-      className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50 sm:px-4 sm:py-2.5"
+      className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-50"
     >
       <ArrowLeft size={16} />
       กลับไปบทเรียน
@@ -752,20 +752,20 @@ builtins.input = custom_input
   </div>
 </div>
       <div className="flex min-h-0 flex-1 overflow-hidden rounded-[22px] border border-white/70 bg-white/90 shadow-[0_18px_48px_rgba(15,23,42,0.10)]">
-        <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)]">
-          <aside className="overflow-y-auto border-b border-slate-200 bg-slate-50/90 p-5 lg:border-b-0 lg:border-r lg:p-6">
-            <p className="text-sm font-black uppercase tracking-[0.28em] text-blue-600">
+        <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[248px_minmax(0,1fr)] xl:grid-cols-[276px_minmax(0,1fr)]">
+          <aside className="overflow-y-auto border-b border-slate-200 bg-slate-50/90 p-4 lg:border-b-0 lg:border-r lg:p-5">
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-blue-600">
               Practice Exercise
             </p>
-            <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900 sm:text-[2rem]">
+            <h1 className="mt-1 text-lg font-black leading-snug tracking-tight text-slate-900 sm:text-xl">
               {exTitle(currentEx)}
             </h1>
 
-            <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-              <p className="text-[11px] font-black uppercase tracking-[0.25em] text-slate-500">
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">
                 เลือกโจทย์
               </p>
-              <div className="mt-3 space-y-2">
+              <div className="mt-2 space-y-1.5">
                 {exercises.map((exercise, index) => {
                   const isActive = index === currentExIdx;
                   const isPassed = Boolean(passedExercises[index]);
@@ -775,7 +775,7 @@ builtins.input = custom_input
                       key={exercise.exercise_id ?? index}
                       type="button"
                       onClick={() => setCurrentExIdx(index)}
-                      className={`flex w-full items-center justify-between rounded-2xl border px-3 py-3 text-left text-sm font-semibold transition-colors ${
+                      className={`flex w-full items-center justify-between rounded-xl border px-2.5 py-2 text-left text-xs font-semibold transition-colors ${
                         isActive
                           ? "border-blue-600 bg-blue-600 text-white"
                           : isPassed
@@ -785,16 +785,16 @@ builtins.input = custom_input
                     >
                       <span className="flex items-center gap-2">
                         <span
-                          className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-black ${
+                          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-black ${
                             isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
                           }`}
                         >
                           {index + 1}
                         </span>
-                        <span className="text-left">{exTitle(exercise) || `โจทย์ที่ ${index + 1}`}</span>
+                        <span className="text-left leading-snug">{exTitle(exercise) || `โจทย์ที่ ${index + 1}`}</span>
                       </span>
                       {isPassed ? (
-                        <CheckCircle2 size={16} className={isActive ? "text-white" : "text-emerald-500"} />
+                        <CheckCircle2 size={14} className={isActive ? "text-white" : "text-emerald-500"} />
                       ) : null}
                     </button>
                   );
@@ -802,21 +802,21 @@ builtins.input = custom_input
               </div>
             </div>
 
-            <h2 className="mt-6 inline-block border-b-4 border-blue-600 pb-1 text-xl font-black text-blue-600 sm:mt-8 sm:text-2xl">
+            <h2 className="mt-5 inline-block border-b-2 border-blue-600 pb-0.5 text-sm font-black text-blue-600">
               คำอธิบาย
             </h2>
-            <p className="mt-4 whitespace-pre-line text-base leading-8 text-slate-700 sm:mt-5 sm:text-lg">
+            <p className="mt-2.5 whitespace-pre-line text-[13px] leading-6 text-slate-700">
               {exDescription(currentEx)}
             </p>
 
-            <div className="mt-6 rounded-3xl bg-slate-900 px-4 py-4 font-mono text-sm text-slate-100 sm:mt-8 sm:px-5">
-              <p className="mb-3 text-xs font-bold text-emerald-400">// ตัวอย่างผลลัพธ์</p>
+            <div className="mt-4 rounded-2xl bg-slate-900 px-3.5 py-3 font-mono text-xs text-slate-100">
+              <p className="mb-2 text-[10px] font-bold text-emerald-400">// ตัวอย่างผลลัพธ์</p>
               {parseTestCases(currentEx.test_cases)[0] ? (
                 <>
-                  <p className="mb-2 text-slate-300">
+                  <p className="mb-1.5 break-words text-slate-300">
                     Input: {String(parseTestCases(currentEx.test_cases)[0].input ?? "")}
                   </p>
-                  <p className="text-sm font-bold text-white sm:text-base">
+                  <p className="break-words text-xs font-bold text-white">
                     Output: {String(parseTestCases(currentEx.test_cases)[0].expected ?? parseTestCases(currentEx.test_cases)[0].expected_output ?? "")}
                   </p>
                 </>
@@ -825,20 +825,17 @@ builtins.input = custom_input
               )}
             </div>
             
-            <div className="mt-6 flex items-end justify-between gap-3 sm:mt-8">
+            <div className="mt-4 flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2.5">
               <div>
-                <p className="text-2xl font-black text-slate-900 sm:text-3xl">
+                <p className="text-base font-black leading-none text-slate-900">
                   {completionCount}/{exercises.length}
                 </p>
-                <p className="mt-1 text-sm text-slate-500">ความคืบหน้าแบบฝึกหัด</p>
+                <p className="mt-1 text-[10px] text-slate-500">ทำสำเร็จแล้ว</p>
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-right sm:px-4">
-                <div className="text-xs font-semibold text-slate-500">รางวัล</div>
-                <div className="mt-1 text-sm font-black text-slate-900">
-                  +{currentEx.xp_reward || 0} XP
-                </div>
-                <div className="text-sm font-black text-slate-900">
-                  +{currentEx.currency_reward || 0} Coins
+              <div className="text-right">
+                <div className="text-[10px] font-semibold text-slate-500">รางวัลข้อนี้</div>
+                <div className="text-xs font-black text-slate-900">
+                  +{currentEx.xp_reward || 0} XP · +{currentEx.currency_reward || 0} Coins
                 </div>
               </div>
             </div>
@@ -847,7 +844,7 @@ builtins.input = custom_input
           <section className={`relative flex min-h-0 min-w-0 flex-col ${isAiOpen ? "xl:pr-[320px]" : ""}`}>
               <div className="flex min-h-0 flex-1 flex-col">
 <div className="min-h-0 flex-1 border-b border-slate-200">
-  <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 sm:px-5">
+  <div className="border-b border-slate-200 bg-slate-50 px-3 py-2">
     <div className="flex gap-2">
       {/* 
         ปรับให้ map ตัวแปรเป็น fileObj (ซึ่งเป็น Object) 
@@ -861,7 +858,7 @@ builtins.input = custom_input
           <button
             key={fileName}
             onClick={() => setActiveFile(fileName)}
-            className={`px-3 py-1 rounded-lg text-sm font-semibold transition-colors ${
+            className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
               activeFile === fileName 
                 ? "bg-blue-600 text-white" 
                 : "bg-white text-slate-600 border border-slate-300 hover:bg-slate-50"
@@ -904,7 +901,7 @@ builtins.input = custom_input
   <div className="flex w-full gap-2">
         <button
       onClick={() => setIsAiOpen((value) => !value)}
-      className={`inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-sm font-bold shadow-sm transition-colors sm:px-4 sm:py-2.5 ${
+      className={`inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-bold shadow-sm transition-colors ${
         isAiOpen
           ? "bg-blue-700 text-white hover:bg-blue-800"
           : "border border-slate-200 bg-white text-blue-600 hover:bg-slate-50"
@@ -917,7 +914,7 @@ builtins.input = custom_input
   <div className="flex w-full flex-wrap items-center justify-end gap-2">
     <button
       onClick={copyCode}
-      className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50"
+      className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-50"
     >
       <Copy size={16} />
       คัดลอก
@@ -958,7 +955,7 @@ builtins.input = custom_input
       setActiveFile("main.py");
     }
   }}
-  className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50 sm:px-4 sm:py-2.5"
+  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-50"
 >
   <RotateCcw size={16} />
   รีเซ็ตโค้ด
@@ -966,7 +963,7 @@ builtins.input = custom_input
     <button
       onClick={handleRun}
       disabled={!pyReady || isRunning}
-      className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+      className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
     >
       <Play size={16} />
       Run
@@ -974,7 +971,7 @@ builtins.input = custom_input
     <button
       onClick={handleSubmit}
       disabled={!pyReady || isRunning}
-      className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-3 py-2 text-sm font-bold text-white transition-colors hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-blue-300"
+      className="inline-flex items-center gap-2 rounded-xl bg-blue-700 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-blue-300"
     >
       <CheckCircle2 size={16} />
       ส่งแบบฝึกหัด
@@ -991,7 +988,7 @@ builtins.input = custom_input
 
                 <div
                   ref={terminalRef}
-                  className="flex-1 overflow-y-auto p-4 font-mono text-sm"
+                  className="flex-1 overflow-y-auto p-3 font-mono text-xs"
                 >
                   {terminalLines.length === 0 ? (
                     <p className="text-slate-500">Run your code to see output here.</p>

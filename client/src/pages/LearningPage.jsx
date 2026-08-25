@@ -514,17 +514,39 @@ const ModuleAccordion = ({
           >
             <div className="bg-pysim-surface-low/50 px-8 pb-6 pt-2">
               <ul className="space-y-2">
-                {lessons.map((lesson) => {
+                {lessons.map((lesson, index) => {
                   const lessonId = lesson.lesson_id || lesson.id;
-                  const isLessonLocked =
+                  const levelLocked =
                     userLevel < Number(lesson.required_level || 0);
-                  const lessonStatus = isLessonLocked
+
+                  // Sub-lessons open in order. Each one is written assuming the
+                  // one before it has been read - บทที่ 2 uses the variables
+                  // บทที่ 1 introduced - so a beginner who opens the middle of a
+                  // chapter first meets syntax nobody has explained to them and
+                  // concludes they cannot do this. The previous lesson counts as
+                  // finished when its post-quiz is done, the same signal the
+                  // "เรียนเสร็จสิ้น" badge already uses.
+                  const previousLesson = index > 0 ? lessons[index - 1] : null;
+                  const sequenceLocked =
+                    Boolean(previousLesson) && !previousLesson.post_quiz_completed;
+                  const isLessonLocked = levelLocked || sequenceLocked;
+
+                  const lessonStatus = levelLocked
                     ? { label: "ล็อกอยู่", className: "bg-pysim-surface-dim text-pysim-outline" }
-                    : getLessonStatus(lesson);
+                    : sequenceLocked
+                      ? { label: "ต้องเรียนบทก่อนให้จบ", className: "bg-pysim-surface-dim text-pysim-outline" }
+                      : getLessonStatus(lesson);
+
+                  const lockReason = levelLocked
+                    ? `ต้องถึงเลเวล ${lesson.required_level} ก่อนถึงจะเรียนบทนี้ได้`
+                    : sequenceLocked
+                      ? `เรียน "${previousLesson.title}" ให้จบก่อน แล้วบทนี้จะเปิดให้เอง`
+                      : undefined;
 
                   return (
                     <li
                       key={lessonId}
+                      title={lockReason}
                       className={`group/item flex items-center justify-between rounded-lg p-4 transition-all duration-300 ${
                         isLessonLocked
                           ? "cursor-not-allowed bg-pysim-surface-dim/30 opacity-50"

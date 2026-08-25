@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  BookOpen, Target, FlaskConical, Globe, LogOut, Monitor, Store, Coins
+  BookOpen, Target, FlaskConical, Globe, LogOut, Monitor, Store, Coins, Lock
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { TheInfiniteGrid } from './components/ui/the-infinite-grid';
@@ -22,6 +22,8 @@ import LeaderboardPage from './pages/LeaderboardPage';
 
 // --- Your Original Pages ---
 import MainMenu from './pages/MainMenu';
+import GameModeLocked from './pages/GameModeLocked';
+import { canEnterGameModes, gameModeLockMessage } from './utils/gameModeAccess.js';
 import CompetitiveArena from './pages/CompetitiveArena';
 import ArcadeBattleRoyale from './pages/Arcade/ArcadeBattleRoyale';
 import ChallengePage from './pages/ChallengePage';
@@ -360,6 +362,15 @@ function AppContent() {
     if (!isAdminUser) return <Navigate to="/learn" replace />;
     return element;
   };
+  // Game modes open at the rank defined in utils/gameModeAccess.js. Guarding
+  // the routes and not just the buttons, so typing /matchmaking straight into
+  // the address bar goes the same way as clicking it.
+  const requireGameModeRank = (element) => {
+    if (!authReady) return null;
+    if (!isAuthenticated) return <Navigate to="/login" replace />;
+    if (!canEnterGameModes(user)) return <GameModeLocked user={user} />;
+    return element;
+  };
 
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-transparent text-slate-800 font-sans transition-colors duration-300 relative">
@@ -486,15 +497,15 @@ function AppContent() {
               {/* Multiplayer Hub Route */}
               <Route path="/profile" element={requireStudent(<ProfilePage user={user} />)} />
               <Route path="/profile/:userId" element={requireStudent(<ProfilePage user={user} />)} />
-              <Route path="/menu" element={<MainMenu user={user} />} />
+              <Route path="/menu" element={requireGameModeRank(<MainMenu user={user} />)} />
               <Route path="/achievements" element={<Achievements />} />
               <Route path="/leaderboard" element={<LeaderboardPage user={user} />} />
-              <Route path="/online" element={isAuthenticated ? <CompetitiveArena user={user} /> : <Navigate to="/login" replace />} />
+              <Route path="/online" element={requireGameModeRank(<CompetitiveArena user={user} />)} />
               {/* Person 2 reached the Competitive Arena at /competitive-arena on their
                   branch; kept as a second path so links and bookmarks from there
                   still land, rather than renaming /online out from under ours. */}
-              <Route path="/competitive-arena" element={isAuthenticated ? <CompetitiveArena user={user} /> : <Navigate to="/login" replace />} />
-              <Route path="/matchmaking" element={isAuthenticated ? <ArcadeBattleRoyale user={user} /> : <Navigate to="/login" replace />} />
+              <Route path="/competitive-arena" element={requireGameModeRank(<CompetitiveArena user={user} />)} />
+              <Route path="/matchmaking" element={requireGameModeRank(<ArcadeBattleRoyale user={user} />)} />
               <Route
                 path="/admin/dashboard"
                 element={requireAdmin(<Dashboard />)}
@@ -536,6 +547,7 @@ const TopRightHeader = ({ user, onLogout }) => {
   const navigate = useNavigate();
   const [langMenuOpen, setLangMenuOpen] = useState(false);
   const coinBalance = Number(user?.virtual_currency ?? user?.coins ?? 0);
+  const gameModeUnlocked = canEnterGameModes(user);
   const profileImage = user?.profile_asset_url?.startsWith('/uploads')
     ? `http://localhost:3001${user.profile_asset_url}`
     : user?.profile_asset_url;
@@ -549,9 +561,16 @@ const TopRightHeader = ({ user, onLogout }) => {
       {!user?.isGuest && (
         <button
           onClick={() => navigate('/menu')}
-          className="hidden sm:flex items-center space-x-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all bg-gradient-to-r from-amber-100 to-amber-200 text-amber-800 hover:shadow-md hover:scale-105"
+          title={gameModeUnlocked ? undefined : gameModeLockMessage(user, i18n.language)}
+          className={`hidden sm:flex items-center space-x-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all hover:shadow-md hover:scale-105 ${
+            gameModeUnlocked
+              ? 'bg-gradient-to-r from-amber-100 to-amber-200 text-amber-800'
+              : 'bg-slate-100 text-slate-400 border border-slate-200'
+          }`}
         >
-          <Monitor className="h-3 w-3" />
+          {/* Still clickable while locked: the destination explains the
+              requirement and how far off they are, which a dead button cannot. */}
+          {gameModeUnlocked ? <Monitor className="h-3 w-3" /> : <Lock className="h-3 w-3" />}
           <span>{t('navbar.modes', 'โหมดเกม')}</span>
         </button>
       )}
