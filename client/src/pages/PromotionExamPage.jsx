@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { ArrowLeft, CheckCircle2, Loader2, ShieldAlert, Sparkles } from 'lucide-react';
 import ProgressCelebration from '../components/learning/ProgressCelebration';
+import { API_BASE } from '../config/api.js';
 
-const API_BASE = 'http://localhost:3001';
 
 export default function PromotionExamPage({ user, onUserRefresh, onNavigate }) {
   const [exam, setExam] = useState(null);

@@ -14,6 +14,7 @@ import {
   Send,
   X,
 } from "lucide-react";
+import { API_BASE } from '../config/api.js';
 // เปลี่ยนจากการโหลดใน useEffect แบบเดิม ให้มาใช้ฟังก์ชันช่วย
 const loadConfetti = () => {
   return new Promise((resolve) => {
@@ -38,7 +39,6 @@ const triggerCelebration = async () => {
   });
 };
 
-const API_BASE = "http://localhost:3001";
 const LUMI_AVATAR_BASE = "/data_MiNiGame/NPC_lumi";
 const PYODIDE_SCRIPT_ID = "mini-game-pyodide";
 const PYODIDE_SCRIPT_URL = "https://cdn.jsdelivr.net/pyodide/v0.27.7/full/pyodide.js";

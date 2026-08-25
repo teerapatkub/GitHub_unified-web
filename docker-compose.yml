@@ -1,0 +1,68 @@
+# The whole system, runnable with one command, on any machine with Docker.
+#
+#   docker compose up --build
+#   → http://localhost:3001
+#
+# Deliberately not tied to a hosting provider. Whoever deploys this picks the
+# host later; what this file guarantees is that the pieces fit together the same
+# way wherever that turns out to be.
+
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: ${PGUSER:-postgres}
+      POSTGRES_PASSWORD: ${PGPASSWORD:-postgres}
+      POSTGRES_DB: ${PGDATABASE:-postgres}
+    volumes:
+      # Mounted at /var/lib/postgresql, NOT .../data. Postgres 18 puts its data
+      # in a versioned subdirectory of this path so that a future major-version
+      # upgrade can run pg_upgrade across both; mounting the old .../data path
+      # makes the 18 image refuse to start.
+      - pysim-db:/var/lib/postgresql
+    # The API creates and seeds every table it needs on boot, so it must not
+    # start talking to a database that is still coming up.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PGUSER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    build:
+      context: .
+      args:
+        # Empty on purpose: the API serves the front end, so the browser talks
+        # to the same origin it loaded the page from.
+        VITE_API_BASE_URL: ""
+        VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    # Keys and mail credentials come from server/.env, which is not in the
+    # image and not in git.
+    env_file:
+      - server/.env
+    environment:
+      PORT: 3001
+      PGHOST: db
+      PGPORT: 5432
+      PGUSER: ${PGUSER:-postgres}
+      PGPASSWORD: ${PGPASSWORD:-postgres}
+      PGDATABASE: ${PGDATABASE:-postgres}
+      UPLOADS_DIR: /data/uploads
+      # The address this deployment answers on from outside. Only links that
+      # leave the process need it - the email verification link, which cannot
+      # be relative because it is opened days later from a mail client.
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3001}
+    ports:
+      - "${PORT:-3001}:3001"
+    volumes:
+      # Uploaded files outlive the container. Without this, every redeploy
+      # would delete every profile picture in the system.
+      - pysim-uploads:/data/uploads
+    restart: unless-stopped
+
+volumes:
+  pysim-db:
+  pysim-uploads:

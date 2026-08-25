@@ -1,11 +1,12 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { BUILT_IN_THEMES, THEME_CYBERPUNK_DARK } from '../themes/themes';
+import { API_BASE, assetUrl } from '../config/api.js';
 
 const ThemeContext = createContext(null);
 
 const resolveAssetUrl = (value) => {
     if (!value) return '';
-    return value.startsWith('/uploads') ? `http://localhost:3001${value}` : value;
+    return assetUrl(value);
 };
 
 const readStoredUser = () => {

@@ -359,6 +359,18 @@ const db = {
         return this.query(sql, params);
     },
 
+    // Send SQL through completely untouched.
+    //
+    // query() rewrites `?` into $1, $2, ... which is exactly right for the
+    // hand-written queries in this project and exactly wrong for a generated
+    // dump: schema.sql and seed-content.sql contain question marks inside Thai
+    // lesson text, and rewriting those would corrupt the content on its way in.
+    // Only for whole SQL files that carry no parameters of their own.
+    async raw(sql) {
+        const activePool = await ensurePool();
+        return activePool.query(sql);
+    },
+
     // A transaction has to stay on ONE client, so this checks one out of the
     // pool and hands back the mysql2 connection interface over it.
     async getConnection() {
@@ -390,10 +402,69 @@ const db = {
     config: { host: DB_CONFIG.host, port: DB_CONFIG.port, database: DB_CONFIG.database, user: DB_CONFIG.user },
 };
 
-(async () => {
+// Turn a completely empty database into a working PySim.
+//
+// Everything below this function creates the tables it personally owns
+// (arcade_*, problems, the shop, achievements, the survey). Nothing has ever
+// created `users`, `lessons`, `lesson_slides`, `quiz_questions` or the rest of
+// the curriculum's tables - on the development machine they were restored from
+// a dump years ago and simply never went away. Starting the container against a
+// fresh database on 2026-08-26 is what finally showed it: the API booted
+// cleanly and then answered every single request with
+// `relation "users" does not exist`.
+//
+// schema.sql and seed-content.sql are generated from a working database by
+// scripts/dump-schema.js. Applied here, at the very start of initialisation, so
+// the rest of this file finds the tables it expects.
+//
+// Runs ONLY on a database with no `users` table. An installation that already
+// has one is somebody's live system: applying a structure dump to it would
+// error at best, and the seed would fight the content they have edited. There
+// is no path here that touches an existing install.
+const bootstrapEmptyDatabase = async () => {
+    const [[existing]] = await db.query(
+        `SELECT COUNT(*)::int AS n FROM information_schema.tables
+          WHERE table_schema = 'public' AND table_name = 'users'`
+    );
+    if (existing.n > 0) return;
+
+    const fsp = require('fs');
+    const schemaPath = require('path').join(__dirname, 'schema.sql');
+    const seedPath = require('path').join(__dirname, 'seed-content.sql');
+
+    if (!fsp.existsSync(schemaPath)) {
+        console.warn('⚠️ ฐานข้อมูลว่างเปล่าและไม่พบ schema.sql — ระบบจะทำงานไม่ได้ '
+            + 'ให้รัน `node scripts/dump-schema.js` จากเครื่องที่มีฐานข้อมูลใช้งานอยู่');
+        return;
+    }
+
+    console.log('📦 ฐานข้อมูลว่างเปล่า — กำลังสร้างโครงสร้างตารางจาก schema.sql');
+    await db.raw(fsp.readFileSync(schemaPath, 'utf8'));
+
+    if (fsp.existsSync(seedPath)) {
+        console.log('📦 กำลังใส่เนื้อหาบทเรียนและคลังโจทย์จาก seed-content.sql');
+        await db.raw(fsp.readFileSync(seedPath, 'utf8'));
+    }
+
+    // Read by server.js, which recomputes which problems can be graded once the
+    // app is up. Only meaningful on the boot that did the install.
+    db.freshInstall = true;
+    console.log('✅ ติดตั้งฐานข้อมูลใหม่เรียบร้อย');
+};
+
+// Everything this file sets up, as one awaitable promise.
+//
+// server.js has its own boot work (ensureMergedSchemas) that used to run in
+// parallel with this, which is invisible on a database where both are no-ops
+// and a collision on a fresh one: both raced to create the same relations and
+// one of them lost with "already exists", abandoning the rest of the
+// initialisation. server.js awaits db.ready before doing its own now.
+db.ready = (async () => {
     try {
         const [rows] = await db.query('SELECT current_database() AS database, current_user AS user, version() AS version');
         console.log(`เชื่อมต่อ PostgreSQL สำเร็จ: ${rows[0].database} (${rows[0].user})`);
+
+        await bootstrapEmptyDatabase();
 
         // Initialize Arcade Battle Royale tables in PostgreSQL
         await db.query(`
@@ -930,13 +1001,13 @@ const db = {
                     {
                         item_type: 'THEME', name: 'ธีมอวกาศ', price: 120, rarity: 'RARE',
                         description: 'เปลี่ยนพื้นหลังและโทนสีทั้งเว็บเป็นห้วงอวกาศสีม่วงพาสเทล',
-                        asset_url: 'http://localhost:3001/uploads/space-theme.png',
+                        asset_url: '/uploads/space-theme.png',
                         effects: null,
                     },
                     {
                         item_type: 'PROFILE_FRAME', name: 'กรอบดาวเคราะห์', price: 80, rarity: 'RARE',
                         description: 'กรอบวงโคจรไล่สีม่วง-ฟ้า พร้อมดาวเคราะห์และดวงดาว',
-                        asset_url: 'http://localhost:3001/uploads/frame-space.svg',
+                        asset_url: '/uploads/frame-space.svg',
                         effects: null,
                     },
                     {
@@ -960,13 +1031,13 @@ const db = {
                     {
                         item_type: 'THEME', name: 'ธีมซากุระ', price: 120, rarity: 'RARE',
                         description: 'เปลี่ยนพื้นหลังและโทนสีทั้งเว็บเป็นสวนซากุระสีชมพู',
-                        asset_url: 'http://localhost:3001/uploads/1782844342595-474510254.png',
+                        asset_url: '/uploads/1782844342595-474510254.png',
                         effects: null,
                     },
                     {
                         item_type: 'PROFILE_FRAME', name: 'กรอบกลีบซากุระ', price: 80, rarity: 'RARE',
                         description: 'กรอบวงกลมสีชมพูประดับดอกซากุระและกิ่งไม้',
-                        asset_url: 'http://localhost:3001/uploads/frame-sakura.svg',
+                        asset_url: '/uploads/frame-sakura.svg',
                         effects: null,
                     },
                     {
@@ -992,6 +1063,21 @@ const db = {
               WHERE set_key IS NULL
                 AND item_type = 'THEME'
                 AND asset_url LIKE '%474510254%'`
+        );
+
+        // Cosmetic art used to be seeded with its full address written in, so
+        // every row in the database says the picture lives on the developer's
+        // own machine. On any other host those become broken images - a theme
+        // a player paid coins for that renders as nothing. Stored relative from
+        // now on, and the rows already written are rewritten to match; the
+        // server serves /uploads itself, so a relative path resolves wherever
+        // the deployment happens to be.
+        // Any localhost port, not just today's: three rows still point at
+        // :5000, from a version of this project that ran there.
+        await db.query(
+            `UPDATE shop_items
+                SET asset_url = REGEXP_REPLACE(asset_url, '^https?://localhost:[0-9]+', '')
+              WHERE asset_url ~ '^https?://localhost:[0-9]+/'`
         );
 
         let setsSeeded = 0;

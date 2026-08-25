@@ -36,6 +36,7 @@ import ThemePage from './admin/pages/ThemePage';
 import AddLesson from './admin/pages/AddLesson';
 import Leaderboard from './admin/pages/Leaderboard';
 import CompetitiveChallengePage from './admin/pages/CompetitiveChallengePage';
+import { API_BASE, assetUrl } from './config/api.js';
 
 // ######################################################################
 // ### MAIN APP
@@ -117,7 +118,7 @@ function AppContent() {
     }
 
     try {
-      const response = await fetch(`http://localhost:3001/api/user/profile/${uid}`);
+      const response = await fetch(`${API_BASE}/api/user/profile/${uid}`);
       if (response.status === 404) {
         localStorage.removeItem('user');
         setUser(null);
@@ -243,7 +244,7 @@ function AppContent() {
 
     const prewarmTasks = async () => {
       try {
-        const response = await fetch(`http://localhost:3001/api/learning/ai-task?userId=${user.user_id}&mode=challenge`);
+        const response = await fetch(`${API_BASE}/api/learning/ai-task?userId=${user.user_id}&mode=challenge`);
         if (response.ok) {
           const payload = await response.json();
           if (payload?.task) {
@@ -276,7 +277,7 @@ function AppContent() {
 
     const sendPresence = () => {
       const presence = getPresenceInfo(location.pathname);
-      fetch('http://localhost:3001/api/presence', {
+      fetch(`${API_BASE}/api/presence`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -548,9 +549,7 @@ const TopRightHeader = ({ user, onLogout }) => {
   const [langMenuOpen, setLangMenuOpen] = useState(false);
   const coinBalance = Number(user?.virtual_currency ?? user?.coins ?? 0);
   const gameModeUnlocked = canEnterGameModes(user);
-  const profileImage = user?.profile_asset_url?.startsWith('/uploads')
-    ? `http://localhost:3001${user.profile_asset_url}`
-    : user?.profile_asset_url;
+  const profileImage = assetUrl(user?.profile_asset_url);
 
   return (
     <div className="flex items-center space-x-3 rounded-2xl border border-slate-200/70 bg-white/80 p-2 pr-4 shadow-sm">

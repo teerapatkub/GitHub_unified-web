@@ -141,15 +141,35 @@ try {
     throw error;
 }
 
-const uploadsDir = path.join(__dirname, 'uploads');
+// Where uploaded files live. Configurable because this directory is the one
+// piece of state that is NOT in the database: profile pictures, lesson media
+// and cosmetic art all land here, and a deployment that unpacks a new version
+// over the old one would take them with it. Pointing UPLOADS_DIR at a mounted
+// volume keeps them outside the release, which is the only way an update stops
+// being a data loss event.
+const uploadsDir = process.env.UPLOADS_DIR
+    ? path.resolve(process.env.UPLOADS_DIR)
+    : path.join(__dirname, 'uploads');
 
 if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Theme and lesson images uploaded through /api/upload are referenced by absolute
-// URL from the database (shop_items.asset_url), so they have to be served back.
+// Theme and lesson images uploaded through /api/upload are referenced from the
+// database (shop_items.asset_url), so they have to be served back.
 app.use('/uploads', express.static(uploadsDir));
+
+// The address this deployment is reachable at from OUTSIDE.
+//
+// Almost nothing needs it - the front end talks to the API with relative paths
+// now. The exception is anything that leaves the process and has to come back:
+// an email verification link opens days later, in a mail client, on a different
+// machine, and cannot be relative. That link was hardcoded to localhost, which
+// meant every verification email the system had ever sent pointed the recipient
+// at their own computer.
+const publicBaseUrl = () =>
+    String(process.env.PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3001}`)
+        .trim().replace(/\/+$/, '');
 
 const logRouteError = (label, error) => {
     const message = describeError(error);
@@ -2044,7 +2064,7 @@ app.post('/api/register', async (req, res) => {
         );
 
         // ส่ง Verification Email
-        const verifyUrl = `http://localhost:3001/api/verify-email/${verifyToken}`;
+        const verifyUrl = `${publicBaseUrl()}/api/verify-email/${verifyToken}`;
         if (EMAIL_CONFIGURED) {
             try {
                 await emailTransporter.sendMail({
@@ -6869,7 +6889,10 @@ setInterval(sweepArcadeRoundHistory, 60 * 60 * 1000);
 // 8. Start Server & Simulation Engine
 // ==========================================
 
-const PORT = 3001;
+// PORT comes from the environment because hosts assign it - most container
+// platforms hand the process a port and expect it to listen there. 3001 stays
+// as the local-development default so nothing needs a .env to run.
+const PORT = Number(process.env.PORT) || 3001;
 
 app.put('/api/admin/users/:id/ban', async (req, res) => {
     try {
@@ -7947,7 +7970,11 @@ app.post('/api/upload', (req, res) => {
             return res.status(400).json({ error: 'No file uploaded' });
         }
 
-        const url = `http://localhost:3001/uploads/${req.file.filename}`;
+        // Relative on purpose. This string is stored in the database and
+        // rendered months later, possibly from a different host than the one
+        // that took the upload - an absolute URL baked in here is a picture
+        // that 404s for every user the day the domain changes.
+        const url = `/uploads/${req.file.filename}`;
         return res.json({ url });
     });
 });
@@ -7973,8 +8000,75 @@ const ensureMergedSchemas = async () => {
     }
 };
 
+// Which problems can be graded automatically depends on what is installed HERE,
+// not on what was installed wherever the seed data was produced.
+//
+// problems.is_auto_gradable is computed by running every reference solution and
+// seeing which ones pass their own tests. The value that ships in
+// seed-content.sql was computed on a development machine without flask,
+// requests or pytest, so 26 problems arrive marked ungradable. On a machine
+// that has them - which the container does, by construction - only 15 really
+// are, and the other 11 would otherwise stay on the honour system forever for
+// no reason but a missing import at dump time.
+//
+// Runs once, on the boot that installed the database, and in the background:
+// it executes 192 Python programs and takes a minute or two, which is not
+// something to make the first visitor wait for.
+const recomputeGradabilityAfterInstall = () => {
+    if (!db.freshInstall) return;
+
+    console.log('🧪 ติดตั้งใหม่ — กำลังตรวจว่าโจทย์ข้อไหนตรวจอัตโนมัติได้บ้างบนเครื่องนี้ (ทำงานเบื้องหลัง)');
+    const child = require('child_process').spawn(
+        process.execPath,
+        [path.join(__dirname, 'scripts', 'mark-auto-gradable.js'), '--apply'],
+        { cwd: __dirname, stdio: ['ignore', 'pipe', 'pipe'] }
+    );
+    let tail = '';
+    child.stdout.on('data', (d) => { tail = String(d); });
+    child.on('error', (err) => console.warn('⚠️ ตรวจความสามารถในการตรวจโจทย์ไม่สำเร็จ:', describeError(err)));
+    child.on('close', (code) => {
+        if (code === 0) console.log('✅ ปรับสถานะการตรวจอัตโนมัติของคลังโจทย์เรียบร้อย\n' + tail.trim());
+        else console.warn(`⚠️ ตรวจความสามารถในการตรวจโจทย์จบด้วยรหัส ${code} — โจทย์บางข้ออาจถูกข้ามการตรวจ`);
+    });
+};
+
+// Serve the built front end from the API server itself.
+//
+// This is what makes the whole thing ONE deployable unit: one process, one
+// origin, one port. It also removes cross-origin requests entirely - the page
+// and the API it calls are the same site, so there is no CORS configuration to
+// get wrong on a domain nobody has bought yet.
+//
+// Skipped silently when the build is absent: during development Vite serves the
+// front end on :5174 and proxies here, and there is no dist/ to serve.
+const clientDist = process.env.CLIENT_DIST
+    ? path.resolve(process.env.CLIENT_DIST)
+    : path.join(__dirname, '..', 'client', 'dist');
+
+if (fs.existsSync(path.join(clientDist, 'index.html'))) {
+    app.use(express.static(clientDist));
+
+    // Single-page app fallback. React Router owns every path that is not an API
+    // route or a real file, so a hard reload on /leaderboard has to be answered
+    // with index.html rather than a 404 - reloading a deep link is not an edge
+    // case, it is how people use bookmarks.
+    app.get(/^(?!\/api\/|\/uploads\/).*/, (req, res, next) => {
+        if (req.method !== 'GET') return next();
+        return res.sendFile(path.join(clientDist, 'index.html'));
+    });
+    console.log(`\u2705 เสิร์ฟหน้าเว็บที่ build แล้วจาก ${clientDist}`);
+} else {
+    console.log('\u2139\uFE0F  ไม่พบไฟล์หน้าเว็บที่ build แล้ว — โหมดพัฒนาใช้ Vite เสิร์ฟที่ :5174 แทน');
+}
+
 app.listen(PORT, async () => {
     console.log(`Server running on port ${PORT}`);
+    // db.js creates and seeds its own tables on import. On an established
+    // database both that and ensureMergedSchemas() below are no-ops and the
+    // order never mattered; on an empty one they raced, and whichever lost
+    // aborted the rest of its own setup with "already exists".
+    await db.ready;
     await ensureMergedSchemas();
+    recomputeGradabilityAfterInstall();
     console.log('\u2705 ตารางของ Competitive Arena, Dashboard และการรีเซ็ตรหัสผ่าน พร้อมใช้งานแล้ว');
 });

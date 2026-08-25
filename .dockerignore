@@ -1,0 +1,25 @@
+# Keep the build context small, and keep secrets and personal data out of the
+# image.
+**/node_modules
+**/dist
+.git
+.gitignore
+_archive
+project_logs
+docs
+specs
+skills-lock.json
+
+# Database backups taken from a live system: real accounts, real email
+# addresses, real password hashes. Anchored to the repo root so that
+# server/schema.sql and server/seed-content.sql - which the image NEEDS to
+# install itself and contain no personal data - are not caught by it.
+/*.sql
+
+**/.env
+**/.env.*
+!**/.env.example
+
+# Uploaded files belong on a mounted volume, not baked into the image.
+server/uploads
+**/npm-debug.log*

@@ -9,8 +9,8 @@ import {
   Trash2,
 } from "lucide-react";
 import AdminNavbar from "../components/AdminNavbar";
+import { API_BASE } from '../../config/api.js';
 
-const API_BASE = "http://localhost:3001";
 
 const emptyCase = () => ({ lines: [""], expected: "" });
 

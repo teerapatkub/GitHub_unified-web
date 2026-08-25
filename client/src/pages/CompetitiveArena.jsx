@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Editor from '@monaco-editor/react';
+import { API_BASE } from '../config/api.js';
 
 const arenaFallbacks = {
   acceptChallenge: 'Accept Challenge',
@@ -285,7 +286,7 @@ export default function CompetitiveArena() {
   const fetchMailbox = async (userId) => {
     if (!userId) return;
     try {
-      const response = await fetch(`http://localhost:3001/api/mailbox/${userId}`);
+      const response = await fetch(`${API_BASE}/api/mailbox/${userId}`);
       const data = await response.json();
       setMailbox(data);
       setUnreadCount(data.filter(m => Number(m.is_read) === 0).length);
@@ -297,7 +298,7 @@ export default function CompetitiveArena() {
   const markMailboxAsRead = async (userId) => {
     if (!userId) return;
     try {
-      await fetch(`http://localhost:3001/api/mailbox/${userId}/read-all`, {
+      await fetch(`${API_BASE}/api/mailbox/${userId}/read-all`, {
         method: 'POST'
       });
       setUnreadCount(0);
@@ -311,7 +312,7 @@ export default function CompetitiveArena() {
   const fetchChallenges = async () => {
     if (!user) return;
     try {
-      const response = await fetch(`http://localhost:3001/api/competitive/challenges?userId=${user.user_id}`);
+      const response = await fetch(`${API_BASE}/api/competitive/challenges?userId=${user.user_id}`);
       const data = await response.json();
       setChallenges(data);
       fetchMailbox(user.user_id);
@@ -333,7 +334,7 @@ export default function CompetitiveArena() {
   const fetchLeaderboard = async () => {
     if (!user) return;
     try {
-      const response = await fetch(`http://localhost:3001/api/competitive/leaderboard?userId=${user.user_id}`);
+      const response = await fetch(`${API_BASE}/api/competitive/leaderboard?userId=${user.user_id}`);
       if (!response.ok) return;
       const data = await response.json();
       setLeaderboard(Array.isArray(data) ? data : []);
@@ -407,7 +408,7 @@ export default function CompetitiveArena() {
   const saveDraftCode = async (challengeId, code) => {
     if (!user || !challengeId) return;
     try {
-      await fetch(`http://localhost:3001/api/competitive/challenges/${challengeId}/save-draft`, {
+      await fetch(`${API_BASE}/api/competitive/challenges/${challengeId}/save-draft`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: user.user_id, code })
@@ -423,7 +424,7 @@ export default function CompetitiveArena() {
   const handleAcceptChallenge = async (challenge) => {
     if (!user) return;
     try {
-      await fetch(`http://localhost:3001/api/competitive/challenges/${challenge.challenge_id}/accept`, {
+      await fetch(`${API_BASE}/api/competitive/challenges/${challenge.challenge_id}/accept`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: user.user_id })
@@ -460,7 +461,7 @@ export default function CompetitiveArena() {
     }
     setConsoleOutput("Submitting solution...\nRunning test cases...");
     try {
-      const response = await fetch(`http://localhost:3001/api/competitive/challenges/${activeTabId}/submit`, {
+      const response = await fetch(`${API_BASE}/api/competitive/challenges/${activeTabId}/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: user.user_id, code: editorCode })
@@ -498,7 +499,7 @@ export default function CompetitiveArena() {
     setConsoleOutput("Running Python test cases on the server...");
 
     try {
-      const response = await fetch(`http://localhost:3001/api/competitive/challenges/${activeTabId}/run-tests`, {
+      const response = await fetch(`${API_BASE}/api/competitive/challenges/${activeTabId}/run-tests`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: user.user_id, code: editorCode })
@@ -534,7 +535,7 @@ export default function CompetitiveArena() {
   const handleClaimMailReward = async (mail) => {
     if (!user) return;
     try {
-      const response = await fetch(`http://localhost:3001/api/mailbox/${mail.mail_id}/claim`, {
+      const response = await fetch(`${API_BASE}/api/mailbox/${mail.mail_id}/claim`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: user.user_id })
@@ -554,7 +555,7 @@ export default function CompetitiveArena() {
   // Force Summary (Instant evaluation for test challenges)
   const handleForceSummary = async (challengeId) => {
     try {
-      const response = await fetch(`http://localhost:3001/api/competitive/challenges/${challengeId}/force-summary`, {
+      const response = await fetch(`${API_BASE}/api/competitive/challenges/${challengeId}/force-summary`, {
         method: 'POST'
       });
       const data = await response.json();
@@ -585,7 +586,7 @@ export default function CompetitiveArena() {
     }
     
     try {
-      const response = await fetch('http://localhost:3001/api/competitive/challenges', {
+      const response = await fetch(`${API_BASE}/api/competitive/challenges`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

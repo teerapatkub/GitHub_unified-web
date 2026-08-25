@@ -19,8 +19,8 @@ import {
 } from "lucide-react";
 import ProgressCelebration from "../components/learning/ProgressCelebration";
 import { problemTitle, problemDescription } from "../utils/problemText";
+import { API_BASE } from '../config/api.js';
 
-const API_BASE = "http://localhost:3001";
 const PYODIDE_SCRIPT_ID = "lesson-exercise-pyodide";
 const PYODIDE_SCRIPT_URL = "https://cdn.jsdelivr.net/pyodide/v0.27.7/full/pyodide.js";
 
@@ -648,7 +648,7 @@ builtins.input = custom_input
     setIsAiResponding(true);
 
     try {
-      const response = await fetch("http://localhost:3001/api/ai/chat", {
+      const response = await fetch(`${API_BASE}/api/ai/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // POST /api/ai/chat takes `messages`, an OpenAI-style array. This used

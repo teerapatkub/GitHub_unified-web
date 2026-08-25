@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import AdminNavbar from "../components/AdminNavbar";
+import { API_BASE } from '../../config/api.js';
 
 export default function ManageAccount() {
   const [users, setUsers] = useState([]);
@@ -12,7 +13,7 @@ export default function ManageAccount() {
 
   const fetchUsers = () => {
     setLoading(true);
-    fetch("http://localhost:3001/api/admin/users")
+    fetch(`${API_BASE}/api/admin/users`)
       .then((res) => res.json())
       .then((data) => {
         setUsers(Array.isArray(data) ? data : []);
@@ -43,7 +44,7 @@ export default function ManageAccount() {
 
   const handleDelete = async () => {
     const res = await fetch(
-      `http://localhost:3001/api/admin/users/${selectedUser.user_id}/delete`,
+      `${API_BASE}/api/admin/users/${selectedUser.user_id}/delete`,
       { method: "PUT" }
     );
     if (res.ok) {
@@ -57,7 +58,7 @@ export default function ManageAccount() {
 
   const handleBan = async () => {
     const res = await fetch(
-      `http://localhost:3001/api/admin/users/${selectedUser.user_id}/ban`,
+      `${API_BASE}/api/admin/users/${selectedUser.user_id}/ban`,
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -75,7 +76,7 @@ export default function ManageAccount() {
 
   const handleRecover = async () => {
     const res = await fetch(
-      `http://localhost:3001/api/admin/users/${selectedUser.user_id}/recover`,
+      `${API_BASE}/api/admin/users/${selectedUser.user_id}/recover`,
       { method: "PUT" }
     );
     if (res.ok) {

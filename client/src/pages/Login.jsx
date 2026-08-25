@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Code, Cpu, Sparkles } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
+import { API_BASE } from '../config/api.js';
 
 export default function Login() {
     const navigate = useNavigate();
@@ -25,7 +26,7 @@ export default function Login() {
         setError('');
         const endpoint = isRegister ? '/register' : '/login';
         try {
-            const res = await axios.post(`http://localhost:3001${endpoint}`, formData);
+            const res = await axios.post(`${API_BASE}${endpoint}`, formData);
             if (res.data.success) {
                 if (!isRegister) {
                     localStorage.setItem('user', JSON.stringify(res.data.user));

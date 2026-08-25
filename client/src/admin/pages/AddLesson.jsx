@@ -6,8 +6,9 @@ import {
   CheckCircle2, Circle, GripVertical, X, Save,
 } from "lucide-react";
 import AdminNavbar from "../components/AdminNavbar";
+import { API_BASE } from '../../config/api.js';
+const UPLOAD_API = `${API_BASE}/api/upload`;
 
-const UPLOAD_API = "http://localhost:3001/api/upload";
 
 /* ══════════════════════════════════════════════
    Upload Button — สไตล์เดียวกับ ThemePage
@@ -283,8 +284,8 @@ export default function AddLesson() {
                     {slide.mediaUrl && (
                       <div className="relative group">
                         {slide.mediaType === "video"
-                          ? <video src={`http://localhost:3001${slide.mediaUrl}`} className="h-20 w-32 object-cover rounded-xl border-2 border-slate-200" controls />
-                          : <img src={`http://localhost:3001${slide.mediaUrl}`} alt="preview" className="h-20 w-32 object-cover rounded-xl border-2 border-slate-200" />
+                          ? <video src={`${API_BASE}${slide.mediaUrl}`} className="h-20 w-32 object-cover rounded-xl border-2 border-slate-200" controls />
+                          : <img src={`${API_BASE}${slide.mediaUrl}`} alt="preview" className="h-20 w-32 object-cover rounded-xl border-2 border-slate-200" />
                         }
                         <button type="button" onClick={() => updateSlide(slide.id, "mediaUrl", "")}
                           className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition">

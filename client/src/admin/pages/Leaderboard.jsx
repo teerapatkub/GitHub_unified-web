@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Trophy, Medal, Star, TrendingUp, RefreshCw } from "lucide-react";
 import AdminNavbar from "../components/AdminNavbar";
+import { API_BASE } from '../../config/api.js';
 
 const RANK_STYLE = [
   { bg: "bg-yellow-50", border: "border-yellow-200", badge: "bg-gradient-to-br from-yellow-400 to-amber-500", text: "text-yellow-700", icon: "🥇" },
@@ -21,7 +22,7 @@ export default function Leaderboard() {
 
   const fetchLeaderboard = () => {
     setLoading(true);
-    fetch("http://localhost:3001/api/admin/users")
+    fetch(`${API_BASE}/api/admin/users`)
       .then((res) => res.json())
       .then((data) => {
         setUsers(Array.isArray(data) ? data.filter((u) => !u.is_deleted) : []);

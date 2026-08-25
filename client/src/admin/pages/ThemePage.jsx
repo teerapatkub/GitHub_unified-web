@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Plus, X, Pencil, Trash2, ChevronDown, Upload, Loader2 } from "lucide-react";
 import AdminNavbar from "../components/AdminNavbar";
+import { API_BASE } from '../../config/api.js';
+const UPLOAD_API = `${API_BASE}/api/upload`;
+const API = `${API_BASE}/api/themes`;
 
-const UPLOAD_API = "http://localhost:3001/api/upload";
 
 /* ── ปุ่มอัปโหลดไฟล์จากคอมพ์ ── */
 function UploadButton({ onUploaded, accept = "image/*" }) {
@@ -60,7 +62,6 @@ const TABS = [
   { key: "profile_background", label: "เพิ่มพื้นหลังโปรไฟล์" },
 ];
 
-const API = "http://localhost:3001/api/themes";
 
 const EP = {
   effect:             { get: API,                   post: API,                   put: (id) => `${API}/${id}`,              del: (id) => `${API}/${id}` },

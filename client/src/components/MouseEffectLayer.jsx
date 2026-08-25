@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { API_BASE, assetUrl } from '../config/api.js';
 
-const API_BASE = 'http://localhost:3001';
 
 function parseEffects(value) {
   if (Array.isArray(value)) return value;
@@ -78,7 +78,7 @@ export default function MouseEffectLayer({ user }) {
     <div className="pointer-events-none fixed inset-0 z-[9999]" aria-hidden="true">
       {bursts.map((burst) => {
         const isImage = typeof burst.visual === 'string' && (burst.visual.startsWith('http') || burst.visual.startsWith('/uploads'));
-        const source = burst.visual.startsWith('/uploads') ? `${API_BASE}${burst.visual}` : burst.visual;
+        const source = assetUrl(burst.visual);
         return (
           <span
             key={burst.id}

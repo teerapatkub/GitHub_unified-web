@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Eye, EyeOff, Check, X, AlertCircle, Code, Hexagon, Mail, KeyRound, ArrowLeft } from "lucide-react";
 import { Typewriter } from "../components/ui/typewriter-text";
+import { API_BASE } from '../config/api.js';
 
 // ======================================================
 // Password Validation Rules (หลักสากล)
@@ -63,7 +64,7 @@ export default function LoginPage({ onLoginSuccess }) {
   // ======================================================
   useEffect(() => {
     if (step === "survey") {
-      fetch("http://localhost:3001/api/survey")
+      fetch(`${API_BASE}/api/survey`)
         .then((res) => res.json())
         .then((data) => setSurveySteps(data.sort((a, b) => a.id - b.id)))
         .catch(() => setError("โหลดข้อมูลล้มเหลว"));
@@ -81,7 +82,7 @@ export default function LoginPage({ onLoginSuccess }) {
     setSuccess("");
     setTokenChecking(true);
 
-    fetch(`http://localhost:3001/api/password/reset/${encodeURIComponent(token)}`)
+    fetch(`${API_BASE}/api/password/reset/${encodeURIComponent(token)}`)
       .then(async (res) => {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.message || "ลิงก์เปลี่ยนรหัสผ่านไม่ถูกต้องหรือหมดอายุแล้ว");
@@ -120,7 +121,7 @@ export default function LoginPage({ onLoginSuccess }) {
     const endpoint = isRegister ? "/api/register" : "/api/login";
     try {
       const loginAfterRegister = async () => {
-        const loginRes = await fetch("http://localhost:3001/api/login", {
+        const loginRes = await fetch(`${API_BASE}/api/login`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ username, password }),
@@ -132,7 +133,7 @@ export default function LoginPage({ onLoginSuccess }) {
         return loginData;
       };
 
-      const res = await fetch(`http://localhost:3001${endpoint}`, {
+      const res = await fetch(`${API_BASE}${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
@@ -201,7 +202,7 @@ export default function LoginPage({ onLoginSuccess }) {
 
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:3001/api/password/forgot", {
+      const res = await fetch(`${API_BASE}/api/password/forgot`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: resetEmail }),
@@ -236,7 +237,7 @@ export default function LoginPage({ onLoginSuccess }) {
 
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:3001/api/password/reset", {
+      const res = await fetch(`${API_BASE}/api/password/reset`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token: resetToken, password }),
@@ -296,7 +297,7 @@ export default function LoginPage({ onLoginSuccess }) {
         callback: async (response) => {
           setLoading(true);
           try {
-            const res = await fetch("http://localhost:3001/api/auth/google", {
+            const res = await fetch(`${API_BASE}/api/auth/google`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ token: response.credential }),
@@ -332,7 +333,7 @@ export default function LoginPage({ onLoginSuccess }) {
     }));
     if (payload.length === 0) return;
     try {
-      await fetch("http://localhost:3001/api/survey/responses", {
+      await fetch(`${API_BASE}/api/survey/responses`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: loggedInUser.user_id, answers: payload }),
@@ -374,7 +375,7 @@ export default function LoginPage({ onLoginSuccess }) {
   const fetchAssessment = async () => {
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:3001/api/advanced-validation");
+      const res = await fetch(`${API_BASE}/api/advanced-validation`);
       const data = await res.json();
       if (Array.isArray(data) && data.length > 0) {
         setAssessmentQuestions(data);
@@ -394,7 +395,7 @@ export default function LoginPage({ onLoginSuccess }) {
       onLoginSuccess({ ...loggedInUser, level });
       return;
     }
-    await fetch("http://localhost:3001/api/user/update-level", {
+    await fetch(`${API_BASE}/api/user/update-level`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ user_id: loggedInUser.user_id, level }),

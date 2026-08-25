@@ -15,8 +15,8 @@ import {
     CircleDot,
     Circle,
 } from 'lucide-react';
+import { API_BASE } from '../config/api.js';
 
-const API_BASE = 'http://localhost:3001';
 
 const SKILL_TIER_TH = {
     Beginner: 'ผู้เริ่มต้น',

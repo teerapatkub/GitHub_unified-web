@@ -3,6 +3,7 @@ import axios from 'axios';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import CodingWorkspace from './CodingWorkspace';
 import ProgressCelebration from './ProgressCelebration';
+import { API_BASE } from '../../config/api.js';
 
 const MODE_COPY = {
   exercise: {
@@ -65,7 +66,7 @@ export default function AiTaskPage({ mode = 'exercise', user, onUserRefresh }) {
       }
       setError('');
 
-      const response = await axios.get('http://localhost:3001/api/learning/ai-task', {
+      const response = await axios.get(`${API_BASE}/api/learning/ai-task`, {
         params: { userId, mode, forceNew },
       });
 
@@ -110,7 +111,7 @@ export default function AiTaskPage({ mode = 'exercise', user, onUserRefresh }) {
       setRerolling(true);
       setError('');
 
-      const response = await axios.post('http://localhost:3001/api/learning/ai-task/reroll', {
+      const response = await axios.post(`${API_BASE}/api/learning/ai-task/reroll`, {
         userId,
         mode,
       });
@@ -127,7 +128,7 @@ export default function AiTaskPage({ mode = 'exercise', user, onUserRefresh }) {
   const handleSubmitTask = useCallback(async ({ taskId, code }) => {
     // The server runs this code against the task's test cases and decides
     // whether it passed. It used to be told `passed: true` and believe it.
-    const response = await axios.post('http://localhost:3001/api/learning/ai-task/submit', {
+    const response = await axios.post(`${API_BASE}/api/learning/ai-task/submit`, {
       userId,
       taskId,
       mode,

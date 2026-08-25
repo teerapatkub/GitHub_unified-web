@@ -3,8 +3,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, ChevronRight, Play } from "lucide-react";
 import { useParams } from "react-router-dom";
 import usePyodide from "../hooks/usePyodide";
+import { API_BASE } from '../config/api.js';
 
-const API_BASE = "http://localhost:3001";
 
 const buildSlideCodeKey = (slide, index) =>
   `${slide?.title || "slide"}-${slide?.src || "no-src"}-${index}`;

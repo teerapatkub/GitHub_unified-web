@@ -1,0 +1,24 @@
+# Python libraries a learner's answer is allowed to import.
+#
+# This file is the reason the container exists in the shape it does. Answers are
+# graded by running real Python, so whatever a problem's solution imports has to
+# be installed next to the API - a Node-only host cannot grade this project at
+# all, and a Node host with a bare Python cannot grade the 26 problems that
+# currently sit marked "not automatically gradable" for no reason other than a
+# missing import.
+#
+# Derived by reading every solution_code in the problems table, not guessed:
+#   flask 5 · pandas 5 · requests 5 · matplotlib 5 · pytest 5
+# The other imports found there (sqlite3, asyncio, re, math, random,
+# collections, datetime) are in the standard library and need nothing.
+#
+# tkinter is deliberately absent. Five problems import it, and it cannot run
+# without a display; those stay ungradable by nature, not by omission.
+#
+# After changing this file, re-run `npm run mark:gradable -- --apply` so the
+# problems it just made gradable stop being skipped.
+flask==3.1.2
+pandas==2.3.3
+requests==2.32.5
+matplotlib==3.10.7
+pytest==8.4.2

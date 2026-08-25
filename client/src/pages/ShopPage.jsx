@@ -3,10 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { ShoppingBag, ShoppingCart, Coins, CheckCircle, Search } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
+import { API_BASE, assetUrl } from '../config/api.js';
 
-const API_BASE = 'http://localhost:3001';
 
-const resolveAssetUrl = (value) => (value?.startsWith('/uploads') ? `${API_BASE}${value}` : value);
+const resolveAssetUrl = (value) => assetUrl(value);
 const userThemeKey = (user) => `game_theme:user:${user.user_id}`;
 const getShopThemePalette = (item) => {
     const themeText = `${item?.name || ''} ${item?.assetUrl || ''} ${item?.previewImage || ''}`.toLowerCase();
@@ -587,7 +587,7 @@ export default function ShopPage() {
                                 <div className="h-40 bg-pysim-surface-low flex items-center justify-center relative">
                                     {item.icon.type === 'image' ? (
                                         <img
-                                            src={item.icon.value.startsWith('/uploads') ? `${API_BASE}${item.icon.value}` : item.icon.value}
+                                            src={assetUrl(item.icon.value)}
                                             alt={item.name}
                                             className={item.type === 'THEME'
                                                 ? 'h-full w-full object-cover group-hover:scale-105 transition-transform duration-300'

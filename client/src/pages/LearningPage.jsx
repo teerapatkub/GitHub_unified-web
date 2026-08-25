@@ -8,6 +8,7 @@ import {
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { useTranslation } from "react-i18next";
+import { API_BASE } from '../config/api.js';
 
 const normalizeModulesForDisplay = (rows) => {
   if (!Array.isArray(rows) || rows.length === 0) return [];
@@ -137,7 +138,7 @@ export default function LearningPage({ onNavigate, user }) {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const res = await axios.get("http://localhost:3001/api/course-content", {
+        const res = await axios.get(`${API_BASE}/api/course-content`, {
           params: { user_id: user.user_id, user_level: user.level },
         });
         const normalizedModules = normalizeModulesForDisplay(res.data);

@@ -13,6 +13,7 @@ import {
   Loader2,
   RefreshCcw,
 } from 'lucide-react';
+import { API_BASE } from '../../config/api.js';
 
 const PYODIDE_SCRIPT_ID = 'pyodide-runtime-loader';
 const PYODIDE_SCRIPT_URL = 'https://cdn.jsdelivr.net/pyodide/v0.27.7/full/pyodide.js';
@@ -340,7 +341,7 @@ output.strip()
     setIsAiResponding(true);
 
     try {
-      const response = await axios.post('http://localhost:3001/api/ai/chat', {
+      const response = await axios.post(`${API_BASE}/api/ai/chat`, {
         message: messageToSend,
         code,
         level: userLevel,
