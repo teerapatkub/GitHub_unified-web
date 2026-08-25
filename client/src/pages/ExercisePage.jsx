@@ -651,13 +651,30 @@ builtins.input = custom_input
       const response = await fetch("http://localhost:3001/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        // POST /api/ai/chat takes `messages`, an OpenAI-style array. This used
+        // to send `message` plus loose context fields, which the endpoint never
+        // read - so every question asked here came back 500 and the learner saw
+        // the "AI is unavailable" fallback, always. The exercise context rides
+        // in a system message instead.
         body: JSON.stringify({
-          message: messageToSend,
-          code,
-          level: user?.level || 1,
-          lessonId,
-          exerciseTitle: exTitle(currentEx),
-          instructions: exDescription(currentEx),
+          messages: [
+            {
+              role: 'system',
+              content: [
+                'คุณคือ Lumi ผู้ช่วยสอน Python ของผู้เรียนที่เพิ่งเริ่มต้น ตอบเป็นภาษาไทย สั้น ตรงประเด็น',
+                'อย่าเฉลยโค้ดทั้งข้อ ให้ชี้จุดที่ผิดและบอกแนวทางแก้',
+                `โจทย์: ${exTitle(currentEx)}`,
+                `คำอธิบายโจทย์: ${exDescription(currentEx)}`,
+                `ระดับของผู้เรียน: ${user?.level || 1}`,
+                `โค้ดล่าสุดของผู้เรียน:\n${code}`,
+              ].join('\n'),
+            },
+            ...chatHistory
+              .filter((m) => m.role === 'user' || m.role === 'ai')
+              .slice(-6)
+              .map((m) => ({ role: m.role === 'ai' ? 'assistant' : 'user', content: m.text })),
+            { role: 'user', content: messageToSend },
+          ],
         }),
       });
 

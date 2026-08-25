@@ -275,11 +275,26 @@ function normalizeSql(sql) {
 //   * plain objects and arrays -> JSON text. pg would otherwise encode a JS
 //     array as a Postgres ARRAY ('{1,2,3}'), which is not what a jsonb or text
 //     column here expects.
+//
+// A third was added on 2026-08-25: Date -> ISO-8601 in UTC.
+//
+// pg serialises a Date using the LOCAL timezone offset, and PostgreSQL drops
+// that offset when the value lands in a `timestamp without time zone` column -
+// so the digits stored were local wall clock, while every value written by
+// `current_timestamp` was UTC. Two conventions in one column type, which only
+// stayed invisible while the reader was wrong in the matching direction.
+//
+// Now that reads are consistently UTC (see the type parser above), writes have
+// to be too. Doing it here rather than at each call site means a Date passed
+// anywhere is stored as the same instant it represents - including by code
+// written later that has never heard of this. Correct for `timestamptz`
+// columns as well, which read the offset and keep the instant either way.
 function normalizeParams(params) {
     return (Array.isArray(params) ? params : []).map((value) => {
         if (typeof value === 'boolean') return value ? 1 : 0;
         if (value === undefined) return null;
-        if (value === null || value instanceof Date || Buffer.isBuffer(value)) return value;
+        if (value instanceof Date) return value.toISOString();
+        if (value === null || Buffer.isBuffer(value)) return value;
         if (typeof value === 'object') return JSON.stringify(value);
         return value;
     });

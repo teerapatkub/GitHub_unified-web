@@ -200,11 +200,17 @@ export default function useRoundJudging({ playerState, setPlayerState, currentRo
       return;
     }
 
+    // Take this run's lines from a subscription registered here as well as from
+    // the shared ref. Both hold the same thing today; the local one removes any
+    // dependence on when the effect that registers the shared callback last ran.
+    let captured = [];
+    setPyOnOutput((lines) => { pyOutputRef.current = lines; captured = lines; });
+
     clearPyOutput();
     setConsoleOutput(t('running'));
     await runPyCode(playerState.code);
 
-    const printed = pyOutputRef.current
+    const printed = (captured.length ? captured : pyOutputRef.current)
       .filter(l => l.type === 'stdout' || l.type === 'stderr')
       .map(l => l.text)
       .join('\n');

@@ -59,6 +59,29 @@ const SKEW_MS = 5000;
         const appSkew = Math.abs(new Date(appRows[0].plain).getTime() - Date.now());
         check(appSkew < SKEW_MS, 'อ่านผ่าน db.js ได้เวลาเดิม', `ต่าง ${Math.round(appSkew / 1000)} วินาที`);
 
+        // 2b. The other direction, and the one that got away: a JS Date written
+        //     into a `timestamp` column. pg serialises a Date with the local
+        //     offset and PostgreSQL drops that offset on the cast, so the stored
+        //     digits are LOCAL wall clock - while current_timestamp stores UTC.
+        //     Two conventions in one column type. Reading is now consistently
+        //     UTC, so anything still writing a raw Date lands hours in the
+        //     future: the Arcade round timer showed 25,197 seconds instead of 60.
+        //     Checked through db.js, because that is the layer every endpoint
+        //     writes through and the only one that can normalise a Date.
+        const conn = await db.getConnection();
+        let written;
+        try {
+            await conn.query('CREATE TEMP TABLE ts_probe_app (plain timestamp)');
+            await conn.query('INSERT INTO ts_probe_app (plain) VALUES (?)', [new Date()]);
+            const [rows] = await conn.query('SELECT plain FROM ts_probe_app');
+            written = rows[0];
+        } finally {
+            conn.release();
+        }
+        const dateSkew = Math.abs(new Date(written.plain).getTime() - Date.now());
+        check(dateSkew < SKEW_MS, 'เขียนด้วย JS Date แล้วอ่านกลับได้เวลาเดิม',
+            `ต่าง ${Math.round(dateSkew / 1000)} วินาที`);
+
         // 3. The bug as a player met it: accept a challenge, and the elapsed
         //    time must be seconds, not hours.
         const { rows: [u] } = await c.query(
