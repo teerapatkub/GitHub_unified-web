@@ -3,6 +3,8 @@ import { Eye, EyeOff, Check, X, AlertCircle, Code, Hexagon, Mail, KeyRound, Arro
 import { Typewriter } from "../components/ui/typewriter-text";
 import { API_BASE } from '../config/api.js';
 
+const isValidGoogleClientId = (clientId) => /^[\w.-]+\.apps\.googleusercontent\.com$/.test(clientId);
+
 // ======================================================
 // Password Validation Rules (หลักสากล)
 // ======================================================
@@ -11,7 +13,7 @@ const PASSWORD_RULES = [
   { label: "มีตัวอักษรพิมพ์ใหญ่ (A-Z)", test: (p) => /[A-Z]/.test(p) },
   { label: "มีตัวอักษรพิมพ์เล็ก (a-z)", test: (p) => /[a-z]/.test(p) },
   { label: "มีตัวเลข (0-9)", test: (p) => /[0-9]/.test(p) },
-  { label: "มีอักขระพิเศษ (!@#$%^&*)", test: (p) => /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(p) },
+  { label: "มีอักขระพิเศษ (!@#$%^&*)", test: (p) => /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(p) },
 ];
 
 const getPasswordStrength = (password) => {
@@ -260,6 +262,8 @@ export default function LoginPage({ onLoginSuccess }) {
   // Google Login
   // ======================================================
   const [googleLoaded, setGoogleLoaded] = useState(false);
+  const [googleConfigLoaded, setGoogleConfigLoaded] = useState(false);
+  const [googleClientId, setGoogleClientId] = useState("");
 
   // ตรวจสอบว่า Google SDK โหลดแล้วหรือยัง
   useEffect(() => {
@@ -272,15 +276,49 @@ export default function LoginPage({ onLoginSuccess }) {
     return () => clearInterval(check);
   }, []);
 
+  useEffect(() => {
+    let isMounted = true;
+    const bundledClientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID || "").trim();
+
+    if (isValidGoogleClientId(bundledClientId)) {
+      setGoogleClientId(bundledClientId);
+      setGoogleConfigLoaded(true);
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    fetch(`${API_BASE}/api/config/google`)
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.message || "โหลดการตั้งค่า Google ไม่สำเร็จ");
+        if (isMounted) setGoogleClientId((data.clientId || "").trim());
+      })
+      .catch(() => {
+        if (isMounted) setGoogleClientId("");
+      })
+      .finally(() => {
+        if (isMounted) setGoogleConfigLoaded(true);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const handleGoogleLogin = () => {
     setError("");
     if (!window.google) {
       setError("Google SDK ยังไม่โหลด กรุณารีเฟรชหน้าเว็บ");
       return;
     }
-    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    if (!clientId || clientId === "YOUR_GOOGLE_CLIENT_ID") {
-      setError("ยังไม่ได้ตั้งค่า Google Client ID");
+    if (!googleConfigLoaded) {
+      setError("กำลังโหลดการตั้งค่า Google กรุณาลองอีกครั้ง");
+      return;
+    }
+    const clientId = googleClientId.trim();
+    if (!isValidGoogleClientId(clientId)) {
+      setError("ยังไม่ได้ตั้งค่า GOOGLE_CLIENT_ID เป็น OAuth Web Client ID ใน server/.env");
       return;
     }
 
@@ -383,7 +421,7 @@ export default function LoginPage({ onLoginSuccess }) {
       } else {
         alert("ไม่พบข้อสอบในระบบ");
       }
-    } catch (err) {
+    } catch {
       setError("เชื่อมต่อ Server ไม่ได้");
     } finally {
       setLoading(false);
@@ -865,7 +903,7 @@ export default function LoginPage({ onLoginSuccess }) {
           <button
             type="button"
             onClick={handleGoogleLogin}
-            disabled={!googleLoaded}
+            disabled={!googleLoaded || !googleConfigLoaded}
             className="w-full flex items-center justify-center gap-3 py-3 px-4 bg-white border border-pysim-outline-variant rounded-2xl hover:bg-pysim-surface-low hover:border-pysim-outline hover:shadow-md transition-all font-medium text-pysim-on-surface disabled:opacity-50 disabled:cursor-wait active:scale-[0.98]"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24">
@@ -874,7 +912,7 @@ export default function LoginPage({ onLoginSuccess }) {
               <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
               <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
             </svg>
-            {googleLoaded ? "เข้าสู่ระบบด้วย Google" : "กำลังโหลด..."}
+            {googleLoaded && googleConfigLoaded ? "เข้าสู่ระบบด้วย Google" : "กำลังโหลด..."}
           </button>
 
           {/* Divider */}

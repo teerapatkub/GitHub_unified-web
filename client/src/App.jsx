@@ -150,15 +150,14 @@ function AppContent() {
       return { mode: 'challenge', activityLabel: 'กำลังทำความท้าทาย' };
     }
     if (
+      pathname.startsWith('/menu') ||
       pathname.startsWith('/online') ||
+      pathname.startsWith('/competitive-arena') ||
       pathname.startsWith('/matchmaking') ||
       pathname.startsWith('/join-room') ||
       pathname.startsWith('/lobby')
     ) {
       return { mode: 'online', activityLabel: 'กำลังเล่นโหมดออนไลน์' };
-    }
-    if (pathname.startsWith('/menu')) {
-      return { mode: 'solo', activityLabel: 'กำลังเล่นโหมดเดี่ยว' };
     }
     if (pathname.startsWith('/shop')) {
       return { mode: 'shop', activityLabel: 'กำลังดูร้านค้า' };
@@ -346,7 +345,7 @@ function AppContent() {
 
   // === Which pages show the Navbar ===
   const hideNavbar = location.pathname === '/login';
-  const fullBleedRoutes = ['/menu', '/online', '/matchmaking', '/achievements'];
+  const fullBleedRoutes = ['/menu', '/online', '/competitive-arena', '/matchmaking', '/achievements'];
   const isSimulationMode = fullBleedRoutes.some(r => location.pathname.startsWith(r));
   const isCodingWorkspace = ['/exercise', '/mini-game', '/challenge', '/debug', '/promotion-exam']
     .some(route => location.pathname.startsWith(route));
