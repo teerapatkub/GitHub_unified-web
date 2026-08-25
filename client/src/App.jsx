@@ -16,8 +16,8 @@ import LessonPage from './pages/LessonPage';
 import ExercisePage from './pages/ExercisePage';
 import MiNi_Game from './pages/MiNi_Game';
 import FriendLogin from './pages/FriendLogin';
-import ShopPage from './pages/old plan/ShopPage';
-import Achievements from './pages/old plan/Achievements';
+import ShopPage from './pages/ShopPage';
+import Achievements from './pages/Achievements';
 
 // --- Your Original Pages ---
 import MainMenu from './pages/MainMenu';

@@ -2,7 +2,7 @@ import { useCallback, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShoppingBag, ShoppingCart, Coins, CheckCircle, Search } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useTheme } from '../../contexts/ThemeContext';
+import { useTheme } from '../contexts/ThemeContext';
 
 const API_BASE = 'http://localhost:3001';
 

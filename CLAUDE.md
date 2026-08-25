@@ -6,7 +6,10 @@ This file provides guidance to AI assistants when working with code in this repo
 
 PySim (Python Coder Game) is a Thai-language web app for teaching Python to beginners. It combines a structured lesson curriculum with gamified progression (levels, XP, coins, promotion exams), AI-generated exercises/challenges, and an optional "developer life simulation" mode.
 
-**Master Design Document**: Refer to `project_logs/project_discription.txt` before making structural changes. Note: the system uses PostgreSQL on port 5432 (see Database section below).
+**Master Design Document**: Refer to `project_logs/project_discription.txt` before making structural changes.
+Note: the system uses PostgreSQL on port 5432 (see Database section below).
+
+**อภิธานศัพท์**: `CONTEXT.md` — อ่านก่อนตั้งชื่อสิ่งใหม่ เพื่อให้ทั้งทีมเรียกสิ่งเดียวกันด้วยคำเดียวกัน
 
 ---
 
@@ -46,7 +49,9 @@ The project is divided among three team members. **Always respect these boundari
 - `client/` — React 19 + Vite frontend (port 5174, dev-proxies `/api` to `http://localhost:3001`).
 - `server/` — Node/Express backend (port 3001), main API in `server/server.js`.
 - `project_logs/` — Work logs and master project description doc (`project_logs/YYYY-MM-DD/`).
-- `prototype/` — Historical prototype files (now fully migrated into `client/src/pages/ArcadeBattleRoyale.jsx`).
+- `docs/` — `adr/` การตัดสินใจเชิงสถาปัตยกรรม · `arcade-solutions.md` เฉลยโจทย์ Arcade ทุกข้อ · `archive/` เอกสารที่ถูกแทนที่แล้ว
+- `specs/` — สเปกของงานที่ยังทำไม่เสร็จ
+- `_archive/` — ของเก่าที่ไม่ได้ใช้แล้ว (ไม่อยู่ใน git ดู `_archive/README.md`)
 
 ---
 
@@ -263,7 +268,7 @@ view `exercises`, `mini_game_exercises`, `multiplayer_challenges` เพิ่�
   และ hint 6 ข้อที่เผลอเฉลยคำตอบ ถ้าแก้คลังโจทย์แล้วไม่รัน จะไม่มีอะไรจับให้เลย
 - เมื่อแก้ไข Bot AI, Sabotage system หรือ real-time state ให้ทดสอบผ่าน dev server จริงก่อนถือว่าเสร็จ (state ซับซ้อน อ่านโค้ดอย่างเดียวไม่พอ)
 - แก้ไขเฉพาะไฟล์ในขอบเขตความรับผิดชอบของตนเอง (ดูหัวข้อ Team Responsibilities) หากจำเป็นต้องแก้ไฟล์นอกขอบเขต ให้แจ้งเตือนผู้ใช้ก่อน
-- **ห้ามทำเครื่องหมาย ✅ shipped & verified ให้ feature ใดใน `plan.md` (หรือที่อื่น) โดยไม่มีรายการ scenario ที่ทดสอบจริงแนบท้าย** — "อ่านโค้ดแล้วดูถูกต้อง" ไม่นับ ต้องระบุว่าทดสอบผ่านอะไรบ้าง (เช่น รันผ่าน dev server จริง, ยิง API จริง, เช็คค่าใน DB จริง) กฎนี้เกิดจากการตรวจสอบเมื่อ 2026-08-17 ที่พบว่าหลาย phase ที่เคยติด ✅ ไว้ มีบั๊กจริงที่ผู้เล่นจะเจอ (เช่น modal สร้างห้องไม่ปิด, ซื้อของในร้านค้าไม่หักเงินจริง) ทั้งที่โค้ดผ่านตาแล้วดูเหมือนถูกต้อง ดูรายละเอียดกฎเต็มที่ท้าย `plan.md`
+- **ห้ามทำเครื่องหมาย ✅ shipped & verified ให้ feature ใดใน `plan.md` (หรือที่อื่น) โดยไม่มีรายการ scenario ที่ทดสอบจริงแนบท้าย** — "อ่านโค้ดแล้วดูถูกต้อง" ไม่นับ ต้องระบุว่าทดสอบผ่านอะไรบ้าง (เช่น รันผ่าน dev server จริง, ยิง API จริง, เช็คค่าใน DB จริง) กฎนี้เกิดจากการตรวจสอบเมื่อ 2026-08-17 ที่พบว่าหลาย phase ที่เคยติด ✅ ไว้ มีบั๊กจริงที่ผู้เล่นจะเจอ (เช่น modal สร้างห้องไม่ปิด, ซื้อของในร้านค้าไม่หักเงินจริง) ทั้งที่โค้ดผ่านตาแล้วดูเหมือนถูกต้อง ดูรายละเอียดกฎเต็มที่ท้าย `docs/archive/plan.md`
 
 ### 📝 บันทึกการทำงาน (Work Log) — บังคับ
 **หลังจากแก้ไขโค้ดเสร็จทุกครั้ง ต้องเขียนบันทึกสรุปการทำงานไว้ในโฟลเดอร์ `project_logs/YYYY-MM-DD/`** โดยไฟล์บันทึกควรมีหัวข้อดังนี้:
