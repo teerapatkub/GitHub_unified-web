@@ -19,6 +19,8 @@
     "mark:gradable": "node scripts/mark-auto-gradable.js",
     "test:bilingual": "node scripts/bilingual-check.js",
     "check:time": "node scripts/timestamp-check.js",
+    "test:errors": "node scripts/error-messages-test.js",
+    "fix:problems": "node scripts/fix-broken-problems.js",
     "translate:problems": "node scripts/translate-problems.js"
   },
   "dependencies": {

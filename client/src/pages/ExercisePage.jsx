@@ -121,6 +121,9 @@ export default function ExercisePage({ lessonId, user, onUserRefresh, onNavigate
   const [code, setCode] = useState("");
   const [terminalLines, setTerminalLines] = useState([]);
   const [pyodide, setPyodide] = useState(null);
+  // The failing case from the last submission, so the learner can ask Lumi
+  // about it. Only set when the SERVER says the answer is wrong.
+  const [lastFailure, setLastFailure] = useState(null);
   const [pyReady, setPyReady] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [passedExercises, setPassedExercises] = useState({});
@@ -438,7 +441,6 @@ const handleSubmit = async () => {
 
     setIsRunning(true);
     setTerminalLines(["--- กำลังตรวจแบบฝึกหัด ---"]);
-    let allPassed = true;
 
     try {
       // 1. เขียนไฟล์ทั้งหมดในระบบ (รวมไฟล์เสริมทั้งหมด) ลงใน VFS ก่อนการรัน Test Cases
@@ -480,19 +482,16 @@ output.strip()
         const actual = normalizeOut(raw);
         const expected = normalizeOut(String(testCase.expected ?? testCase.expected_output ?? ""));
 
-        if (actual.includes(expected)) {
-          appendLine(`PASS Test ${index + 1}`);
-        } else {
-          appendLine(`FAIL Test ${index + 1}`);
-          appendLine(`Expected: ${expected}`);
-          appendLine(`Got: ${actual}`);
-          allPassed = false;
-          break;
-        }
+        // A trial run: show what the code printed, and leave the verdict to
+        // the server. This used to compare with `actual.includes(expected)` and
+        // decide here - which passed `17` for an expected `7`, and gated the
+        // submission below so a learner whose code was wrong never saw the
+        // server's explanation at all. See CONTEXT.md: ลองรัน never judges.
+        appendLine(`Test ${index + 1} — คาด: ${expected}`);
+        appendLine(`Test ${index + 1} — ได้: ${actual || '(ไม่ได้พิมพ์อะไรออกมา)'}`);
       }
     } catch (error) {
       appendLine(`System Error: ${error.message}`);
-      allPassed = false;
     } finally {
       try {
         await pyodide.runPythonAsync(`
@@ -508,8 +507,6 @@ builtins.input = custom_input
       setIsRunning(false);
     }
 
-    if (!allPassed) return;
-
     // ดึงโค้ดจาก main.py เพื่ออัปเดตลง State สรุปผล
     const mainCode = fileContents["main.py"] || "";
 
@@ -517,7 +514,6 @@ builtins.input = custom_input
       ...prev,
       [Number(currentEx.exercise_id)]: mainCode,
     }));
-    setPassedExercises((prev) => ({ ...prev, [currentExIdx]: true }));
 
     try {
       const response = await fetch(
@@ -534,9 +530,24 @@ builtins.input = custom_input
 
       const result = await response.json();
       if (!response.ok) {
-        appendLine(`Submit Error: ${result?.error || "Unable to submit exercise."}`);
+        // The server is the only thing that decides pass or fail, and it sends
+        // back a Thai explanation per failing case for a reader who has never
+        // programmed. Show that, not the raw traceback.
+        appendLine(result?.detail || result?.error || "ส่งคำตอบไม่สำเร็จ");
+        const failing = (result?.results || []).filter((r) => !r.passed);
+        setLastFailure(failing.find((r) => r.hint) || failing[0] || null);
+        failing.forEach((r, i) => {
+          if (r.hint) {
+            appendLine(`ข้อ ${i + 1}: ${r.hint}${r.errorLine ? ` (บรรทัดที่ ${r.errorLine})` : ""}`);
+          } else {
+            appendLine(`ข้อ ${i + 1}: คาด ${JSON.stringify(r.expected)} แต่ได้ ${JSON.stringify(r.actual)}`);
+          }
+        });
         return;
       }
+
+      setLastFailure(null);
+      setPassedExercises((prev) => ({ ...prev, [currentExIdx]: true }));
 
       if (result?.user) {
         localStorage.setItem("user", JSON.stringify({ ...user, ...result.user }));
@@ -663,6 +674,25 @@ builtins.input = custom_input
     } finally {
       setIsAiResponding(false);
     }
+  };
+
+  // The short Thai message covers the ten or so mistakes beginners actually
+  // make and costs nothing. This is the way out when it is not enough - and it
+  // only runs when the learner asks, so a typo does not spend tokens. It uses
+  // the chatbot's model, never the code judge's.
+  const askLumiAboutError = () => {
+    if (!lastFailure || isAiResponding) return;
+    setIsAiOpen(true);
+    const parts = [
+      'ช่วยอธิบายหน่อยว่าโค้ดของผมผิดตรงไหนและควรแก้ยังไง อธิบายแบบคนเพิ่งเริ่มเขียนโปรแกรม',
+      lastFailure.hint ? `ระบบบอกว่า: ${lastFailure.hint}` : '',
+      lastFailure.errorLine ? `ผิดที่บรรทัด ${lastFailure.errorLine}` : '',
+      lastFailure.error ? `ข้อความจาก Python: ${String(lastFailure.error).slice(0, 400)}` : '',
+      (lastFailure.expected !== undefined)
+        ? `เทสเคสนี้คาดผลลัพธ์ ${JSON.stringify(lastFailure.expected)} แต่ได้ ${JSON.stringify(lastFailure.actual)}`
+        : '',
+    ].filter(Boolean);
+    sendAiMessage(parts.join(String.fromCharCode(10)));
   };
 
   const completionCount = useMemo(
@@ -953,6 +983,18 @@ builtins.input = custom_input
                       <div key={`${line}-${index}`} className={`mb-0.5 leading-snug ${getTerminalLineClassName(line)}`}>{line}</div>
                     ))
                   )}
+
+                  {lastFailure ? (
+                    <button
+                      type="button"
+                      onClick={askLumiAboutError}
+                      disabled={isAiResponding}
+                      className="mt-3 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-600"
+                    >
+                      <MessageSquareCode size={14} />
+                      อธิบายให้ฟังหน่อย
+                    </button>
+                  ) : null}
 
                   {inputResolverRef.current ? (
                     <div className="flex items-center text-blue-400">

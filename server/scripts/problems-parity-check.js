@@ -109,6 +109,22 @@ const getTestConfig = (value) => {
 // containing a single quote to give it away.
 const REPAIRED_COLUMNS = new Set(['starter_code', 'solution_code', 'description', 'title']);
 
+// Content that was deliberately CORRECTED after the merge, so the pre-merge copy
+// is now the wrong one. Each entry says why, and the check below fails if one of
+// them stops differing - a stale exemption is how a real difference starts
+// hiding behind a comment.
+//
+// See scripts/fix-broken-problems.js, which made these changes.
+const DELIBERATE_FIXES = {
+    'exercises:212:solution_code': 'regex เฉลยหาย backslash: r"d+" ควรเป็น r"\d+"',
+    'exercises:213:solution_code': 'regex เฉลยหาย backslash: r"d" ควรเป็น r"\d"',
+    'exercises:214:solution_code': 'regex เฉลยหาย backslash ทั้งรูปแบบอีเมล',
+    // เฉลยของข้อนี้ก็ถูกเขียนใหม่เหมือนกัน แต่ view ของโหมดแข่งไม่มีคอลัมน์ solution_code
+    // จึงไม่ถูกเทียบที่นี่ — ตัวตรวจข้างล่างจับได้ตอนที่ผมเผลอใส่ไว้
+    'multiplayer_challenges:20:test_cases': 'เทสเคสเป็นของโจทย์เลขคู่/เลขคี่ ไม่ตรงกับคำสั่งเรื่องอุณหภูมิ',
+};
+const seenFixes = new Set();
+
 const decodeIfDoubleEncoded = (v) => {
     if (typeof v !== 'string' || !v.includes('\\')) return v;
     try {
@@ -163,6 +179,8 @@ const sameValue = (a, b) => {
                 for (const col of Object.keys(rowB)) {
                     if (col in IGNORE) continue;
                     if (!(col in rowA)) continue; // reported by the column check above
+                    const fixKey = `${view}:${rowB[key]}:${col}`;
+                    if (fixKey in DELIBERATE_FIXES) { seenFixes.add(fixKey); continue; }
                     const equal = col === 'test_cases_json'
                         ? canonical(getTestConfig(rowA[col])) === canonical(getTestConfig(rowB[col]))
                         : sameValue(rowA[col],
@@ -181,6 +199,13 @@ const sameValue = (a, b) => {
             for (const m of mismatches.slice(0, 8)) console.log(`        ${m}`);
             if (mismatches.length > 8) console.log(`        ... อีก ${mismatches.length - 8} จุด`);
         }
+
+        // An exemption that no longer describes a real difference means the
+        // fix was reverted, or the list was never updated - either way the
+        // check has quietly stopped looking at that column.
+        const stale = Object.keys(DELIBERATE_FIXES).filter((k) => !seenFixes.has(k));
+        check(stale.length === 0, 'รายการแก้ไขที่ตั้งใจยังตรงกับของจริง',
+            stale.length ? `ไม่พบความต่างของ: ${stale.join(', ')}` : `${seenFixes.size} รายการ`);
 
         // The point of merging: one query reaches every mode's problems.
         const { rows: byMode } = await c.query(

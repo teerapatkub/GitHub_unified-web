@@ -20,6 +20,10 @@
 // problem row; whether it passed is decided by actually running Python.
 const crypto = require('crypto');
 const { runPythonScript, runPythonCase, normalizeOutput } = require('./pythonRunner');
+// One sentence a beginner can act on, attached to every failing case. See
+// server/pythonErrorMessages.js - the audience for this whole project is
+// people who have never written code, and a raw traceback tells them nothing.
+const { explainPythonError } = require('./pythonErrorMessages');
 
 const MARKER = '__PYSIM_JUDGE__';
 
@@ -122,13 +126,20 @@ async function gradeFunctionProblem({ problem, code, timeoutMs }) {
     let parsed = [];
     try { parsed = JSON.parse(line.slice(marker.length)); } catch { parsed = []; }
 
-    const results = cases.map((c, i) => ({
-        args: c.args,
-        expected: c.expected,
-        actual: parsed[i]?.actual ?? '',
-        passed: Boolean(parsed[i]?.ok),
-        error: parsed[i]?.error || '',
-    }));
+    const results = cases.map((c, i) => {
+        const error = parsed[i]?.error || '';
+        const explained = explainPythonError(error);
+        return {
+            args: c.args,
+            expected: c.expected,
+            actual: parsed[i]?.actual ?? '',
+            passed: Boolean(parsed[i]?.ok),
+            error,
+            hint: explained.message,
+            errorLine: explained.line,
+            errorKind: explained.kind,
+        };
+    });
 
     const passed = results.filter((r) => r.passed).length;
     return { passed, total: results.length, allPassed: passed === results.length, results, error: '' };
@@ -199,12 +210,18 @@ async function gradeStdioProblem({ problem, code, timeoutMs }) {
             if (outcome.passed) { best = outcome; break; }
             if (!best) best = outcome;
         }
+        const error = trimLauncherFrames(best.error || '');
+        const explained = explainPythonError(error);
         results.push({
             input: c.input ?? '',
             expected: accepted.length > 1 ? accepted : accepted[0],
             actual: best.actual,
             passed: best.passed,
-            error: trimLauncherFrames(best.error || ''),
+            error,
+            // What to show the learner, and where to point them.
+            hint: explained.message,
+            errorLine: explained.line,
+            errorKind: explained.kind,
         });
     }
 
