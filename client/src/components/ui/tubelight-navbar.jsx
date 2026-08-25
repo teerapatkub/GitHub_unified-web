@@ -36,7 +36,7 @@ export function NavBar({ items, className }) {
         className,
       )}
     >
-      <div className="flex flex-wrap items-center justify-center gap-2 rounded-2xl border border-slate-200/70 bg-slate-50/80 p-2 shadow-inner shadow-white/50">
+      <div className="pysim-theme-nav flex flex-wrap items-center justify-center gap-2 rounded-2xl border border-slate-200/70 bg-slate-50/80 p-2 shadow-inner shadow-white/50">
         {items.map((item) => {
           const Icon = item.icon
           const isActive = activeTab === item.name

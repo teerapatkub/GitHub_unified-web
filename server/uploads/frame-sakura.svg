@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="กรอบโปรไฟล์ธีมซากุระ">
+  <title>กรอบกลีบซากุระ — Sakura Petal Frame</title>
+  <defs>
+    <linearGradient id="sakuraRing" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fbcfe8"/>
+      <stop offset="50%" stop-color="#ec4899"/>
+      <stop offset="100%" stop-color="#f9a8d4"/>
+    </linearGradient>
+    <radialGradient id="petal" cx="50%" cy="30%">
+      <stop offset="0%" stop-color="#fff1f7"/>
+      <stop offset="100%" stop-color="#f9a8d4"/>
+    </radialGradient>
+    <!-- one blossom, reused around the ring -->
+    <g id="blossom">
+      <g fill="url(#petal)" stroke="#f472b6" stroke-width="0.9">
+        <ellipse cx="0" cy="-8" rx="5.2" ry="8"/>
+        <ellipse cx="0" cy="-8" rx="5.2" ry="8" transform="rotate(72)"/>
+        <ellipse cx="0" cy="-8" rx="5.2" ry="8" transform="rotate(144)"/>
+        <ellipse cx="0" cy="-8" rx="5.2" ry="8" transform="rotate(216)"/>
+        <ellipse cx="0" cy="-8" rx="5.2" ry="8" transform="rotate(288)"/>
+      </g>
+      <circle r="2.6" fill="#fde68a"/>
+    </g>
+  </defs>
+
+  <!-- ring: the centre stays fully transparent so an avatar shows through -->
+  <circle cx="100" cy="100" r="88" fill="none" stroke="#fce7f3" stroke-width="3" opacity="0.7"/>
+  <circle cx="100" cy="100" r="82" fill="none" stroke="url(#sakuraRing)" stroke-width="8"/>
+
+  <!-- a branch curving along the ring -->
+  <path d="M22 128 C 44 150, 78 168, 118 172" fill="none" stroke="#b0785c" stroke-width="3"
+        stroke-linecap="round" opacity="0.85"/>
+  <path d="M52 148 l -9 8 M84 163 l -6 10" fill="none" stroke="#b0785c" stroke-width="2.2"
+        stroke-linecap="round" opacity="0.8"/>
+
+  <!-- blossoms sitting on the ring -->
+  <use href="#blossom" transform="translate(100 18) scale(1.15)"/>
+  <use href="#blossom" transform="translate(170 72) scale(0.95) rotate(24)"/>
+  <use href="#blossom" transform="translate(30 74) scale(0.9) rotate(-18)"/>
+  <use href="#blossom" transform="translate(146 160) scale(1.05) rotate(12)"/>
+  <use href="#blossom" transform="translate(46 142) scale(0.8) rotate(-30)"/>
+
+  <!-- petals drifting off -->
+  <g fill="#fbcfe8" stroke="#f9a8d4" stroke-width="0.7" opacity="0.95">
+    <ellipse cx="186" cy="124" rx="4.6" ry="7" transform="rotate(38 186 124)"/>
+    <ellipse cx="14" cy="106" rx="4" ry="6.2" transform="rotate(-42 14 106)"/>
+    <ellipse cx="118" cy="192" rx="3.6" ry="5.6" transform="rotate(18 118 192)"/>
+  </g>
+</svg>

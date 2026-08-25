@@ -124,12 +124,14 @@ export default function AiTaskPage({ mode = 'exercise', user, onUserRefresh }) {
     }
   }, [mode, persistTask, rerolling, task, userId]);
 
-  const handleSubmitTask = useCallback(async ({ taskId }) => {
+  const handleSubmitTask = useCallback(async ({ taskId, code }) => {
+    // The server runs this code against the task's test cases and decides
+    // whether it passed. It used to be told `passed: true` and believe it.
     const response = await axios.post('http://localhost:3001/api/learning/ai-task/submit', {
       userId,
       taskId,
       mode,
-      passed: true,
+      code,
     });
 
     if (response.data?.user) {

@@ -1,56 +1,451 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ShoppingBag, Tag, Coins, CheckCircle, Search, SlidersHorizontal, Star } from 'lucide-react';
+import { ShoppingBag, ShoppingCart, Coins, CheckCircle, Search } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useTheme } from '../../contexts/ThemeContext';
+
+const API_BASE = 'http://localhost:3001';
+
+const resolveAssetUrl = (value) => (value?.startsWith('/uploads') ? `${API_BASE}${value}` : value);
+const userThemeKey = (user) => `game_theme:user:${user.user_id}`;
+const getShopThemePalette = (item) => {
+    const themeText = `${item?.name || ''} ${item?.assetUrl || ''} ${item?.previewImage || ''}`.toLowerCase();
+    if (themeText.includes('ocean')) {
+        return {
+            bg: '#f1fdff',
+            bgSoft: '#e6f9fb',
+            text: '#164e63',
+            textSoft: '#397281',
+            muted: '#6aa3ad',
+            accent: '#0891b2',
+            accentSoft: 'rgba(8, 145, 178, 0.14)',
+            accentHover: '#0e7490',
+            border: 'rgba(8, 145, 178, 0.2)',
+            surface: 'rgba(241, 253, 255, 0.9)',
+            navbarOverlay: 'rgba(241, 253, 255, 0.74)',
+            navbarBorder: 'rgba(8, 145, 178, 0.22)',
+            navBg: 'rgba(255, 255, 255, 0.78)',
+        };
+    }
+    if (themeText.includes('space')) {
+        return {
+            bg: '#f7f8ff',
+            bgSoft: '#eef1ff',
+            text: '#302e63',
+            textSoft: '#5b5f94',
+            muted: '#858dc3',
+            accent: '#7c3aed',
+            accentSoft: 'rgba(124, 58, 237, 0.13)',
+            accentHover: '#6d28d9',
+            border: 'rgba(124, 58, 237, 0.18)',
+            surface: 'rgba(247, 248, 255, 0.9)',
+            navbarOverlay: 'rgba(247, 248, 255, 0.74)',
+            navbarBorder: 'rgba(124, 58, 237, 0.2)',
+            navBg: 'rgba(255, 255, 255, 0.8)',
+        };
+    }
+    return {
+        bg: '#fff7fb',
+        bgSoft: '#fff0f6',
+        text: '#4a2338',
+        textSoft: '#85516b',
+        muted: '#b08098',
+        accent: '#ec4899',
+        accentSoft: 'rgba(236, 72, 153, 0.14)',
+        accentHover: '#db2777',
+        border: 'rgba(236, 72, 153, 0.16)',
+        surface: 'rgba(255, 247, 251, 0.88)',
+        navbarOverlay: 'rgba(255, 247, 251, 0.72)',
+        navbarBorder: 'rgba(236, 72, 153, 0.18)',
+        navBg: 'rgba(255, 255, 255, 0.76)',
+    };
+};
+const itemSlot = (type) => {
+    if (type === 'THEME') return 'THEME';
+    if (type === 'MOUSE_EFFECT') return 'MOUSE_EFFECT';
+    return 'PROFILE_FRAME';
+};
+
+const createShopTheme = (item) => {
+    const palette = getShopThemePalette(item);
+    return {
+        id: `shop-theme-${item.itemId}`,
+        name: item.name,
+        icon: 'Aa',
+        category: 'shop',
+        description: 'Theme Store',
+        backgroundImage: resolveAssetUrl(item.assetUrl || item.previewImage),
+        colors: {
+            '--t-bg': palette.bg,
+            '--t-bg-soft': palette.bgSoft,
+            '--t-card': 'rgba(255, 255, 255, 0.82)',
+            '--t-card-hover': 'rgba(255, 255, 255, 0.94)',
+            '--t-text': palette.text,
+            '--t-text-soft': palette.textSoft,
+            '--t-muted': palette.muted,
+            '--t-accent': palette.accent,
+            '--t-accent-soft': palette.accentSoft,
+            '--t-accent-hover': palette.accentHover,
+            '--t-border': palette.border,
+            '--shop-theme-surface': palette.surface,
+            '--shop-theme-navbar-overlay': palette.navbarOverlay,
+            '--shop-theme-navbar-border': palette.navbarBorder,
+            '--shop-theme-nav-bg': palette.navBg,
+        },
+    };
+};
 
 export default function ShopPage() {
     const navigate = useNavigate();
     const { t } = useTranslation();
+    const { registerTheme, setTheme } = useTheme();
     const [mounted, setMounted] = useState(false);
     const [selectedCategory, setSelectedCategory] = useState('all');
     const [searchTerm, setSearchTerm] = useState('');
-    
+    const [items, setItems] = useState([]);
+    const [ownedItemIds, setOwnedItemIds] = useState(new Set());
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
+    const [hoveredItemId, setHoveredItemId] = useState(null);
+    const [sets, setSets] = useState([]);
+    const [buyingSet, setBuyingSet] = useState('');
+    const [equippedItems, setEquippedItems] = useState(() => {
+        try {
+            const user = JSON.parse(localStorage.getItem('user') || '{}');
+            return {
+                THEME: Number(user.equipped_theme_id) || null,
+                MOUSE_EFFECT: Number(user.equipped_mouse_effect_id) || null,
+                PROFILE_FRAME: Number(user.equipped_profile_frame_id) || null,
+            };
+        } catch {
+            return {};
+        }
+    });
+
     useEffect(() => { setTimeout(() => setMounted(true), 100); }, []);
-    
+
+    useEffect(() => {
+        const syncEquippedFromUser = (user) => {
+            if (!user) return;
+            setEquippedItems({
+                THEME: Number(user.equipped_theme_id) || null,
+                MOUSE_EFFECT: Number(user.equipped_mouse_effect_id) || null,
+                PROFILE_FRAME: Number(user.equipped_profile_frame_id) || null,
+            });
+        };
+
+        const onUserUpdated = (event) => syncEquippedFromUser(event.detail?.user);
+        window.addEventListener('pysim:user-updated', onUserUpdated);
+        window.addEventListener('pysim:user-cosmetic-equipped', onUserUpdated);
+        return () => {
+            window.removeEventListener('pysim:user-updated', onUserUpdated);
+            window.removeEventListener('pysim:user-cosmetic-equipped', onUserUpdated);
+        };
+    }, []);
+
     const categories = [
         { id: 'all', name: t('shop.categories.all', 'ทั้งหมด') },
         { id: 'themes', name: t('shop.categories.themes', 'ธีม') },
         { id: 'avatars', name: t('shop.categories.avatars', 'อวาตาร์') },
         { id: 'effects', name: t('shop.categories.effects', 'เอฟเฟกต์') },
     ];
-    
-    const items = [
-        { id: 1, name: 'Ocean Theme', category: 'themes', price: 500, icon: '🌊', rarity: 'rare', owned: false },
-        { id: 2, name: 'Sakura Theme', category: 'themes', price: 750, icon: '🌸', rarity: 'epic', owned: false },
-        { id: 3, name: 'Cyber Cat', category: 'avatars', price: 300, icon: '🐱', rarity: 'common', owned: true },
-        { id: 4, name: 'Code Ninja', category: 'avatars', price: 450, icon: '🥷', rarity: 'rare', owned: false },
-        { id: 5, name: 'Golden Trail', category: 'effects', price: 1000, icon: '✨', rarity: 'legendary', owned: false },
-        { id: 6, name: 'Matrix Rain', category: 'effects', price: 600, icon: '💚', rarity: 'rare', owned: false },
-    ];
-    
+
     const rarityColors = {
         common: 'text-pysim-on-surface-variant',
         rare: 'text-pysim-primary',
         epic: 'text-purple-600',
         legendary: 'text-pysim-secondary',
     };
-    
+
+    const normalizePreviewData = (value) => {
+        if (!value) return null;
+        if (typeof value === 'object') return value;
+        try {
+            return JSON.parse(value);
+        } catch {
+            return value;
+        }
+    };
+
+    const getCategoryFromType = (type) => {
+        if (type === 'MOUSE_EFFECT') return 'effects';
+        if (type === 'PROFILE_FRAME' || type === 'PROFILE_BACKGROUND') return 'avatars';
+        return 'themes';
+    };
+
+    const getIconFromItem = (item) => {
+        const imageUrl = item.preview_image || item.asset_url;
+        if (typeof imageUrl === 'string' && imageUrl.trim()) {
+            return { type: 'image', value: imageUrl };
+        }
+
+        const preview = normalizePreviewData(item.preview_data);
+        if (preview?.css_class) {
+            const labelByTheme = {
+                'theme-default': 'Py',
+                'theme-neon-cyberpunk': 'NE',
+                'theme-hacker': '</>',
+            };
+            return { type: 'text', value: labelByTheme[preview.css_class] || 'Aa' };
+        }
+        if (preview?.border) {
+            return { type: 'text', value: '[]' };
+        }
+
+        const firstEffect = Array.isArray(preview) ? preview[0] : null;
+        const visual = firstEffect?.visual || preview?.visual || preview?.icon || preview?.effect;
+
+        if (typeof visual === 'string' && visual.trim()) {
+            if (visual.startsWith('http') || visual.startsWith('/uploads')) {
+                return { type: 'image', value: visual };
+            }
+            return { type: 'text', value: visual };
+        }
+
+        if (item.type === 'MOUSE_EFFECT') return { type: 'text', value: '*' };
+        if (item.type === 'PROFILE_FRAME' || item.type === 'PROFILE_BACKGROUND') return { type: 'text', value: '[]' };
+        return { type: 'text', value: '#' };
+    };
+
+    const fetchShop = useCallback(async () => {
+        setLoading(true);
+        setError('');
+        try {
+            const user = JSON.parse(localStorage.getItem('user') || 'null');
+            const setsUrl = user?.user_id && !user?.isGuest
+                ? `${API_BASE}/shop/sets?userId=${user.user_id}`
+                : `${API_BASE}/shop/sets`;
+            const [itemsRes, inventoryRes, setsRes] = await Promise.all([
+                fetch(`${API_BASE}/shop/items`),
+                user?.user_id && !user?.isGuest
+                    ? fetch(`${API_BASE}/shop/inventory/${user.user_id}`)
+                    : Promise.resolve(null),
+                fetch(setsUrl),
+            ]);
+
+            if (!itemsRes.ok) throw new Error('โหลดสินค้าไม่สำเร็จ');
+            const shopItems = await itemsRes.json();
+            const inventoryItems = inventoryRes && inventoryRes.ok ? await inventoryRes.json() : [];
+            const ownedIds = new Set((Array.isArray(inventoryItems) ? inventoryItems : []).map((item) => Number(item.item_id)));
+
+            const nextItems = (Array.isArray(shopItems) ? shopItems : []).map((item) => ({
+                id: Number(item.item_id),
+                itemId: Number(item.item_id),
+                name: item.name,
+                category: getCategoryFromType(item.type),
+                type: item.type,
+                price: Number(item.price || 0),
+                assetUrl: item.asset_url || '',
+                previewImage: item.preview_image || '',
+                icon: getIconFromItem(item),
+                effectData: normalizePreviewData(item.preview_data),
+                rarity: String(item.rarity || 'common').toLowerCase(),
+                owned: ownedIds.has(Number(item.item_id)),
+            }));
+
+            setOwnedItemIds(ownedIds);
+            setItems(nextItems);
+            setSets(setsRes && setsRes.ok ? await setsRes.json() : []);
+
+            const equippedThemeId = Number(user?.equipped_theme_id || 0);
+            const equippedTheme = nextItems.find((item) => item.type === 'THEME' && item.itemId === equippedThemeId);
+            if (equippedTheme) {
+                registerTheme(createShopTheme(equippedTheme));
+            }
+        } catch (err) {
+            setError(err.message || 'โหลดสินค้าไม่สำเร็จ');
+            setItems([]);
+        } finally {
+            setLoading(false);
+        }
+    }, [registerTheme]);
+
+    useEffect(() => {
+        fetchShop();
+    }, [fetchShop]);
+
     const filteredItems = items.filter(item => {
         const matchesCategory = selectedCategory === 'all' || item.category === selectedCategory;
         const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
         return matchesCategory && matchesSearch;
     });
-    
+
+    const handleBuy = async (item) => {
+        const user = JSON.parse(localStorage.getItem('user') || 'null');
+        if (!user?.user_id || user?.isGuest) {
+            alert('กรุณาเข้าสู่ระบบก่อนซื้อสินค้า');
+            return;
+        }
+
+        try {
+            const res = await fetch(`${API_BASE}/shop/buy`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: user.user_id, itemId: item.itemId }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                alert(data.error || 'ซื้อสินค้าไม่สำเร็จ');
+                return;
+            }
+
+            const nextOwned = new Set(ownedItemIds);
+            nextOwned.add(item.itemId);
+            setOwnedItemIds(nextOwned);
+            setItems((current) => current.map((entry) => (
+                entry.itemId === item.itemId ? { ...entry, owned: true } : entry
+            )));
+            if (data.virtual_currency !== undefined) {
+                const nextUser = {
+                    ...user,
+                    virtual_currency: Number(data.virtual_currency),
+                    coins: Number(data.virtual_currency),
+                };
+                localStorage.setItem('user', JSON.stringify(nextUser));
+                window.dispatchEvent(new CustomEvent('pysim:user-updated', {
+                    detail: { user: nextUser },
+                }));
+            }
+        } catch {
+            alert('เชื่อมต่อร้านค้าไม่สำเร็จ');
+        }
+    };
+
+    const handleBuySet = async (set) => {
+        const user = JSON.parse(localStorage.getItem('user') || 'null');
+        if (!user?.user_id || user?.isGuest) {
+            alert('กรุณาเข้าสู่ระบบก่อนซื้อสินค้า');
+            return;
+        }
+
+        setBuyingSet(set.set_key);
+        try {
+            const res = await fetch(`${API_BASE}/shop/buy-set`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: user.user_id, setKey: set.set_key }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                alert(data.error || 'ซื้อเซ็ตไม่สำเร็จ');
+                return;
+            }
+
+            if (data.virtual_currency !== undefined) {
+                const nextUser = {
+                    ...user,
+                    virtual_currency: Number(data.virtual_currency),
+                    coins: Number(data.virtual_currency),
+                };
+                localStorage.setItem('user', JSON.stringify(nextUser));
+                window.dispatchEvent(new CustomEvent('pysim:user-updated', { detail: { user: nextUser } }));
+            }
+            // Re-reads items, inventory and sets in one go, so the item grid and the
+            // set cards agree about what is owned without hand-patching both.
+            await fetchShop();
+        } catch {
+            alert('เชื่อมต่อร้านค้าไม่สำเร็จ');
+        } finally {
+            setBuyingSet('');
+        }
+    };
+
+    const handleEquip = async (item) => {
+        const user = JSON.parse(localStorage.getItem('user') || 'null');
+        if (!user?.user_id || user?.isGuest) return;
+
+        try {
+            const res = await fetch(`${API_BASE}/shop/equip`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: user.user_id, itemId: item.itemId, type: item.type }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                alert(data.error || 'Unable to equip item');
+                return;
+            }
+
+            const slot = itemSlot(item.type);
+            const nextUser = { ...user };
+            if (slot === 'THEME') {
+                nextUser.equipped_theme_id = item.itemId;
+                nextUser.theme_asset_url = item.assetUrl || item.previewImage;
+                nextUser.theme_preview_image = item.previewImage || item.assetUrl;
+                nextUser.theme_name = item.name;
+                const theme = createShopTheme(item);
+                registerTheme(theme);
+                localStorage.setItem(userThemeKey(user), theme.id);
+                window.setTimeout(() => setTheme(theme.id), 0);
+            } else if (slot === 'MOUSE_EFFECT') {
+                nextUser.equipped_mouse_effect_id = item.itemId;
+                nextUser.mouse_effect_data = item.effectData;
+                window.dispatchEvent(new CustomEvent('pysim:mouse-effect-equipped', {
+                    detail: { effects: item.effectData },
+                }));
+            } else {
+                nextUser.equipped_profile_frame_id = item.itemId;
+                nextUser.profile_asset_url = item.assetUrl || item.previewImage;
+            }
+            localStorage.setItem('user', JSON.stringify(nextUser));
+            setEquippedItems((current) => ({ ...current, [slot]: item.itemId }));
+            window.dispatchEvent(new CustomEvent('pysim:user-cosmetic-equipped', {
+                detail: { user: nextUser },
+            }));
+        } catch {
+            alert('Unable to equip item');
+        }
+    };
+
+    const handleUnequip = async (item) => {
+        const user = JSON.parse(localStorage.getItem('user') || 'null');
+        if (!user?.user_id || user?.isGuest) return;
+
+        try {
+            const res = await fetch(`${API_BASE}/shop/equip`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: user.user_id, itemId: null, type: item.type }),
+            });
+            if (!res.ok) return;
+
+            const slot = itemSlot(item.type);
+            const nextUser = { ...user };
+            if (slot === 'THEME') {
+                nextUser.equipped_theme_id = null;
+                nextUser.theme_asset_url = '';
+                nextUser.theme_preview_image = '';
+                nextUser.theme_name = '';
+                localStorage.setItem(userThemeKey(user), 'cyberpunk-light');
+                setTheme('cyberpunk-light');
+            } else if (slot === 'MOUSE_EFFECT') {
+                nextUser.equipped_mouse_effect_id = null;
+                nextUser.mouse_effect_data = [];
+                window.dispatchEvent(new CustomEvent('pysim:mouse-effect-equipped', {
+                    detail: { effects: [] },
+                }));
+            } else {
+                nextUser.equipped_profile_frame_id = null;
+                nextUser.profile_asset_url = '';
+            }
+            localStorage.setItem('user', JSON.stringify(nextUser));
+            setEquippedItems((current) => ({ ...current, [slot]: null }));
+            window.dispatchEvent(new CustomEvent('pysim:user-cosmetic-equipped', {
+                detail: { user: nextUser },
+            }));
+        } catch {
+            // The visual state remains unchanged if the request cannot be completed.
+        }
+    };
+
     return (
         <div className="min-h-screen bg-pysim-surface relative overflow-y-auto">
-            {/* Background */}
             <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
                 <div className="absolute -top-24 -right-24 w-96 h-96 bg-pysim-secondary-container/10 rounded-full blur-3xl"></div>
                 <div className="absolute bottom-0 -left-48 w-[500px] h-[500px] bg-pysim-primary/5 rounded-full blur-[100px]"></div>
             </div>
-            
+
             <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-8 py-8">
-                {/* Header */}
                 <div className={`mb-10 transition-all duration-700 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'}`}>
                     <div className="flex items-center gap-3 mb-2">
                         <div className="w-10 h-10 python-gradient rounded-lg flex items-center justify-center">
@@ -60,15 +455,14 @@ export default function ShopPage() {
                     </div>
                     <p className="text-pysim-on-surface-variant ml-[52px]">{t('shop.subtitle', 'ปรับแต่งประสบการณ์ของคุณ')}</p>
                 </div>
-                
-                {/* Filters & Search */}
+
                 <div className={`flex flex-col md:flex-row gap-4 mb-8 transition-all duration-700 delay-100 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
                     <div className="flex gap-2 flex-wrap">
                         {categories.map(cat => (
                             <button key={cat.id} onClick={() => setSelectedCategory(cat.id)}
                                 className={`px-5 py-2.5 rounded-lg text-sm font-bold transition-all duration-200 ${
-                                    selectedCategory === cat.id 
-                                        ? 'python-gradient text-white' 
+                                    selectedCategory === cat.id
+                                        ? 'python-gradient text-white'
                                         : 'bg-white text-pysim-on-surface-variant hover:bg-pysim-surface-low whisper-shadow'
                                 }`}>
                                 {cat.name}
@@ -84,45 +478,183 @@ export default function ShopPage() {
                         </div>
                     </div>
                 </div>
-                
-                {/* Items Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {filteredItems.map((item, index) => (
-                        <div key={item.id}
-                            className={`bg-white rounded-xl whisper-shadow hover:translate-y-[-4px] transition-all duration-300 overflow-hidden group
-                                ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
-                            style={{ transitionDelay: `${200 + index * 80}ms` }}>
-                            {/* Item Preview */}
-                            <div className="h-40 bg-pysim-surface-low flex items-center justify-center relative">
-                                <span className="text-5xl group-hover:scale-110 transition-transform duration-300">{item.icon}</span>
-                                <span className={`absolute top-3 right-3 text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded bg-white/80 backdrop-blur-sm ${rarityColors[item.rarity]}`}>
-                                    {item.rarity}
-                                </span>
-                            </div>
-                            {/* Item Info */}
-                            <div className="p-5">
-                                <h3 className="text-lg font-bold text-pysim-on-surface mb-1">{item.name}</h3>
-                                <div className="flex items-center justify-between mt-4">
-                                    <div className="flex items-center gap-1.5">
-                                        <Coins size={16} className="text-pysim-secondary-container" />
-                                        <span className="font-bold text-pysim-secondary text-sm">{item.price}</span>
+
+                {error && (
+                    <div className="mb-6 rounded-lg bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">
+                        {error}
+                    </div>
+                )}
+
+                {!loading && sets.length > 0 && selectedCategory === 'all' && !searchTerm && (
+                    <div className={`mb-12 transition-all duration-700 delay-150 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+                        <div className="flex items-baseline gap-3 mb-4">
+                            <h2 className="text-2xl font-black text-pysim-on-surface">เซ็ตธีม</h2>
+                            <p className="text-sm text-pysim-on-surface-variant">ซื้อยกเซ็ตถูกกว่าเลือกทีละชิ้น</p>
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            {sets.map((set) => (
+                                <div key={set.set_key}
+                                    className="bg-white rounded-xl whisper-shadow overflow-hidden flex flex-col">
+                                    <div className="px-6 pt-5 pb-4 border-b border-pysim-outline/10">
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div>
+                                                <h3 className="text-xl font-black text-pysim-on-surface">{set.name_th}</h3>
+                                                <p className="mt-1 text-sm text-pysim-on-surface-variant">{set.description_th}</p>
+                                            </div>
+                                            {set.savings > 0 && (
+                                                <span className="shrink-0 rounded-lg bg-pysim-primary/10 px-3 py-1.5 text-xs font-black text-pysim-primary">
+                                                    ประหยัด {set.savings}
+                                                </span>
+                                            )}
+                                        </div>
                                     </div>
-                                    {item.owned ? (
-                                        <span className="flex items-center gap-1 text-emerald-600 text-sm font-bold">
-                                            <CheckCircle size={16} /> {t('shop.owned', 'มีแล้ว')}
-                                        </span>
+
+                                    <div className="grid grid-cols-3 gap-3 px-6 py-5">
+                                        {set.items.map((item) => (
+                                            <div key={item.item_id} className="text-center">
+                                                <div className="relative h-24 rounded-lg bg-pysim-surface-low flex items-center justify-center overflow-hidden">
+                                                    {item.asset_url ? (
+                                                        <img src={item.asset_url} alt={item.name}
+                                                            className={item.type === 'THEME'
+                                                                ? 'h-full w-full object-cover'
+                                                                : 'h-16 w-16 object-contain'} />
+                                                    ) : (
+                                                        <span className="text-3xl">
+                                                            {Array.isArray(item.preview_data) && item.preview_data[0]?.visual
+                                                                ? item.preview_data[0].visual
+                                                                : '*'}
+                                                        </span>
+                                                    )}
+                                                    {item.owned && (
+                                                        <span className="absolute inset-x-0 bottom-0 bg-emerald-500/90 py-0.5 text-[10px] font-bold text-white">
+                                                            มีแล้ว
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <p className="mt-2 text-xs font-bold text-pysim-on-surface leading-tight">{item.name}</p>
+                                                <p className="text-[11px] text-pysim-outline">{item.price} เหรียญ</p>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    <div className="mt-auto flex items-end justify-between gap-4 px-6 pb-5">
+                                        <div>
+                                            <p className="text-xs text-pysim-outline line-through">
+                                                แยกชิ้น {set.individual_total} เหรียญ
+                                            </p>
+                                            <p className="text-2xl font-black text-pysim-primary leading-tight">
+                                                {set.fully_owned ? set.price : set.price_for_user} เหรียญ
+                                            </p>
+                                            {!set.fully_owned && set.owned_count > 0 && (
+                                                <p className="text-[11px] text-pysim-on-surface-variant">
+                                                    หักส่วนที่มีแล้ว {set.owned_count} ชิ้นออก
+                                                </p>
+                                            )}
+                                        </div>
+                                        <button
+                                            onClick={() => handleBuySet(set)}
+                                            disabled={set.fully_owned || buyingSet === set.set_key}
+                                            className={`rounded-lg px-6 py-2.5 text-sm font-bold transition-all duration-200 ${
+                                                set.fully_owned
+                                                    ? 'bg-pysim-surface-low text-pysim-outline cursor-not-allowed'
+                                                    : 'python-gradient text-white hover:opacity-90'
+                                            }`}>
+                                            {set.fully_owned
+                                                ? 'มีครบแล้ว'
+                                                : buyingSet === set.set_key ? 'กำลังซื้อ...' : 'ซื้อยกเซ็ต'}
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {loading ? (
+                    <div className="py-16 text-center text-sm font-semibold text-pysim-outline">
+                        กำลังโหลดสินค้า...
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {filteredItems.map((item, index) => (
+                            <div key={item.id}
+                                onMouseEnter={() => setHoveredItemId(item.id)}
+                                onMouseLeave={() => setHoveredItemId(null)}
+                                className={`bg-white rounded-xl whisper-shadow hover:translate-y-[-4px] transition-all duration-300 overflow-hidden group
+                                    ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
+                                style={{ transitionDelay: `${200 + index * 80}ms` }}>
+                                <div className="h-40 bg-pysim-surface-low flex items-center justify-center relative">
+                                    {item.icon.type === 'image' ? (
+                                        <img
+                                            src={item.icon.value.startsWith('/uploads') ? `${API_BASE}${item.icon.value}` : item.icon.value}
+                                            alt={item.name}
+                                            className={item.type === 'THEME'
+                                                ? 'h-full w-full object-cover group-hover:scale-105 transition-transform duration-300'
+                                                : 'h-20 w-20 object-contain group-hover:scale-110 transition-transform duration-300'}
+                                        />
                                     ) : (
-                                        <button className="px-5 py-2 python-gradient text-white rounded-lg text-sm font-bold hover:opacity-90 transition-all active:scale-95">
-                                            {t('shop.buy', 'ซื้อ')}
+                                        <span className="text-5xl group-hover:scale-110 transition-transform duration-300">{item.icon.value}</span>
+                                    )}
+                                    <span className={`absolute top-3 right-3 text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded bg-white/80 backdrop-blur-sm ${rarityColors[item.rarity] || rarityColors.common}`}>
+                                        {item.rarity}
+                                    </span>
+                                </div>
+
+                                <div className="p-5">
+                                    <h3 className="text-lg font-bold text-pysim-on-surface mb-1">{item.name}</h3>
+                                    <div className="relative mt-4 h-10">
+                                        <div className={`absolute inset-0 items-center gap-1.5 ${hoveredItemId === item.id && !item.owned ? 'hidden' : 'flex'}`}>
+                                            <Coins size={16} className="text-pysim-secondary-container" />
+                                            <span className="font-bold text-pysim-secondary text-sm">{item.price}</span>
+                                        </div>
+                                        {item.owned ? (
+                                            <>
+                                            <span
+                                                role={item.type === 'MOUSE_EFFECT' ? 'button' : undefined}
+                                                tabIndex={item.type === 'MOUSE_EFFECT' ? 0 : undefined}
+                                                title={item.type === 'MOUSE_EFFECT' ? 'Equip mouse effect' : undefined}
+                                                onClick={() => item.type === 'MOUSE_EFFECT' && handleEquip(item)}
+                                                onKeyDown={(event) => {
+                                                    if (item.type === 'MOUSE_EFFECT' && (event.key === 'Enter' || event.key === ' ')) handleEquip(item);
+                                                }}
+                                                className={`absolute inset-0 flex w-full items-center justify-center gap-1 rounded-lg px-4 py-2.5 text-sm font-bold transition-colors ${item.type === 'MOUSE_EFFECT' ? 'cursor-pointer bg-sky-400 text-white hover:bg-sky-500' : 'bg-emerald-50 text-emerald-600'}`}
+                                            >
+                                                <CheckCircle size={16} /> {t('shop.owned', 'มีแล้ว')}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleEquip(item)}
+                                                className={`absolute inset-0 flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold text-white transition-colors ${equippedItems[itemSlot(item.type)] === item.itemId ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-sky-400 hover:bg-sky-500'}`}
+                                            >
+                                                <CheckCircle size={17} /> {equippedItems[itemSlot(item.type)] === item.itemId ? 'กำลังสวมใส่' : 'สวมใส่'}
+                                            </button>
+                                            </>
+                                        ) : (
+                                            <button
+                                                onClick={() => handleBuy(item)}
+                                                className={`absolute inset-0 w-full items-center justify-center gap-2 rounded-lg bg-sky-400 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-sky-500 active:scale-[0.98] ${hoveredItemId === item.id ? 'flex' : 'hidden'}`}
+                                            >
+                                                <ShoppingCart size={17} />
+                                                {t('shop.buy', 'ซื้อ')}
+                                            </button>
+                                        )}
+                                    </div>
+                                    {item.owned && equippedItems[itemSlot(item.type)] === item.itemId && (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleUnequip(item)}
+                                            className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-600 transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600"
+                                        >
+                                            ถอดออก
                                         </button>
                                     )}
                                 </div>
                             </div>
-                        </div>
-                    ))}
-                </div>
-                
-                {/* Back Button */}
+                        ))}
+                    </div>
+                )}
+
                 <button onClick={() => navigate('/menu')}
                     className={`mt-10 text-pysim-outline hover:text-pysim-primary text-sm font-bold transition-colors uppercase tracking-widest ${mounted ? 'opacity-100' : 'opacity-0'}`}>
                     ← {t('shop.back', 'กลับหน้าหลัก')}

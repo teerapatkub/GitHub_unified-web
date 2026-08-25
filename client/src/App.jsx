@@ -2,33 +2,37 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  BookOpen, Target, FlaskConical, Globe, LogOut, Monitor, Store
+  BookOpen, Target, FlaskConical, Globe, LogOut, Monitor, Store, Coins
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { TheInfiniteGrid } from './components/ui/the-infinite-grid';
 import { NavBar } from './components/ui/tubelight-navbar';
-import { ThemeProvider } from './contexts/ThemeContext';
+import MouseEffectLayer from './components/MouseEffectLayer';
 
 
 // --- Friend's Learning Pages ---
 import LearningPage from './pages/LearningPage';
 import LessonPage from './pages/LessonPage';
 import ExercisePage from './pages/ExercisePage';
+import MiNi_Game from './pages/MiNi_Game';
 import FriendLogin from './pages/FriendLogin';
 import ShopPage from './pages/old plan/ShopPage';
+import Achievements from './pages/old plan/Achievements';
 
 // --- Your Original Pages ---
 import MainMenu from './pages/MainMenu';
 import CompetitiveArena from './pages/CompetitiveArena';
-import ArcadeBattleRoyale from './pages/ArcadeBattleRoyale';
+import ArcadeBattleRoyale from './pages/Arcade/ArcadeBattleRoyale';
 import ChallengePage from './pages/ChallengePage';
 import AiTaskPage from './components/learning/AiTaskPage';
 import PromotionExamPage from './pages/PromotionExamPage';
+import ProfilePage from './pages/ProfilePage';
 import Dashboard from './admin/pages/Dashboard';
 import ManageAccount from './admin/pages/ManageAccount';
 import ThemePage from './admin/pages/ThemePage';
 import AddLesson from './admin/pages/AddLesson';
 import Leaderboard from './admin/pages/Leaderboard';
+import CompetitiveChallengePage from './admin/pages/CompetitiveChallengePage';
 
 // ######################################################################
 // ### MAIN APP
@@ -45,18 +49,16 @@ export default function App() {
   }, []);
 
   return (
-    <ThemeProvider>
-      <BrowserRouter>
-        <audio
-          ref={audioRef}
-          id="bg-music"
-          src="/assets/music/Monplaisir.mp3"
-          loop
-          hidden
-        />
-        <AppContent />
-      </BrowserRouter>
-    </ThemeProvider>
+    <BrowserRouter>
+      <audio
+        ref={audioRef}
+        id="bg-music"
+        src="/assets/music/Monplaisir.mp3"
+        loop
+        hidden
+      />
+      <AppContent />
+    </BrowserRouter>
   );
 }
 
@@ -68,7 +70,27 @@ function AppContent() {
   const location = useLocation();
 
   // === Auth State ===
-  const [user, setUser] = useState(null);
+  // Seeded synchronously from localStorage on the very first render rather
+  // than starting at null and waiting for the hydration effect below. Starting
+  // at null meant a hard load of any protected deep link rendered its route
+  // guard as unauthenticated for one render, redirecting to /login before the
+  // effect could restore the saved session — the URL had already changed, so
+  // the player ended up on /learn instead of the page they asked for. Reading
+  // the same key the effect reads keeps the two in agreement; the effect still
+  // runs afterwards to handle an injected user, guest defaults, and profile
+  // refresh.
+  const [user, setUser] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('user') || 'null');
+      if (saved?.user_id && !saved?.isGuest) {
+        return { ...saved, isGuest: false, level: Number(saved.level || 1) };
+      }
+      return saved;
+    } catch {
+      return null;
+    }
+  });
+  const [authReady, setAuthReady] = useState(false);
   const isAuthenticated = Boolean(user && !user.isGuest);
 
 
@@ -76,6 +98,9 @@ function AppContent() {
     if (!nextUser) return;
     setUser(nextUser);
     localStorage.setItem('user', JSON.stringify(nextUser));
+    window.dispatchEvent(new CustomEvent('pysim:user-updated', {
+      detail: { user: nextUser },
+    }));
   }, []);
 
   const refreshUserProfile = useCallback(async (injectedUser = null) => {
@@ -104,6 +129,39 @@ function AppContent() {
     }
   }, [syncUserToState]);
 
+  const getPresenceInfo = useCallback((pathname) => {
+    if (pathname.startsWith('/admin')) {
+      return { mode: 'admin', activityLabel: 'อยู่ในหน้าแอดมิน' };
+    }
+    if (pathname.startsWith('/lesson')) {
+      return { mode: 'learn', activityLabel: 'กำลังอ่านบทเรียน' };
+    }
+    if (pathname.startsWith('/exercise') || pathname.startsWith('/debug')) {
+      return { mode: 'exercise', activityLabel: 'กำลังทำแบบฝึกหัด' };
+    }
+    if (pathname.startsWith('/mini-game')) {
+      return { mode: 'mini-game', activityLabel: 'กำลังเล่นมินิเกม' };
+    }
+    if (pathname.startsWith('/challenge')) {
+      return { mode: 'challenge', activityLabel: 'กำลังทำความท้าทาย' };
+    }
+    if (
+      pathname.startsWith('/online') ||
+      pathname.startsWith('/matchmaking') ||
+      pathname.startsWith('/join-room') ||
+      pathname.startsWith('/lobby')
+    ) {
+      return { mode: 'online', activityLabel: 'กำลังเล่นโหมดออนไลน์' };
+    }
+    if (pathname.startsWith('/menu')) {
+      return { mode: 'solo', activityLabel: 'กำลังเล่นโหมดเดี่ยว' };
+    }
+    if (pathname.startsWith('/shop')) {
+      return { mode: 'shop', activityLabel: 'กำลังดูร้านค้า' };
+    }
+    return { mode: 'learn', activityLabel: 'กำลังดูบทเรียน' };
+  }, []);
+
   useEffect(() => {
     const searchParams = new URLSearchParams(location.search);
     const userParam = searchParams.get('user');
@@ -111,10 +169,9 @@ function AppContent() {
       const authenticatedUser = {
         ...incomingUser,
         isGuest: false,
-        level: Number(incomingUser?.level || 1),
+        level: Number(incomingUser?.level ?? 1),
       };
-      localStorage.setItem('user', JSON.stringify(authenticatedUser));
-      setUser(authenticatedUser);
+      syncUserToState(authenticatedUser);
       return authenticatedUser;
     };
 
@@ -130,6 +187,7 @@ function AppContent() {
 
         if (parsedUser?.user_id || parsedUser?.username) {
           persistAuthenticatedUser(parsedUser);
+          setAuthReady(true);
           navigate(location.pathname, { replace: true });
           return;
         }
@@ -148,22 +206,32 @@ function AppContent() {
     };
 
     if (savedUser?.user_id && !savedUser?.isGuest) {
-      setUser({
+      syncUserToState({
         ...savedUser,
         isGuest: false,
-        level: Number(savedUser.level || 1),
+        level: Number(savedUser.level ?? 1),
       });
+      setAuthReady(true);
       return;
     }
 
     if (!savedUser || (savedUser.isGuest && savedUser.level !== defaultGuest.level)) {
-      localStorage.setItem('user', JSON.stringify(defaultGuest));
-      setUser(defaultGuest);
+      syncUserToState(defaultGuest);
+      setAuthReady(true);
       if (savedUser) window.location.reload();
     } else {
-      setUser(savedUser);
+      syncUserToState(savedUser);
+      setAuthReady(true);
     }
-  }, [location.pathname, location.search, navigate]);
+  }, [location.pathname, location.search, navigate, syncUserToState]);
+
+  useEffect(() => {
+    const onCosmeticEquipped = (event) => {
+      if (event.detail?.user) syncUserToState(event.detail.user);
+    };
+    window.addEventListener('pysim:user-cosmetic-equipped', onCosmeticEquipped);
+    return () => window.removeEventListener('pysim:user-cosmetic-equipped', onCosmeticEquipped);
+  }, [syncUserToState]);
 
   useEffect(() => {
     if (!user || user.isGuest) return;
@@ -200,11 +268,34 @@ function AppContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.user_id]);
 
+  useEffect(() => {
+    if (!user || user.isGuest || !user.user_id) return;
+
+    const sendPresence = () => {
+      const presence = getPresenceInfo(location.pathname);
+      fetch('http://localhost:3001/api/presence', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.user_id,
+          currentPath: location.pathname,
+          ...presence,
+        }),
+      }).catch(() => {
+        // Presence is best-effort; the app should keep working if the API is unavailable.
+      });
+    };
+
+    sendPresence();
+    const interval = setInterval(sendPresence, 30000);
+    return () => clearInterval(interval);
+  }, [getPresenceInfo, location.pathname, user?.isGuest, user?.user_id]);
+
   // === Login Success ===
   const handleLoginSuccess = (userData) => {
     const authenticatedUser = { ...userData, isGuest: false };
     syncUserToState(authenticatedUser);
-    navigate('/learn');
+    navigate(authenticatedUser.role === 'admin' ? '/admin/dashboard' : '/learn');
   };
 
   const handleLogout = () => {
@@ -217,13 +308,29 @@ function AppContent() {
   const [currentModule, setCurrentModule] = useState(null);
 
   const handleNavigate = (page, lessonId = null, module = null) => {
-    if (lessonId) setCurrentLessonId(lessonId);
+    if (lessonId !== null && lessonId !== undefined) setCurrentLessonId(lessonId);
     if (module) setCurrentModule(module);
+
+    if (page === 'lesson' && lessonId !== null && lessonId !== undefined) {
+      navigate(`/lesson/${lessonId}`);
+      return;
+    }
+
+    if (page === 'exercise' && lessonId !== null && lessonId !== undefined) {
+      navigate(`/exercise/${lessonId}`);
+      return;
+    }
+
+    if (page === 'mini-game' && lessonId !== null && lessonId !== undefined) {
+      navigate(`/mini-game/${lessonId}`);
+      return;
+    }
 
     const routeMap = {
       'learn': '/learn',
       'lesson': '/lesson',
       'exercise': '/exercise',
+      'mini-game': '/mini-game',
       'challenge': '/challenge',
       'promotion-exam': '/promotion-exam',
       'shop': '/shop',
@@ -235,13 +342,27 @@ function AppContent() {
 
   // === Which pages show the Navbar ===
   const hideNavbar = location.pathname === '/login';
-  const simulationRoutes = ['/menu', '/online', '/matchmaking'];
-  const isSimulationMode = simulationRoutes.some(r => location.pathname.startsWith(r));
-  const isCodingWorkspace = ['/exercise', '/challenge', '/debug'].includes(location.pathname);
+  const fullBleedRoutes = ['/menu', '/online', '/matchmaking', '/achievements'];
+  const isSimulationMode = fullBleedRoutes.some(r => location.pathname.startsWith(r));
+  const isCodingWorkspace = ['/exercise', '/mini-game', '/challenge', '/debug', '/promotion-exam']
+    .some(route => location.pathname.startsWith(route));
   const isAdminUser = user?.role === 'admin';
+  const requireStudent = (element) => {
+    if (!authReady) return null;
+    if (!isAuthenticated) return <Navigate to="/login" replace />;
+    if (isAdminUser) return <Navigate to="/admin/dashboard" replace />;
+    return element;
+  };
+  const requireAdmin = (element) => {
+    if (!authReady) return null;
+    if (!isAuthenticated) return <Navigate to="/login" replace />;
+    if (!isAdminUser) return <Navigate to="/learn" replace />;
+    return element;
+  };
 
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-transparent text-slate-800 font-sans transition-colors duration-300 relative">
+      <MouseEffectLayer user={user} />
       <TheInfiniteGrid>
         {/* TOP RIGHT FLOATING HEADER — Hide on login AND simulation routes */}
         <AnimatePresence>
@@ -252,7 +373,7 @@ function AppContent() {
               exit={{ y: -20, opacity: 0 }}
               transition={{ duration: 0.3, ease: 'easeInOut' }}
             >
-              <div className="fixed inset-x-0 top-0 z-40 border-b border-slate-200/70 bg-white/85 backdrop-blur-xl shadow-[0_10px_40px_rgba(15,23,42,0.08)]">
+              <div className="pysim-theme-navbar fixed inset-x-0 top-0 z-40 border-b border-slate-200/70 bg-white/85 backdrop-blur-xl shadow-[0_10px_40px_rgba(15,23,42,0.08)]">
                 <div className="mx-auto flex h-20 max-w-[1700px] items-center gap-4 px-4 sm:px-6">
                   <div className="hidden min-w-[150px] lg:block">
                     <div className="text-xs font-black uppercase tracking-[0.24em] text-blue-600">PYSIM</div>
@@ -292,59 +413,68 @@ function AppContent() {
             }
           >
             <Routes location={location}>
-              <Route path="/" element={<Navigate to={isAuthenticated ? "/learn" : "/login"} replace />} />
+              <Route path="/" element={
+                authReady
+                  ? <Navigate to={isAuthenticated ? (isAdminUser ? "/admin/dashboard" : "/learn") : "/login"} replace />
+                  : null
+              } />
               <Route
                 path="/shop"
-                element={
-                  isAuthenticated
-                    ? <ShopPage />
-                    : <Navigate to="/login" replace />
-                }
+                element={requireStudent(<ShopPage />)}
               />
               <Route
                 path="/login"
                 element={
-                  isAuthenticated
-                    ? <Navigate to="/learn" replace />
+                  !authReady
+                    ? null
+                    : isAuthenticated
+                    ? <Navigate to={isAdminUser ? "/admin/dashboard" : "/learn"} replace />
                     : <FriendLogin onLoginSuccess={handleLoginSuccess} />
                 }
               />
 
               {/* Friend's Learning Pages */}
               <Route path="/learn" element={
-                isAuthenticated
-                  ? <LearningPage onNavigate={handleNavigate} user={user} />
-                  : <Navigate to="/login" replace />
+                requireStudent(<LearningPage onNavigate={handleNavigate} user={user} />)
               } />
-              <Route path="/lesson" element={
-                isAuthenticated ? (
+              <Route path="/lesson" element={<Navigate to="/learn" replace />} />
+              <Route path="/lesson/:lessonId" element={
+                requireStudent(
                   <LessonPage
                     lessonId={currentLessonId}
                     module={currentModule}
                     onNavigate={handleNavigate}
                     user={user}
                   />
-                ) : <Navigate to="/login" replace />
+                )
               } />
-              <Route path="/exercise" element={
-                isAuthenticated ? (
+              <Route path="/exercise" element={<Navigate to="/learn" replace />} />
+              <Route path="/exercise/:lessonId" element={
+                requireStudent(
                   <ExercisePage
                     lessonId={currentLessonId}
                     onNavigate={handleNavigate}
                     user={user}
                     onUserRefresh={refreshUserProfile}
                   />
-                ) : <Navigate to="/login" replace />
+                )
+              } />
+              <Route path="/mini-game" element={<Navigate to="/learn" replace />} />
+              <Route path="/mini-game/:lessonId" element={
+                requireStudent(
+                  <MiNi_Game
+                    lessonId={currentLessonId}
+                    onNavigate={handleNavigate}
+                    user={user}
+                    onUserRefresh={refreshUserProfile}
+                  />
+                )
               } />
               <Route path="/debug" element={
-                isAuthenticated
-                  ? <AiTaskPage mode="exercise" user={user} onUserRefresh={refreshUserProfile} />
-                  : <Navigate to="/login" replace />
+                requireStudent(<AiTaskPage mode="exercise" user={user} onUserRefresh={refreshUserProfile} />)
               } />
               <Route path="/challenge" element={
-                isAuthenticated
-                  ? <ChallengePage onNavigate={handleNavigate} user={user} onUserRefresh={refreshUserProfile} />
-                  : <Navigate to="/login" replace />
+                requireStudent(<ChallengePage onNavigate={handleNavigate} user={user} onUserRefresh={refreshUserProfile} />)
               } />
               <Route path="/promotion-exam" element={
                 isAuthenticated
@@ -353,28 +483,39 @@ function AppContent() {
               } />
 
               {/* Multiplayer Hub Route */}
+              <Route path="/profile" element={requireStudent(<ProfilePage user={user} />)} />
+              <Route path="/profile/:userId" element={requireStudent(<ProfilePage user={user} />)} />
               <Route path="/menu" element={<MainMenu user={user} />} />
+              <Route path="/achievements" element={<Achievements />} />
               <Route path="/online" element={isAuthenticated ? <CompetitiveArena user={user} /> : <Navigate to="/login" replace />} />
+              {/* Person 2 reached the Competitive Arena at /competitive-arena on their
+                  branch; kept as a second path so links and bookmarks from there
+                  still land, rather than renaming /online out from under ours. */}
+              <Route path="/competitive-arena" element={isAuthenticated ? <CompetitiveArena user={user} /> : <Navigate to="/login" replace />} />
               <Route path="/matchmaking" element={isAuthenticated ? <ArcadeBattleRoyale user={user} /> : <Navigate to="/login" replace />} />
               <Route
                 path="/admin/dashboard"
-                element={isAdminUser ? <Dashboard /> : <Navigate to="/learn" replace />}
+                element={requireAdmin(<Dashboard />)}
               />
               <Route
                 path="/admin/manage-account"
-                element={isAdminUser ? <ManageAccount /> : <Navigate to="/learn" replace />}
+                element={requireAdmin(<ManageAccount />)}
               />
               <Route
                 path="/admin/theme"
-                element={isAdminUser ? <ThemePage /> : <Navigate to="/learn" replace />}
+                element={requireAdmin(<ThemePage />)}
               />
               <Route
                 path="/admin/add-lesson"
-                element={isAdminUser ? <AddLesson /> : <Navigate to="/learn" replace />}
+                element={requireAdmin(<AddLesson />)}
               />
               <Route
                 path="/admin/leaderboard"
-                element={isAdminUser ? <Leaderboard /> : <Navigate to="/learn" replace />}
+                element={requireAdmin(<Leaderboard />)}
+              />
+              <Route
+                path="/admin/competitive-challenge"
+                element={requireAdmin(<CompetitiveChallengePage />)}
               />
             </Routes>
           </motion.div>
@@ -389,21 +530,27 @@ function AppContent() {
 // ### TOP RIGHT HEADER (User Profile & Language)
 // ######################################################################
 const TopRightHeader = ({ user, onLogout }) => {
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [langMenuOpen, setLangMenuOpen] = useState(false);
+  const coinBalance = Number(user?.virtual_currency ?? user?.coins ?? 0);
+  const profileImage = user?.profile_asset_url?.startsWith('/uploads')
+    ? `http://localhost:3001${user.profile_asset_url}`
+    : user?.profile_asset_url;
 
   return (
     <div className="flex items-center space-x-3 rounded-2xl border border-slate-200/70 bg-white/80 p-2 pr-4 shadow-sm">
       
-      {/* Simulation Mode Toggle (Desktop Only) */}
+      {/* Game modes menu (Desktop Only) — this used to be labelled "Simulation",
+          which was the developer-life mode; that mode has been removed and the
+          button has always navigated to /menu, so the label now says so. */}
       {!user?.isGuest && (
         <button
           onClick={() => navigate('/menu')}
           className="hidden sm:flex items-center space-x-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all bg-gradient-to-r from-amber-100 to-amber-200 text-amber-800 hover:shadow-md hover:scale-105"
         >
           <Monitor className="h-3 w-3" />
-          <span>Simulation</span>
+          <span>{t('navbar.modes', 'โหมดเกม')}</span>
         </button>
       )}
 
@@ -453,6 +600,33 @@ const TopRightHeader = ({ user, onLogout }) => {
         </div>
       ) : (
         <div className="flex items-center space-x-3 pl-1">
+          <div
+            className="hidden sm:flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-black text-amber-700"
+            title="Coins"
+          >
+            <Coins className="h-4 w-4 text-amber-500" />
+            <span>{coinBalance.toLocaleString()}</span>
+          </div>
+          {/* Avatar, with the equipped profile frame drawn around it. profileImage
+              is the frame's artwork — it used to be rendered as the avatar itself,
+              which meant an equipped frame replaced the player rather than framing
+              them. The centre of every frame is transparent, so it overlays. */}
+          <button
+            onClick={() => navigate('/profile')}
+            className="relative h-10 w-10 shrink-0 rounded-full transition-transform hover:scale-105"
+            title={t('navbar.profile', 'ดูโปรไฟล์ของฉัน')}
+          >
+            <div
+              className={`absolute inset-[5px] rounded-full bg-gradient-to-br from-sky-400 to-indigo-500
+                          flex items-center justify-center text-xs font-black text-white select-none
+                          ${profileImage ? '' : 'ring-2 ring-sky-300'}`}
+            >
+              {String(user?.username || '?').trim().charAt(0).toUpperCase()}
+            </div>
+            {profileImage && (
+              <img src={profileImage} alt="" className="absolute inset-0 h-full w-full pointer-events-none" />
+            )}
+          </button>
           <div className="flex flex-col items-end hidden sm:flex">
             <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">LV. {user?.level || 1}</span>
             <span className="text-xs font-semibold text-slate-700">{user?.username}</span>

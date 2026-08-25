@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Shuffle, PlusSquare, Users, Settings, User, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import SettingsModal from '../components/SettingsModal';
+import SettingsModal from '../../components/SettingsModal';
 
 export default function OnlineMenu() {
     const navigate = useNavigate();

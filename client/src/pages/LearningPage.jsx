@@ -77,9 +77,29 @@ const removeDuplicateModules = (rows) => {
     .reverse();
 };
 
+const getLevelProgress = (xp = 0) => {
+  const numericXp = Number(xp || 0);
+  let level = 1;
+  let remainingXp = numericXp;
+  let requiredXpForNextLevel = 120;
+
+  while (remainingXp >= requiredXpForNextLevel) {
+    remainingXp -= requiredXpForNextLevel;
+    level += 1;
+    requiredXpForNextLevel = 120 * level;
+  }
+
+  return {
+    level,
+    xpInCurrentLevel: remainingXp,
+    xpNeededThisLevel: Math.max(1, requiredXpForNextLevel),
+  };
+};
+
 export default function LearningPage({ onNavigate, user }) {
   const [modules, setModules] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showCompleteModal, setShowCompleteModal] = useState(false);
   const { t } = useTranslation();
 
   const resolveText = (key, fallback) => {
@@ -88,11 +108,19 @@ export default function LearningPage({ onNavigate, user }) {
   };
 
   const progression = user?.progression || {};
-  const currentLevel = Number(progression.level || user?.level || 1);
   const totalXp = Number(user?.xp || 0);
-  const currentLevelXp = Number(progression.xpIntoLevel || 0);
-  const xpNeededThisLevel = Number(progression.xpNeededThisLevel || 100);
-  const xpProgressPercent = Number(progression.xpProgressPercent || 0);
+  const streakDays = Number(user?.streak_days || 0);
+  const storedLevel = Number(user?.level ?? 1);
+  const levelProgress = getLevelProgress(totalXp);
+  // The server sends a `progression` block; fall back to the local curve when it
+  // is absent so guests and stale /profile responses still render a sane bar.
+  const currentLevel = Number(progression.level || Math.max(storedLevel, levelProgress.level));
+  const currentLevelXp = Number(progression.xpIntoLevel ?? levelProgress.xpInCurrentLevel);
+  const xpNeededThisLevel = Number(progression.xpNeededThisLevel || levelProgress.xpNeededThisLevel || 100);
+  const xpProgressPercent = Number(
+    progression.xpProgressPercent
+    ?? Math.min(100, Math.round((currentLevelXp / (xpNeededThisLevel || 1)) * 100))
+  );
   const promotionExamEligible = Boolean(progression.promotionExamEligible);
   const promotionStageLabel = progression.promotionStage === "intermediate_to_advanced"
     ? "Intermediate → Advanced"
@@ -124,6 +152,36 @@ export default function LearningPage({ onNavigate, user }) {
     fetchData();
   }, [user]);
 
+  const continueLearning = () => {
+    const nextLesson = modules
+      .flatMap((module) =>
+        (module.lessons || []).map((lesson) => ({
+          ...lesson,
+          moduleData: module,
+          moduleId: Number(module.module_id || 0),
+          moduleOrder: Number(module.order_index || 0),
+        }))
+      )
+      .filter(
+        (lesson) =>
+          !lesson.post_quiz_completed &&
+          currentLevel >= Number(lesson.required_level || 0)
+      )
+      .sort(
+        (a, b) =>
+          a.moduleId - b.moduleId ||
+          a.moduleOrder - b.moduleOrder ||
+          Number(a.order_index || 0) - Number(b.order_index || 0)
+      )[0];
+
+    if (!nextLesson) {
+      setShowCompleteModal(true);
+      return;
+    }
+
+    onNavigate("lesson", nextLesson.lesson_id || nextLesson.id, nextLesson.moduleData);
+  };
+
   if (loading) {
     return (
       <div className="flex h-96 flex-col items-center justify-center space-y-4">
@@ -152,7 +210,7 @@ export default function LearningPage({ onNavigate, user }) {
                 {user?.username || "Python Scholar"}
               </h2>
               <p className="text-xs font-semibold uppercase tracking-wider text-pysim-outline">
-                เลเวล {user?.level || 1}
+                เลเวล {currentLevel}
               </p>
             </div>
 
@@ -194,14 +252,18 @@ export default function LearningPage({ onNavigate, user }) {
                     🔥
                   </span>
                   <span className="text-sm font-bold text-pysim-secondary">
-                    0 วัน
+                    {streakDays} วัน
                   </span>
                 </div>
               </div>
             </div>
 
             <div className="pt-4">
-              <button className="flex w-full items-center justify-center gap-2 rounded-lg bg-pysim-secondary-container py-3 text-sm font-bold tracking-wide text-pysim-on-secondary-container transition-all hover:opacity-90 active:scale-95">
+              <button
+                type="button"
+                onClick={continueLearning}
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-pysim-secondary-container py-3 text-sm font-bold tracking-wide text-pysim-on-secondary-container transition-all hover:opacity-90 active:scale-95"
+              >
                 เรียนต่อ
               </button>
             </div>
@@ -254,7 +316,7 @@ export default function LearningPage({ onNavigate, user }) {
           >
             {modules.map((mod, index) => {
               const reqLevel = Number(mod.required_level || 0);
-              const myLevel = Number(user?.level || 1);
+              const myLevel = currentLevel;
               const isLocked = myLevel < reqLevel;
 
               return (
@@ -271,6 +333,40 @@ export default function LearningPage({ onNavigate, user }) {
           </motion.div>
         </section>
       </main>
+
+      {showCompleteModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          role="presentation"
+          onClick={() => setShowCompleteModal(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white p-8 text-center shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="learning-complete-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <CheckCircle2 className="mx-auto mb-4 h-14 w-14 text-emerald-500" />
+            <h2
+              id="learning-complete-title"
+              className="text-2xl font-extrabold text-pysim-primary"
+            >
+              เรียนครบทุกบทเรียนแล้ว
+            </h2>
+            <p className="mt-3 text-pysim-on-surface-variant">
+              ยินดีด้วย คุณทำแบบทดสอบหลังเรียนครบทุกบทเรียนแล้ว
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowCompleteModal(false)}
+              className="mt-6 rounded-lg bg-pysim-primary px-6 py-3 text-sm font-bold text-white transition-opacity hover:opacity-90"
+            >
+              ปิด
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -300,6 +396,27 @@ const ModuleAccordion = ({
 
   const progress = calculateProgress();
 
+  const getLessonStatus = (lesson) => {
+    if (lesson.post_quiz_completed) {
+      return {
+        label: "เรียนเสร็จสิ้น",
+        className: "bg-emerald-100 text-emerald-700",
+      };
+    }
+
+    if (lesson.pre_quiz_completed) {
+      return {
+        label: "กำลังเรียน",
+        className: "bg-amber-100 text-amber-700",
+      };
+    }
+
+    return {
+      label: "ยังไม่เริ่ม",
+      className: "bg-pysim-surface-container text-pysim-on-surface-variant",
+    };
+  };
+
   return (
     <motion.div
       variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
@@ -321,8 +438,15 @@ const ModuleAccordion = ({
               <Lock className="h-6 w-6" />
             </div>
           ) : (
-            <div className="chapter-card-gradient flex h-16 w-16 shrink-0 items-center justify-center rounded-lg text-white">
-              <span className="text-2xl font-black">
+            <div
+              className="flex h-16 w-16 shrink-0 select-none items-center justify-center rounded-lg border shadow-sm"
+              style={{
+                backgroundColor: "#e5e7eb",
+                borderColor: "#9ca3af",
+                color: "#111827",
+              }}
+            >
+              <span className="text-2xl font-black leading-none">
                 {String(moduleData.module_id || "").padStart(2, "0")}
               </span>
             </div>
@@ -394,6 +518,9 @@ const ModuleAccordion = ({
                   const lessonId = lesson.lesson_id || lesson.id;
                   const isLessonLocked =
                     userLevel < Number(lesson.required_level || 0);
+                  const lessonStatus = isLessonLocked
+                    ? { label: "ล็อกอยู่", className: "bg-pysim-surface-dim text-pysim-outline" }
+                    : getLessonStatus(lesson);
 
                   return (
                     <li
@@ -427,9 +554,21 @@ const ModuleAccordion = ({
                         </span>
                       </div>
 
-                      <div className="flex items-center space-x-5">
-                        <span className="rounded-lg bg-pysim-surface-high px-2.5 py-1 text-[11px] font-mono font-bold text-pysim-on-surface-variant">
-                          {lesson.completed_count || 0}/{lesson.total_count || 0}
+                      <div className="flex items-center gap-3">
+                        <span
+                          className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-bold ${lessonStatus.className}`}
+                        >
+                          {lessonStatus.label}
+                        </span>
+                        <span
+                          className="min-w-[3.25rem] select-none rounded-lg border px-3 py-1 text-center text-xs font-mono font-black shadow-sm"
+                          style={{
+                            backgroundColor: "#e5e7eb",
+                            borderColor: "#9ca3af",
+                            color: "#111827",
+                          }}
+                        >
+                          ภาคปฏิบัติ {lesson.completed_count || 0}/{lesson.total_count || 0}
                         </span>
                       </div>
                     </li>

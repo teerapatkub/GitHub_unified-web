@@ -1,125 +1,151 @@
-const net = require('net');
-const crypto = require('crypto');
+// server/db.js — PostgreSQL access layer with a MySQL-compatible surface.
+//
+// Every call site in server.js was written against mysql2's shape:
+//   const [rows]   = await db.query('SELECT ... WHERE id = ?', [id]);
+//   const [result] = await db.execute('INSERT ...', [...]);   // result.insertId
+//   const conn     = await db.getConnection();                // beginTransaction/commit/rollback/release
+// so this module keeps that surface exactly, and translates MySQL SQL to
+// Postgres on the way through.
+//
+// The transport is the `pg` driver, adopted from Person 2's branch during the
+// 2026-08-25 three-way merge, replacing a hand-written implementation of the
+// Postgres wire protocol that had grown here. Two things that implementation
+// could not do are the reason for the switch:
+//
+//   * It had no connection pool - every query opened and tore down its own TCP
+//     connection and SASL handshake.
+//   * It could not use bind parameters. Values were escaped and spliced into
+//     the SQL string as literals, which is both a standing injection risk and
+//     the root of a whole family of type bugs: JS booleans had to render as
+//     1/0, so no column in this schema could be a real BOOLEAN, and a blanket
+//     TRUE->1 rewrite once corrupted JSON inside a seed string.
+//
+// Values now travel out-of-band as real bind parameters, so that entire class
+// of problem is gone. Two compatibility shims below preserve the exact
+// behaviour the rest of the codebase already depends on - read their comments
+// before removing either.
+require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 
-const BOOL_COLUMNS = new Set([
-    'auto_resolve',
-    'force_skip_day',
-    'is_active',
-    'is_equipped',
-    'is_passed',
-    'is_plugged_in',
-    'is_ready',
-    'is_resolved',
-    'verified',
-]);
+const { Pool, types } = require('pg');
 
-const OID = {
-    BOOL: 16,
-    INT8: 20,
-    INT2: 21,
-    INT4: 23,
-    FLOAT4: 700,
-    FLOAT8: 701,
-    NUMERIC: 1700,
-    JSON: 114,
-    JSONB: 3802,
+// pg returns int8 and numeric as STRINGS, because they can exceed the range a
+// JS number represents exactly. The previous layer converted them to numbers,
+// and callers rely on that: `COUNT(*)` comes back as int8, and code like
+// `remaining > 0` or `total - used` would silently do string comparison and
+// concatenation instead of arithmetic. Nothing in this schema stores integers
+// beyond 2^53, so converting is safe here.
+types.setTypeParser(20, (value) => (value === null ? null : Number(value)));   // int8
+types.setTypeParser(1700, (value) => (value === null ? null : Number(value))); // numeric
+
+const DB_CONFIG = {
+    host: process.env.PGHOST || 'localhost',
+    port: Number(process.env.PGPORT || 5432),
+    user: process.env.PGUSER || 'postgres',
+    password: String(process.env.PGPASSWORD ?? 'postgres'),
+    database: process.env.PGDATABASE || 'postgres',
+    max: Number(process.env.DB_CONNECTION_LIMIT || 10),
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,
 };
 
-function i32(n) {
-    const b = Buffer.alloc(4);
-    b.writeInt32BE(n);
-    return b;
-}
+// Errors that mean "the connection died", not "the query was wrong". Only these
+// are worth rebuilding the pool and retrying once for.
+const RECOVERABLE_ERROR_CODES = new Set([
+    'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT',
+    '57P01', '57P02', '57P03', '53300', '08000', '08003', '08006',
+]);
 
-function cstr(buf, off = 0) {
-    const end = buf.indexOf(0, off);
-    return [buf.slice(off, end).toString(), end + 1];
-}
+const isRecoverableError = (error) => {
+    if (!error) return false;
+    if (RECOVERABLE_ERROR_CODES.has(error.code)) return true;
+    const message = String(error.message || '').toUpperCase();
+    return message.includes('ECONNRESET') || message.includes('ECONNREFUSED') || message.includes('ETIMEDOUT');
+};
 
-function msg(type, payload = Buffer.alloc(0)) {
-    return Buffer.concat([Buffer.from(type), i32(payload.length + 4), payload]);
-}
+const formatDbError = (error) => {
+    if (!error) return 'Unknown database error';
+    if (typeof error.message === 'string' && error.message.trim()) return error.message;
+    if (typeof error.code === 'string' && error.code.trim()) return `Database error (${error.code})`;
+    try { return JSON.stringify(error); } catch { return String(error); }
+};
 
-function startup(params) {
-    const parts = [];
-    for (const [key, value] of Object.entries(params)) {
-        parts.push(Buffer.from(`${key}\0${value}\0`));
+let pool = null;
+let poolInitPromise = null;
+
+const ensurePool = async () => {
+    if (pool) return pool;
+    if (!poolInitPromise) {
+        poolInitPromise = (async () => {
+            const nextPool = new Pool(DB_CONFIG);
+            // An idle client erroring out must not take the process down.
+            nextPool.on('error', (err) => {
+                console.warn('[db] idle client error:', formatDbError(err));
+            });
+            await nextPool.query('SELECT 1');
+            pool = nextPool;
+            return pool;
+        })().finally(() => { poolInitPromise = null; });
     }
-    parts.push(Buffer.from('\0'));
-    const body = Buffer.concat([i32(196608), ...parts]);
-    return Buffer.concat([i32(body.length + 4), body]);
-}
+    return poolInitPromise;
+};
 
-function xor(a, b) {
-    const out = Buffer.alloc(a.length);
-    for (let i = 0; i < a.length; i += 1) out[i] = a[i] ^ b[i];
-    return out;
-}
+const closePool = async () => {
+    if (!pool) return;
+    try { await pool.end(); } catch { /* already going away */ }
+    finally { pool = null; }
+};
 
-function hmac(key, text) {
-    return crypto.createHmac('sha256', key).update(text).digest();
-}
-
-function sha256(buf) {
-    return crypto.createHash('sha256').update(buf).digest();
-}
-
-function saslEscape(value) {
-    return value.replace(/=/g, '=3D').replace(/,/g, '=2C');
-}
-
-function parsePgError(payload) {
-    const fields = {};
-    let off = 0;
-    while (off < payload.length && payload[off] !== 0) {
-        const code = String.fromCharCode(payload[off]);
-        const [value, next] = cstr(payload, off + 1);
-        fields[code] = value;
-        off = next;
-    }
-    return fields.M || payload.toString();
-}
+// ---------------------------------------------------------------------------
+// SQL translation
+// ---------------------------------------------------------------------------
 
 function stripTrailingSemicolon(sql) {
     return sql.replace(/;\s*$/, '');
 }
 
-function rewriteQuestionMarks(sql, params = []) {
+// `?` -> `$1, $2, ...`, skipping anything inside a string literal or a
+// dollar-quoted block, so a question mark that is part of DATA is left alone.
+function replaceMysqlPlaceholders(sql) {
     let index = 0;
     let out = '';
     let quote = null;
+    let dollarQuote = null;
 
     for (let i = 0; i < sql.length; i += 1) {
         const ch = sql[i];
         const next = sql[i + 1];
 
-        if (quote) {
-            out += quote === '`' && ch === '`' ? '"' : ch;
-            if (ch === quote) {
-                if (quote !== '`' && next === quote) {
-                    out += next;
-                    i += 1;
-                } else {
-                    quote = null;
-                }
-            } else if (ch === '\\' && quote !== '"') {
-                out += next || '';
-                i += 1;
+        if (dollarQuote) {
+            if (sql.startsWith(dollarQuote, i)) {
+                out += dollarQuote;
+                i += dollarQuote.length - 1;
+                dollarQuote = null;
+            } else {
+                out += ch;
             }
             continue;
         }
 
-        if (ch === "'" || ch === '"' || ch === '`') {
-            quote = ch;
-            out += ch === '`' ? '"' : ch;
+        if (!quote && ch === '$') {
+            const match = sql.slice(i).match(/^\$[A-Za-z_][A-Za-z0-9_]*\$|^\$\$/);
+            if (match) {
+                dollarQuote = match[0];
+                out += dollarQuote;
+                i += dollarQuote.length - 1;
+                continue;
+            }
+        }
+
+        if (quote) {
+            out += ch;
+            if (ch === quote && next === quote) { out += next; i += 1; }
+            else if (ch === quote) { quote = null; }
             continue;
         }
 
-        if (ch === '?' && index < params.length) {
-            out += literal(params[index], sql.slice(Math.max(0, i - 80), i));
-            index += 1;
-            continue;
-        }
+        if (ch === '\'' || ch === '"') { quote = ch; out += ch; continue; }
+
+        if (ch === '?') { index += 1; out += `$${index}`; continue; }
 
         out += ch;
     }
@@ -127,298 +153,201 @@ function rewriteQuestionMarks(sql, params = []) {
     return out;
 }
 
-function literal(value, before = '') {
-    const boolColumnMatch = before.match(/(?:\b|\")([a-zA-Z_][a-zA-Z0-9_]*)\"?\s*=\s*$/);
-    if (value === null || value === undefined) return 'NULL';
-    if (typeof value === 'boolean') return value ? '1' : '0';
-    if (typeof value === 'number') return Number.isFinite(value) ? String(value) : 'NULL';
-    if (typeof value === 'bigint') return String(value);
-    if (value instanceof Date) return `'${value.toISOString().replace(/'/g, "''")}'`;
-    if (Buffer.isBuffer(value)) return `'\\x${value.toString('hex')}'`;
-    if (typeof value === 'object') return `'${JSON.stringify(value).replace(/'/g, "''")}'`;
-    return `'${String(value).replace(/'/g, "''")}'`;
-}
+// MySQL's `KEY foo (...)` inside CREATE TABLE has no Postgres equivalent inline;
+// UNIQUE KEY becomes a named constraint, plain KEY is dropped (it is only an index).
+const transformCreateTableIndexes = (sql) =>
+    sql
+        .split('\n')
+        .filter((line) => !/^\s*KEY\s+/i.test(line))
+        .map((line) => {
+            const named = line.match(/^(\s*)UNIQUE\s+KEY\s+"?([A-Za-z0-9_]+)"?\s*\((.+)\)(,?)\s*$/i);
+            if (named) return `${named[1]}CONSTRAINT "${named[2]}" UNIQUE (${named[3]})${named[4]}`;
+            const anon = line.match(/^(\s*)UNIQUE\s+KEY\s*\((.+)\)(,?)\s*$/i);
+            if (anon) return `${anon[1]}UNIQUE (${anon[2]})${anon[3]}`;
+            return line;
+        })
+        .join('\n')
+        .replace(/,\s*\)/g, '\n)');
 
-function normalizeSql(sql, params = []) {
-    let normalized = rewriteQuestionMarks(String(sql), params);
+function normalizeSql(sql) {
+    let out = String(sql || '').trim();
 
-    normalized = normalized
+    // MySQL admin statements that have no meaning here but are cheap to satisfy.
+    if (/^SELECT\s+GET_LOCK\s*\(/i.test(out)) return 'SELECT 1 AS lock_result';
+    if (/^SELECT\s+RELEASE_LOCK\s*\(/i.test(out)) return 'SELECT 1 AS release_result';
+    if (/^SHOW\s+TABLES/i.test(out)) {
+        return "SELECT tablename AS table_name FROM pg_catalog.pg_tables WHERE schemaname = 'public' ORDER BY tablename";
+    }
+
+    out = out
         .replace(/`([^`]+)`/g, '"$1"')
         .replace(/\bDATABASE\s*\(\s*\)/gi, "'public'")
-        .replace(/\bDATE_ADD\s*\(\s*NOW\s*\(\s*\)\s*,\s*INTERVAL\s+(\d+)\s+HOUR\s*\)/gi, "CURRENT_TIMESTAMP + INTERVAL '$1 hours'")
+        .replace(/table_schema\s*=\s*current_database\s*\(\s*\)/gi, "table_schema = 'public'")
         .replace(/\bNOW\s*\(\s*\)/gi, 'CURRENT_TIMESTAMP')
+        .replace(/\bCURDATE\s*\(\s*\)/gi, 'CURRENT_DATE')
         .replace(/\bcurrent_timestamp\s*\(\s*\)/gi, 'CURRENT_TIMESTAMP')
-        .replace(/\s+AFTER\s+"?[a-zA-Z_][a-zA-Z0-9_]*"?/gi, '')
-        .replace(/\bON\s+UPDATE\s+CURRENT_TIMESTAMP\b/gi, '')
-        .replace(/\bTINYINT\s*\(\s*1\s*\)/gi, 'BOOLEAN')
+        // A parameterised interval cannot be spliced into an INTERVAL literal;
+        // multiplying a unit interval is the portable form.
+        .replace(/\bDATE_ADD\s*\(\s*CURRENT_TIMESTAMP\s*,\s*INTERVAL\s+\?\s+HOUR\s*\)/gi,
+            "(CURRENT_TIMESTAMP + (? * INTERVAL '1 hour'))")
+        // Everything else: Postgres wants the interval as a quoted literal.
+        .replace(
+            /\bDATE_(ADD|SUB)\s*\(\s*([^,()]+(?:\([^()]*\))?)\s*,\s*INTERVAL\s+(\d+)\s+(SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR)S?\s*\)/gi,
+            (_m, op, expr, n, unit) =>
+                `(${expr.trim()} ${op.toUpperCase() === 'ADD' ? '+' : '-'} INTERVAL '${n} ${unit.toLowerCase()}s')`)
+        // MySQL's CAST(x AS UNSIGNED) yields the leading digits of a string and 0
+        // when there are none - mini_game_exercises.exercise_order ('1A', 'START')
+        // is sorted with it. A plain ::bigint would raise on 'START' instead.
+        .replace(
+            /\bCAST\s*\(\s*([^()]+?)\s+AS\s+(?:UNSIGNED|SIGNED)(?:\s+INTEGER)?\s*\)/gi,
+            (_m, expr) => `COALESCE(NULLIF(substring((${expr.trim()})::text from '^[0-9]+'), '')::bigint, 0)`)
+        .replace(
+            /SUBSTRING_INDEX\s*\(\s*GROUP_CONCAT\s*\(\s*([A-Za-z0-9_."()]+)\s+ORDER\s+BY\s+([A-Za-z0-9_."()]+)\s+DESC\s+SEPARATOR\s+'([^']*)'\s*\)\s*,\s*'([^']*)'\s*,\s*1\s*\)/gi,
+            "split_part(string_agg($1::text, '$3' ORDER BY $2 DESC), '$4', 1)")
+        .replace(/\bJSON_ARRAY\s*\(/gi, 'json_build_array(')
+        .replace(/\bjson_valid\s*\(\s*([^)]+)\s*\)/gi, '$1 IS NOT NULL')
+        // Column types and table options.
+        // TINYINT(1) becomes SMALLINT, never BOOLEAN: the existing schema stores
+        // every flag as 0/1 and server.js compares them with `= 1`. Postgres will
+        // not implicitly cast an integer to boolean, so a BOOLEAN column here
+        // breaks `WHERE is_active = 1` outright.
+        .replace(/\bTINYINT\s*\(\s*1\s*\)/gi, 'SMALLINT')
         .replace(/\bINT\s*\(\s*\d+\s*\)/gi, 'INTEGER')
         .replace(/\bVARCHAR\s*\(\s*(\d+)\s*\)/gi, 'VARCHAR($1)')
         .replace(/\bLONGTEXT\b/gi, 'TEXT')
         .replace(/\bDATETIME\b/gi, 'TIMESTAMP')
-        .replace(/\bAUTO_INCREMENT\b/gi, 'GENERATED BY DEFAULT AS IDENTITY');
+        .replace(/\benum\s*\(([^)]+)\)/gi, 'varchar(50)')
+        .replace(/\s+AFTER\s+"?[a-zA-Z_][a-zA-Z0-9_]*"?/gi, '')
+        .replace(/\bON\s+UPDATE\s+CURRENT_TIMESTAMP\b/gi, '')
+        .replace(/\s+ENGINE\s*=\s*\w+/gi, '')
+        .replace(/\s+DEFAULT\s+CHARSET\s*=\s*\w+/gi, '')
+        .replace(/\s+COLLATE\s*=\s*\w+/gi, '')
+        .replace(/\s+COLLATE\s+\w+/gi, '')
+        .replace(/\s+CHARACTER\s+SET\s+\w+/gi, '')
+        .replace(/,\s*(?:UNIQUE\s+)?KEY\s+"?[a-zA-Z_][a-zA-Z0-9_]*"?\s*\([^)]*\)/gi, '')
+        .replace(/\bAUTO_INCREMENT\b/gi, 'GENERATED BY DEFAULT AS IDENTITY')
+        // MySQL upsert -> Postgres upsert. The whole UPDATE body goes with it,
+        // so there is deliberately no rule rewriting `VALUES(col)` to
+        // `EXCLUDED.col`: such a rule cannot tell that form apart from an
+        // ordinary single-column `INSERT ... VALUES (x)` and would corrupt it.
+        .replace(/\s+ON\s+DUPLICATE\s+KEY\s+UPDATE[\s\S]*?(?=;|$)/gi, ' ON CONFLICT DO NOTHING');
 
-    normalized = normalized.replace(/\bTRUE\b/g, '1').replace(/\bFALSE\b/g, '0');
+    if (/^\s*CREATE\s+TABLE/i.test(out)) out = transformCreateTableIndexes(out);
 
-    if (/^\s*insert\s+into\b/i.test(normalized) && !/\breturning\b/i.test(normalized)) {
-        normalized = `${stripTrailingSemicolon(normalized)} RETURNING *`;
+    // Callers read `result.insertId` after an INSERT; without RETURNING there is
+    // nothing to read it from.
+    if (/^\s*INSERT\s+INTO\b/i.test(out) && !/\bRETURNING\b/i.test(out)) {
+        out = `${stripTrailingSemicolon(out)} RETURNING *`;
     }
 
-    return normalized;
+    return replaceMysqlPlaceholders(out);
 }
 
-function parseValue(value, typeOid) {
-    if (value === null) return null;
-    if (typeOid === OID.BOOL) return value === 't';
-    if ([OID.INT2, OID.INT4, OID.INT8].includes(typeOid)) return Number(value);
-    if ([OID.FLOAT4, OID.FLOAT8, OID.NUMERIC].includes(typeOid)) return Number(value);
-    if ([OID.JSON, OID.JSONB].includes(typeOid)) {
-        try {
-            return JSON.parse(value);
-        } catch {
-            return value;
-        }
-    }
-    return value;
+// The old layer serialised parameters itself. Two of its conversions have to be
+// kept or working code changes meaning:
+//   * booleans -> 1/0, because the flag columns are SMALLINT, and pg would send
+//     a real boolean that Postgres refuses to compare against them.
+//   * plain objects and arrays -> JSON text. pg would otherwise encode a JS
+//     array as a Postgres ARRAY ('{1,2,3}'), which is not what a jsonb or text
+//     column here expects.
+function normalizeParams(params) {
+    return (Array.isArray(params) ? params : []).map((value) => {
+        if (typeof value === 'boolean') return value ? 1 : 0;
+        if (value === undefined) return null;
+        if (value === null || value instanceof Date || Buffer.isBuffer(value)) return value;
+        if (typeof value === 'object') return JSON.stringify(value);
+        return value;
+    });
 }
 
-function commandToResult(command, rows) {
-    const result = {
+// mysql2's return shape: SELECT gives the rows, everything else gives a summary.
+function buildMysqlLikeResult(result) {
+    const command = String(result.command || '').toUpperCase();
+    const rows = result.rows || [];
+    const fields = result.fields || [];
+
+    if (command === 'SELECT' || command === 'SHOW') return [rows, fields];
+
+    const summary = {
         command,
-        rowCount: 0,
-        affectedRows: 0,
-        changedRows: 0,
+        rowCount: result.rowCount || 0,
+        affectedRows: result.rowCount || 0,
+        changedRows: result.rowCount || 0,
         insertId: 0,
+        rows,
     };
-    const match = String(command || '').match(/^(INSERT|UPDATE|DELETE)\s+(?:\d+\s+)?(\d+)/i);
-    if (match) {
-        result.rowCount = Number(match[2]);
-        result.affectedRows = result.rowCount;
-        result.changedRows = result.rowCount;
+
+    if (command === 'INSERT' && rows[0]) {
+        const idKey = Object.keys(rows[0]).find((key) => key === 'id' || key.endsWith('_id'));
+        summary.insertId = idKey ? Number(rows[0][idKey]) : 0;
     }
-    if (/^INSERT/i.test(command || '') && rows?.[0]) {
-        const firstRow = rows[0];
-        const idKey = Object.keys(firstRow).find((key) => key === 'id' || key.endsWith('_id'));
-        result.insertId = idKey ? Number(firstRow[idKey]) : 0;
-    }
-    return result;
+
+    return [summary, fields];
 }
 
-class PgConnection {
-    constructor(config) {
-        this.config = config;
-        this.buf = Buffer.alloc(0);
-        this.waiter = null;
-        this.connected = false;
-    }
-
-    async connect() {
-        if (this.connected) return;
-        this.sock = net.createConnection({ host: this.config.host, port: this.config.port });
-        this.sock.on('data', (chunk) => {
-            this.buf = Buffer.concat([this.buf, chunk]);
-            this.pump();
-        });
-        this.sock.on('error', (err) => {
-            if (this.waiter) this.waiter.reject(err);
-        });
-        await new Promise((resolve, reject) => {
-            this.sock.once('connect', resolve);
-            this.sock.once('error', reject);
-        });
-
-        this.sock.write(startup({
-            user: this.config.user,
-            database: this.config.database,
-            client_encoding: 'UTF8',
-        }));
-
-        let clientFirstBare = '';
-        while (true) {
-            const m = await this.next();
-            if (m.type === 'R') {
-                const code = m.payload.readInt32BE(0);
-                if (code === 0 || code === 12) continue;
-                if (code === 3) {
-                    this.sock.write(msg('p', Buffer.from(`${this.config.password}\0`)));
-                    continue;
-                }
-                if (code === 5) {
-                    const salt = m.payload.slice(4, 8);
-                    const a = crypto.createHash('md5').update(this.config.password + this.config.user).digest('hex');
-                    const b = crypto.createHash('md5').update(Buffer.concat([Buffer.from(a), salt])).digest('hex');
-                    this.sock.write(msg('p', Buffer.from(`md5${b}\0`)));
-                    continue;
-                }
-                if (code === 10) {
-                    const nonce = crypto.randomBytes(18).toString('base64');
-                    clientFirstBare = `n=${saslEscape(this.config.user)},r=${nonce}`;
-                    const initial = Buffer.from(`n,,${clientFirstBare}`);
-                    this.sock.write(msg('p', Buffer.concat([
-                        Buffer.from('SCRAM-SHA-256\0'),
-                        i32(initial.length),
-                        initial,
-                    ])));
-                    continue;
-                }
-                if (code === 11) {
-                    const serverFirst = m.payload.slice(4).toString();
-                    const parts = Object.fromEntries(serverFirst.split(',').map((p) => [p[0], p.slice(2)]));
-                    const clientFinalNoProof = `c=biws,r=${parts.r}`;
-                    const salted = crypto.pbkdf2Sync(
-                        this.config.password,
-                        Buffer.from(parts.s, 'base64'),
-                        parseInt(parts.i, 10),
-                        32,
-                        'sha256',
-                    );
-                    const clientKey = hmac(salted, 'Client Key');
-                    const authMessage = `${clientFirstBare},${serverFirst},${clientFinalNoProof}`;
-                    const proof = xor(clientKey, hmac(sha256(clientKey), authMessage)).toString('base64');
-                    this.sock.write(msg('p', Buffer.from(`${clientFinalNoProof},p=${proof}`)));
-                    continue;
-                }
-                throw new Error(`Unsupported PostgreSQL auth code ${code}`);
-            }
-            if (m.type === 'Z') {
-                this.connected = true;
-                return;
-            }
-            if (m.type === 'E') throw new Error(parsePgError(m.payload));
-        }
-    }
-
-    pump() {
-        if (!this.waiter || this.buf.length < 5) return;
-        const type = String.fromCharCode(this.buf[0]);
-        const len = this.buf.readInt32BE(1);
-        if (this.buf.length < 1 + len) return;
-        const payload = this.buf.slice(5, 1 + len);
-        this.buf = this.buf.slice(1 + len);
-        const waiter = this.waiter;
-        this.waiter = null;
-        waiter.resolve({ type, payload });
-    }
-
-    next() {
-        return new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => reject(new Error('timeout waiting for PostgreSQL')), 30000);
-            this.waiter = {
-                resolve: (value) => {
-                    clearTimeout(timeout);
-                    resolve(value);
-                },
-                reject: (err) => {
-                    clearTimeout(timeout);
-                    reject(err);
-                },
-            };
-            this.pump();
-        });
-    }
-
-    async query(sql, params = []) {
-        await this.connect();
-        const normalized = normalizeSql(sql, params);
-        this.sock.write(msg('Q', Buffer.from(`${normalized}\0`)));
-
-        const rows = [];
-        let fields = [];
-        let command = '';
-
-        while (true) {
-            const m = await this.next();
-            if (m.type === 'T') {
-                const count = m.payload.readInt16BE(0);
-                let off = 2;
-                fields = [];
-                for (let i = 0; i < count; i += 1) {
-                    const [name, next] = cstr(m.payload, off);
-                    off = next;
-                    off += 6;
-                    const typeOid = m.payload.readInt32BE(off);
-                    off += 12;
-                    fields.push({ name, typeOid });
-                }
-            } else if (m.type === 'D') {
-                const count = m.payload.readInt16BE(0);
-                let off = 2;
-                const row = {};
-                for (let i = 0; i < count; i += 1) {
-                    const len = m.payload.readInt32BE(off);
-                    off += 4;
-                    const raw = len < 0 ? null : m.payload.slice(off, off + len).toString();
-                    if (len >= 0) off += len;
-                    row[fields[i].name] = parseValue(raw, fields[i].typeOid);
-                }
-                rows.push(row);
-            } else if (m.type === 'C') {
-                command = m.payload.slice(0, -1).toString();
-            } else if (m.type === 'Z') {
-                if (/^\s*(select|with|show)\b/i.test(String(sql))) return [rows, fields];
-                return [commandToResult(command, rows), fields];
-            } else if (m.type === 'E') {
-                const err = new Error(parsePgError(m.payload));
-                err.sql = normalized;
-                throw err;
-            }
-        }
-    }
-
-    execute(sql, params = []) {
-        return this.query(sql, params);
-    }
-
-    beginTransaction() {
-        return this.query('BEGIN');
-    }
-
-    commit() {
-        return this.query('COMMIT');
-    }
-
-    rollback() {
-        return this.query('ROLLBACK');
-    }
-
-    release() {
-        this.close();
-    }
-
-    close() {
-        if (!this.sock || this.sock.destroyed) return;
-        this.sock.write(msg('X'));
-        this.sock.end();
-        this.connected = false;
+async function runOn(client, sql, params) {
+    const text = normalizeSql(sql);
+    try {
+        return buildMysqlLikeResult(await client.query(text, normalizeParams(params)));
+    } catch (error) {
+        // The translated SQL is what actually failed, so that is what gets
+        // attached - reading the original hides the rewrite that broke it.
+        error.sql = text;
+        error.message = formatDbError(error);
+        throw error;
     }
 }
-
-const config = {
-    host: process.env.PGHOST || 'localhost',
-    port: Number(process.env.PGPORT || 5432),
-    user: process.env.PGUSER || 'postgres',
-    password: process.env.PGPASSWORD || 'postgres',
-    database: process.env.PGDATABASE || 'postgres',
-};
 
 const db = {
-    async getConnection() {
-        const connection = new PgConnection(config);
-        await connection.connect();
-        return connection;
-    },
-
     async query(sql, params = []) {
-        const connection = await this.getConnection();
+        const attempt = async () => {
+            const activePool = await ensurePool();
+            return runOn(activePool, sql, params);
+        };
         try {
-            return await connection.query(sql, params);
-        } finally {
-            connection.release();
+            return await attempt();
+        } catch (error) {
+            if (!isRecoverableError(error)) throw error;
+            console.warn('[db] recoverable error, rebuilding pool:', error.code || error.message);
+            await closePool();
+            await ensurePool();
+            return attempt();
         }
     },
 
     execute(sql, params = []) {
         return this.query(sql, params);
     },
+
+    // A transaction has to stay on ONE client, so this checks one out of the
+    // pool and hands back the mysql2 connection interface over it.
+    async getConnection() {
+        const activePool = await ensurePool();
+        const client = await activePool.connect();
+        let released = false;
+        return {
+            query: (sql, params = []) => runOn(client, sql, params),
+            execute: (sql, params = []) => runOn(client, sql, params),
+            beginTransaction: () => client.query('BEGIN'),
+            commit: () => client.query('COMMIT'),
+            rollback: () => client.query('ROLLBACK'),
+            release() {
+                // server.js releases in `finally` blocks that can run after an
+                // error already released; releasing twice throws in pg.
+                if (released) return;
+                released = true;
+                client.release();
+            },
+        };
+    },
+
+    async healthcheck() {
+        const activePool = await ensurePool();
+        await activePool.query('SELECT 1');
+        return true;
+    },
+
+    config: { host: DB_CONFIG.host, port: DB_CONFIG.port, database: DB_CONFIG.database, user: DB_CONFIG.user },
 };
 
 (async () => {
@@ -455,7 +384,7 @@ const db = {
                 user_name VARCHAR(50) NOT NULL,
                 is_host INTEGER DEFAULT 0,
                 score INTEGER DEFAULT 0,
-                cash INTEGER DEFAULT 1000,
+                cash INTEGER DEFAULT 0,
                 is_eliminated INTEGER DEFAULT 0,
                 joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -468,6 +397,71 @@ const db = {
         // retrofit it — this ADD COLUMN IF NOT EXISTS closes that gap safely.
         await db.query(`
             ALTER TABLE arcade_participants ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+        `);
+
+        // Idempotent migration: starting cash changed from 1000 to 0 (players
+        // now earn cash purely from their per-round ranking) — retrofits the
+        // column default on databases created before this change. Does not
+        // touch existing rows' current cash values.
+        await db.query(`
+            ALTER TABLE arcade_participants ALTER COLUMN cash SET DEFAULT 0;
+        `);
+
+        // Server-authoritative match state: phase/phase_deadline let
+        // tickArcadeMatches() (below) drive every client's round/timer/shop
+        // transitions from one shared source instead of each browser running
+        // its own independent simulation. last_round_summary is the ranking/
+        // cash-gain/eliminated snapshot built at each round's finalize step,
+        // polled by clients to render the round-summary screen.
+        await db.query(`
+            ALTER TABLE arcade_rooms ADD COLUMN IF NOT EXISTS phase VARCHAR(20) DEFAULT 'LOBBY';
+        `);
+        await db.query(`
+            ALTER TABLE arcade_rooms ADD COLUMN IF NOT EXISTS phase_deadline TIMESTAMP DEFAULT NULL;
+        `);
+        await db.query(`
+            ALTER TABLE arcade_rooms ADD COLUMN IF NOT EXISTS last_round_summary JSONB DEFAULT NULL;
+        `);
+
+        // Phase 8.4 — per-room mode settings chosen at creation. Kept on the
+        // room (not in a global constant) so a room's pacing and task source
+        // stay fixed for the whole match even if the server's defaults change
+        // under it, and so two rooms with different settings can run at once.
+        await db.query(`
+            ALTER TABLE arcade_rooms ADD COLUMN IF NOT EXISTS round_duration_mode VARCHAR(10) DEFAULT 'standard';
+        `);
+        await db.query(`
+            ALTER TABLE arcade_rooms ADD COLUMN IF NOT EXISTS difficulty VARCHAR(10) DEFAULT 'default';
+        `);
+
+        // The four task_ids this match will use, drawn at random when the host
+        // starts it and then FIXED for the rest of the match. Stored on the
+        // room (rather than each client picking for itself) because the server
+        // scales bot scores by the round's real test-case count while the
+        // client grades the player against the same task — if the two ever
+        // disagreed, bots would be scored against a problem nobody solved.
+        // NULL means a legacy/standard room using the fixed built-in tasks.
+        await db.query(`
+            ALTER TABLE arcade_rooms ADD COLUMN IF NOT EXISTS round_task_ids JSONB DEFAULT NULL;
+        `);
+
+        // pending_round_score/has_submitted hold a real player's judged round
+        // result (passCount/readability/time folded into one score, computed
+        // client-side via Pyodide same as before) until tickArcadeMatches()
+        // finalizes the round for everyone at once. Reset to NULL/0 at the
+        // start of every round.
+        await db.query(`
+            ALTER TABLE arcade_participants ADD COLUMN IF NOT EXISTS pending_round_score INTEGER DEFAULT NULL;
+        `);
+        await db.query(`
+            ALTER TABLE arcade_participants ADD COLUMN IF NOT EXISTS has_submitted INTEGER DEFAULT 0;
+        `);
+        // Gold this player was paid for the finished match, written once when the
+        // room reaches RESULT. Stored on the participant rather than derived on the
+        // client so the RESULT screen shows what was actually credited, not a
+        // second guess at the reward table.
+        await db.query(`
+            ALTER TABLE arcade_participants ADD COLUMN IF NOT EXISTS coins_awarded INTEGER DEFAULT 0;
         `);
 
         // Delivery queue for player-vs-player sabotage: an attacker inserts a row,
@@ -501,55 +495,650 @@ const db = {
             );
         `);
 
-        // Check if arcade_tasks has tasks, seed 25 tasks if empty
-        const [taskRows] = await db.query(`SELECT COUNT(*) as count FROM arcade_tasks`);
-        if (!taskRows || parseInt(taskRows[0].count) === 0) {
-            console.log('📌 กำลังเพิ่มโจทย์การแข่งขัน 25 ข้อ (ง่าย 10, กลาง 10, ยาก 5) รองรับ 2 ภาษา ลงใน PostgreSQL...');
-            
-            const SEED_TASKS = [
-                // EASY (10 Tasks)
-                { difficulty: 'easy', title_th: '1. เลขฟีโบนัชชี (Fibonacci)', title_en: '1. Fibonacci Number', desc_th: 'เขียนฟังก์ชัน `fib(n)` เพื่อคืนค่าตัวเลขฟีโบนัชชีลำดับที่ n', desc_en: 'Write a function `fib(n)` that returns the n-th Fibonacci number.', initial_code: 'def fib(n):\n    if n <= 1:\n        return n\n    return fib(n-1) + fib(n-2)', test_cases: JSON.stringify([{ input: [5], output: 5 }, { input: [7], output: 13 }]) },
-                { difficulty: 'easy', title_th: '2. ตรวจสอบเลขคู่/เลขคี่ (Even or Odd)', title_en: '2. Even or Odd', desc_th: 'เขียนฟังก์ชัน `is_even(n)` เพื่อคืนค่า True หากเป็นเลขคู่ และ False หากเป็นเลขคี่', desc_en: 'Write a function `is_even(n)` returning True if n is even, False otherwise.', initial_code: 'def is_even(n):\n    return n % 2 == 0', test_cases: JSON.stringify([{ input: [4], output: true }, { input: [7], output: false }]) },
-                { difficulty: 'easy', title_th: '3. กลับด้านข้อความ (Reverse String)', title_en: '3. Reverse String', desc_th: 'เขียนฟังก์ชัน `reverse_string(s)` เพื่อคืนค่าตัวอักษรเรียงย้อนกลับ', desc_en: 'Write a function `reverse_string(s)` that returns the reversed string.', initial_code: 'def reverse_string(s):\n    return s[::-1]', test_cases: JSON.stringify([{ input: ["hello"], output: "olleh" }, { input: ["python"], output: "nohtyp" }]) },
-                { difficulty: 'easy', title_th: '4. ผลรวมของรายการตัวเลข (Sum Array)', title_en: '4. Sum of Array', desc_th: 'เขียนฟังก์ชัน `sum_array(nums)` เพื่อคืนค่าผลรวมของตัวเลขทั้งหมดในอาร์เรย์', desc_en: 'Write a function `sum_array(nums)` that returns the sum of all elements.', initial_code: 'def sum_array(nums):\n    return sum(nums)', test_cases: JSON.stringify([{ input: [[1, 2, 3, 4]], output: 10 }, { input: [[5, 10, 15]], output: 30 }]) },
-                { difficulty: 'easy', title_th: '5. หาค่าสูงสุด (Find Maximum)', title_en: '5. Find Maximum', desc_th: 'เขียนฟังก์ชัน `find_max(nums)` คืนค่าตัวเลขที่มีค่ามากที่สุดในรายการ', desc_en: 'Write a function `find_max(nums)` returning the largest number.', initial_code: 'def find_max(nums):\n    return max(nums)', test_cases: JSON.stringify([{ input: [[3, 9, 2, 5]], output: 9 }, { input: [[-1, -5, -2]], output: -1 }]) },
-                { difficulty: 'easy', title_th: '6. นับจำนวนสระ (Count Vowels)', title_en: '6. Count Vowels', desc_th: 'เขียนฟังก์ชัน `count_vowels(s)` คืนค่าจำนวนสระ (a, e, i, o, u) ในข้อความ', desc_en: 'Write a function `count_vowels(s)` returning the count of vowels.', initial_code: 'def count_vowels(s):\n    return sum(1 for char in s if char.lower() in "aeiou")', test_cases: JSON.stringify([{ input: ["hello world"], output: 3 }, { input: ["arcade"], output: 3 }]) },
-                { difficulty: 'easy', title_th: '7. แปลงองศาเซลเซียสเป็นฟาเรนไฮต์ (Celsius to Fahrenheit)', title_en: '7. Celsius to Fahrenheit', desc_th: 'เขียนฟังก์ชัน `c_to_f(c)` เพื่อแปลงอุณหภูมิจาก C เป็น F (`(c * 9/5) + 32`)', desc_en: 'Write a function `c_to_f(c)` to convert Celsius to Fahrenheit.', initial_code: 'def c_to_f(c):\n    return (c * 9/5) + 32', test_cases: JSON.stringify([{ input: [0], output: 32 }, { input: [100], output: 212 }]) },
-                { difficulty: 'easy', title_th: '8. แฟกทอเรียล (Factorial)', title_en: '8. Factorial', desc_th: 'เขียนฟังก์ชัน `factorial(n)` คืนค่าผลคูณ n! (เช่น 5! = 120)', desc_en: 'Write a function `factorial(n)` returning n!.', initial_code: 'def factorial(n):\n    if n <= 1: return 1\n    return n * factorial(n - 1)', test_cases: JSON.stringify([{ input: [5], output: 120 }, { input: [3], output: 6 }]) },
-                { difficulty: 'easy', title_th: '9. ตรวจสอบพาลินโดรม (Palindrome Check)', title_en: '9. Palindrome Check', desc_th: 'เขียนฟังก์ชัน `is_palindrome(s)` คืนค่า True หากคำอ่านจากหน้าไปหลังและหลังมาหน้าเหมือนกัน', desc_en: 'Write a function `is_palindrome(s)` returning True if string is a palindrome.', initial_code: 'def is_palindrome(s):\n    c = s.lower().replace(" ", "")\n    return c == c[::-1]', test_cases: JSON.stringify([{ input: ["racecar"], output: true }, { input: ["python"], output: false }]) },
-                { difficulty: 'easy', title_th: '10. กำลังสองของทุกสมาชิก (Square List)', title_en: '10. Square List', desc_th: 'เขียนฟังก์ชัน `square_list(nums)` คืนค่าอาร์เรย์ตัวเลขที่ยกกำลังสองทุกตัว', desc_en: 'Write a function `square_list(nums)` returning a list of squared numbers.', initial_code: 'def square_list(nums):\n    return [x**2 for x in nums]', test_cases: JSON.stringify([{ input: [[1, 2, 3]], output: [1, 4, 9] }]) },
+        // starter_code is what the player actually sees in the editor, and
+        // work_chars is how much of the answer they still have to type once it
+        // is on screen. Added for the beginner rebalance: the editor used to
+        // start everyone at a bare `pass`, which measurement on 2026-08-19
+        // showed left a beginner unable to physically type 70% of the bank
+        // inside Quick Mode's usable seconds. drawArcadeRoundTasks() in
+        // server.js filters on work_chars so a round cannot serve a problem
+        // longer than its own timer allows. Both are backfilled by the seed
+        // upsert below, hence nullable rather than NOT NULL.
+        // These four ALTERs only apply while arcade_tasks is still a real table -
+        // i.e. on a database that has not yet run the problem-bank merge. Once
+        // it has, the name is a view over problems/problem_modes, which already
+        // has every one of these fields, and ALTER on a view errors out.
+        const [[arcadeRel]] = await db.query(
+            `SELECT c.relkind FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+              WHERE n.nspname = 'public' AND c.relname = 'arcade_tasks'`
+        );
+        const arcadeTasksIsTable = arcadeRel?.relkind === 'r';
 
-                // MEDIUM (10 Tasks)
-                { difficulty: 'medium', title_th: '1. ตรวจสอบแอนนาแกรม (Anagram Checker)', title_en: '1. Anagram Checker', desc_th: 'เขียนฟังก์ชัน `is_anagram(s, t)` เพื่อตรวจสอบว่าข้อความสองชุดสลับตัวอักษรกันหรือไม่', desc_en: 'Write a function `is_anagram(s, t)` to check if two strings are anagrams.', initial_code: 'def is_anagram(s, t):\n    return sorted(s) == sorted(t)', test_cases: JSON.stringify([{ input: ["anagram", "nagaram"], output: true }, { input: ["rat", "car"], output: false }]) },
-                { difficulty: 'medium', title_th: '2. ผลรวมสองจำนวน (Two Sum)', title_en: '2. Two Sum', desc_th: 'เขียนฟังก์ชัน `two_sum(nums, target)` คืนค่าตำแหน่งดรรชนีของตัวเลข 2 ตัวที่บวกกันได้เท่ากับเป้าหมาย', desc_en: 'Write a function `two_sum(nums, target)` returning indices of 2 numbers summing to target.', initial_code: 'def two_sum(nums, target):\n    seen = {}\n    for i, num in enumerate(nums):\n        diff = target - num\n        if diff in seen:\n            return [seen[diff], i]\n        seen[num] = i', test_cases: JSON.stringify([{ input: [[2, 7, 11, 15], 9], output: [0, 1] }]) },
-                { difficulty: 'medium', title_th: '3. อาร์เรย์ FizzBuzz (FizzBuzz Array)', title_en: '3. FizzBuzz Array', desc_th: 'เขียนฟังก์ชัน `fizz_buzz(n)` คืนค่ารายการคำว่า "Fizz", "Buzz", "FizzBuzz" หรือตัวเลข ตั้งแต่ 1 ถึง n', desc_en: 'Write a function `fizz_buzz(n)` returning FizzBuzz string list from 1 to n.', initial_code: 'def fizz_buzz(n):\n    res = []\n    for i in range(1, n+1):\n        if i % 15 == 0: res.append("FizzBuzz")\n        elif i % 3 == 0: res.append("Fizz")\n        elif i % 5 == 0: res.append("Buzz")\n        else: res.append(str(i))\n    return res', test_cases: JSON.stringify([{ input: [5], output: ["1", "2", "Fizz", "4", "Buzz"] }]) },
-                { difficulty: 'medium', title_th: '4. ลบตัวเลขซ้ำในรายการ (Remove Duplicates)', title_en: '4. Remove Duplicates', desc_th: 'เขียนฟังก์ชัน `remove_duplicates(nums)` เพื่อลบตัวเลขซ้ำและคืนค่ารายการตัวเลขที่ไม่ซ้ำโดยคงลำดับเดิมไว้', desc_en: 'Write a function `remove_duplicates(nums)` returning list with duplicates removed preserving order.', initial_code: 'def remove_duplicates(nums):\n    res = []\n    for num in nums:\n        if num not in res: res.append(num)\n    return res', test_cases: JSON.stringify([{ input: [[1, 2, 2, 3, 1]], output: [1, 2, 3] }]) },
-                { difficulty: 'medium', title_th: '5. รวบรวม 2 อาร์เรย์ที่จัดเรียงแล้ว (Merge Sorted Lists)', title_en: '5. Merge Two Sorted Lists', desc_th: 'เขียนฟังก์ชัน `merge_lists(l1, l2)` เพื่อรวม 2 อาร์เรย์ที่จัดเรียงแล้วให้กลายเป็นอาร์เรย์ที่เรียงจากน้อยไปมาก', desc_en: 'Write a function `merge_lists(l1, l2)` merging two sorted arrays.', initial_code: 'def merge_lists(l1, l2):\n    return sorted(l1 + l2)', test_cases: JSON.stringify([{ input: [[1, 3, 5], [2, 4, 6]], output: [1, 2, 3, 4, 5, 6] }]) },
-                { difficulty: 'medium', title_th: '6. ค้นหาคำที่ยาวที่สุด (Longest Word)', title_en: '6. Longest Word', desc_th: 'เขียนฟังก์ชัน `longest_word(sentence)` คืนค่าคำที่มีความยาวมากที่สุดในประโยค', desc_en: 'Write a function `longest_word(sentence)` returning the longest word in a string.', initial_code: 'def longest_word(sentence):\n    words = sentence.split()\n    return max(words, key=len) if words else ""', test_cases: JSON.stringify([{ input: ["The quick brown fox jumps"], output: "jumps" }]) },
-                { difficulty: 'medium', title_th: '7. ตรวจสอบจำนวนเฉพาะ (Prime Number Check)', title_en: '7. Prime Number Check', desc_th: 'เขียนฟังก์ชัน `is_prime(n)` เพื่อตรวจสอบว่า n เป็นจำนวนเฉพาะหรือไม่', desc_en: 'Write a function `is_prime(n)` returning True if n is a prime number.', initial_code: 'def is_prime(n):\n    if n <= 1: return False\n    for i in range(2, int(n**0.5) + 1):\n        if n % i == 0: return False\n    return True', test_cases: JSON.stringify([{ input: [11], output: true }, { input: [4], output: false }]) },
-                { difficulty: 'medium', title_th: '8. ค้นหาแบบทวิภาค (Binary Search)', title_en: '8. Binary Search', desc_th: 'เขียนฟังก์ชัน `binary_search(nums, target)` เพื่อหาตำแหน่งดรรชนีของ target ในอาร์เรย์ที่เรียงแล้ว (หากไม่พบคืนค่า -1)', desc_en: 'Write a function `binary_search(nums, target)` returning target index or -1.', initial_code: 'def binary_search(nums, target):\n    low, high = 0, len(nums) - 1\n    while low <= high:\n        mid = (low + high) // 2\n        if nums[mid] == target: return mid\n        elif nums[mid] < target: low = mid + 1\n        else: high = mid - 1\n    return -1', test_cases: JSON.stringify([{ input: [[1, 3, 5, 7, 9], 7], output: 3 }, { input: [[1, 3, 5], 2], output: -1 }]) },
-                { difficulty: 'medium', title_th: '9. ตรวจสอบวงเล็บสมบูรณ์ (Valid Parentheses)', title_en: '9. Valid Parentheses', desc_th: 'เขียนฟังก์ชัน `is_valid_parentheses(s)` ตรวจสอบว่าวงเล็บ (), [], {} เปิดและปิดถูกคู่และถูกลำดับหรือไม่', desc_en: 'Write a function `is_valid_parentheses(s)` validating matching brackets (), [], {}.', initial_code: 'def is_valid_parentheses(s):\n    stack = []\n    mapping = {")": "(", "]": "[", "}": "{"}\n    for char in s:\n        if char in mapping:\n            top = stack.pop() if stack else "#"\n            if mapping[char] != top: return False\n        else:\n            stack.append(char)\n    return not stack', test_cases: JSON.stringify([{ input: ["()[]{}"], output: true }, { input: ["(]"], output: false }]) },
-                { difficulty: 'medium', title_th: '10. คำนวณความถี่ของตัวอักษร (Character Frequency)', title_en: '10. Character Frequency', desc_th: 'เขียนฟังก์ชัน `char_frequency(s)` คืนค่าดิกชันนารีนับจำนวนตัวอักษรแต่ละตัวในสเตรนจ์', desc_en: 'Write a function `char_frequency(s)` returning a dictionary of character counts.', initial_code: 'def char_frequency(s):\n    freq = {}\n    for char in s:\n        freq[char] = freq.get(char, 0) + 1\n    return freq', test_cases: JSON.stringify([{ input: ["aba"], output: { "a": 2, "b": 1 } }]) },
+        if (arcadeTasksIsTable) {
+        await db.query(`ALTER TABLE arcade_tasks ADD COLUMN IF NOT EXISTS starter_code TEXT;`);
+        await db.query(`ALTER TABLE arcade_tasks ADD COLUMN IF NOT EXISTS work_chars INTEGER;`);
 
-                // HARD (5 Tasks)
-                { difficulty: 'hard', title_th: '1. ผลรวมย่อยสูงสุด / อัลกอริทึมของ Kadane (Max Subarray Sum)', title_en: '1. Maximum Subarray Sum', desc_th: 'เขียนฟังก์ชัน `max_sub_array(nums)` หาผลรวมของอาร์เรย์ย่อยที่มีค่ามากที่สุด (Kadane Algorithm)', desc_en: 'Write a function `max_sub_array(nums)` finding the maximum contiguous subarray sum.', initial_code: 'def max_sub_array(nums):\n    max_so_far = nums[0]\n    curr_max = nums[0]\n    for i in range(1, len(nums)):\n        curr_max = max(nums[i], curr_max + nums[i])\n        max_so_far = max(max_so_far, curr_max)\n    return max_so_far', test_cases: JSON.stringify([{ input: [[-2, 1, -3, 4, -1, 2, 1, -5, 4]], output: 6 }]) },
-                { difficulty: 'hard', title_th: '2. ความยาวสับสตริงที่ไม่มีอักขระซ้ำ (Longest Substring Without Repeating)', title_en: '2. Longest Substring Without Repeating Characters', desc_th: 'เขียนฟังก์ชัน `length_of_longest_substring(s)` หาความยาวสตริงย่อยที่ไม่มีอักขระซ้ำกันเลย', desc_en: 'Write a function `length_of_longest_substring(s)` finding max length of substring without repeating characters.', initial_code: 'def length_of_longest_substring(s):\n    char_map = {}\n    left = 0\n    max_len = 0\n    for right, char in enumerate(s):\n        if char in char_map and char_map[char] >= left:\n            left = char_map[char] + 1\n        char_map[char] = right\n        max_len = max(max_len, right - left + 1)\n    return max_len', test_cases: JSON.stringify([{ input: ["abcabcbb"], output: 3 }, { input: ["bbbbb"], output: 1 }]) },
-                { difficulty: 'hard', title_th: '3. ระบบจำลองแคช LRU (LRU Cache Simulator)', title_en: '3. LRU Cache Simulator', desc_th: 'เขียนฟังก์ชัน `simulate_lru(capacity, operations)` คืนค่าผลลัพธ์ของคำสั่ง Get/Put ตามลำดับ LRU Cache', desc_en: 'Write a function `simulate_lru(capacity, operations)` simulating Least Recently Used Cache.', initial_code: 'def simulate_lru(capacity, ops):\n    from collections import OrderedDict\n    cache = OrderedDict()\n    res = []\n    for op, key, val in ops:\n        if op == "put":\n            if key in cache: cache.move_to_end(key)\n            cache[key] = val\n            if len(cache) > capacity: cache.popitem(last=False)\n        elif op == "get":\n            if key in cache:\n                cache.move_to_end(key)\n                res.append(cache[key])\n            else: res.append(-1)\n    return res', test_cases: JSON.stringify([{ input: [2, [["put", 1, 1], ["put", 2, 2], ["get", 1, null], ["put", 3, 3], ["get", 2, null]]], output: [1, -1] }]) },
-                { difficulty: 'hard', title_th: '4. กักเก็บน้ำฝน (Trapping Rain Water)', title_en: '4. Trapping Rain Water', desc_th: 'เขียนฟังก์ชัน `trap(height)` คำนวณปริมาณน้ำฝนที่ขังอยู่ระหว่างความสูงของแท่งกราฟ', desc_en: 'Write a function `trap(height)` calculating total trapped rainwater.', initial_code: 'def trap(height):\n    if not height: return 0\n    l, r = 0, len(height) - 1\n    left_max, right_max = height[l], height[r]\n    water = 0\n    while l < r:\n        if left_max < right_max:\n            l += 1\n            left_max = max(left_max, height[l])\n            water += left_max - height[l]\n        else:\n            r -= 1\n            right_max = max(right_max, height[r])\n            water += right_max - height[r]\n    return water', test_cases: JSON.stringify([{ input: [[0,1,0,2,1,0,1,3,2,1,2,1]], output: 6 }]) },
-                { difficulty: 'hard', title_th: '5. รวบรวม K อาร์เรย์ที่เรียงแล้ว (Merge K Sorted Lists)', title_en: '5. Merge K Sorted Lists', desc_th: 'เขียนฟังก์ชัน `merge_k_lists(lists)` เพื่อรวม K อาร์เรย์ที่เรียงลำดับแล้วให้กลายเป็นอาร์เรย์เดียวที่เรียงลำดับสมบูรณ์', desc_en: 'Write a function `merge_k_lists(lists)` merging K sorted lists into one sorted array.', initial_code: 'def merge_k_lists(lists):\n    flat = [item for sublist in lists for item in sublist]\n    return sorted(flat)', test_cases: JSON.stringify([{ input: [[[1,4,5],[1,3,4],[2,6]]], output: [1,1,2,3,4,4,5,6] }]) }
-            ];
-
-            for (const t of SEED_TASKS) {
-                await db.query(
-                    `INSERT INTO arcade_tasks (difficulty, title_th, title_en, desc_th, desc_en, initial_code, test_cases)
-                     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                    [t.difficulty, t.title_th, t.title_en, t.desc_th, t.desc_en, t.initial_code, t.test_cases]
-                );
-            }
-            console.log('✅ บันทึกโจทย์ 25 ข้อ (ง่าย 10, กลาง 10, ยาก 5) ลงใน PostgreSQL เรียบร้อยแล้ว!');
+        // Per-problem hints, revealed by the aiHelper shop item. That item cost
+        // 600 cash and showed ONE hardcoded sentence for all 40 problems
+        // ("try using a loop or a dictionary"), so it was never worth buying.
+        // Nullable: an older row falls back to that generic string rather than
+        // showing the player an empty hint.
+        await db.query(`ALTER TABLE arcade_tasks ADD COLUMN IF NOT EXISTS hint_th TEXT;`);
+        await db.query(`ALTER TABLE arcade_tasks ADD COLUMN IF NOT EXISTS hint_en TEXT;`);
         }
 
-        console.log('✅ ตารางข้อมูล Arcade Battle Royale และ Arcade Tasks ใน PostgreSQL พร้อมใช้งานแล้ว');
+        // Phase 8.3 / Step 5 — round history must outlive its room.
+        //
+        // It was originally created with ON DELETE CASCADE to arcade_rooms,
+        // which matched its first purpose (review on the RESULT screen while
+        // the room still exists). But rooms are deleted as soon as they empty,
+        // so a player lost their own code the moment they left the match —
+        // there was no way to look back at a past game at all. These
+        // migrations drop that link and denormalize enough to identify the
+        // match without the room row still being there. Retention is handled
+        // by sweepArcadeRoundHistory() in server.js instead of by cascade.
+        await db.query(`
+            ALTER TABLE arcade_round_history DROP CONSTRAINT IF EXISTS arcade_round_history_room_id_fkey;
+        `);
+        await db.query(`
+            ALTER TABLE arcade_round_history ADD COLUMN IF NOT EXISTS room_code VARCHAR(10);
+        `);
+        await db.query(`
+            ALTER TABLE arcade_round_history ADD COLUMN IF NOT EXISTS room_name VARCHAR(100);
+        `);
+        // Stamped when the match actually finishes. Doubles as "this match is
+        // complete" — rows with a NULL value belong to a match that was
+        // abandoned mid-way, which the history list hides.
+        await db.query(`
+            ALTER TABLE arcade_round_history ADD COLUMN IF NOT EXISTS match_ended_at TIMESTAMP DEFAULT NULL;
+        `);
+
+        // The room's own settings, copied onto each history row. Rooms are
+        // deleted as soon as they empty, so without this a finished match can
+        // no longer say what difficulty or round length it was played at — and
+        // that is exactly what a playtest needs to know before it can judge a
+        // result ("2 of 4 rounds finished" means nothing until you know whether
+        // it was a 30-second or a 60-second round). Same reasoning as the
+        // room_code/room_name columns above.
+        await db.query(`
+            ALTER TABLE arcade_round_history ADD COLUMN IF NOT EXISTS difficulty VARCHAR(20);
+        `);
+        await db.query(`
+            ALTER TABLE arcade_round_history ADD COLUMN IF NOT EXISTS round_duration_mode VARCHAR(20);
+        `);
+        // The history list is always "this player's recent matches, newest
+        // first", so that is what gets the index.
+        await db.query(`
+            CREATE INDEX IF NOT EXISTS idx_arcade_history_user ON arcade_round_history (user_name, room_id DESC);
+        `);
+
+        // Phase 8.2 — room chat and emoji reactions. One table serves both:
+        // `kind` says which, and the unused column stays NULL. Cascades away
+        // with its room like the other match-scoped arcade tables.
+        //
+        // Chat is deliberately NOT allowed during ROUND_* phases (enforced in
+        // the POST endpoint, not here) — an open channel while everyone is
+        // solving the same problem is an answer-sharing channel.
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS arcade_chat_messages (
+                id SERIAL PRIMARY KEY,
+                room_id INTEGER NOT NULL REFERENCES arcade_rooms(room_id) ON DELETE CASCADE,
+                user_name VARCHAR(50) NOT NULL,
+                kind VARCHAR(10) NOT NULL DEFAULT 'text',
+                message VARCHAR(300),
+                emoji VARCHAR(16),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        // Clients poll for "anything newer than the last id I saw", so this
+        // index keeps that lookup cheap as a room's history grows.
+        await db.query(`
+            CREATE INDEX IF NOT EXISTS idx_arcade_chat_room_id ON arcade_chat_messages (room_id, id);
+        `);
+
+        // Phase 8.3 — per-round record of what a real player actually submitted,
+        // written by POST /rooms/:id/submit-round. Powers the "review your code"
+        // panel on the RESULT screen. Match-scoped review data, so it cascades
+        // away with its room exactly like arcade_participants/arcade_effects do
+        // (the durable cross-match numbers live in arcade_player_stats below).
+        // Bots never write here — they have no code to review, and their round
+        // score is synthesized server-side rather than submitted.
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS arcade_round_history (
+                id SERIAL PRIMARY KEY,
+                room_id INTEGER NOT NULL REFERENCES arcade_rooms(room_id) ON DELETE CASCADE,
+                user_name VARCHAR(50) NOT NULL,
+                round_num INTEGER NOT NULL,
+                code TEXT,
+                pass_count INTEGER DEFAULT 0,
+                total_count INTEGER DEFAULT 0,
+                quality_score INTEGER DEFAULT 0,
+                time_used_seconds INTEGER DEFAULT 0,
+                round_score INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (room_id, user_name, round_num)
+            );
+        `);
+
+        // Phase 8.3 — durable per-player Arcade career totals, updated once per
+        // match when finalizeArcadePhase() moves a room to RESULT. Deliberately
+        // NOT tied to arcade_rooms: rooms are deleted as soon as they empty, and
+        // these numbers have to outlive them. Keyed by user_name because that is
+        // the identity the whole arcade already uses (arcade_participants has no
+        // user_id column).
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS arcade_player_stats (
+                user_name VARCHAR(50) PRIMARY KEY,
+                matches_played INTEGER DEFAULT 0,
+                wins INTEGER DEFAULT 0,
+                best_rank INTEGER DEFAULT NULL,
+                total_score INTEGER DEFAULT 0,
+                total_cash_earned INTEGER DEFAULT 0,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        // Problem bank. Upserted from server/arcadeTaskSeed.js on every boot,
+        // matched on title_en.
+        //
+        // This used to seed only when the table was completely EMPTY, which
+        // meant new problems could never be added and a wrong test case could
+        // never be corrected without manually wiping the table — and one was
+        // wrong: "Longest Word" expected "jumps" while its own reference
+        // (max(words, key=len)) returns "quick", so a correct player was
+        // marked incorrect. Making this an upsert is what lets the bank grow
+        // and be repaired.
+        //
+        // Only title/description/code/starter/work_chars/test_cases are
+        // written; task_id is never reused or reordered, so existing rows keep
+        // their identity.
+        // Every coding problem in the project lives in `problems` + `problem_modes`
+        // now, and the four old tables are read-only views over them. See
+        // server/problemsSchema.js for the shape and the identity rules.
+        // This runs before the Arcade seed below, because that seed now writes
+        // through the new tables rather than through the `arcade_tasks` name.
+        const { migrateProblems, normalizeFunctionCases } = require('./problemsSchema.js');
+        const movedProblems = await migrateProblems(db);
+        const movedSummary = Object.entries(movedProblems).map(([t, n]) => `${t} ${n}`).join(', ');
+        if (movedSummary) {
+            console.log(`\u2705 merged problem bank: ${movedSummary}`);
+        }
+
+        const { ARCADE_TASKS } = require('./arcadeTaskSeed.js');
+        let inserted = 0, updated = 0;
+        for (const t of ARCADE_TASKS) {
+            const cases = JSON.stringify(normalizeFunctionCases(t.test_cases));
+            const [existing] = await db.query(
+                `SELECT m.entry_id, m.problem_id FROM problem_modes m
+                   JOIN problems p ON p.problem_id = m.problem_id
+                  WHERE m.mode = 'arcade' AND p.title_en = ?`,
+                [t.title_en]
+            );
+            if (existing && existing.length > 0) {
+                await db.query(
+                    `UPDATE problems SET title_th = ?, desc_th = ?, desc_en = ?, solution_code = ?,
+                            starter_code = ?, hint_th = ?, hint_en = ?, test_cases = ?::jsonb,
+                            test_kind = 'function', updated_at = CURRENT_TIMESTAMP
+                     WHERE problem_id = ?`,
+                    [t.title_th, t.desc_th, t.desc_en, t.initial_code,
+                     t.starter_code, t.hint_th, t.hint_en, cases, existing[0].problem_id]
+                );
+                await db.query(
+                    `UPDATE problem_modes SET difficulty = ?, extra = ?::jsonb, updated_at = CURRENT_TIMESTAMP
+                      WHERE mode = 'arcade' AND entry_id = ?`,
+                    [t.difficulty, JSON.stringify({ work_chars: t.work_chars }), existing[0].entry_id]
+                );
+                updated += 1;
+            } else {
+                const [ins] = await db.query(
+                    `INSERT INTO problems (title_th, title_en, desc_th, desc_en, solution_code,
+                                           starter_code, hint_th, hint_en, test_kind, test_cases)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'function', ?::jsonb) RETURNING problem_id`,
+                    [t.title_th, t.title_en, t.desc_th, t.desc_en, t.initial_code,
+                     t.starter_code, t.hint_th, t.hint_en, cases]
+                );
+                const [nextRows] = await db.query(
+                    `SELECT COALESCE(MAX(entry_id), 0) + 1 AS id FROM problem_modes WHERE mode = 'arcade'`
+                );
+                await db.query(
+                    `INSERT INTO problem_modes (mode, entry_id, problem_id, difficulty, extra)
+                     VALUES ('arcade', ?, ?, ?, ?::jsonb)`,
+                    [Number(nextRows[0].id), ins.insertId, t.difficulty,
+                     JSON.stringify({ work_chars: t.work_chars })]
+                );
+                inserted += 1;
+            }
+        }
+        console.log(`✅ คลังโจทย์ Arcade พร้อมใช้งาน: เพิ่มใหม่ ${inserted} ข้อ, อัปเดต ${updated} ข้อ (รวม ${ARCADE_TASKS.length} ข้อ)`);
+
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS arcade_items (
+                item_id SERIAL PRIMARY KEY,
+                item_code VARCHAR(50) UNIQUE NOT NULL,
+                name_th VARCHAR(255) NOT NULL,
+                name_en VARCHAR(255) NOT NULL,
+                desc_th TEXT NOT NULL,
+                desc_en TEXT NOT NULL,
+                price INTEGER NOT NULL,
+                icon VARCHAR(20) NOT NULL,
+                type VARCHAR(20) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        const [itemRows] = await db.query(`SELECT COUNT(*) as count FROM arcade_items`);
+        if (!itemRows || parseInt(itemRows[0].count) === 0) {
+            console.log('📌 กำลังเพิ่มข้อมูลไอเทมก่อกวน 15 ชนิด ลงใน PostgreSQL ตาราง arcade_items...');
+            const SEED_ITEMS = [
+                { item_code: 'inkFog', name_th: 'หมอกดำบังจอ (Ink Fog)', name_en: 'Ink Fog', price: 400, icon: '🌫️', desc_th: 'ทำให้จอพิมพ์โค้ดของเป้าหมายเบลอเป็นเวลา 15 วินาที', desc_en: 'Blurs target editor screen for 15s.', type: 'attack' },
+                { item_code: 'backspaceLock', name_th: 'ล็อกปุ่มลบ (Backspace Lock)', name_en: 'Backspace Lock', price: 500, icon: '🔒', desc_th: 'เป้าหมายไม่สามารถกดลบตัวอักษรได้ 10 วินาที', desc_en: 'Disables target backspace key for 10s.', type: 'attack' },
+                { item_code: 'keyScrambler', name_th: 'สลับแป้นพิมพ์ (Key Scrambler)', name_en: 'Key Scrambler', price: 450, icon: '⌨️', desc_th: 'พิมพ์แล้วตัวอักษรจะสลับตำแหน่งมั่วๆ 10 วินาที', desc_en: 'Scrambles typed keys for 10s.', type: 'attack' },
+                { item_code: 'aiHelper', name_th: 'AI บอกใบ้โค้ด (AI Helper)', name_en: 'AI Helper', price: 600, icon: '🤖', desc_th: 'ขอคำแนะนำและโครงสร้างโค้ดจากระบบ Gemini AI', desc_en: 'Requests AI hint for the current task.', type: 'buff' },
+                { item_code: 'screenShake', name_th: 'แผ่นดินไหว (Earthquake)', name_en: 'Earthquake', price: 300, icon: '🌋', desc_th: 'เขย่าหน้าจอกล่องเขียนโค้ดของเป้าหมายอย่างรุนแรง 8 วินาที', desc_en: 'Violently shakes target editor for 8s.', type: 'attack' },
+                { item_code: 'typoGenerator', name_th: 'Glitch ก่อกวน (Glitch Injector)', name_en: 'Glitch Injector', price: 550, icon: '🐛', desc_th: 'สุ่มพิมพ์ตัวอักษรแปลกปลอมแทรกในโค้ดเป้าหมาย 10 วินาที', desc_en: 'Injects random typos into target editor.', type: 'attack' },
+                { item_code: 'timeFreeze', name_th: 'หยุดเวลาแช่แข็ง (Time Freeze)', name_en: 'Time Freeze', price: 1200, icon: '❄️', desc_th: 'หยุดศัตรูทั้งหมดไม่ให้แก้ไขโค้ดได้ชั่วคราว 5 วินาที', desc_en: 'Freezes all active opponents for 5s.', type: 'aoe' },
+                { item_code: 'blackout', name_th: 'ระเบิดไฟดับ (EMP Strike)', name_en: 'EMP Strike', price: 900, icon: '🔌', desc_th: 'ปิดจอของเป้าหมายทุกคนให้มืดสนิทเป็นเวลา 8 วินาที', desc_en: 'Turns off target screens completely for 8s.', type: 'aoe' },
+                { item_code: 'shield', name_th: 'กำแพงไฟร์วอลล์ (Firewall)', name_en: 'Firewall Shield', price: 700, icon: '🛡️', desc_th: 'ป้องกันความเสียหายจากดีบัฟครั้งถัดไป 100%', desc_en: 'Blocks next incoming attack completely.', type: 'buff' },
+                { item_code: 'cashSteal', name_th: 'โจรกรรม Survival Cash (Data Heist)', name_en: 'Data Heist', price: 600, icon: '🎭', desc_th: 'ขโมยเงิน 🪙 300 จากเป้าหมายมาเป็นของตัวเอง', desc_en: 'Steals 🪙 300 Cash from a target.', type: 'attack' },
+                { item_code: 'capsLockLock', name_th: 'กับดักอักษรใหญ่ (Caps Lock Trap)', name_en: 'Caps Lock Trap', price: 350, icon: '🔠', desc_th: 'บังคับให้พิมพ์เป็นตัวอักษรพิมพ์ใหญ่ทั้งหมด 10 วินาที (เกิด NameError)', desc_en: 'Forces target to type in ALL CAPS.', type: 'attack' },
+                { item_code: 'mirrorMode', name_th: 'กระจกสลับฝั่ง (Mirror Mode)', name_en: 'Mirror Mode', price: 500, icon: '🪞', desc_th: 'สะท้อนหน้าจอเขียนโค้ดกลับด้านซ้าย-ขวาเป็นเวลา 12 วินาที', desc_en: 'Horizontally flips target editor container.', type: 'attack' },
+                { item_code: 'taxCollection', name_th: 'เก็บภาษีคนรวย (Tax Collector)', name_en: 'Tax Collector', price: 800, icon: '💸', desc_th: 'ขโมยเงิน 20% จากผู้เล่นที่มี Survival Cash สูงสุดมาเป็นของคุณ', desc_en: 'Steals 20% cash from wealthiest player.', type: 'buff' },
+                { item_code: 'scoreMultiplier', name_th: 'ตัวคูณคะแนน 2 เท่า (Score Booster)', name_en: 'Score Booster', price: 650, icon: '⚡', desc_th: 'คูณคะแนนที่จะได้รับในรอบปัจจุบันเป็น 2 เท่าเมื่อทำโจทย์สำเร็จ', desc_en: 'Doubles current round score gain.', type: 'buff' },
+                { item_code: 'screenDimmer', name_th: 'แสงจ้าหน้าจอมืด (Screen Dimmer)', name_en: 'Screen Dimmer', price: 400, icon: '🕶️', desc_th: 'หรี่แสงหน้าจอกล่องพิมพ์โค้ดของเป้าหมายให้มืดลงเหลือ 10% นาน 15 วินาที', desc_en: 'Dims target editor brightness to 10%.', type: 'attack' }
+            ];
+
+            for (const item of SEED_ITEMS) {
+                await db.query(
+                    `INSERT INTO arcade_items (item_code, name_th, name_en, desc_th, desc_en, price, icon, type)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [item.item_code, item.name_th, item.name_en, item.desc_th, item.desc_en, item.price, item.icon, item.type]
+                );
+            }
+            console.log('✅ บันทึกข้อมูลไอเทมก่อกวน 15 ชนิด ลงใน PostgreSQL ตาราง arcade_items เรียบร้อยแล้ว!');
+        }
+
+        console.log('✅ ตารางข้อมูล Arcade Battle Royale, Arcade Tasks และ Arcade Items ใน PostgreSQL พร้อมใช้งานแล้ว');
+
+        // ==================================================================
+        // Cosmetic sets — a theme, a profile frame and a cursor effect that
+        // belong together and cost less bought as one. shop_items keeps its
+        // per-item price; shop_sets holds the bundle price, so the saving is a
+        // stored number rather than something the client works out.
+        // ==================================================================
+        await db.query(`ALTER TABLE shop_items ADD COLUMN IF NOT EXISTS set_key VARCHAR(50);`);
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS shop_sets (
+                set_key VARCHAR(50) PRIMARY KEY,
+                name_th VARCHAR(255) NOT NULL,
+                name_en VARCHAR(255) NOT NULL,
+                description_th TEXT,
+                price INTEGER NOT NULL,
+                is_active SMALLINT DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        // Individual prices total 260 per set against a 200 bundle — a 60 coin
+        // saving. Calibrated against what the game pays out: an Arcade win is 50
+        // coins and a lesson exercise 5-10, so a full set is roughly four wins.
+        const COSMETIC_SETS = [
+            {
+                set_key: 'space',
+                name_th: 'เซ็ตธีมอวกาศ',
+                name_en: 'Space Set',
+                description_th: 'ธีมเว็บลายอวกาศ กรอบโปรไฟล์ดาวเคราะห์ และเคอร์เซอร์ฝุ่นดาว',
+                price: 200,
+                items: [
+                    {
+                        item_type: 'THEME', name: 'ธีมอวกาศ', price: 120, rarity: 'RARE',
+                        description: 'เปลี่ยนพื้นหลังและโทนสีทั้งเว็บเป็นห้วงอวกาศสีม่วงพาสเทล',
+                        asset_url: 'http://localhost:3001/uploads/space-theme.png',
+                        effects: null,
+                    },
+                    {
+                        item_type: 'PROFILE_FRAME', name: 'กรอบดาวเคราะห์', price: 80, rarity: 'RARE',
+                        description: 'กรอบวงโคจรไล่สีม่วง-ฟ้า พร้อมดาวเคราะห์และดวงดาว',
+                        asset_url: 'http://localhost:3001/uploads/frame-space.svg',
+                        effects: null,
+                    },
+                    {
+                        item_type: 'MOUSE_EFFECT', name: 'ฝุ่นดาว', price: 60, rarity: 'RARE',
+                        description: 'คลิกแล้วมีประกายดาวกระจายตามเมาส์',
+                        asset_url: '',
+                        effects: [
+                            { trigger: 'click', visual: '✨', color: '#7c3aed', size: 26, duration: 800 },
+                            { trigger: 'dblclick', visual: '🪐', color: '#38bdf8', size: 34, duration: 1000 },
+                        ],
+                    },
+                ],
+            },
+            {
+                set_key: 'sakura',
+                name_th: 'เซ็ตธีมซากุระ',
+                name_en: 'Sakura Set',
+                description_th: 'ธีมเว็บลายซากุระ กรอบโปรไฟล์กลีบซากุระ และเคอร์เซอร์กลีบปลิว',
+                price: 200,
+                items: [
+                    {
+                        item_type: 'THEME', name: 'ธีมซากุระ', price: 120, rarity: 'RARE',
+                        description: 'เปลี่ยนพื้นหลังและโทนสีทั้งเว็บเป็นสวนซากุระสีชมพู',
+                        asset_url: 'http://localhost:3001/uploads/1782844342595-474510254.png',
+                        effects: null,
+                    },
+                    {
+                        item_type: 'PROFILE_FRAME', name: 'กรอบกลีบซากุระ', price: 80, rarity: 'RARE',
+                        description: 'กรอบวงกลมสีชมพูประดับดอกซากุระและกิ่งไม้',
+                        asset_url: 'http://localhost:3001/uploads/frame-sakura.svg',
+                        effects: null,
+                    },
+                    {
+                        item_type: 'MOUSE_EFFECT', name: 'กลีบซากุระปลิว', price: 60, rarity: 'RARE',
+                        description: 'คลิกแล้วมีกลีบซากุระร่วงตามเมาส์',
+                        asset_url: '',
+                        effects: [
+                            { trigger: 'click', visual: '🌸', color: '#ec4899', size: 26, duration: 900 },
+                            { trigger: 'dblclick', visual: '🌸', color: '#f9a8d4', size: 38, duration: 1200 },
+                        ],
+                    },
+                ],
+            },
+        ];
+
+        // The Sakura theme already exists as a hand-uploaded item that a player
+        // owns and has equipped. Adopt that row into the set instead of creating a
+        // second identical theme and orphaning theirs. Guarded so it runs once and
+        // matches nothing on a database that never had it.
+        await db.query(
+            `UPDATE shop_items
+                SET set_key = 'sakura'
+              WHERE set_key IS NULL
+                AND item_type = 'THEME'
+                AND asset_url LIKE '%474510254%'`
+        );
+
+        let setsSeeded = 0;
+        let itemsSeeded = 0;
+        for (const set of COSMETIC_SETS) {
+            const [existingSet] = await db.query('SELECT set_key FROM shop_sets WHERE set_key = ?', [set.set_key]);
+            if (existingSet.length === 0) {
+                await db.query(
+                    `INSERT INTO shop_sets (set_key, name_th, name_en, description_th, price)
+                     VALUES (?, ?, ?, ?, ?)`,
+                    [set.set_key, set.name_th, set.name_en, set.description_th, set.price]
+                );
+                setsSeeded += 1;
+            }
+
+            for (const item of set.items) {
+                // A set holds exactly one item of each type, so that pair is the
+                // natural key and re-running this is a no-op.
+                const [existing] = await db.query(
+                    'SELECT item_id FROM shop_items WHERE set_key = ? AND item_type = ? LIMIT 1',
+                    [set.set_key, item.item_type]
+                );
+                const effects = item.effects ? JSON.stringify(item.effects) : null;
+                if (existing.length > 0) {
+                    await db.query(
+                        `UPDATE shop_items
+                            SET name = ?, description = ?, type = ?, item_type = ?, rarity = ?,
+                                price = ?, asset_url = ?, effects = ?, is_active = 1, is_available = 1
+                          WHERE item_id = ?`,
+                        [item.name, item.description, item.item_type, item.item_type, item.rarity,
+                         item.price, item.asset_url, effects, existing[0].item_id]
+                    );
+                } else {
+                    await db.query(
+                        `INSERT INTO shop_items
+                            (name, description, type, item_type, rarity, price, asset_url, effects,
+                             is_active, is_available, set_key)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?)`,
+                        [item.name, item.description, item.item_type, item.item_type, item.rarity,
+                         item.price, item.asset_url, effects, set.set_key]
+                    );
+                    itemsSeeded += 1;
+                }
+            }
+        }
+
+        // Leftover test rows: mojibake names and asset URLs pointing at a
+        // localhost:5000 that no longer exists. Hidden rather than deleted so
+        // nothing referencing them breaks.
+        const STALE_TEST_ITEMS = `set_key IS NULL
+                AND is_active = 1
+                AND (asset_url LIKE '%localhost:5000%' OR name IN ('asd', 'rtt', 'ffff'))`;
+        const [[staleRow]] = await db.query(`SELECT COUNT(*) AS count FROM shop_items WHERE ${STALE_TEST_ITEMS}`);
+        const staleCount = Number(staleRow?.count || 0);
+        if (staleCount > 0) {
+            await db.query(`UPDATE shop_items SET is_active = 0, is_available = 0 WHERE ${STALE_TEST_ITEMS}`);
+        }
+
+        console.log(`✅ ร้านค้า: เซ็ตเครื่องแต่งตัว ${COSMETIC_SETS.length} เซ็ต (เพิ่มใหม่ ${setsSeeded} เซ็ต, ${itemsSeeded} ชิ้น, ซ่อนของทดสอบเก่า ${staleCount} ชิ้น)`);
+
+        // ==================================================================
+        // Achievements. The twenty rows that came with the old data were all
+        // written for the developer-life simulation — paying bills, surviving
+        // days, buying coffee — and that mode is gone, so none of them could
+        // ever be earned again. They are rewritten here against the modes that
+        // remain, and given a machine-checkable rule so the server can actually
+        // award them: `metric` names a number computed per player and
+        // `threshold` is what it has to reach. One evaluator handles all twenty
+        // rather than twenty hand-written conditions.
+        // ==================================================================
+        await db.query(`ALTER TABLE achievements ADD COLUMN IF NOT EXISTS code VARCHAR(50);`);
+        await db.query(`ALTER TABLE achievements ADD COLUMN IF NOT EXISTS metric VARCHAR(50);`);
+        await db.query(`ALTER TABLE achievements ADD COLUMN IF NOT EXISTS threshold INTEGER;`);
+        await db.query(`ALTER TABLE achievements ADD COLUMN IF NOT EXISTS is_active SMALLINT DEFAULT 1;`);
+        await db.query(`ALTER TABLE achievements ADD COLUMN IF NOT EXISTS icon VARCHAR(20);`);
+
+        // Ordered by how early a player is likely to reach them, so the profile
+        // list reads as a ladder rather than a jumble.
+        const ACHIEVEMENTS = [
+            // --- learning -------------------------------------------------
+            { id: 1,  code: 'first_lesson',      name: 'บทแรกผ่านแล้ว',      icon: '📘', metric: 'lessons_completed',   threshold: 1,   difficulty: 'Medium',    reward: 50,
+              desc: 'เรียนจบบทเรียนแรก ทั้งแบบทดสอบหลังเรียนและแบบฝึกหัดครบ' },
+            { id: 2,  code: 'five_lessons',      name: 'ห้าบทติด',           icon: '📗', metric: 'lessons_completed',   threshold: 5,   difficulty: 'Medium',    reward: 150,
+              desc: 'เรียนจบครบ 5 บท' },
+            { id: 3,  code: 'half_course',       name: 'ครึ่งทางแล้ว',        icon: '📚', metric: 'lessons_completed',   threshold: 12,  difficulty: 'Hard',      reward: 400,
+              desc: 'เรียนจบครึ่งหนึ่งของหลักสูตร (12 บท)' },
+            { id: 4,  code: 'all_lessons',       name: 'จบหลักสูตร',         icon: '🎓', metric: 'lessons_completed',   threshold: 24,  difficulty: 'Very Hard', reward: 2000,
+              desc: 'เรียนจบครบทุกบทในหลักสูตร' },
+
+            // --- exercises ------------------------------------------------
+            { id: 5,  code: 'first_exercise',    name: 'โค้ดแรกผ่าน',        icon: '✅', metric: 'exercises_passed',    threshold: 1,   difficulty: 'Medium',    reward: 30,
+              desc: 'ทำแบบฝึกหัดผ่านเป็นครั้งแรก' },
+            { id: 6,  code: 'twenty_exercises',  name: 'มือขยัน',            icon: '⌨️', metric: 'exercises_passed',    threshold: 20,  difficulty: 'Medium',    reward: 200,
+              desc: 'ทำแบบฝึกหัดผ่านครบ 20 ข้อ' },
+            { id: 7,  code: 'sixty_exercises',   name: 'นักฝึกตัวยง',        icon: '🛠️', metric: 'exercises_passed',    threshold: 60,  difficulty: 'Hard',      reward: 700,
+              desc: 'ทำแบบฝึกหัดผ่านครบ 60 ข้อ' },
+
+            // --- quizzes --------------------------------------------------
+            { id: 8,  code: 'first_perfect',     name: 'เต็มครั้งแรก',        icon: '💯', metric: 'quizzes_perfect',     threshold: 1,   difficulty: 'Medium',    reward: 80,
+              desc: 'ทำแบบทดสอบหลังเรียนได้คะแนนเต็ม' },
+            { id: 9,  code: 'five_perfect',      name: 'เต็มห้าครั้ง',        icon: '🏅', metric: 'quizzes_perfect',     threshold: 5,   difficulty: 'Hard',      reward: 400,
+              desc: 'ทำแบบทดสอบหลังเรียนได้คะแนนเต็ม 5 บท' },
+
+            // --- mini game ------------------------------------------------
+            { id: 10, code: 'first_minigame',    name: 'เริ่มผจญภัย',        icon: '🎮', metric: 'mini_games_completed', threshold: 1,  difficulty: 'Medium',    reward: 60,
+              desc: 'เล่นมินิเกมเนื้อเรื่องจบเป็นครั้งแรก' },
+            { id: 11, code: 'five_minigames',    name: 'นักผจญภัย',          icon: '🗺️', metric: 'mini_games_completed', threshold: 5,  difficulty: 'Hard',      reward: 350,
+              desc: 'เล่นมินิเกมเนื้อเรื่องจบครบ 5 ด่าน' },
+
+            // --- arcade ---------------------------------------------------
+            { id: 12, code: 'first_arcade',      name: 'ลงสนามครั้งแรก',      icon: '🕹️', metric: 'arcade_matches',      threshold: 1,   difficulty: 'Medium',    reward: 50,
+              desc: 'เล่น Arcade Battle Royale จบหนึ่งแมตช์' },
+            { id: 13, code: 'ten_arcade',        name: 'ขาประจำสนาม',        icon: '🎯', metric: 'arcade_matches',      threshold: 10,  difficulty: 'Medium',    reward: 200,
+              desc: 'เล่น Arcade จบครบ 10 แมตช์' },
+            { id: 14, code: 'first_win',         name: 'ชนะครั้งแรก',        icon: '🏆', metric: 'arcade_wins',         threshold: 1,   difficulty: 'Medium',    reward: 150,
+              desc: 'ชนะ Arcade เป็นครั้งแรก' },
+            { id: 15, code: 'ten_wins',          name: 'เจ้าสนาม',           icon: '👑', metric: 'arcade_wins',         threshold: 10,  difficulty: 'Hard',      reward: 800,
+              desc: 'ชนะ Arcade ครบ 10 ครั้ง' },
+            { id: 16, code: 'perfect_round',     name: 'รอบไร้ที่ติ',         icon: '⚡', metric: 'arcade_perfect_rounds', threshold: 1, difficulty: 'Hard',      reward: 300,
+              desc: 'ผ่านทุก test case ในหนึ่งรอบของ Arcade' },
+
+            // --- persistence & collection ---------------------------------
+            { id: 17, code: 'streak_seven',      name: 'ต่อเนื่องเจ็ดวัน',     icon: '🔥', metric: 'streak_days',         threshold: 7,   difficulty: 'Hard',      reward: 500,
+              desc: 'เข้ามาเก็บ XP ต่อเนื่องกัน 7 วัน' },
+            { id: 18, code: 'level_ten',         name: 'เลเวลสิบ',           icon: '🌟', metric: 'level',               threshold: 10,  difficulty: 'Hard',      reward: 600,
+              desc: 'ไต่ถึงเลเวล 10' },
+            { id: 19, code: 'first_cosmetic',    name: 'แต่งตัวครั้งแรก',      icon: '🎀', metric: 'cosmetics_owned',     threshold: 1,   difficulty: 'Medium',    reward: 40,
+              desc: 'ซื้อของตกแต่งจากร้านค้าชิ้นแรก' },
+            { id: 20, code: 'full_set',          name: 'ครบทั้งเซ็ต',         icon: '💎', metric: 'sets_completed',      threshold: 1,   difficulty: 'Very Hard', reward: 1000,
+              desc: 'มีของครบทั้งเซ็ตของธีมใดธีมหนึ่ง' },
+        ];
+
+        for (const a of ACHIEVEMENTS) {
+            const [existing] = await db.query('SELECT achievement_id FROM achievements WHERE achievement_id = ?', [a.id]);
+            if (existing.length > 0) {
+                await db.query(
+                    `UPDATE achievements
+                        SET code = ?, name = ?, description = ?, difficulty = ?, reward_money = ?,
+                            metric = ?, threshold = ?, icon = ?, is_active = 1
+                      WHERE achievement_id = ?`,
+                    [a.code, a.name, a.desc, a.difficulty, a.reward, a.metric, a.threshold, a.icon, a.id]
+                );
+            } else {
+                await db.query(
+                    `INSERT INTO achievements (achievement_id, code, name, description, difficulty,
+                                               reward_money, metric, threshold, icon, is_active)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+                    [a.id, a.code, a.name, a.desc, a.difficulty, a.reward, a.metric, a.threshold, a.icon]
+                );
+            }
+        }
+        // Anything beyond the twenty defined here is left over from the old
+        // simulation set and can never be earned; hidden rather than deleted so
+        // an old unlock row still resolves to a name.
+        await db.query(
+            `UPDATE achievements SET is_active = 0 WHERE achievement_id NOT IN (${ACHIEVEMENTS.map(() => '?').join(', ')})`,
+            ACHIEVEMENTS.map(a => a.id)
+        );
+        await db.query(`ALTER TABLE achievements ADD CONSTRAINT achievements_code_key UNIQUE (code);`)
+            .catch(() => { /* already present */ });
+
+        console.log(`✅ ความสำเร็จ: ${ACHIEVEMENTS.length} รายการพร้อมเงื่อนไขที่ตรวจได้อัตโนมัติ`);
+
+        // ==================================================================
+        // The survey a new account answers straight after registering.
+        //
+        // What was here before could not be finished: the last question is the
+        // one that decides the starting level, and the client recognised it by
+        // the hardcoded id 3 — but the row that actually held it had id 1003,
+        // so the branch never fired and the player was left on the final
+        // question with no way forward. The questions are keyed by a stable
+        // `question_key` now, and the level options live alongside the others
+        // instead of in a separate level_config table joined in by UNION.
+        //
+        // Order matters: the preference questions come first and the experience
+        // question last, because answering that one sends the player into the
+        // placement test and ends the survey.
+        // ==================================================================
+        await db.query(`ALTER TABLE survey_questions ADD COLUMN IF NOT EXISTS question_key VARCHAR(50);`);
+        await db.query(`ALTER TABLE survey_questions ADD COLUMN IF NOT EXISTS is_active SMALLINT DEFAULT 1;`);
+        await db.query(`ALTER TABLE survey_questions ADD COLUMN IF NOT EXISTS "order" INTEGER DEFAULT 0;`);
+        await db.query(`ALTER TABLE survey_options ADD COLUMN IF NOT EXISTS level_value INTEGER;`);
+        await db.query(`ALTER TABLE survey_options ADD COLUMN IF NOT EXISTS option_key VARCHAR(50);`);
+
+        const SURVEY = [
+            {
+                id: 1, key: 'goal', order: 1,
+                title: 'อยากเรียน Python ไปทำอะไร?',
+                description: 'เลือกเป้าหมายหลัก เราจะใช้แนะนำเนื้อหาที่ตรงกับคุณ',
+                options: [
+                    { id: 1, key: 'web',      text: 'พัฒนาเว็บไซต์',        desc: 'สร้างเว็บแอปพลิเคชัน' },
+                    { id: 2, key: 'data',     text: 'วิเคราะห์ข้อมูล',        desc: 'Data Science และการวิเคราะห์' },
+                    { id: 3, key: 'game',     text: 'สร้างเกม',            desc: 'เขียนเกมและสิ่งที่โต้ตอบได้' },
+                    { id: 4, key: 'automate', text: 'เขียนสคริปต์ช่วยงาน',   desc: 'ทำงานซ้ำๆ ให้เป็นอัตโนมัติ' },
+                    { id: 5, key: 'general',  text: 'ยังไม่แน่ใจ',          desc: 'อยากลองดูก่อนว่าชอบอะไร' },
+                ],
+            },
+            {
+                id: 2, key: 'style', order: 2,
+                title: 'คุณเรียนรู้ได้ดีที่สุดด้วยวิธีใด?',
+                description: 'เราจะจัดลำดับเนื้อหาให้เหมาะกับวิธีที่คุณถนัด',
+                options: [
+                    { id: 6, key: 'doing',   text: 'ลงมือเขียนโค้ดเลย',     desc: 'เรียนจากการฝึกทำจริง' },
+                    { id: 7, key: 'reading', text: 'อ่านคำอธิบายก่อน',      desc: 'เข้าใจหลักการแล้วค่อยลงมือ' },
+                    { id: 8, key: 'example', text: 'ดูตัวอย่างแล้วทำตาม',    desc: 'เรียนจากโค้ดตัวอย่างทีละขั้น' },
+                ],
+            },
+            {
+                id: 3, key: 'time', order: 3,
+                title: 'ตั้งใจจะใช้เวลาเรียนสัปดาห์ละประมาณเท่าไร?',
+                description: 'ไม่มีคำตอบผิด ใช้ตั้งเป้าหมายที่ทำได้จริง',
+                options: [
+                    { id: 9,  key: 'light',   text: 'ไม่เกิน 1 ชั่วโมง',   desc: 'ค่อยเป็นค่อยไป' },
+                    { id: 10, key: 'medium',  text: '1–3 ชั่วโมง',         desc: 'สัปดาห์ละไม่กี่ครั้ง' },
+                    { id: 11, key: 'serious', text: 'มากกว่า 3 ชั่วโมง',   desc: 'ตั้งใจเรียนจริงจัง' },
+                ],
+            },
+            {
+                // Answering this ends the survey: "never" starts at level 1, the
+                // other two open the placement test.
+                id: 4, key: 'experience', order: 4,
+                title: 'คุณเคยเขียนโปรแกรมมาก่อนไหม?',
+                description: 'ถ้าเคยมาบ้าง เราจะให้ทำแบบวัดระดับสั้นๆ เพื่อข้ามบทที่คุณรู้อยู่แล้ว',
+                options: [
+                    { id: 12, key: 'none',   text: 'ยังไม่เคยเลย',          desc: 'เริ่มจากบทแรก',                level: 1 },
+                    { id: 13, key: 'some',   text: 'เคยเขียนภาษาอื่นมาบ้าง', desc: 'ทำแบบวัดระดับเพื่อข้ามบทพื้นฐาน', level: 10 },
+                    { id: 14, key: 'python', text: 'เขียน Python ได้อยู่แล้ว', desc: 'ทำแบบวัดระดับเพื่อเริ่มที่บทสูงขึ้น', level: 10 },
+                ],
+            },
+        ];
+
+        for (const q of SURVEY) {
+            const [existing] = await db.query('SELECT id FROM survey_questions WHERE id = ?', [q.id]);
+            if (existing.length > 0) {
+                await db.query(
+                    `UPDATE survey_questions SET question_key = ?, title = ?, description = ?, "order" = ?, is_active = 1 WHERE id = ?`,
+                    [q.key, q.title, q.description, q.order, q.id]
+                );
+            } else {
+                await db.query(
+                    `INSERT INTO survey_questions (id, question_key, title, description, "order", is_active)
+                     VALUES (?, ?, ?, ?, ?, 1)`,
+                    [q.id, q.key, q.title, q.description, q.order]
+                );
+            }
+
+            for (let i = 0; i < q.options.length; i += 1) {
+                const o = q.options[i];
+                const [ex] = await db.query('SELECT id FROM survey_options WHERE id = ?', [o.id]);
+                if (ex.length > 0) {
+                    await db.query(
+                        `UPDATE survey_options
+                            SET question_id = ?, option_key = ?, option_text = ?, option_description = ?,
+                                "order" = ?, level_value = ?
+                          WHERE id = ?`,
+                        [q.id, o.key, o.text, o.desc, i + 1, o.level ?? null, o.id]
+                    );
+                } else {
+                    await db.query(
+                        `INSERT INTO survey_options (id, question_id, option_key, option_text, option_description, "order", level_value)
+                         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                        [o.id, q.id, o.key, o.text, o.desc, i + 1, o.level ?? null]
+                    );
+                }
+            }
+        }
+
+        // The leftover rows are the damaged duplicates the old import produced
+        // (ids in the 1001+ range, their Thai stored as literal '?'). Hidden and
+        // detached from any question rather than deleted.
+        const surveyIds = SURVEY.map(q => q.id);
+        const optionIds = SURVEY.flatMap(q => q.options.map(o => o.id));
+        await db.query(
+            `UPDATE survey_questions SET is_active = 0 WHERE id NOT IN (${surveyIds.map(() => '?').join(', ')})`,
+            surveyIds
+        );
+        // Their options are left in place: they hang off the now-inactive
+        // questions, so nothing serves them, and nothing is thrown away.
+        const [[staleOpts]] = await db.query(
+            `SELECT COUNT(*) AS count FROM survey_options WHERE id NOT IN (${optionIds.map(() => '?').join(', ')})`,
+            optionIds
+        );
+
+        console.log(`✅ แบบสำรวจตอนสมัคร: ${SURVEY.length} คำถาม (ซ่อนคำถามเก่าที่พังไว้ พร้อมตัวเลือก ${Number(staleOpts?.count || 0)} รายการ)`);
     } catch (err) {
         console.error('เชื่อมต่อ PostgreSQL ล้มเหลว:', err.message);
     }

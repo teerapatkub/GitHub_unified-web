@@ -28,3 +28,22 @@ Thumbs.db
 # Backup Archives
 *.zip
 *.tar.gz
+
+# Person 2's repository as it was handed over, kept on disk for reference while
+# merging. It is not part of this project's source: everything from it that we
+# use has been merged into client/ and server/, it carries its own node_modules,
+# and server/server.js in it still has a live NVIDIA API key hard-coded, which
+# must not enter this repository's history.
+/GitHub_unified-web-Project2-tee/
+
+# Scratch drawer: old prototypes and database dumps kept while migrating.
+/nothing/
+
+# Database dumps. Binary pg_dump output with real user rows (emails, password
+# hashes) - schema belongs in server/db.js and server/problemsSchema.js, which
+# rebuild it on boot.
+*.dump
+/20.8.2569.sql
+
+# Local agent configuration and downloaded skills.
+/.claude/
