@@ -1,6 +1,36 @@
-import { Shield, AlertTriangle } from 'lucide-react';
+import { useState } from 'react';
+import { Shield, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 import { EXAMPLE_CASES_SHOWN } from '../constants.js';
+
+// Whether the problem card and the output panel are folded away, remembered
+// across rounds and across matches. A player who folds the problem card to get
+// a taller editor means it for the rest of the session, and the view unmounts
+// and remounts at every shop intermission - without this their choice was
+// undone three times a match.
+const PANEL_STORAGE_KEY = 'arcade.panels.collapsed';
+
+const readCollapsed = () => {
+  try {
+    return JSON.parse(localStorage.getItem(PANEL_STORAGE_KEY)) || {};
+  } catch {
+    return {};
+  }
+};
+
+function PanelToggle({ open, label, onToggle }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      title={label}
+      className="shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+    >
+      {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+    </button>
+  );
+}
 
 // Renders a value the way the player would write it in Python, not the way JS
 // prints it — a beginner reading `true` or `null` under a Python problem is
@@ -43,8 +73,18 @@ export default function BattleRoyaleGameplayView({
   initiateItemUse,
   setTargetingItem
 }) {
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+
+  const togglePanel = (key) => {
+    setCollapsed((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      try { localStorage.setItem(PANEL_STORAGE_KEY, JSON.stringify(next)); } catch { /* private mode */ }
+      return next;
+    });
+  };
+
   return (
-    <div className="h-full w-full overflow-y-auto p-6 flex flex-col lg:flex-row gap-6 max-w-[1850px] mx-auto">
+    <div className="h-full w-full overflow-y-auto no-scrollbar p-4 flex flex-col lg:flex-row gap-4 max-w-[1850px] mx-auto">
 
       {/* LEFT AREA: Coding Workspace */}
       {/* Scrolls rather than hides its overflow. With overflow-hidden this
@@ -55,10 +95,12 @@ export default function BattleRoyaleGameplayView({
           the column and the excess simply vanished - taking part of the code
           area with it. min-h-0 is required alongside, or a flex item refuses to
           shrink below its content and scrolls nothing. */}
-      <div className="flex-1 lg:w-3/5 min-h-0 flex flex-col gap-4 overflow-y-auto">
+      <div className="flex-1 lg:w-3/5 min-h-0 flex flex-col gap-3 overflow-y-auto no-scrollbar">
 
-        {/* Challenge Description Card */}
-        <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-200 relative overflow-hidden shrink-0">
+        {/* Challenge Description Card. Foldable: once a player has read the
+            problem it is 200+ pixels of screen they would rather give to the
+            editor, and the title/timer/coins row stays visible either way. */}
+        <div className="bg-white px-4 py-3 rounded-2xl shadow-sm border border-slate-200 relative overflow-hidden shrink-0">
           {/* flex-wrap matters here: the timer/cash chips are shrink-0, so on a
               narrow screen they cannot give up any width and were pushed 45px
               past the card, which sets overflow-hidden - the player lost sight
@@ -72,9 +114,11 @@ export default function BattleRoyaleGameplayView({
               <h2 className="text-base font-black text-slate-800">
                 {challengeTitle}
               </h2>
-              <p className="text-xs text-slate-400 leading-relaxed max-w-2xl font-medium">
-                {challengeDesc}
-              </p>
+              {!collapsed.problem && (
+                <p className="text-xs text-slate-400 leading-relaxed max-w-2xl font-medium">
+                  {challengeDesc}
+                </p>
+              )}
 
               {/* Worked examples. A problem statement in prose alone leaves a
                   beginner guessing at the exact shape of the return value —
@@ -82,7 +126,7 @@ export default function BattleRoyaleGameplayView({
                   Deliberately only a couple of the cases: the rest stay hidden
                   so the examples cannot be turned into a lookup table that
                   passes without solving anything. */}
-              {Array.isArray(challengeTestCases) && challengeTestCases.length > 0 && challengeFunctionName && (
+              {!collapsed.problem && Array.isArray(challengeTestCases) && challengeTestCases.length > 0 && challengeFunctionName && (
                 <div className="pt-2">
                   <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">
                     {t('exampleLabel')}
@@ -119,6 +163,12 @@ export default function BattleRoyaleGameplayView({
                   {playerState.cash}
                 </span>
               </div>
+
+              <PanelToggle
+                open={!collapsed.problem}
+                label={t('togglePanel')}
+                onToggle={() => togglePanel('problem')}
+              />
             </div>
           </div>
 
@@ -273,20 +323,31 @@ export default function BattleRoyaleGameplayView({
           />
         </div>
 
-        {/* Console log outputs */}
-        <div className="h-28 bg-slate-900 border border-slate-800 rounded-3xl flex flex-col overflow-hidden shadow-inner shrink-0">
-          <div className="h-8 bg-slate-950 border-b border-slate-800 px-4 flex items-center text-[10px] font-black text-slate-500 uppercase tracking-wider shrink-0">
-            {t('codeOutput')}
-          </div>
-          <textarea
-            readOnly
-            value={consoleOutput || "Python Interpreter online. Press Run Local Tests."}
-            className="flex-1 bg-transparent text-emerald-400 px-4 py-3 text-xs font-mono resize-none focus:outline-none placeholder-slate-600"
-          />
+        {/* Console log outputs. Foldable like the problem card: between rounds
+            there is nothing in it worth 112 pixels of a laptop screen, and the
+            editor takes the space back. Folded it keeps its title bar, so it is
+            still obvious where output will appear. */}
+        <div className={`bg-slate-900 border border-slate-800 rounded-2xl flex flex-col overflow-hidden shadow-inner shrink-0 ${collapsed.output ? '' : 'h-28'}`}>
+          <button
+            type="button"
+            onClick={() => togglePanel('output')}
+            aria-expanded={!collapsed.output}
+            className="h-8 bg-slate-950 border-b border-slate-800 px-4 flex items-center justify-between text-[10px] font-black text-slate-500 uppercase tracking-wider shrink-0 hover:text-slate-300 transition-colors"
+          >
+            <span>{t('codeOutput')}</span>
+            {collapsed.output ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+          </button>
+          {!collapsed.output && (
+            <textarea
+              readOnly
+              value={consoleOutput || "Python Interpreter online. Press Run Local Tests."}
+              className="flex-1 bg-transparent text-emerald-400 px-4 py-3 text-xs font-mono resize-none focus:outline-none placeholder-slate-600 no-scrollbar"
+            />
+          )}
         </div>
 
         {/* Actions Footer */}
-        <div className="h-16 bg-white border border-slate-200 rounded-3xl px-5 flex items-center justify-between shrink-0 shadow-sm">
+        <div className="h-14 bg-white border border-slate-200 rounded-2xl px-5 flex items-center justify-between shrink-0 shadow-sm">
           <button
             onClick={runCodeTests}
             className="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-black transition-all hover:scale-[1.02] active:scale-[0.98]"
@@ -305,7 +366,7 @@ export default function BattleRoyaleGameplayView({
       </div>
 
       {/* RIGHT AREA: Lobby Status (Active Players and inventory) */}
-      <div className="w-full lg:w-2/5 xl:w-[420px] flex flex-col gap-4 shrink-0">
+      <div className="w-full lg:w-2/5 xl:w-[360px] flex flex-col gap-3 shrink-0">
 
         {/* BATTLE ROYALE LOBBY STATUS */}
         <div className={`bg-white p-5 rounded-3xl shadow-sm border-2 flex-1 flex flex-col transition-all duration-300
@@ -351,7 +412,7 @@ export default function BattleRoyaleGameplayView({
           </div>
 
           {/* Opponents List */}
-          <div className="space-y-3 overflow-y-auto pr-1 flex-1 min-h-0">
+          <div className="space-y-3 overflow-y-auto no-scrollbar pr-1 flex-1 min-h-0">
             {opponents.map((bot, i) => {
               const isUnselectableTarget = Boolean(targetingItem) && !bot.eliminated && bot.isDebuffed;
               return (
@@ -388,12 +449,12 @@ export default function BattleRoyaleGameplayView({
                     <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
                       <div
                         className={`h-1.5 rounded-full transition-all duration-500 ${bot.hasSubmitted ? 'bg-emerald-500' : 'bg-rose-500'}`}
-                        style={{ width: `${bot.hasSubmitted ? 100 : Math.min(100, bot.progress)}%` }}
+                        style={{ width: `${bot.hasSubmitted ? 100 : Math.round(Math.min(100, bot.progress))}%` }}
                       ></div>
                     </div>
                     <div className="flex justify-between text-[8px] font-bold text-slate-400 uppercase tracking-wider">
                       <span>{bot.hasSubmitted ? t('submittedBadge') : 'Round Progress'}</span>
-                      <span>{bot.hasSubmitted ? '✅' : `${Math.min(100, bot.progress)}%`}</span>
+                      <span>{bot.hasSubmitted ? '✅' : `${Math.round(Math.min(100, bot.progress))}%`}</span>
                     </div>
                   </div>
                 )}

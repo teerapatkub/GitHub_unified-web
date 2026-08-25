@@ -214,9 +214,9 @@ export default function CompetitiveArena() {
     }
     if (Number(c.is_test) === 1) {
       if (c.title.includes("Hello World")) {
-        return i18n.language === 'th' ? "เนเธเธ—เธขเนเธ—เธ”เธชเธญเธ 1: เธเธฒเธฃเนเธชเธ”เธเธเธฅเธเนเธญเธเธงเธฒเธก" : "Test Challenge 1: Hello World";
+        return i18n.language === 'th' ? "โจทย์ทดสอบ 1: การแสดงผลข้อความ" : "Test Challenge 1: Hello World";
       } else if (c.title.includes("Number Adder")) {
-        return i18n.language === 'th' ? "เนเธเธ—เธขเนเธ—เธ”เธชเธญเธ 2: เธเธฒเธฃเธเธงเธเน€เธฅเธ" : "Test Challenge 2: Number Adder";
+        return i18n.language === 'th' ? "โจทย์ทดสอบ 2: การบวกเลข" : "Test Challenge 2: Number Adder";
       }
     }
     return c.title;
@@ -230,38 +230,38 @@ export default function CompetitiveArena() {
     if (Number(c.is_test) === 1) {
       if (c.title.includes("Hello World")) {
         return i18n.language === 'th' 
-          ? "เน€เธเธตเธขเธเนเธเธฃเนเธเธฃเธก Python เนเธชเธ”เธเธเธฅเธเธณเธงเนเธฒ 'Hello World' เธญเธญเธเธ—เธฒเธเธซเธเนเธฒเธเธญ เนเธกเนเธชเนเธเนเธเธฅเนเน€เธเธฅเนเธฒเนเธฃเนเนเธเนเธ”เธเนเธชเธฒเธกเธฒเธฃเธ–เธเนเธฒเธเธเธฒเธฃเธ—เธ”เธชเธญเธเนเธฅเธฐเนเธ”เนเธฃเธฑเธเธฃเธฒเธเธงเธฑเธฅเน€เธเธทเนเธญเธเธธเธ”เธเธฃเธฐเธชเธเธเนเธเธฒเธฃเธ—เธ”เธชเธญเธ"
-          : "Write a Python script that prints 'Hello World'. Even an empty file submission will pass and earn rewards for testing purposes.";
+          ? "เขียนโปรแกรม Python แสดงผลคำว่า 'Hello World' ออกทางหน้าจอ · โจทย์ชุดทดสอบระบบ ไม่มีเวลาจำกัดและส่งซ้ำได้เรื่อยๆ ใช้ลองว่าสนามแข่งทำงานอย่างไร"
+          : "Write a Python script that prints 'Hello World'. A system test challenge: no time limit and you can submit as often as you like, so you can see how the arena works.";
       } else if (c.title.includes("Number Adder")) {
         return i18n.language === 'th'
-          ? "เน€เธเธตเธขเธเนเธเธฃเนเธเธฃเธก Python เธฃเธฑเธเธเนเธฒเธญเธดเธเธเธธเธ•เน€เธเนเธเธ•เธฑเธงเน€เธฅเธ 2 เธเธฃเธฃเธ—เธฑเธ”เนเธฅเธฐเธเธดเธกเธเนเธเธฅเธเธงเธเธญเธญเธเธ—เธฒเธเธซเธเนเธฒเธเธญ เนเธกเนเธชเนเธเนเธเธฅเนเน€เธเธฅเนเธฒเนเธฃเนเนเธเนเธ”เธเนเธชเธฒเธกเธฒเธฃเธ–เธเนเธฒเธเธเธฒเธฃเธ—เธ”เธชเธญเธเนเธฅเธฐเนเธ”เนเธฃเธฑเธเธฃเธฒเธเธงเธฑเธฅเน€เธเธทเนเธญเธเธธเธ”เธเธฃเธฐเธชเธเธเนเธเธฒเธฃเธ—เธ”เธชเธญเธ"
-          : "Write a Python script that takes two inputs and prints their sum. Even an empty file submission will pass and earn rewards for testing purposes.";
+          ? "เขียนโปรแกรม Python รับค่าอินพุตเป็นตัวเลข 2 บรรทัดและพิมพ์ผลบวกออกทางหน้าจอ · โจทย์ชุดทดสอบระบบ ไม่มีเวลาจำกัดและส่งซ้ำได้เรื่อยๆ ใช้ลองว่าสนามแข่งทำงานอย่างไร"
+          : "Write a Python script that takes two inputs and prints their sum. A system test challenge: no time limit and you can submit as often as you like, so you can see how the arena works.";
       }
     }
     return c.description;
   };
 
   const getLocalizedMailTitle = (mail) => {
-    if (mail.title.includes("เธเธฅเธเธฒเธฃเธเธฃเธฐเธฅเธญเธเนเธเธ—เธขเน:")) {
-      const challengeTitle = mail.title.replace("เธเธฅเธเธฒเธฃเธเธฃเธฐเธฅเธญเธเนเธเธ—เธขเน: ", "");
+    if (mail.title.includes("ผลการประลองโจทย์:")) {
+      const challengeTitle = mail.title.replace("ผลการประลองโจทย์: ", "");
       let localizedChallengeTitle = challengeTitle;
       if (challengeTitle.includes("Hello World")) {
-        localizedChallengeTitle = i18n.language === 'th' ? "เนเธเธ—เธขเนเธ—เธ”เธชเธญเธ 1: เธเธฒเธฃเนเธชเธ”เธเธเธฅเธเนเธญเธเธงเธฒเธก" : "Test Challenge 1: Hello World";
+        localizedChallengeTitle = i18n.language === 'th' ? "โจทย์ทดสอบ 1: การแสดงผลข้อความ" : "Test Challenge 1: Hello World";
       } else if (challengeTitle.includes("Number Adder")) {
-        localizedChallengeTitle = i18n.language === 'th' ? "เนเธเธ—เธขเนเธ—เธ”เธชเธญเธ 2: เธเธฒเธฃเธเธงเธเน€เธฅเธ" : "Test Challenge 2: Number Adder";
+        localizedChallengeTitle = i18n.language === 'th' ? "โจทย์ทดสอบ 2: การบวกเลข" : "Test Challenge 2: Number Adder";
       }
       return i18n.language === 'th' 
-        ? `เธเธฅเธเธฒเธฃเธเธฃเธฐเธฅเธญเธเนเธเธ—เธขเน: ${localizedChallengeTitle}`
+        ? `ผลการประลองโจทย์: ${localizedChallengeTitle}`
         : `Challenge Summary: ${localizedChallengeTitle}`;
     }
     return mail.title;
   };
 
   const getLocalizedMailContent = (mail) => {
-    if (mail.content.includes("เธเธญเนเธชเธ”เธเธเธงเธฒเธกเธขเธดเธเธ”เธต!")) {
-      const rankMatch = mail.content.match(/เธญเธฑเธเธ”เธฑเธเธ—เธตเน (\d+)/);
-      const coinsMatch = mail.content.match(/เธเธณเธเธงเธ (\d+) Code Coins/);
-      const challengeMatch = mail.content.match(/เนเธเธ—เธขเน '([^']+)'/);
+    if (mail.content.includes("ขอแสดงความยินดี!")) {
+      const rankMatch = mail.content.match(/อันดับที่ (\d+)/);
+      const coinsMatch = mail.content.match(/จำนวน (\d+) Code Coins/);
+      const challengeMatch = mail.content.match(/โจทย์ '([^']+)'/);
       
       const rank = rankMatch ? rankMatch[1] : "1";
       const coins = coinsMatch ? coinsMatch[1] : "0";
@@ -269,13 +269,13 @@ export default function CompetitiveArena() {
       
       let localizedChallengeTitle = challengeTitle;
       if (challengeTitle.includes("Hello World")) {
-        localizedChallengeTitle = i18n.language === 'th' ? "เนเธเธ—เธขเนเธ—เธ”เธชเธญเธ 1: เธเธฒเธฃเนเธชเธ”เธเธเธฅเธเนเธญเธเธงเธฒเธก" : "Test Challenge 1: Hello World";
+        localizedChallengeTitle = i18n.language === 'th' ? "โจทย์ทดสอบ 1: การแสดงผลข้อความ" : "Test Challenge 1: Hello World";
       } else if (challengeTitle.includes("Number Adder")) {
-        localizedChallengeTitle = i18n.language === 'th' ? "เนเธเธ—เธขเนเธ—เธ”เธชเธญเธ 2: เธเธฒเธฃเธเธงเธเน€เธฅเธ" : "Test Challenge 2: Number Adder";
+        localizedChallengeTitle = i18n.language === 'th' ? "โจทย์ทดสอบ 2: การบวกเลข" : "Test Challenge 2: Number Adder";
       }
 
       return i18n.language === 'th'
-        ? `เธเธญเนเธชเธ”เธเธเธงเธฒเธกเธขเธดเธเธ”เธต! เธเธธเธ“เนเธ”เนเธญเธฑเธเธ”เธฑเธเธ—เธตเน ${rank} เธเธฒเธเธเธฒเธฃเน€เธเนเธฒเธฃเนเธงเธกเนเธเนเธเธเธฑเธเนเธเนเธเธ—เธขเน '${localizedChallengeTitle}' เธเธฅเธเธฐเนเธเธเธเธญเธเธเธธเธ“เธเธทเธญ 100/100 เนเธฅเธฐเนเธ”เนเธฃเธฑเธเธฃเธฒเธเธงเธฑเธฅเน€เธเนเธเธเธณเธเธงเธ ${coins} Code Coins (เนเธซเธกเธ”เธเธณเธฅเธญเธเธฃเธฐเธเธเธ—เธ”เธชเธญเธ)`
+        ? `ขอแสดงความยินดี! คุณได้อันดับที่ ${rank} จากการเข้าร่วมแข่งขันในโจทย์ '${localizedChallengeTitle}' ผลคะแนนของคุณคือ 100/100 และได้รับรางวัลเป็นจำนวน ${coins} Code Coins (โหมดจำลองระบบทดสอบ)`
         : `Congratulations! You placed Rank ${rank} in challenge '${localizedChallengeTitle}'. Your final score is 100/100 and you received a reward of ${coins} Code Coins (Simulation Test Mode).`;
     }
     return mail.content;

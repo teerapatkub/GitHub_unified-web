@@ -395,3 +395,19 @@ html[data-theme^="shop-theme-"] .pysim-theme-nav {
     border-color: var(--shop-theme-navbar-border, rgba(236, 72, 153, 0.2)) !important;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
+
+/* A scroll container whose scrollbar is not part of the design.
+   Used by the Arcade coding column, where the bar sat in the gap between the
+   editor and the player list and read as a divider drawn down the middle of
+   the screen. The element still scrolls with the wheel, trackpad, and
+   keyboard - only the bar itself is hidden. Do NOT reach for this on a
+   container whose content is long and has no other cue that it scrolls. */
+.no-scrollbar {
+    scrollbar-width: none;          /* Firefox */
+    -ms-overflow-style: none;       /* old Edge */
+}
+
+.no-scrollbar::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+}

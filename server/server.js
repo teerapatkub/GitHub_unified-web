@@ -3627,6 +3627,13 @@ app.get('/api/competitive/challenges', async (req, res) => {
                    ) AS submission_count
             FROM multiplayer_challenges c
             LEFT JOIN users u ON c.created_by = u.user_id
+            -- A challenge's expires_at is its shelf life, and until now
+            -- nothing enforced it: every one of the arena's challenges was
+            -- weeks past its date and still listed, still acceptable, still
+            -- payable. Expired now means gone from the arena. The row itself
+            -- stays in the problems table - see CONTEXT.md, a problem outlives the
+            -- mode registration that showed it.
+            WHERE c.expires_at IS NULL OR c.expires_at > CURRENT_TIMESTAMP
             ORDER BY c.challenge_id DESC
         `);
 
@@ -3729,6 +3736,18 @@ app.post('/api/competitive/challenges/:id/accept', async (req, res) => {
 
         if (existing.length > 0) {
             return res.json({ success: true, message: 'Already accepted' });
+        }
+
+        // Checked here as well as in the listing: a player whose browser is
+        // still showing a list fetched before the expiry could otherwise
+        // accept a challenge that no longer exists as far as the arena is
+        // concerned, and then be scored on it.
+        const [live] = await db.execute(
+            'SELECT challenge_id FROM multiplayer_challenges WHERE challenge_id = ? AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)',
+            [challengeId]
+        );
+        if (live.length === 0) {
+            return res.status(410).json({ error: 'โจทย์ข้อนี้หมดอายุแล้ว' });
         }
 
         await db.execute(`

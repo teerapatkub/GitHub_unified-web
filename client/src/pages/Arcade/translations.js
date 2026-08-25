@@ -69,6 +69,7 @@ export const TRANSLATIONS = {
     langBtn: "🇹🇭 ภาษาไทย",
     round1Note: "Round 1: Pure Skill. Debuffs disabled.",
     codeOutput: "Console output",
+    togglePanel: "Fold / unfold this panel",
     runTests: "Run local tests",
     submitCode: "Submit solution",
     // testsPassed is gone: the button it belonged to printed a fixed "all
@@ -316,6 +317,7 @@ export const TRANSLATIONS = {
     langBtn: "🇬🇧 English",
     round1Note: "รอบที่ 1: วัดฝีมือล้วนๆ ยังไม่อนุญาตให้ใช้ไอเทมแกล้งกัน",
     codeOutput: "ผลการรันโปรแกรม",
+    togglePanel: "ย่อ / ขยายส่วนนี้",
     runTests: "ทดสอบโค้ด",
     submitCode: "ส่งคำตอบ",
     codeEmpty: "กรุณาเขียนโค้ดก่อนทำการส่งคำตอบ",

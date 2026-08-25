@@ -614,7 +614,7 @@ builtins.input = custom_input
   };
 
   const getTerminalLineClassName = (line) => {
-    if (line.startsWith("PASS") || line.startsWith("เธเนเธฒเธ")) {
+    if (line.startsWith("PASS") || line.startsWith("ผ่าน")) {
       return "text-emerald-400";
     }
     if (

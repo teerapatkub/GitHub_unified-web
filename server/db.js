@@ -730,6 +730,21 @@ const db = {
             console.log(`\u2705 merged problem bank: ${movedSummary}`);
         }
 
+        // Problem titles used to carry their position in the bank ("1. เลขฟีโบนัชชี").
+        // Rounds draw at random from the whole bank, so the number never matched
+        // anything the player could see - round 1 might open "7." and round 2
+        // "3.", which reads like the game skipped six problems. Stripped in the
+        // database as well as in the seed file, and stripped BEFORE the upsert
+        // below: that upsert matches rows on title_en, so renaming the seed
+        // alone would have found no match and inserted 40 duplicate problems.
+        await db.query(
+            `UPDATE problems
+                SET title_th = regexp_replace(title_th, '^[0-9]+\\.[ ]*', ''),
+                    title_en = regexp_replace(title_en, '^[0-9]+\\.[ ]*', ''),
+                    updated_at = CURRENT_TIMESTAMP
+              WHERE title_th ~ '^[0-9]+\\.' OR title_en ~ '^[0-9]+\\.'`
+        );
+
         const { ARCADE_TASKS } = require('./arcadeTaskSeed.js');
         let inserted = 0, updated = 0;
         for (const t of ARCADE_TASKS) {

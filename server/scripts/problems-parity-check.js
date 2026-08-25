@@ -125,6 +125,22 @@ const DELIBERATE_FIXES = {
 };
 const seenFixes = new Set();
 
+// The same idea as DELIBERATE_FIXES, for a correction that touched too many
+// rows to list one by one: every Arcade title lost the ordinal it used to
+// carry ("1. เลขฟีโบนัชชี" -> "เลขฟีโบนัชชี"), because rounds draw at random and
+// the number named a position nobody could see. A rule states the shape of the
+// allowed difference rather than blessing whole columns, so a title that
+// changed in any OTHER way is still reported. Each rule must fire at least
+// once, exactly like a stale entry in DELIBERATE_FIXES.
+const DELIBERATE_RULES = [
+    {
+        name: 'ตัดเลขข้อหน้าชื่อโจทย์ Arcade',
+        applies: (view, col) => view === 'arcade_tasks' && (col === 'title_th' || col === 'title_en'),
+        allowed: (nowValue, oldValue) => String(oldValue).replace(/^[0-9]+\.\s*/, '') === String(nowValue),
+    },
+];
+const seenRules = new Set();
+
 const decodeIfDoubleEncoded = (v) => {
     if (typeof v !== 'string' || !v.includes('\\')) return v;
     try {
@@ -181,6 +197,10 @@ const sameValue = (a, b) => {
                     if (!(col in rowA)) continue; // reported by the column check above
                     const fixKey = `${view}:${rowB[key]}:${col}`;
                     if (fixKey in DELIBERATE_FIXES) { seenFixes.add(fixKey); continue; }
+                    const rule = DELIBERATE_RULES.find((r) => r.applies(view, col)
+                        && String(rowA[col]) !== String(rowB[col])
+                        && r.allowed(rowA[col], rowB[col]));
+                    if (rule) { seenRules.add(rule.name); continue; }
                     const equal = col === 'test_cases_json'
                         ? canonical(getTestConfig(rowA[col])) === canonical(getTestConfig(rowB[col]))
                         : sameValue(rowA[col],
@@ -206,6 +226,10 @@ const sameValue = (a, b) => {
         const stale = Object.keys(DELIBERATE_FIXES).filter((k) => !seenFixes.has(k));
         check(stale.length === 0, 'รายการแก้ไขที่ตั้งใจยังตรงกับของจริง',
             stale.length ? `ไม่พบความต่างของ: ${stale.join(', ')}` : `${seenFixes.size} รายการ`);
+
+        const staleRules = DELIBERATE_RULES.filter((r) => !seenRules.has(r.name)).map((r) => r.name);
+        check(staleRules.length === 0, 'กฎยกเว้นที่ตั้งใจยังตรงกับของจริง',
+            staleRules.length ? `ไม่พบความต่างของ: ${staleRules.join(', ')}` : `${seenRules.size} กฎ`);
 
         // The point of merging: one query reaches every mode's problems.
         const { rows: byMode } = await c.query(

@@ -19,6 +19,18 @@ const MAX_AOE_HELD = arcadeConfig.maxAoeHeld;
 const BOT_BUY_ATTEMPT_INTERVAL_MS = arcadeConfig.botBuyAttemptIntervalMs;
 const BOT_ITEM_USE_INTERVAL_MS = arcadeConfig.botItemUseIntervalMs;
 
+// How many typing intervals a bot needs to fill its progress bar for one round,
+// drawn fresh each round. Expressed in intervals rather than seconds so a
+// profile's typingSpeedMs still decides who finishes first: the fastest bot
+// (1200ms) fills the bar in roughly 26-41s of a 60s round and the slowest
+// (2200ms) usually runs out of time, which is the ordering the profiles
+// describe. The range is what stops several bots sharing a profile from
+// finishing on the same second.
+const BOT_STEPS_TO_FINISH_MIN = 22;
+const BOT_STEPS_TO_FINISH_MAX = 34;
+const rollStepsToFinish = () =>
+  BOT_STEPS_TO_FINISH_MIN + Math.floor(Math.random() * (BOT_STEPS_TO_FINISH_MAX - BOT_STEPS_TO_FINISH_MIN + 1));
+
 export class BotAIEngine {
   constructor(name) {
     this.name = name;
@@ -28,7 +40,9 @@ export class BotAIEngine {
     this.score = 0;
     this.cash = 0;
     this.eliminated = false;
-    this.progress = 0; // 0 to 100% coding completion
+    this.progress = 0; // 0 to 100% coding completion, per round, never wraps
+    this.roundSolved = false;
+    this.stepsToFinish = rollStepsToFinish();
     this.inventory = [];
     this.activeEffects = [];
     this.revengeTarget = null;
@@ -46,6 +60,8 @@ export class BotAIEngine {
     this.cash = 0;
     this.eliminated = false;
     this.progress = 0;
+    this.roundSolved = false;
+    this.stepsToFinish = rollStepsToFinish();
     this.inventory = [];
     this.activeEffects = [];
     this.revengeTarget = null;
@@ -60,6 +76,8 @@ export class BotAIEngine {
   // the same match, only progress is per-round.
   resetRoundProgress() {
     this.progress = 0;
+    this.roundSolved = false;
+    this.stepsToFinish = rollStepsToFinish();
     // Must be re-based, not left alone. The coding tick now advances by every
     // typingSpeedMs interval that elapsed since lastActionTime, so carrying a
     // timestamp from before the summary+shop intermission (~25s) would hand
@@ -120,7 +138,7 @@ export class BotAIEngine {
         // the profile's stated pace no matter how often update() is called.
         const steps = Math.floor(timePassed / this.profile.typingSpeedMs);
         this.lastActionTime += steps * this.profile.typingSpeedMs;
-        this.progress += steps * (Math.floor(Math.random() * 25) + 15);
+        this.progress = Math.min(100, this.progress + (steps * 100) / this.stepsToFinish);
 
         // When bot completes coding task — this.score only feeds the bot's
         // own mid-round "who's leading" targeting heuristic (pickAttackTarget
@@ -129,8 +147,15 @@ export class BotAIEngine {
         // player sees on screen, both of which come solely from the rank-
         // based reward evaluateRound() credits via botManager.awardCash()
         // once the round's actual outcome is known.
-        if (this.progress >= 100) {
-          this.progress = 0;
+        // Finishing is once per round, and the bar STAYS at 100. It used to
+        // reset itself to 0 here and start climbing again, so a bot that
+        // finished early appeared to solve the same problem over and over -
+        // with the old step size (15-39% per typing interval) that was about
+        // thirteen laps in a single 60s round, which is what a player saw: a
+        // bar that filled in three seconds, snapped back to empty, and never
+        // meant anything.
+        if (!this.roundSolved && this.progress >= 100) {
+          this.roundSolved = true;
           const scoreGain = Math.floor(400 * this.profile.accuracy) + 100;
           this.score += scoreGain;
         }

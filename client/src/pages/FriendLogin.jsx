@@ -286,6 +286,13 @@ export default function LoginPage({ onLoginSuccess }) {
     try {
       window.google.accounts.id.initialize({
         client_id: clientId,
+        // Google's own SDK logs a deprecation warning into the console on
+        // every visit until a site opts in to FedCM, and has announced it will
+        // become mandatory. Opting in also RETIRES notification.isNotDisplayed()
+        // and isSkippedMoment(), which is why the prompt() call below no longer
+        // passes a callback — under FedCM the browser shows its own account
+        // chooser and reports nothing back for us to inspect.
+        use_fedcm_for_prompt: true,
         callback: async (response) => {
           setLoading(true);
           try {
@@ -306,11 +313,7 @@ export default function LoginPage({ onLoginSuccess }) {
           }
         },
       });
-      window.google.accounts.id.prompt((notification) => {
-        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-          setError("ไม่สามารถแสดง Google popup ได้ กรุณาตรวจสอบว่า popup ไม่ถูกบล็อค");
-        }
-      });
+      window.google.accounts.id.prompt();
     } catch (err) {
       setError("ไม่สามารถเชื่อมต่อ Google ได้: " + err.message);
     }
