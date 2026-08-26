@@ -2419,8 +2419,16 @@ app.post('/api/auth/google', async (req, res) => {
     const { token } = req.body;
     try {
         if (!GOOGLE_LOGIN_ENABLED) {
+            // Two audiences, two messages. Whoever is looking at the login
+            // screen did not configure this and cannot fix it, so they get the
+            // way in that works; the fix goes to the log, where the person who
+            // can act on it will look.
+            console.error(
+                '❌ /api/auth/google ถูกเรียกทั้งที่ยังไม่ได้ตั้งค่า GOOGLE_CLIENT_ID ' +
+                '(ใส่ OAuth Web Client ID ใน server/.env แล้วรีสตาร์ท server)'
+            );
             return res.status(503).json({
-                message: 'ยังไม่ได้ตั้งค่า GOOGLE_CLIENT_ID เป็น OAuth Web Client ID ใน server/.env'
+                message: 'ตอนนี้เข้าสู่ระบบด้วย Google ยังใช้ไม่ได้ กรุณาเข้าสู่ระบบด้วยชื่อผู้ใช้และรหัสผ่าน'
             });
         }
 
@@ -2482,7 +2490,12 @@ app.post('/api/auth/google', async (req, res) => {
         }
     } catch (err) {
         console.error('❌ Google Auth Error:', err.message);
-        res.status(500).json({ message: 'Google authentication failed' });
+        // A failed verifyIdToken() is the common case here, and it means the
+        // id the browser signed in with is not the id this server checks
+        // against - the two halves of the same setting, out of step.
+        res.status(500).json({
+            message: 'เข้าสู่ระบบด้วย Google ไม่สำเร็จ กรุณาลองใหม่ หรือเข้าสู่ระบบด้วยชื่อผู้ใช้และรหัสผ่าน'
+        });
     }
 });
 
