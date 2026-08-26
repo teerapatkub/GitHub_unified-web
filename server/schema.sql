@@ -20,7 +20,6 @@ SET search_path TO public;
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
-SET transaction_timeout = 0;
 SET client_encoding = 'UTF8';
 SET standard_conforming_strings = on;
 SET check_function_bodies = false;
@@ -1087,8 +1086,8 @@ CREATE TABLE public.active_accepted_challenges (
     challenge_id integer NOT NULL,
     code_state text,
     started_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    accepted_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    last_saved_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    accepted_at timestamp without time zone DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) NOT NULL,
+    last_saved_at timestamp without time zone DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'::text) NOT NULL,
     problem_mode_competitive character varying(20) GENERATED ALWAYS AS ('competitive'::character varying) STORED
 );
 
@@ -2388,6 +2387,8 @@ CREATE VIEW public.multiplayer_challenges AS
     p.created_by,
     p.created_at,
     COALESCE(((m.extra ->> 'is_test'::text))::integer, 0) AS is_test,
+    COALESCE(NULLIF((m.extra ->> 'challenge_type'::text), ''::text), 'standard'::text) AS challenge_type,
+    COALESCE(NULLIF((m.extra ->> 'challenge_scope'::text), ''::text), 'standard'::text) AS challenge_scope,
     m.expires_at
    FROM (public.problem_modes m
      JOIN public.problems p ON ((p.problem_id = m.problem_id)))
@@ -3127,7 +3128,8 @@ CREATE TABLE public.users (
     equipped_mouse_effect_id integer,
     equipped_profile_frame_id integer,
     avatar_url character varying(255),
-    bio character varying(500)
+    bio character varying(500),
+    email_verified smallint DEFAULT 0
 );
 
 
@@ -4750,6 +4752,20 @@ CREATE INDEX idx_learning_ai_tasks_user_mode_status ON public.learning_ai_tasks 
 
 
 --
+-- Name: idx_lesson_quiz_attempt_lesson; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_lesson_quiz_attempt_lesson ON public.lesson_quiz_attempts USING btree (lesson_id, quiz_type);
+
+
+--
+-- Name: idx_lesson_quiz_attempt_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_lesson_quiz_attempt_user ON public.lesson_quiz_attempts USING btree (user_id);
+
+
+--
 -- Name: idx_problem_modes_lesson; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4761,6 +4777,13 @@ CREATE INDEX idx_problem_modes_lesson ON public.problem_modes USING btree (mode,
 --
 
 CREATE INDEX idx_problem_modes_problem ON public.problem_modes USING btree (problem_id);
+
+
+--
+-- Name: uk_lesson_quiz_attempt; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uk_lesson_quiz_attempt ON public.lesson_quiz_attempts USING btree (user_id, lesson_id, quiz_type);
 
 
 --

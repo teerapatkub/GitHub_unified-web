@@ -21,7 +21,6 @@ SET search_path TO public;
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
-SET transaction_timeout = 0;
 SET client_encoding = 'UTF8';
 SET standard_conforming_strings = on;
 SET check_function_bodies = false;
@@ -33,6 +32,13 @@ SET row_security = off;
 -- Data for Name: achievements; Type: TABLE DATA; Schema: public; Owner: -
 --
 
+INSERT INTO public.achievements (achievement_id, name, description, difficulty, reward_money, code, metric, threshold, is_active, icon) VALUES (15, 'เจ้าสนาม', 'ชนะ Arcade ครบ 10 ครั้ง', 'Hard', 800.00, 'ten_wins', 'arcade_wins', 10, 1, '👑');
+INSERT INTO public.achievements (achievement_id, name, description, difficulty, reward_money, code, metric, threshold, is_active, icon) VALUES (16, 'รอบไร้ที่ติ', 'ผ่านทุก test case ในหนึ่งรอบของ Arcade', 'Hard', 300.00, 'perfect_round', 'arcade_perfect_rounds', 1, 1, '⚡');
+INSERT INTO public.achievements (achievement_id, name, description, difficulty, reward_money, code, metric, threshold, is_active, icon) VALUES (17, 'ต่อเนื่องเจ็ดวัน', 'เข้ามาเก็บ XP ต่อเนื่องกัน 7 วัน', 'Hard', 500.00, 'streak_seven', 'streak_days', 7, 1, '🔥');
+INSERT INTO public.achievements (achievement_id, name, description, difficulty, reward_money, code, metric, threshold, is_active, icon) VALUES (18, 'เลเวลสิบ', 'ไต่ถึงเลเวล 10', 'Hard', 600.00, 'level_ten', 'level', 10, 1, '🌟');
+INSERT INTO public.achievements (achievement_id, name, description, difficulty, reward_money, code, metric, threshold, is_active, icon) VALUES (19, 'แต่งตัวครั้งแรก', 'ซื้อของตกแต่งจากร้านค้าชิ้นแรก', 'Medium', 40.00, 'first_cosmetic', 'cosmetics_owned', 1, 1, '🎀');
+INSERT INTO public.achievements (achievement_id, name, description, difficulty, reward_money, code, metric, threshold, is_active, icon) VALUES (20, 'ครบทั้งเซ็ต', 'มีของครบทั้งเซ็ตของธีมใดธีมหนึ่ง', 'Very Hard', 1000.00, 'full_set', 'sets_completed', 1, 1, '💎');
+INSERT INTO public.achievements (achievement_id, name, description, difficulty, reward_money, code, metric, threshold, is_active, icon) VALUES (1, 'บทแรกผ่านแล้ว', 'เรียนจบบทเรียนแรก ทั้งแบบทดสอบหลังเรียนและแบบฝึกหัดครบ', 'Medium', 50.00, 'first_lesson', 'lessons_completed', 1, 1, '📘');
 INSERT INTO public.achievements (achievement_id, name, description, difficulty, reward_money, code, metric, threshold, is_active, icon) VALUES (2, 'ห้าบทติด', 'เรียนจบครบ 5 บท', 'Medium', 150.00, 'five_lessons', 'lessons_completed', 5, 1, '📗');
 INSERT INTO public.achievements (achievement_id, name, description, difficulty, reward_money, code, metric, threshold, is_active, icon) VALUES (3, 'ครึ่งทางแล้ว', 'เรียนจบครึ่งหนึ่งของหลักสูตร (12 บท)', 'Hard', 400.00, 'half_course', 'lessons_completed', 12, 1, '📚');
 INSERT INTO public.achievements (achievement_id, name, description, difficulty, reward_money, code, metric, threshold, is_active, icon) VALUES (4, 'จบหลักสูตร', 'เรียนจบครบทุกบทในหลักสูตร', 'Very Hard', 2000.00, 'all_lessons', 'lessons_completed', 24, 1, '🎓');
@@ -42,17 +48,10 @@ INSERT INTO public.achievements (achievement_id, name, description, difficulty, 
 INSERT INTO public.achievements (achievement_id, name, description, difficulty, reward_money, code, metric, threshold, is_active, icon) VALUES (8, 'เต็มครั้งแรก', 'ทำแบบทดสอบหลังเรียนได้คะแนนเต็ม', 'Medium', 80.00, 'first_perfect', 'quizzes_perfect', 1, 1, '💯');
 INSERT INTO public.achievements (achievement_id, name, description, difficulty, reward_money, code, metric, threshold, is_active, icon) VALUES (9, 'เต็มห้าครั้ง', 'ทำแบบทดสอบหลังเรียนได้คะแนนเต็ม 5 บท', 'Hard', 400.00, 'five_perfect', 'quizzes_perfect', 5, 1, '🏅');
 INSERT INTO public.achievements (achievement_id, name, description, difficulty, reward_money, code, metric, threshold, is_active, icon) VALUES (10, 'เริ่มผจญภัย', 'เล่นมินิเกมเนื้อเรื่องจบเป็นครั้งแรก', 'Medium', 60.00, 'first_minigame', 'mini_games_completed', 1, 1, '🎮');
-INSERT INTO public.achievements (achievement_id, name, description, difficulty, reward_money, code, metric, threshold, is_active, icon) VALUES (19, 'แต่งตัวครั้งแรก', 'ซื้อของตกแต่งจากร้านค้าชิ้นแรก', 'Medium', 40.00, 'first_cosmetic', 'cosmetics_owned', 1, 1, '🎀');
-INSERT INTO public.achievements (achievement_id, name, description, difficulty, reward_money, code, metric, threshold, is_active, icon) VALUES (20, 'ครบทั้งเซ็ต', 'มีของครบทั้งเซ็ตของธีมใดธีมหนึ่ง', 'Very Hard', 1000.00, 'full_set', 'sets_completed', 1, 1, '💎');
 INSERT INTO public.achievements (achievement_id, name, description, difficulty, reward_money, code, metric, threshold, is_active, icon) VALUES (11, 'นักผจญภัย', 'เล่นมินิเกมเนื้อเรื่องจบครบ 5 ด่าน', 'Hard', 350.00, 'five_minigames', 'mini_games_completed', 5, 1, '🗺️');
 INSERT INTO public.achievements (achievement_id, name, description, difficulty, reward_money, code, metric, threshold, is_active, icon) VALUES (12, 'ลงสนามครั้งแรก', 'เล่น Arcade Battle Royale จบหนึ่งแมตช์', 'Medium', 50.00, 'first_arcade', 'arcade_matches', 1, 1, '🕹️');
 INSERT INTO public.achievements (achievement_id, name, description, difficulty, reward_money, code, metric, threshold, is_active, icon) VALUES (13, 'ขาประจำสนาม', 'เล่น Arcade จบครบ 10 แมตช์', 'Medium', 200.00, 'ten_arcade', 'arcade_matches', 10, 1, '🎯');
-INSERT INTO public.achievements (achievement_id, name, description, difficulty, reward_money, code, metric, threshold, is_active, icon) VALUES (1, 'บทแรกผ่านแล้ว', 'เรียนจบบทเรียนแรก ทั้งแบบทดสอบหลังเรียนและแบบฝึกหัดครบ', 'Medium', 50.00, 'first_lesson', 'lessons_completed', 1, 1, '📘');
 INSERT INTO public.achievements (achievement_id, name, description, difficulty, reward_money, code, metric, threshold, is_active, icon) VALUES (14, 'ชนะครั้งแรก', 'ชนะ Arcade เป็นครั้งแรก', 'Medium', 150.00, 'first_win', 'arcade_wins', 1, 1, '🏆');
-INSERT INTO public.achievements (achievement_id, name, description, difficulty, reward_money, code, metric, threshold, is_active, icon) VALUES (15, 'เจ้าสนาม', 'ชนะ Arcade ครบ 10 ครั้ง', 'Hard', 800.00, 'ten_wins', 'arcade_wins', 10, 1, '👑');
-INSERT INTO public.achievements (achievement_id, name, description, difficulty, reward_money, code, metric, threshold, is_active, icon) VALUES (16, 'รอบไร้ที่ติ', 'ผ่านทุก test case ในหนึ่งรอบของ Arcade', 'Hard', 300.00, 'perfect_round', 'arcade_perfect_rounds', 1, 1, '⚡');
-INSERT INTO public.achievements (achievement_id, name, description, difficulty, reward_money, code, metric, threshold, is_active, icon) VALUES (17, 'ต่อเนื่องเจ็ดวัน', 'เข้ามาเก็บ XP ต่อเนื่องกัน 7 วัน', 'Hard', 500.00, 'streak_seven', 'streak_days', 7, 1, '🔥');
-INSERT INTO public.achievements (achievement_id, name, description, difficulty, reward_money, code, metric, threshold, is_active, icon) VALUES (18, 'เลเวลสิบ', 'ไต่ถึงเลเวล 10', 'Hard', 600.00, 'level_ten', 'level', 10, 1, '🌟');
 
 
 --
@@ -172,7 +171,7 @@ INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, h
     return 0', 'def factorial(n):
     if n <= 1:
         return 1
-    return n * factorial(n - 1)', 'function', '[{"args": [5], "expected": 120}, {"args": [3], "expected": 6}, {"args": [0], "expected": 1}, {"args": [1], "expected": 1}, {"args": [6], "expected": 720}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.767437', 1);
+    return n * factorial(n - 1)', 'function', '[{"args": [5], "expected": 120}, {"args": [3], "expected": 6}, {"args": [0], "expected": 1}, {"args": [1], "expected": 1}, {"args": [6], "expected": 720}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.755037', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (177, 'ค้นหาแบบทวิภาค (Binary Search)', 'Binary Search', 'เขียนฟังก์ชัน "binary_search(nums, target)" เพื่อหาตำแหน่งดรรชนีของ target ในอาร์เรย์ที่เรียงแล้ว (หากไม่พบคืนค่า -1)', 'Write a function "binary_search(nums, target)" returning target index or -1.', 'ลบ break ออกแล้วขยับขอบเขตแทน ถ้าค่ากลางน้อยเกินไปคำตอบอยู่ครึ่งขวา ให้ low ขยับไปถัดจาก mid ถ้ามากเกินไปคำตอบอยู่ครึ่งซ้าย ให้ high ถอยมาก่อน mid — ต้องขยับให้พ้น mid ไม่งั้นช่วงไม่เคยแคบลงและลูปวนไม่จบ', 'Replace the break by moving a bound. Too small means the answer is in the right half, so low moves past mid; too large means the left half, so high pulls back before mid. It must move PAST mid, or the range never narrows and the loop never ends.', 'def binary_search(nums, target):
     low, high = 0, len(nums) - 1
     while low <= high:
@@ -192,11 +191,15 @@ INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, h
             low = mid + 1
         else:
             high = mid - 1
-    return -1', 'function', '[{"args": [[1, 3, 5, 7, 9], 7], "expected": 3}, {"args": [[1, 3, 5], 2], "expected": -1}, {"args": [[1], 1], "expected": 0}, {"args": [[], 5], "expected": -1}, {"args": [[1, 2, 3, 4, 5], 1], "expected": 0}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.833841', 1);
-INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (159, 'ตรวจสอบแอนนาแกรม (Anagram Checker)', 'Anagram Checker', 'เขียนฟังก์ชัน "is_anagram(s, t)" เพื่อตรวจสอบว่าข้อความสองชุดสลับตัวอักษรกันหรือไม่', 'Write a function "is_anagram(s, t)" to check if two strings are anagrams.', 'sorted() คืนลิสต์ตัวอักษรที่เรียงแล้ว ถ้าสองคำใช้ตัวอักษรชุดเดียวกัน ผลเรียงจะเท่ากันเสมอ: sorted(s) == sorted(t)', 'sorted() returns the letters in order, so two words built from the same letters always sort identically: sorted(s) == sorted(t).', 'def is_anagram(s, t):
-    # TODO: สองคำเป็นอนาแกรมกันเมื่อเรียงตัวอักษรแล้วเหมือนกัน — ใช้ sorted()
-    return None', 'def is_anagram(s, t):
-    return sorted(s) == sorted(t)', 'function', '[{"args": ["anagram", "nagaram"], "expected": true}, {"args": ["rat", "car"], "expected": false}, {"args": ["", ""], "expected": true}, {"args": ["a", "a"], "expected": true}, {"args": ["ab", "ba"], "expected": true}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.786757', 1);
+    return -1', 'function', '[{"args": [[1, 3, 5, 7, 9], 7], "expected": 3}, {"args": [[1, 3, 5], 2], "expected": -1}, {"args": [[1], 1], "expected": 0}, {"args": [[], 5], "expected": -1}, {"args": [[1, 2, 3, 4, 5], 1], "expected": 0}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.835413', 1);
+INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (162, 'ค่าเฉลี่ยของรายการ (Average)', 'Average of List', 'เขียนฟังก์ชัน `average(nums)` คืนค่าเฉลี่ยของตัวเลขในรายการ (รายการว่างคืน 0)', 'Write a function `average(nums)` returning the mean of the list (0 for an empty list).', 'sum(nums) / len(nums) — ใช้ / (ได้ทศนิยม) ไม่ใช่ // (ปัดเศษทิ้ง) บรรทัด if ที่ให้มากันหารด้วยศูนย์ไว้แล้ว', 'sum(nums) / len(nums). Use / for a real decimal, not // which floors it. The if already guards against dividing by zero.', 'def average(nums):
+    if not nums:
+        return 0
+    # TODO: คืนผลรวม sum(nums) หารด้วยจำนวนสมาชิก len(nums)
+    return -1', 'def average(nums):
+    if not nums:
+        return 0
+    return sum(nums) / len(nums)', 'function', '[{"args": [[2, 4]], "expected": 3}, {"args": [[]], "expected": 0}, {"args": [[5]], "expected": 5}, {"args": [[1, 2, 3, 4]], "expected": 2.5}, {"args": [[-2, 2]], "expected": 0}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.941562', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (189, 'รายการซ้อนให้แบนราบ (Flatten List)', 'Flatten Nested List', 'เขียนฟังก์ชัน `flatten(lists)` รวมรายการซ้อนชั้นเดียวให้เป็นรายการเดียว', 'Write a function `flatten(lists)` flattening a list of lists by one level.', 'ลิสต์มีเมธอด .extend() ที่เอา "สมาชิกทุกตัว" ของอีกลิสต์มาต่อท้าย ต่างจาก .append() ที่จะยัดลิสต์ทั้งก้อนลงไปเป็นสมาชิกตัวเดียว', 'Lists have .extend(), which appends every ITEM of another list, unlike .append(), which would drop the whole list in as a single element.', 'def flatten(lists):
     out = []
     for sub in lists:
@@ -206,7 +209,7 @@ INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, h
     out = []
     for sub in lists:
         out.extend(sub)
-    return out', 'function', '[{"args": [[[1, 2], [3]]], "expected": [1, 2, 3]}, {"args": [[]], "expected": []}, {"args": [[[], []]], "expected": []}, {"args": [[[1], [2], [3]]], "expected": [1, 2, 3]}, {"args": [[[5, 6], [], [7]]], "expected": [5, 6, 7]}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.918451', 1);
+    return out', 'function', '[{"args": [[[1, 2], [3]]], "expected": [1, 2, 3]}, {"args": [[]], "expected": []}, {"args": [[[], []]], "expected": []}, {"args": [[[1], [2], [3]]], "expected": [1, 2, 3]}, {"args": [[[5, 6], [], [7]]], "expected": [5, 6, 7]}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.971083', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (178, 'หมุนอาร์เรย์ (Rotate Array)', 'Rotate Array', 'เขียนฟังก์ชัน `rotate(nums, k)` หมุนอาร์เรย์ไปทางขวา k ตำแหน่ง', 'Write a function `rotate(nums, k)` rotating the array right by k positions.', 'การหมุนคือการตัดแล้วสลับที่ nums[-k:] คือ k ตัวท้าย nums[:-k] คือส่วนที่เหลือ เอามาต่อกันตามลำดับนั้น สองบรรทัดที่ให้มาจัดการ k ที่ใหญ่กว่าลิสต์และกรณี k เป็น 0 ไว้แล้ว', 'Rotating is slicing and swapping: nums[-k:] is the last k items, nums[:-k] the rest — join them in that order. The two given lines already handle a k larger than the list, and k of 0.', 'def rotate(nums, k):
     if not nums:
         return []
@@ -220,15 +223,11 @@ INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, h
     k = k % len(nums)
     if k == 0:
         return list(nums)
-    return nums[-k:] + nums[:-k]', 'function', '[{"args": [[1, 2, 3, 4, 5], 2], "expected": [4, 5, 1, 2, 3]}, {"args": [[], 3], "expected": []}, {"args": [[1, 2, 3], 0], "expected": [1, 2, 3]}, {"args": [[1, 2], 3], "expected": [2, 1]}, {"args": [[1, 2, 3], 3], "expected": [1, 2, 3]}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.960278', 1);
-INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (162, 'ค่าเฉลี่ยของรายการ (Average)', 'Average of List', 'เขียนฟังก์ชัน `average(nums)` คืนค่าเฉลี่ยของตัวเลขในรายการ (รายการว่างคืน 0)', 'Write a function `average(nums)` returning the mean of the list (0 for an empty list).', 'sum(nums) / len(nums) — ใช้ / (ได้ทศนิยม) ไม่ใช่ // (ปัดเศษทิ้ง) บรรทัด if ที่ให้มากันหารด้วยศูนย์ไว้แล้ว', 'sum(nums) / len(nums). Use / for a real decimal, not // which floors it. The if already guards against dividing by zero.', 'def average(nums):
-    if not nums:
-        return 0
-    # TODO: คืนผลรวม sum(nums) หารด้วยจำนวนสมาชิก len(nums)
-    return -1', 'def average(nums):
-    if not nums:
-        return 0
-    return sum(nums) / len(nums)', 'function', '[{"args": [[2, 4]], "expected": 3}, {"args": [[]], "expected": 0}, {"args": [[5]], "expected": 5}, {"args": [[1, 2, 3, 4]], "expected": 2.5}, {"args": [[-2, 2]], "expected": 0}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.903862', 1);
+    return nums[-k:] + nums[:-k]', 'function', '[{"args": [[1, 2, 3, 4, 5], 2], "expected": [4, 5, 1, 2, 3]}, {"args": [[], 3], "expected": []}, {"args": [[1, 2, 3], 0], "expected": [1, 2, 3]}, {"args": [[1, 2], 3], "expected": [2, 1]}, {"args": [[1, 2, 3], 3], "expected": [1, 2, 3]}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:57.038654', 1);
+INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (159, 'ตรวจสอบแอนนาแกรม (Anagram Checker)', 'Anagram Checker', 'เขียนฟังก์ชัน "is_anagram(s, t)" เพื่อตรวจสอบว่าข้อความสองชุดสลับตัวอักษรกันหรือไม่', 'Write a function "is_anagram(s, t)" to check if two strings are anagrams.', 'sorted() คืนลิสต์ตัวอักษรที่เรียงแล้ว ถ้าสองคำใช้ตัวอักษรชุดเดียวกัน ผลเรียงจะเท่ากันเสมอ: sorted(s) == sorted(t)', 'sorted() returns the letters in order, so two words built from the same letters always sort identically: sorted(s) == sorted(t).', 'def is_anagram(s, t):
+    # TODO: สองคำเป็นอนาแกรมกันเมื่อเรียงตัวอักษรแล้วเหมือนกัน — ใช้ sorted()
+    return None', 'def is_anagram(s, t):
+    return sorted(s) == sorted(t)', 'function', '[{"args": ["anagram", "nagaram"], "expected": true}, {"args": ["rat", "car"], "expected": false}, {"args": ["", ""], "expected": true}, {"args": ["a", "a"], "expected": true}, {"args": ["ab", "ba"], "expected": true}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.77565', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (191, 'ลำดับต่อเนื่องยาวที่สุด (Longest Consecutive)', 'Longest Consecutive Sequence', 'เขียนฟังก์ชัน `longest_consecutive(nums)` หาความยาวของลำดับเลขต่อเนื่องที่ยาวที่สุด', 'Write a function `longest_consecutive(nums)` returning the length of the longest run of consecutive integers.', 'นับเฉพาะจากตัวที่เป็น "จุดเริ่มต้น" ของชุด (เงื่อนไข n - 1 not in s ที่ให้มา) แล้วใช้ while ไล่ n + length ต่อขึ้นไปเรื่อยๆ การเช็คใน set เร็วกว่าในลิสต์มาก', 'Only count from a value that STARTS a run (the given n - 1 not in s test), then walk upward with a while on n + length. Membership tests in a set are far faster than in a list.', 'def longest_consecutive(nums):
     s = set(nums)
     best = 0
@@ -246,7 +245,7 @@ INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, h
             while n + length in s:
                 length += 1
             best = max(best, length)
-    return best', 'function', '[{"args": [[100, 4, 200, 1, 3, 2]], "expected": 4}, {"args": [[]], "expected": 0}, {"args": [[1]], "expected": 1}, {"args": [[1, 2, 0, 1]], "expected": 3}, {"args": [[5, 10]], "expected": 1}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.95563', 1);
+    return best', 'function', '[{"args": [[100, 4, 200, 1, 3, 2]], "expected": 4}, {"args": [[]], "expected": 0}, {"args": [[1]], "expected": 1}, {"args": [[1, 2, 0, 1]], "expected": 3}, {"args": [[5, 10]], "expected": 1}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:57.029041', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (179, 'รวบรวม K อาร์เรย์ที่เรียงแล้ว (Merge K Sorted Lists)', 'Merge K Sorted Lists', 'เขียนฟังก์ชัน "merge_k_lists(lists)" เพื่อรวม K อาร์เรย์ที่เรียงลำดับแล้วให้กลายเป็นอาร์เรย์เดียวที่เรียงลำดับสมบูรณ์', 'Write a function "merge_k_lists(lists)" merging K sorted lists into one sorted array.', 'ไม่ต้องรวมแบบฉลาด เอาทุกตัวมากองรวมกันด้วย extend แล้ว sorted() ทีเดียวตอนท้ายก็ได้คำตอบที่ถูก', 'No clever merging needed: extend everything into one pile, then sorted() once at the end gives the right answer.', 'def merge_k_lists(lists):
     flat = []
     for sub in lists:
@@ -257,26 +256,21 @@ INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, h
     flat = []
     for sub in lists:
         flat.extend(sub)
-    return sorted(flat)', 'function', '[{"args": [[[1, 4, 5], [1, 3, 4], [2, 6]]], "expected": [1, 1, 2, 3, 4, 4, 5, 6]}, {"args": [[]], "expected": []}, {"args": [[[1]]], "expected": [1]}, {"args": [[[2], [1]]], "expected": [1, 2]}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.878288', 1);
+    return sorted(flat)', 'function', '[{"args": [[[1, 4, 5], [1, 3, 4], [2, 6]]], "expected": [1, 1, 2, 3, 4, 4, 5, 6]}, {"args": [[]], "expected": []}, {"args": [[[1]]], "expected": [1]}, {"args": [[[2], [1]]], "expected": [1, 2]}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.89947', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (126, 'บทสรุปสายเวทมนตร์ 1B_2A', 'Magic Path Summary 1B_2A', 'ยินดีด้วยคุณมาถึงจุดสิ้นสุดของสาย 1B_2A แล้ว พิมพ์ print("success") เพื่อจบด่าน', 'Congratulations, you''ve reached the end of path 1B_2A. Type print("success") to finish the level.', NULL, NULL, 'print("")', 'print("success")', 'stdio', '[]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 05:07:00.175634', 1);
-INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (160, 'ผลรวม 1 ถึง n (Sum To N)', 'Sum To N', 'เขียนฟังก์ชัน `sum_to_n(n)` คืนค่าผลรวมของเลข 1 ถึง n', 'Write a function `sum_to_n(n)` returning the sum of integers from 1 to n.', 'range(1, n + 1) ให้ 1 ถึง n — ต้อง +1 เพราะ range ไม่รวมตัวสุดท้าย แล้วบวกเข้า total ในลูป', 'range(1, n + 1) yields 1 through n — the +1 matters because range excludes its end value. Add each i into total inside the loop.', 'def sum_to_n(n):
-    if n <= 0:
-        return 0
-    total = 0
-    for i in range(1, n + 1):
-        # TODO: บวก i เข้ากับ total
-        pass
-    return total', 'def sum_to_n(n):
-    if n <= 0:
-        return 0
-    total = 0
-    for i in range(1, n + 1):
-        total += i
-    return total', 'function', '[{"args": [5], "expected": 15}, {"args": [1], "expected": 1}, {"args": [0], "expected": 0}, {"args": [10], "expected": 55}, {"args": [100], "expected": 5050}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.88971', 1);
-INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (153, 'ตรวจสอบเลขคู่/เลขคี่ (Even or Odd)', 'Even or Odd', 'เขียนฟังก์ชัน "is_even(n)" เพื่อคืนค่า True หากเป็นเลขคู่ และ False หากเป็นเลขคี่', 'Write a function "is_even(n)" returning True if n is even, False otherwise.', '% คือเศษจากการหาร n % 2 ได้ 0 เมื่อเป็นเลขคู่ เขียน n % 2 == 0 ตรงๆ ได้ True/False อยู่แล้ว ไม่ต้องใช้ if', '% gives the remainder. n % 2 is 0 for an even number, and n % 2 == 0 is already True or False on its own — no if needed.', 'def is_even(n):
-    # TODO: คืน True ถ้า n หารด้วย 2 แล้วเหลือเศษ 0 (ใช้ n % 2)
-    return None', 'def is_even(n):
-    return n % 2 == 0', 'function', '[{"args": [4], "expected": true}, {"args": [7], "expected": false}, {"args": [0], "expected": true}, {"args": [-2], "expected": true}, {"args": [99], "expected": false}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.724197', 1);
+INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (200, 'print hello world', NULL, 'แสดงข้อความว่า Hello World', NULL, NULL, NULL, NULL, NULL, 'stdio', '[{"input": "Hello World", "expected": "Hello World"}]', 17, '2026-08-26 01:52:26.2985', '2026-08-26 01:52:26.2985', 1);
+INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (90, 'Dynamic Routing', 'Dynamic Routing', 'สร้าง Route สำหรับต้อนรับผู้ใช้งานผ่าน URL ในรูปแบบ `/user/<name>` โดยรับพารามิเตอร์ `name` เข้ามาในฟังก์ชัน แล้วคืนค่าข้อความ `"Hello, " + name`', NULL, NULL, NULL, 'from flask import Flask
+app = Flask(__name__)
+
+@app.route("/user/<name>")
+def greet(name):
+    # return ข้อความต้อนรับ name
+    pass', 'from flask import Flask
+app = Flask(__name__)
+
+@app.route("/user/<name>")
+def greet(name):
+    return f"Hello, {name}"', 'stdio', '[{"input": "", "expected": ""}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 05:10:18.260257', 0);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (185, 'ระบบจำลองแคช LRU (LRU Cache Simulator)', 'LRU Cache Simulator', 'เขียนฟังก์ชัน "simulate_lru(capacity, operations)" คืนค่าผลลัพธ์ของคำสั่ง Get/Put ตามลำดับ LRU Cache', 'Write a function "simulate_lru(capacity, operations)" simulating Least Recently Used Cache.', 'OrderedDict จำลำดับการใช้งาน move_to_end บอกว่า "เพิ่งใช้ตัวนี้" และ popitem(last=False) เอาตัวที่เก่าสุดออก ส่วน get ที่ไม่เจอต้อง append -1 ไม่ใช่ข้ามไป', 'OrderedDict remembers usage order: move_to_end marks something as just used, popitem(last=False) evicts the oldest. A get that misses must append -1, not skip.', 'def simulate_lru(capacity, ops):
     from collections import OrderedDict
     cache = OrderedDict()
@@ -308,29 +302,7 @@ INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, h
                 res.append(cache[key])
             else:
                 res.append(-1)
-    return res', 'function', '[{"args": [2, [["put", 1, 1], ["put", 2, 2], ["get", 1, null], ["put", 3, 3], ["get", 2, null]]], "expected": [1, -1]}, {"args": [1, [["put", 1, 1], ["put", 2, 2], ["get", 1, null]]], "expected": [-1]}, {"args": [2, [["put", 1, 1], ["get", 1, null]]], "expected": [1]}, {"args": [2, [["get", 5, null]]], "expected": [-1]}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.862551', 1);
-INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (90, 'Dynamic Routing', 'Dynamic Routing', 'สร้าง Route สำหรับต้อนรับผู้ใช้งานผ่าน URL ในรูปแบบ `/user/<name>` โดยรับพารามิเตอร์ `name` เข้ามาในฟังก์ชัน แล้วคืนค่าข้อความ `"Hello, " + name`', NULL, NULL, NULL, 'from flask import Flask
-app = Flask(__name__)
-
-@app.route("/user/<name>")
-def greet(name):
-    # return ข้อความต้อนรับ name
-    pass', 'from flask import Flask
-app = Flask(__name__)
-
-@app.route("/user/<name>")
-def greet(name):
-    return f"Hello, {name}"', 'stdio', '[{"input": "", "expected": ""}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 05:10:18.260257', 0);
-INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (180, 'ผลรวมของรายการตัวเลข (Sum Array)', 'Sum of Array', 'เขียนฟังก์ชัน "sum_array(nums)" เพื่อคืนค่าผลรวมของตัวเลขทั้งหมดในอาร์เรย์', 'Write a function "sum_array(nums)" that returns the sum of all elements.', 'เครื่องหมาย += บวกทับค่าเดิม (x += 1 มีความหมายเท่ากับ x = x + 1) บรรทัดที่บวกต้องอยู่ในลูปจึงจะทำซ้ำทุกตัว ถ้าไปอยู่นอกลูปจะได้แค่ตัวสุดท้าย', 'The += operator adds onto what is already there (x += 1 means x = x + 1). The adding line has to sit INSIDE the loop to run for every item; outside it, only the last value counts.', 'def sum_array(nums):
-    total = 0
-    for n in nums:
-        # TODO: บวก n เข้ากับ total
-        pass
-    return total', 'def sum_array(nums):
-    total = 0
-    for n in nums:
-        total += n
-    return total', 'function', '[{"args": [[1, 2, 3, 4]], "expected": 10}, {"args": [[5, 10, 15]], "expected": 30}, {"args": [[]], "expected": 0}, {"args": [[-1, 1]], "expected": 0}, {"args": [[7]], "expected": 7}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.737979', 1);
+    return res', 'function', '[{"args": [2, [["put", 1, 1], ["put", 2, 2], ["get", 1, null], ["put", 3, 3], ["get", 2, null]]], "expected": [1, -1]}, {"args": [1, [["put", 1, 1], ["put", 2, 2], ["get", 1, null]]], "expected": [-1]}, {"args": [2, [["put", 1, 1], ["get", 1, null]]], "expected": [1]}, {"args": [2, [["get", 5, null]]], "expected": [-1]}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.876746', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (171, 'หาค่าสูงสุด (Find Maximum)', 'Find Maximum', 'เขียนฟังก์ชัน "find_max(nums)" คืนค่าตัวเลขที่มีค่ามากที่สุดในรายการ', 'Write a function "find_max(nums)" returning the largest number.', 'เทียบทีละตัวกับตัวที่ดีที่สุดที่เจอมา ถ้า n > best ก็เปลี่ยน best เป็น n เริ่ม best จากสมาชิกตัวแรกไว้แล้ว จึงไม่ต้องกลัวลิสต์ค่าลบ', 'Compare each item against the best so far: if n > best, make best equal n. best already starts at the first element, so negative numbers are handled.', 'def find_max(nums):
     best = nums[0]
     for n in nums:
@@ -341,7 +313,33 @@ INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, h
     for n in nums:
         if n > best:
             best = n
-    return best', 'function', '[{"args": [[3, 9, 2, 5]], "expected": 9}, {"args": [[-1, -5, -2]], "expected": -1}, {"args": [[0]], "expected": 0}, {"args": [[2, 2, 2]], "expected": 2}, {"args": [[-10, 5]], "expected": 5}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.745839', 1);
+    return best', 'function', '[{"args": [[3, 9, 2, 5]], "expected": 9}, {"args": [[-1, -5, -2]], "expected": -1}, {"args": [[0]], "expected": 0}, {"args": [[2, 2, 2]], "expected": 2}, {"args": [[-10, 5]], "expected": 5}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.736571', 1);
+INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (192, 'หาตัวที่ปรากฏบ่อยที่สุด (Most Frequent)', 'Most Frequent Element', 'เขียนฟังก์ชัน `most_frequent(nums)` คืนค่าตัวเลขที่ปรากฏบ่อยที่สุด (ถ้าเท่ากันให้คืนตัวที่เจอก่อน)', 'Write a function `most_frequent(nums)` returning the most common value (earliest on a tie).', 'nums.count(n) นับจำนวนครั้งที่ n ปรากฏ (ให้มาแล้ว) เหลือแค่เก็บตัวที่นับได้มากสุด อัปเดตทั้ง best และ best_count พร้อมกัน ไม่งั้นการเทียบครั้งต่อไปจะเพี้ยน', 'nums.count(n) counts occurrences (already given). You only need to keep the highest — update best AND best_count together, or the next comparison is wrong.', 'def most_frequent(nums):
+    best = None
+    best_count = 0
+    for n in nums:
+        c = nums.count(n)
+        # TODO: ถ้า c มากกว่า best_count ให้ best = n และ best_count = c
+        pass
+    return best', 'def most_frequent(nums):
+    best = None
+    best_count = 0
+    for n in nums:
+        c = nums.count(n)
+        if c > best_count:
+            best = n
+            best_count = c
+    return best', 'function', '[{"args": [[1, 2, 2, 3]], "expected": 2}, {"args": [[4]], "expected": 4}, {"args": [[1, 1, 2, 2]], "expected": 1}, {"args": [[5, 6, 6, 6, 5]], "expected": 6}, {"args": [[9, 8, 8]], "expected": 8}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.950187', 1);
+INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (24, 'ตรวจสอบช่วงอายุ', 'Check Age Range', 'รับค่าอายุ age ถ้า age >= 18 ให้ตรวจสอบต่อว่า ถ้ามีบัตรประชาชน (รับค่า input เพิ่มเป็น True/False) ให้พิมพ์ "Allowed" ถ้าไม่มีพิมพ์ "Not Allowed"', 'Receive an age. If age >= 18, check further: if they have an ID card (receive additional input as True/False), print "Allowed". If not, print "Not Allowed"', NULL, NULL, 'age = int(input())
+has_id = input() == "True"
+# เขียน if ซ้อน if
+', 'age = int(input())
+has_id = input() == "True"
+if age >= 18:
+    if has_id:
+        print("Allowed")
+    else:
+        print("Not Allowed")', 'stdio', '[{"input": "20\nTrue", "expected": "Allowed"}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 05:19:35.433836', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (161, 'ตรวจสอบวงเล็บสมบูรณ์ (Valid Parentheses)', 'Valid Parentheses', 'เขียนฟังก์ชัน "is_valid_parentheses(s)" ตรวจสอบว่าวงเล็บ (), [], {} เปิดและปิดถูกคู่และถูกลำดับหรือไม่', 'Write a function "is_valid_parentheses(s)" validating matching brackets (), [], {}.', 'stack คือกองที่หยิบตัวบนสุดออกก่อน วงเล็บปิดต้องคู่กับตัวที่เพิ่งเปิดล่าสุด ถ้า mapping[char] != top ก็ผิดคู่ และจบแล้ว stack ต้องว่าง จึงคืน not stack', 'A stack pops the most recent item first, and a closer must match the newest opener — if mapping[char] != top it is mismatched. At the end an empty stack means every opener found its pair, and `not` on an empty list is already True.', 'def is_valid_parentheses(s):
     stack = []
     mapping = {")": "(", "]": "[", "}": "{"}
@@ -363,55 +361,15 @@ INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, h
                 return False
         else:
             stack.append(char)
-    return not stack', 'function', '[{"args": ["()[]{}"], "expected": true}, {"args": ["(]"], "expected": false}, {"args": [""], "expected": true}, {"args": ["([{}])"], "expected": true}, {"args": ["("], "expected": false}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.839084', 1);
-INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (175, 'ความยาวสับสตริงที่ไม่มีอักขระซ้ำ (Longest Substring Without Repeating)', 'Longest Substring Without Repeating Characters', 'เขียนฟังก์ชัน "length_of_longest_substring(s)" หาความยาวสตริงย่อยที่ไม่มีอักขระซ้ำกันเลย', 'Write a function "length_of_longest_substring(s)" finding max length of substring without repeating characters.', 'คิดเป็นหน้าต่างที่มีขอบซ้าย (left) กับขวา ถ้าเจอตัวอักษรซ้ำ "ในหน้าต่างปัจจุบัน" ให้เลื่อน left ไปหลังตำแหน่งเดิมของมัน — เงื่อนไข char_map[char] >= left คือสิ่งที่บอกว่าซ้ำอยู่ในหน้าต่างจริง ไม่ใช่ซ้ำที่หลุดไปแล้ว', 'Think of a window with a left and right edge. On a repeat INSIDE the window, move left past the old position — the char_map[char] >= left test is what tells a genuine repeat from one the window already left behind.', 'def length_of_longest_substring(s):
-    char_map = {}
-    left = 0
-    max_len = 0
-    for right, char in enumerate(s):
-        # TODO: ถ้า char เคยเจอแล้ว และตำแหน่งเดิม >= left ให้เลื่อน left = char_map[char] + 1
-        char_map[char] = right
-        max_len = max(max_len, right - left + 1)
-    return max_len', 'def length_of_longest_substring(s):
-    char_map = {}
-    left = 0
-    max_len = 0
-    for right, char in enumerate(s):
-        if char in char_map and char_map[char] >= left:
-            left = char_map[char] + 1
-        char_map[char] = right
-        max_len = max(max_len, right - left + 1)
-    return max_len', 'function', '[{"args": ["abcabcbb"], "expected": 3}, {"args": ["bbbbb"], "expected": 1}, {"args": [""], "expected": 0}, {"args": ["pwwkew"], "expected": 3}, {"args": ["abcdef"], "expected": 6}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.856063', 1);
-INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (192, 'หาตัวที่ปรากฏบ่อยที่สุด (Most Frequent)', 'Most Frequent Element', 'เขียนฟังก์ชัน `most_frequent(nums)` คืนค่าตัวเลขที่ปรากฏบ่อยที่สุด (ถ้าเท่ากันให้คืนตัวที่เจอก่อน)', 'Write a function `most_frequent(nums)` returning the most common value (earliest on a tie).', 'nums.count(n) นับจำนวนครั้งที่ n ปรากฏ (ให้มาแล้ว) เหลือแค่เก็บตัวที่นับได้มากสุด อัปเดตทั้ง best และ best_count พร้อมกัน ไม่งั้นการเทียบครั้งต่อไปจะเพี้ยน', 'nums.count(n) counts occurrences (already given). You only need to keep the highest — update best AND best_count together, or the next comparison is wrong.', 'def most_frequent(nums):
-    best = None
-    best_count = 0
-    for n in nums:
-        c = nums.count(n)
-        # TODO: ถ้า c มากกว่า best_count ให้ best = n และ best_count = c
-        pass
-    return best', 'def most_frequent(nums):
-    best = None
-    best_count = 0
-    for n in nums:
-        c = nums.count(n)
-        if c > best_count:
-            best = n
-            best_count = c
-    return best', 'function', '[{"args": [[1, 2, 2, 3]], "expected": 2}, {"args": [[4]], "expected": 4}, {"args": [[1, 1, 2, 2]], "expected": 1}, {"args": [[5, 6, 6, 6, 5]], "expected": 6}, {"args": [[9, 8, 8]], "expected": 8}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.908171', 1);
+    return not stack', 'function', '[{"args": ["()[]{}"], "expected": true}, {"args": ["(]"], "expected": false}, {"args": [""], "expected": true}, {"args": ["([{}])"], "expected": true}, {"args": ["("], "expected": false}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.842155', 1);
+INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (153, 'ตรวจสอบเลขคู่/เลขคี่ (Even or Odd)', 'Even or Odd', 'เขียนฟังก์ชัน "is_even(n)" เพื่อคืนค่า True หากเป็นเลขคู่ และ False หากเป็นเลขคี่', 'Write a function "is_even(n)" returning True if n is even, False otherwise.', '% คือเศษจากการหาร n % 2 ได้ 0 เมื่อเป็นเลขคู่ เขียน n % 2 == 0 ตรงๆ ได้ True/False อยู่แล้ว ไม่ต้องใช้ if', '% gives the remainder. n % 2 is 0 for an even number, and n % 2 == 0 is already True or False on its own — no if needed.', 'def is_even(n):
+    # TODO: คืน True ถ้า n หารด้วย 2 แล้วเหลือเศษ 0 (ใช้ n % 2)
+    return None', 'def is_even(n):
+    return n % 2 == 0', 'function', '[{"args": [4], "expected": true}, {"args": [7], "expected": false}, {"args": [0], "expected": true}, {"args": [-2], "expected": true}, {"args": [99], "expected": false}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.712968', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (181, 'ตัวเลขที่หายไป (Missing Number)', 'Missing Number', 'เขียนฟังก์ชัน `missing_number(nums, n)` หาตัวเลขที่หายไปจากชุด 1 ถึง n', 'Write a function `missing_number(nums, n)` finding the missing value from 1..n.', 'ผลรวม 1..n หาได้ด้วยสูตร n * (n + 1) // 2 โดยไม่ต้องวนลูป เอาลบด้วย sum(nums) ส่วนที่ขาดคือตัวที่หายไป — ใช้ // เพราะผลลัพธ์เป็นจำนวนเต็ม', 'The sum of 1..n is n * (n + 1) // 2 with no loop at all. Subtract sum(nums) and the shortfall is the missing value — use // to keep it an integer.', 'def missing_number(nums, n):
     # TODO: ผลรวมของ 1..n คือ n * (n + 1) // 2 — ลบด้วย sum(nums) จะได้ตัวที่หายไป
     return -1', 'def missing_number(nums, n):
-    return n * (n + 1) // 2 - sum(nums)', 'function', '[{"args": [[1, 2, 4], 4], "expected": 3}, {"args": [[2], 2], "expected": 1}, {"args": [[1], 2], "expected": 2}, {"args": [[1, 2, 3, 5], 5], "expected": 4}, {"args": [[2, 3, 4, 5], 5], "expected": 1}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.924563', 1);
-INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (24, 'ตรวจสอบช่วงอายุ', 'Check Age Range', 'รับค่าอายุ age ถ้า age >= 18 ให้ตรวจสอบต่อว่า ถ้ามีบัตรประชาชน (รับค่า input เพิ่มเป็น True/False) ให้พิมพ์ "Allowed" ถ้าไม่มีพิมพ์ "Not Allowed"', 'Receive an age. If age >= 18, check further: if they have an ID card (receive additional input as True/False), print "Allowed". If not, print "Not Allowed"', NULL, NULL, 'age = int(input())
-has_id = input() == "True"
-# เขียน if ซ้อน if
-', 'age = int(input())
-has_id = input() == "True"
-if age >= 18:
-    if has_id:
-        print("Allowed")
-    else:
-        print("Not Allowed")', 'stdio', '[{"input": "20\nTrue", "expected": "Allowed"}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 05:19:35.433836', 1);
+    return n * (n + 1) // 2 - sum(nums)', 'function', '[{"args": [[1, 2, 4], 4], "expected": 3}, {"args": [[2], 2], "expected": 1}, {"args": [[1], 2], "expected": 2}, {"args": [[1, 2, 3, 5], 5], "expected": 4}, {"args": [[2, 3, 4, 5], 5], "expected": 1}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.984418', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (158, 'เลขฟีโบนัชชี (Fibonacci)', 'Fibonacci Number', 'เขียนฟังก์ชัน "fib(n)" เพื่อคืนค่าตัวเลขฟีโบนัชชีลำดับที่ n', 'Write a function "fib(n)" that returns the n-th Fibonacci number.', 'ฟังก์ชันเรียกตัวเองได้ ลอง fib(n-1) + fib(n-2) — สองบรรทัดแรกที่ให้มาแล้วคือ "จุดหยุด" ถ้าไม่มีมันจะเรียกตัวเองไม่จบ', 'A function may call itself: fib(n-1) + fib(n-2). The two lines already given are the stopping point — without them it would recurse forever.', 'def fib(n):
     if n <= 1:
         return n
@@ -419,8 +377,18 @@ INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, h
     return 0', 'def fib(n):
     if n <= 1:
         return n
-    return fib(n - 1) + fib(n - 2)', 'function', '[{"args": [5], "expected": 5}, {"args": [7], "expected": 13}, {"args": [0], "expected": 0}, {"args": [1], "expected": 1}, {"args": [10], "expected": 55}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.711966', 1);
+    return fib(n - 1) + fib(n - 2)', 'function', '[{"args": [5], "expected": 5}, {"args": [7], "expected": 13}, {"args": [0], "expected": 0}, {"args": [1], "expected": 1}, {"args": [10], "expected": 55}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.70629', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (123, 'เส้นทางเวทมนตร์ 1B', 'Magic Path 1B', 'ยินดีต้อนรับสู่เส้นทาง 1B พิมพ์ 1B_2A หรือ 1B_2B เพื่อไปต่อ', 'Welcome to path 1B. Type 1B_2A or 1B_2B to continue.', NULL, NULL, 'print("")', 'print("")', 'stdio', '[]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 05:06:19.806937', 1);
+INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (180, 'ผลรวมของรายการตัวเลข (Sum Array)', 'Sum of Array', 'เขียนฟังก์ชัน "sum_array(nums)" เพื่อคืนค่าผลรวมของตัวเลขทั้งหมดในอาร์เรย์', 'Write a function "sum_array(nums)" that returns the sum of all elements.', 'เครื่องหมาย += บวกทับค่าเดิม (x += 1 มีความหมายเท่ากับ x = x + 1) บรรทัดที่บวกต้องอยู่ในลูปจึงจะทำซ้ำทุกตัว ถ้าไปอยู่นอกลูปจะได้แค่ตัวสุดท้าย', 'The += operator adds onto what is already there (x += 1 means x = x + 1). The adding line has to sit INSIDE the loop to run for every item; outside it, only the last value counts.', 'def sum_array(nums):
+    total = 0
+    for n in nums:
+        # TODO: บวก n เข้ากับ total
+        pass
+    return total', 'def sum_array(nums):
+    total = 0
+    for n in nums:
+        total += n
+    return total', 'function', '[{"args": [[1, 2, 3, 4]], "expected": 10}, {"args": [[5, 10, 15]], "expected": 30}, {"args": [[]], "expected": 0}, {"args": [[-1, 1]], "expected": 0}, {"args": [[7]], "expected": 7}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.730711', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (186, 'อาร์เรย์ FizzBuzz (FizzBuzz Array)', 'FizzBuzz Array', 'เขียนฟังก์ชัน "fizz_buzz(n)" คืนค่ารายการคำว่า "Fizz", "Buzz", "FizzBuzz" หรือตัวเลข ตั้งแต่ 1 ถึง n', 'Write a function "fizz_buzz(n)" returning FizzBuzz string list from 1 to n.', 'ลำดับเงื่อนไขสำคัญมาก ต้องเช็คหาร 15 ก่อน (ให้มาแล้ว) จากนั้น 3 แล้ว 5 ใช้ elif ต่อกัน ถ้าสลับลำดับ 15 จะถูกจับเป็น Fizz', 'Order matters: 15 must be tested first (already given), then 3, then 5, chained with elif. Reversed, multiples of 15 would come out as Fizz.', 'def fizz_buzz(n):
     res = []
     for i in range(1, n + 1):
@@ -441,7 +409,7 @@ INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, h
                 res.append("Buzz")
             else:
                 res.append(str(i))
-    return res', 'function', '[{"args": [5], "expected": ["1", "2", "Fizz", "4", "Buzz"]}, {"args": [1], "expected": ["1"]}, {"args": [3], "expected": ["1", "2", "Fizz"]}, {"args": [15], "expected": ["1", "2", "Fizz", "4", "Buzz", "Fizz", "7", "8", "Fizz", "Buzz", "11", "Fizz", "13", "14", "FizzBuzz"]}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.801023', 1);
+    return res', 'function', '[{"args": [5], "expected": ["1", "2", "Fizz", "4", "Buzz"]}, {"args": [1], "expected": ["1"]}, {"args": [3], "expected": ["1", "2", "Fizz"]}, {"args": [15], "expected": ["1", "2", "Fizz", "4", "Buzz", "Fizz", "7", "8", "Fizz", "Buzz", "11", "Fizz", "13", "14", "FizzBuzz"]}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.795583', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (176, 'ผลรวมย่อยสูงสุด / อัลกอริทึมของ Kadane (Max Subarray Sum)', 'Maximum Subarray Sum', 'เขียนฟังก์ชัน "max_sub_array(nums)" หาผลรวมของอาร์เรย์ย่อยที่มีค่ามากที่สุด (Kadane Algorithm)', 'Write a function "max_sub_array(nums)" finding the maximum contiguous subarray sum.', 'ทุกตำแหน่งถามคำถามเดียว: "เริ่มนับใหม่จากตัวนี้ (nums[i]) หรือต่อจากของเดิม (curr_max + nums[i]) อันไหนดีกว่า" ใช้ max() เลือก แล้วค่อยเก็บสถิติสูงสุดไว้ที่ max_so_far', 'At each position ask one question: start fresh at nums[i], or extend with curr_max + nums[i]? max() picks, then max_so_far records the best ever seen.', 'def max_sub_array(nums):
     max_so_far = nums[0]
     curr_max = nums[0]
@@ -455,7 +423,7 @@ INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, h
     for i in range(1, len(nums)):
         curr_max = max(nums[i], curr_max + nums[i])
         max_so_far = max(max_so_far, curr_max)
-    return max_so_far', 'function', '[{"args": [[-2, 1, -3, 4, -1, 2, 1, -5, 4]], "expected": 6}, {"args": [[1]], "expected": 1}, {"args": [[-1, -2]], "expected": -1}, {"args": [[1, 2, 3]], "expected": 6}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.851248', 1);
+    return max_so_far', 'function', '[{"args": [[-2, 1, -3, 4, -1, 2, 1, -5, 4]], "expected": 6}, {"args": [[1]], "expected": 1}, {"args": [[-1, -2]], "expected": -1}, {"args": [[1, 2, 3]], "expected": 6}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.854247', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (127, 'บทสรุปสายเวทมนตร์ 1B_2B', 'Magic Path Summary 1B_2B', 'ยินดีด้วยคุณมาถึงจุดสิ้นสุดของสาย 1B_2B แล้ว พิมพ์ print("success") เพื่อจบด่าน', 'Congratulations, you''ve reached the end of path 1B_2B. Type print("success") to finish the level.', NULL, NULL, 'print("")', 'print("success")', 'stdio', '[]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 05:07:00.180385', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (132, 'Mini 2: คำนวณคะแนนรวม', 'Mini 2: Calculate the Total Score', 'สร้างตัวแปร score มีค่า 40 แล้วเพิ่มอีก 10 จากนั้นแสดงผลรวม', 'Create a variable score with the value 40, then add another 10, and display the total', NULL, NULL, 'score = 40
 score = score + 10
@@ -468,10 +436,42 @@ INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, h
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (143, 'Test Challenge 1: Hello World', 'Test Challenge 1: Hello World', 'Write a Python script that prints ''Hello World''. Even an empty file submission will pass and earn rewards for testing purposes.', 'Write a Python script that prints ''Hello World''. Even an empty file submission will pass and earn rewards for testing purposes.', NULL, NULL, NULL, NULL, 'stdio', '[{"input": "", "expected": "Hello World\n"}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 05:10:18.274248', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (144, 'Test Challenge 2: Number Adder', 'Test Challenge 2: Number Adder', 'Write a Python script that takes two inputs and prints their sum. Even an empty file submission will pass and earn rewards for testing purposes.', 'Write a Python script that takes two inputs and prints their sum. Even an empty file submission will pass and earn rewards for testing purposes.', NULL, NULL, NULL, NULL, 'stdio', '[{"input": "4\n5\n", "expected": "9\n"}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 05:10:18.276436', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (145, 'ทดสอบระบบ1', NULL, '1234', '1234', NULL, NULL, NULL, NULL, 'stdio', '[{"input": "", "expected": ""}]', 24, '2026-08-24 20:43:54.978192', '2026-08-25 05:10:18.278214', 1);
+INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (175, 'ความยาวสับสตริงที่ไม่มีอักขระซ้ำ (Longest Substring Without Repeating)', 'Longest Substring Without Repeating Characters', 'เขียนฟังก์ชัน "length_of_longest_substring(s)" หาความยาวสตริงย่อยที่ไม่มีอักขระซ้ำกันเลย', 'Write a function "length_of_longest_substring(s)" finding max length of substring without repeating characters.', 'คิดเป็นหน้าต่างที่มีขอบซ้าย (left) กับขวา ถ้าเจอตัวอักษรซ้ำ "ในหน้าต่างปัจจุบัน" ให้เลื่อน left ไปหลังตำแหน่งเดิมของมัน — เงื่อนไข char_map[char] >= left คือสิ่งที่บอกว่าซ้ำอยู่ในหน้าต่างจริง ไม่ใช่ซ้ำที่หลุดไปแล้ว', 'Think of a window with a left and right edge. On a repeat INSIDE the window, move left past the old position — the char_map[char] >= left test is what tells a genuine repeat from one the window already left behind.', 'def length_of_longest_substring(s):
+    char_map = {}
+    left = 0
+    max_len = 0
+    for right, char in enumerate(s):
+        # TODO: ถ้า char เคยเจอแล้ว และตำแหน่งเดิม >= left ให้เลื่อน left = char_map[char] + 1
+        char_map[char] = right
+        max_len = max(max_len, right - left + 1)
+    return max_len', 'def length_of_longest_substring(s):
+    char_map = {}
+    left = 0
+    max_len = 0
+    for right, char in enumerate(s):
+        if char in char_map and char_map[char] >= left:
+            left = char_map[char] + 1
+        char_map[char] = right
+        max_len = max(max_len, right - left + 1)
+    return max_len', 'function', '[{"args": ["abcabcbb"], "expected": 3}, {"args": ["bbbbb"], "expected": 1}, {"args": [""], "expected": 0}, {"args": ["pwwkew"], "expected": 3}, {"args": ["abcdef"], "expected": 6}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.863442', 1);
+INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (160, 'ผลรวม 1 ถึง n (Sum To N)', 'Sum To N', 'เขียนฟังก์ชัน `sum_to_n(n)` คืนค่าผลรวมของเลข 1 ถึง n', 'Write a function `sum_to_n(n)` returning the sum of integers from 1 to n.', 'range(1, n + 1) ให้ 1 ถึง n — ต้อง +1 เพราะ range ไม่รวมตัวสุดท้าย แล้วบวกเข้า total ในลูป', 'range(1, n + 1) yields 1 through n — the +1 matters because range excludes its end value. Add each i into total inside the loop.', 'def sum_to_n(n):
+    if n <= 0:
+        return 0
+    total = 0
+    for i in range(1, n + 1):
+        # TODO: บวก i เข้ากับ total
+        pass
+    return total', 'def sum_to_n(n):
+    if n <= 0:
+        return 0
+    total = 0
+    for i in range(1, n + 1):
+        total += i
+    return total', 'function', '[{"args": [5], "expected": 15}, {"args": [1], "expected": 1}, {"args": [0], "expected": 0}, {"args": [10], "expected": 55}, {"args": [100], "expected": 5050}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.912943', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (169, 'แปลงองศาเซลเซียสเป็นฟาเรนไฮต์ (Celsius to Fahrenheit)', 'Celsius to Fahrenheit', 'เขียนฟังก์ชัน "c_to_f(c)" เพื่อแปลงอุณหภูมิจาก C เป็น F ("(c * 9/5) + 32")', 'Write a function "c_to_f(c)" to convert Celsius to Fahrenheit.', 'ใส่วงเล็บให้ชัด (c * 9/5) + 32 — ใน Python คูณและหารทำก่อนบวก แต่การใส่วงเล็บช่วยให้อ่านง่ายและไม่พลาด', 'Write it as (c * 9/5) + 32. Python does multiplication and division before addition anyway, but the parentheses make it hard to get wrong.', 'def c_to_f(c):
     # TODO: สูตรคือ c คูณ 9 หาร 5 แล้วบวก 32
     return 0', 'def c_to_f(c):
-    return (c * 9 / 5) + 32', 'function', '[{"args": [0], "expected": 32}, {"args": [100], "expected": 212}, {"args": [10], "expected": 50}, {"args": [-40], "expected": -40}, {"args": [20], "expected": 68}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.760093', 1);
+    return (c * 9 / 5) + 32', 'function', '[{"args": [0], "expected": 32}, {"args": [100], "expected": 212}, {"args": [10], "expected": 50}, {"args": [-40], "expected": -40}, {"args": [20], "expected": 68}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.749056', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (146, 'หาเลขที่มากที่สุด', NULL, 'กำหนดตัวเลขมาให้ n จำนวน ให้เขียนโปรแกรมเพื่อหาเลขที่มีค่ามากที่สุด
 
 ข้อมูลนำเข้า:
@@ -491,11 +491,11 @@ INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, h
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (163, 'นับจำนวนคำ (Count Words)', 'Count Words', 'เขียนฟังก์ชัน `count_words(s)` คืนค่าจำนวนคำในประโยค (คั่นด้วยช่องว่าง)', 'Write a function `count_words(s)` returning the number of words in a sentence.', 's.split() ตัดคำด้วยช่องว่างให้เป็นลิสต์ แล้ว len() นับจำนวนสมาชิก ต่อกันได้เลย: len(s.split())', 's.split() cuts the text into a list on whitespace, and len() counts a list''s items. Chain them: len(s.split()).', 'def count_words(s):
     # TODO: แยกคำด้วย s.split() แล้วนับจำนวนด้วย len()
     return -1', 'def count_words(s):
-    return len(s.split())', 'function', '[{"args": ["hello world"], "expected": 2}, {"args": [""], "expected": 0}, {"args": ["one"], "expected": 1}, {"args": ["a b c d"], "expected": 4}, {"args": ["  spaced   out  "], "expected": 2}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.883832', 1);
+    return len(s.split())', 'function', '[{"args": ["hello world"], "expected": 2}, {"args": [""], "expected": 0}, {"args": ["one"], "expected": 1}, {"args": ["a b c d"], "expected": 4}, {"args": ["  spaced   out  "], "expected": 2}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.906476', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (164, 'นับตัวอักษรที่ไม่ซ้ำ (Count Unique Chars)', 'Count Unique Characters', 'เขียนฟังก์ชัน `count_unique(s)` คืนค่าจำนวนตัวอักษรที่ไม่ซ้ำกัน', 'Write a function `count_unique(s)` returning how many distinct characters appear.', 'set() ทิ้งตัวซ้ำทั้งหมดโดยอัตโนมัติ จึงเหลือแค่ len(set(s)) ไม่ต้องเทียบทีละคู่', 'set() drops every duplicate automatically, so len(set(s)) is the whole answer — no pairwise comparison needed.', 'def count_unique(s):
     # TODO: set(s) เก็บตัวอักษรที่ไม่ซ้ำ แล้วนับด้วย len()
     return -1', 'def count_unique(s):
-    return len(set(s))', 'function', '[{"args": ["aab"], "expected": 2}, {"args": [""], "expected": 0}, {"args": ["abc"], "expected": 3}, {"args": ["aaaa"], "expected": 1}, {"args": ["abab"], "expected": 2}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.929421', 1);
+    return len(set(s))', 'function', '[{"args": ["aab"], "expected": 2}, {"args": [""], "expected": 0}, {"args": ["abc"], "expected": 3}, {"args": ["aaaa"], "expected": 1}, {"args": ["abab"], "expected": 2}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.993191', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (25, 'โปรแกรมคำนวณส่วนลด', 'Discount Calculator Program', 'รับค่าราคาสินค้า price ถ้า price มากกว่า 1000 ให้ลด 10% (แสดงราคาใหม่) ถ้าไม่ถึงพิมพ์ราคาเดิม', 'Receive a product price. If the price is greater than 1000, apply a 10% discount (display the new price). If it does not reach 1000, print the original price.', NULL, NULL, 'price = float(input())
 # ใช้เงื่อนไขคำนวณส่วนลด
 ', 'price = float(input())
@@ -527,7 +527,7 @@ INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, h
         diff = target - num
         if diff in seen:
             return [seen[diff], i]
-        seen[num] = i', 'function', '[{"args": [[2, 7, 11, 15], 9], "expected": [0, 1]}, {"args": [[3, 2, 4], 6], "expected": [1, 2]}, {"args": [[3, 3], 6], "expected": [0, 1]}, {"args": [[1, 5, 3], 8], "expected": [1, 2]}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.791796', 1);
+        seen[num] = i', 'function', '[{"args": [[2, 7, 11, 15], 9], "expected": [0, 1]}, {"args": [[3, 2, 4], 6], "expected": [1, 2]}, {"args": [[3, 3], 6], "expected": [0, 1]}, {"args": [[1, 5, 3], 8], "expected": [1, 2]}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.788098', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (170, 'คำนวณความถี่ของตัวอักษร (Character Frequency)', 'Character Frequency', 'เขียนฟังก์ชัน "char_frequency(s)" คืนค่าดิกชันนารีนับจำนวนตัวอักษรแต่ละตัวในสเตรนจ์', 'Write a function "char_frequency(s)" returning a dictionary of character counts.', 'dict มีเมธอด .get(คีย์, ค่าสำรอง) ที่คืนค่าสำรองเมื่อยังไม่มีคีย์นั้น ถ้าให้ค่าสำรองเป็น 0 ก็บวกหนึ่งทับได้ทันทีในบรรทัดเดียว ไม่ต้องเขียน if แยกกรณีตัวที่เจอครั้งแรก', 'A dict has .get(key, fallback), which returns the fallback when the key is absent. With 0 as the fallback you can add one straight onto it in a single line — no if for the first occurrence.', 'def char_frequency(s):
     freq = {}
     for char in s:
@@ -537,11 +537,11 @@ INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, h
     freq = {}
     for char in s:
         freq[char] = freq.get(char, 0) + 1
-    return freq', 'function', '[{"args": ["aba"], "expected": {"a": 2, "b": 1}}, {"args": [""], "expected": {}}, {"args": ["x"], "expected": {"x": 1}}, {"args": ["aab"], "expected": {"a": 2, "b": 1}}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.846413', 1);
+    return freq', 'function', '[{"args": ["aba"], "expected": {"a": 2, "b": 1}}, {"args": [""], "expected": {}}, {"args": ["x"], "expected": {"x": 1}}, {"args": ["aab"], "expected": {"a": 2, "b": 1}}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.847802', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (173, 'รวบรวม 2 อาร์เรย์ที่จัดเรียงแล้ว (Merge Sorted Lists)', 'Merge Two Sorted Lists', 'เขียนฟังก์ชัน "merge_lists(l1, l2)" เพื่อรวม 2 อาร์เรย์ที่จัดเรียงแล้วให้กลายเป็นอาร์เรย์ที่เรียงจากน้อยไปมาก', 'Write a function "merge_lists(l1, l2)" merging two sorted arrays.', '+ ต่อลิสต์เข้าด้วยกัน แล้ว sorted() เรียงทั้งก้อน: sorted(l1 + l2) ไม่ต้องเขียนการรวมแบบเทียบทีละคู่เอง', '+ joins two lists and sorted() orders the result: sorted(l1 + l2). No need to merge them pairwise by hand.', 'def merge_lists(l1, l2):
     # TODO: รวมสองลิสต์เข้าด้วยกัน (l1 + l2) แล้วเรียงด้วย sorted()
     return [-1]', 'def merge_lists(l1, l2):
-    return sorted(l1 + l2)', 'function', '[{"args": [[1, 3, 5], [2, 4, 6]], "expected": [1, 2, 3, 4, 5, 6]}, {"args": [[], []], "expected": []}, {"args": [[1], []], "expected": [1]}, {"args": [[2, 2], [1, 3]], "expected": [1, 2, 2, 3]}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.816536', 1);
+    return sorted(l1 + l2)', 'function', '[{"args": [[1, 3, 5], [2, 4, 6]], "expected": [1, 2, 3, 4, 5, 6]}, {"args": [[], []], "expected": []}, {"args": [[1], []], "expected": [1]}, {"args": [[2, 2], [1, 3]], "expected": [1, 2, 2, 3]}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.8073', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (187, 'ค้นหาคำที่ยาวที่สุด (Longest Word)', 'Longest Word', 'เขียนฟังก์ชัน "longest_word(sentence)" คืนค่าคำที่มีความยาวมากที่สุดในประโยค', 'Write a function "longest_word(sentence)" returning the longest word in a string.', 'เทียบ "ความยาว" ไม่ใช่ตัวอักษร จึงต้องใช้ len(w) > len(best) ถ้าเขียน w > best จะกลายเป็นเทียบตามลำดับตัวอักษร', 'Compare LENGTHS, not the words: len(w) > len(best). Writing w > best would compare them alphabetically instead.', 'def longest_word(sentence):
     words = sentence.split()
     if not words:
@@ -558,7 +558,7 @@ INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, h
     for w in words:
         if len(w) > len(best):
             best = w
-    return best', 'function', '[{"args": ["The quick brown fox jumps"], "expected": "quick"}, {"args": ["hello"], "expected": "hello"}, {"args": ["a bb ccc"], "expected": "ccc"}, {"args": [""], "expected": ""}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.82203', 1);
+    return best', 'function', '[{"args": ["The quick brown fox jumps"], "expected": "quick"}, {"args": ["hello"], "expected": "hello"}, {"args": ["a bb ccc"], "expected": "ccc"}, {"args": [""], "expected": ""}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.819093', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (28, 'นับถอยหลัง', 'Countdown', 'รับค่า n แล้วใช้ while loop แสดงตัวเลขถอยหลังจาก n ลงมาถึง 1', 'Receive a value n, then use a while loop to display the numbers counting down from n to 1.', NULL, NULL, 'n = int(input())
 # ใช้ while loop นับถอยหลัง
 ', 'n = int(input())
@@ -674,7 +674,7 @@ INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, h
     for p in prices[1:]:
         best = max(best, p - low)
         low = min(low, p)
-    return best', 'function', '[{"args": [[7, 1, 5, 3, 6, 4]], "expected": 5}, {"args": [[7, 6, 4, 3, 1]], "expected": 0}, {"args": [[]], "expected": 0}, {"args": [[1, 2]], "expected": 1}, {"args": [[3, 3, 3]], "expected": 0}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.937686', 1);
+    return best', 'function', '[{"args": [[7, 1, 5, 3, 6, 4]], "expected": 5}, {"args": [[7, 6, 4, 3, 1]], "expected": 0}, {"args": [[]], "expected": 0}, {"args": [[1, 2]], "expected": 1}, {"args": [[3, 3, 3]], "expected": 0}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:57.00379', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (166, 'จัดกลุ่มคำสลับอักษร (Group Anagrams)', 'Group Anagrams Count', 'เขียนฟังก์ชัน `group_anagrams_count(words)` คืนค่าจำนวนกลุ่มของคำที่เป็นแอนนาแกรมกัน', 'Write a function `group_anagrams_count(words)` returning how many anagram groups exist.', 'คำที่เป็นอนาแกรมกันจะได้ "ลายนิ้วมือ" เดียวกันเมื่อเรียงตัวอักษร ใช้ "".join(sorted(w)) แปลงกลับเป็นสตริงก่อน เพราะลิสต์ใส่ใน set ไม่ได้ แล้ว set จะรวมกลุ่มซ้ำให้เอง', 'Anagrams share a fingerprint once their letters are sorted. Convert back to a string with "".join(sorted(w)) — a list cannot go into a set — and the set collapses the duplicates for you.', 'def group_anagrams_count(words):
     groups = set()
     for w in words:
@@ -684,10 +684,23 @@ INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, h
     groups = set()
     for w in words:
         groups.add("".join(sorted(w)))
-    return len(groups)', 'function', '[{"args": [["eat", "tea", "tan"]], "expected": 2}, {"args": [[]], "expected": 0}, {"args": [["abc"]], "expected": 1}, {"args": [["ab", "ba", "cd"]], "expected": 2}, {"args": [["a", "a", "a"]], "expected": 1}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.945556', 1);
+    return len(groups)', 'function', '[{"args": [["eat", "tea", "tan"]], "expected": 2}, {"args": [[]], "expected": 0}, {"args": [["abc"]], "expected": 1}, {"args": [["ab", "ba", "cd"]], "expected": 2}, {"args": [["a", "a", "a"]], "expected": 1}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:57.013333', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (138, 'Mini 2: รับของโปรด', 'Mini 2: Receive Favorite Food', 'รับชื่ออาหาร 1 ค่า แล้วแสดง "ฉันชอบ <อาหาร>"', 'Receive 1 food name value, then display "ฉันชอบ <food>"', NULL, NULL, 'food = input("อาหารที่ชอบ: ")
 print("ฉันชอบ", food)', 'food = input("อาหารที่ชอบ: ")
 print("ฉันชอบ", food)', 'stdio', '[{"input": "ราเมง", "expected": "ฉันชอบ ราเมง"}, {"input": "ข้าวผัด", "expected": "ฉันชอบ ข้าวผัด"}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 05:08:57.828607', 1);
+INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (172, 'นับจำนวนสระ (Count Vowels)', 'Count Vowels', 'เขียนฟังก์ชัน "count_vowels(s)" คืนค่าจำนวนสระ (a, e, i, o, u) ในข้อความ', 'Write a function "count_vowels(s)" returning the count of vowels.', 'in ใช้ถามว่ามีอยู่ในสตริงไหม เช่น char in vowels และ .lower() ทำให้ตัวพิมพ์ใหญ่นับด้วย ไม่งั้น "A" จะหลุด', 'in asks whether something is present: char in vowels. Use .lower() so capitals count too, otherwise "A" slips through.', 'def count_vowels(s):
+    vowels = "aeiou"
+    count = 0
+    for char in s:
+        # TODO: ถ้า char.lower() อยู่ใน vowels ให้ count เพิ่มขึ้น 1
+        pass
+    return count', 'def count_vowels(s):
+    vowels = "aeiou"
+    count = 0
+    for char in s:
+        if char.lower() in vowels:
+            count += 1
+    return count', 'function', '[{"args": ["hello world"], "expected": 3}, {"args": ["arcade"], "expected": 3}, {"args": [""], "expected": 0}, {"args": ["xyz"], "expected": 0}, {"args": ["AEIOU"], "expected": 5}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.742349', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (45, 'สร้าง Set ตัดข้อมูลซ้ำ', 'Create a Set to Remove Duplicates', 'กำหนดให้ `numbers = [1, 2, 2, 3, 4, 4, 5]` ให้นักเรียนแปลง List นี้ให้เป็น Set เพื่อตัดเลขที่ซ้ำกันออก แล้วพิมพ์ Set นั้นออกมา (หมายเหตุ: ลำดับใน Set อาจสลับกันได้ แต่ในเทสเคสให้เทียบผลลัพธ์ที่เป็น Set)', 'Given `numbers = [1, 2, 2, 3, 4, 4, 5]`, convert this List into a Set to remove the duplicate numbers, then print that Set. (Note: the order of items in a Set may vary, but the test case compares the result as a Set.)', NULL, NULL, 'numbers = [1, 2, 2, 3, 4, 4, 5]
 # แปลงเป็น set แล้ว print
 ', 'numbers = [1, 2, 2, 3, 4, 4, 5]
@@ -701,19 +714,6 @@ set_b = {3, 4, 5}
 ', 'set_a = {1, 2, 3}
 set_b = {3, 4, 5}
 print(set_a | set_b)', 'stdio', '[{"input": "", "expected": "{1, 2, 3, 4, 5}"}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 05:25:33.374912', 1);
-INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (172, 'นับจำนวนสระ (Count Vowels)', 'Count Vowels', 'เขียนฟังก์ชัน "count_vowels(s)" คืนค่าจำนวนสระ (a, e, i, o, u) ในข้อความ', 'Write a function "count_vowels(s)" returning the count of vowels.', 'in ใช้ถามว่ามีอยู่ในสตริงไหม เช่น char in vowels และ .lower() ทำให้ตัวพิมพ์ใหญ่นับด้วย ไม่งั้น "A" จะหลุด', 'in asks whether something is present: char in vowels. Use .lower() so capitals count too, otherwise "A" slips through.', 'def count_vowels(s):
-    vowels = "aeiou"
-    count = 0
-    for char in s:
-        # TODO: ถ้า char.lower() อยู่ใน vowels ให้ count เพิ่มขึ้น 1
-        pass
-    return count', 'def count_vowels(s):
-    vowels = "aeiou"
-    count = 0
-    for char in s:
-        if char.lower() in vowels:
-            count += 1
-    return count', 'function', '[{"args": ["hello world"], "expected": 3}, {"args": ["arcade"], "expected": 3}, {"args": [""], "expected": 0}, {"args": ["xyz"], "expected": 0}, {"args": ["AEIOU"], "expected": 5}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.753361', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (188, 'กักเก็บน้ำฝน (Trapping Rain Water)', 'Trapping Rain Water', 'เขียนฟังก์ชัน "trap(height)" คำนวณปริมาณน้ำฝนที่ขังอยู่ระหว่างความสูงของแท่งกราฟ', 'Write a function "trap(height)" calculating total trapped rainwater.', 'น้ำที่ขังบนแต่ละช่องคือ ความสูงกำแพงที่เตี้ยกว่าในสองฝั่ง ลบ ความสูงพื้นช่องนั้น เพราะเดินจากฝั่งที่กำแพงเตี้ยกว่าเสมอ left_max/right_max จึงเป็นตัวจำกัดอยู่แล้ว น้ำจึงไม่เคยติดลบ', 'Water above a cell is the shorter of the two side walls minus that cell''s own height. Because you always advance from the shorter wall, left_max/right_max are already the limiting one — so the amount is never negative.', 'def trap(height):
     if not height:
         return 0
@@ -744,7 +744,7 @@ INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, h
             r -= 1
             right_max = max(right_max, height[r])
             water += right_max - height[r]
-    return water', 'function', '[{"args": [[0, 1, 0, 2, 1, 0, 1, 3, 2, 1, 2, 1]], "expected": 6}, {"args": [[]], "expected": 0}, {"args": [[4, 2, 3]], "expected": 1}, {"args": [[3, 0, 3]], "expected": 3}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.868371', 1);
+    return water', 'function', '[{"args": [[0, 1, 0, 2, 1, 0, 1, 3, 2, 1, 2, 1]], "expected": 6}, {"args": [[]], "expected": 0}, {"args": [[4, 2, 3]], "expected": 1}, {"args": [[3, 0, 3]], "expected": 3}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.889492', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (2, 'ยินดีต้อนรับสู่โลกโปรแกรมมิ่ง', 'Welcome to the World of Programming', 'ให้นักเรียนใช้ฟังก์ชัน print() สองครั้ง เพื่อแสดงข้อความบรรทัดแรกว่า "Welcome to Python" และบรรทัดที่สองว่า "Happy Coding"', 'Have the student use the print() function twice to display the message "Welcome to Python" on the first line and "Happy Coding" on the second line', NULL, NULL, '# บรรทัดแรก: Welcome to Python
 # บรรทัดที่สอง: Happy Coding
 ', 'print("Welcome to Python")
@@ -1251,7 +1251,7 @@ btn.pack()', 'stdio', '[{"input": "", "expected": ""}]', NULL, '2026-08-24 20:43
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (155, 'กลับด้านข้อความ (Reverse String)', 'Reverse String', 'เขียนฟังก์ชัน "reverse_string(s)" เพื่อคืนค่าตัวอักษรเรียงย้อนกลับ', 'Write a function "reverse_string(s)" that returns the reversed string.', 'สไลซ์เขียนเป็น s[เริ่ม:จบ:ก้าว] ถ้าก้าวเป็น -1 คือเดินถอยหลัง เว้นเริ่มกับจบว่างไว้ก็ได้ทั้งสตริง: s[::-1]', 'A slice is s[start:stop:step]. A step of -1 walks backwards, and leaving start and stop empty takes the whole string: s[::-1].', 'def reverse_string(s):
     # TODO: คืนสตริงที่กลับด้าน — สไลซ์แบบ [::-1] ทำให้ได้เลย
     return ""', 'def reverse_string(s):
-    return s[::-1]', 'function', '[{"args": ["hello"], "expected": "olleh"}, {"args": ["python"], "expected": "nohtyp"}, {"args": [""], "expected": ""}, {"args": ["a"], "expected": "a"}, {"args": ["ab cd"], "expected": "dc ba"}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.730376', 1);
+    return s[::-1]', 'function', '[{"args": ["hello"], "expected": "olleh"}, {"args": ["python"], "expected": "nohtyp"}, {"args": [""], "expected": ""}, {"args": ["a"], "expected": "a"}, {"args": ["ab cd"], "expected": "dc ba"}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.722482', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (91, 'สร้าง Async Function', NULL, 'ให้นักเรียน import โมดูล `asyncio` แล้วสร้างฟังก์ชันแบบอะซิงโครนัสชื่อ `main()` โดยใช้คำสั่ง `async def main():` ภายในฟังก์ชันให้พิมพ์คำว่า "Async Started"', NULL, NULL, NULL, 'import asyncio
 # สร้าง async def main() และ print "Async Started"
 ', 'import asyncio
@@ -1285,12 +1285,6 @@ text = "Learn Python Programming"
 if re.search("Python", text):
     print("Found")', 'stdio', '[{"input": "", "expected": "Found"}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-24 20:43:54.978192', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (124, 'บทสรุปสายวิชาการ 1A_2A', 'Conclusion of Academic Track 1A_2A', 'ยินดีด้วยคุณมาถึงจุดสิ้นสุดของสาย 1A_2A แล้ว พิมพ์ print("success") เพื่อจบด่าน', 'Congratulations! You have reached the end of track 1A_2A. Type print("success") to finish the level.', NULL, NULL, 'print("")', 'print("success")', 'stdio', '[]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 05:06:19.810101', 1);
-INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (107, 'แยกข้อความด้วยตัวคั่นหลายรูปแบบ', NULL, 'กำหนดให้ `text = "apple,banana;orange-grape"` ให้นักเรียนใช้ `re.split(r"[,;-]", text)` เพื่อแยกคำด้วยเครื่องหมายคอมมา, Semicolon และขีดกลาง ออกมาเป็น List แล้วพิมพ์ผลลัพธ์', NULL, NULL, NULL, 'import re
-text = "apple,banana;orange-grape"
-# ใช้ re.split แยกคำด้วย pattern และ print
-', 'import re
-text = "apple,banana;orange-grape"
-print(re.split(r"[,;-]", text))', 'stdio', '[{"input": "", "expected": "[''apple'', ''banana'', ''orange'', ''grape'']"}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-24 20:43:54.978192', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (190, 'ผลคูณยกเว้นตัวเอง (Product Except Self)', 'Product Of Array Except Self', 'เขียนฟังก์ชัน `product_except_self(nums)` คืนอาร์เรย์ที่แต่ละตำแหน่งคือผลคูณของสมาชิกอื่นทั้งหมด', 'Write a function `product_except_self(nums)` where each position is the product of all other elements.', 'ลูปในซ้อนลูปนอก: ลูปนอกเลือกตำแหน่งที่จะ "เว้น" ลูปในคูณทุกตัวยกเว้นตำแหน่งนั้น เงื่อนไข i != j คือสิ่งที่เว้นมันออก', 'A loop inside a loop: the outer picks which index to SKIP, the inner multiplies everything else. The i != j test is what does the skipping.', 'def product_except_self(nums):
     out = []
     for i in range(len(nums)):
@@ -1307,7 +1301,13 @@ INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, h
             if i != j:
                 p *= v
         out.append(p)
-    return out', 'function', '[{"args": [[1, 2, 3, 4]], "expected": [24, 12, 8, 6]}, {"args": [[]], "expected": []}, {"args": [[2, 3]], "expected": [3, 2]}, {"args": [[1, 1, 1]], "expected": [1, 1, 1]}, {"args": [[5, 0]], "expected": [0, 5]}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.950681', 1);
+    return out', 'function', '[{"args": [[1, 2, 3, 4]], "expected": [24, 12, 8, 6]}, {"args": [[]], "expected": []}, {"args": [[2, 3]], "expected": [3, 2]}, {"args": [[1, 1, 1]], "expected": [1, 1, 1]}, {"args": [[5, 0]], "expected": [0, 5]}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:57.021436', 1);
+INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (107, 'แยกข้อความด้วยตัวคั่นหลายรูปแบบ', NULL, 'กำหนดให้ `text = "apple,banana;orange-grape"` ให้นักเรียนใช้ `re.split(r"[,;-]", text)` เพื่อแยกคำด้วยเครื่องหมายคอมมา, Semicolon และขีดกลาง ออกมาเป็น List แล้วพิมพ์ผลลัพธ์', NULL, NULL, NULL, 'import re
+text = "apple,banana;orange-grape"
+# ใช้ re.split แยกคำด้วย pattern และ print
+', 'import re
+text = "apple,banana;orange-grape"
+print(re.split(r"[,;-]", text))', 'stdio', '[{"input": "", "expected": "[''apple'', ''banana'', ''orange'', ''grape'']"}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-24 20:43:54.978192', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (112, 'ใช้งาน asyncio.sleep', NULL, 'สร้างฟังก์ชัน `say_hello()` แบบ `async def` ภายในให้ใช้ `await asyncio.sleep(1)` เพื่อจำลองการหน่วงเวลา 1 วินาที แล้วพิมพ์คำว่า "Hello after 1s"', NULL, NULL, NULL, 'import asyncio
 
 async def say_hello():
@@ -1418,6 +1418,16 @@ INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, h
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (151, 'พิมพ์เลขคู่จาก 1 ถึง N', NULL, 'ให้เขียนโปรแกรม Python รับจำนวนเต็ม n
 จากนั้นให้แสดงเลขคู่ทั้งหมดตั้งแต่ 1 ถึง n โดยคั่นแต่ละตัวด้วยช่องว่าง
 ถ้าไม่มีเลขคู่ ให้แสดงคำว่า ไม่มีเลขคู่', NULL, NULL, NULL, NULL, NULL, 'stdio', '[{"input": "10", "expected": "2 4 6 8 10"}, {"input": "7", "expected": "2 4 6"}, {"input": "1", "expected": "ไม่มีเลขคู่"}]', 31, '2026-08-24 20:43:54.978192', '2026-08-24 20:43:54.978192', 1);
+INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (154, 'กำลังสองของทุกสมาชิก (Square List)', 'Square List', 'เขียนฟังก์ชัน "square_list(nums)" คืนค่าอาร์เรย์ตัวเลขที่ยกกำลังสองทุกตัว', 'Write a function "square_list(nums)" returning a list of squared numbers.', 'ยกกำลังใช้ ** ดังนั้น x ** 2 คือ x กำลังสอง แล้วเก็บเข้าลิสต์ด้วย out.append(...)', 'Exponentiation is **, so x ** 2 squares x. Collect it with out.append(...).', 'def square_list(nums):
+    out = []
+    for x in nums:
+        # TODO: เพิ่มค่า x ยกกำลังสอง (x ** 2) เข้าไปใน out
+        pass
+    return out', 'def square_list(nums):
+    out = []
+    for x in nums:
+        out.append(x ** 2)
+    return out', 'function', '[{"args": [[1, 2, 3]], "expected": [1, 4, 9]}, {"args": [[]], "expected": []}, {"args": [[0]], "expected": [0]}, {"args": [[-2, 5]], "expected": [4, 25]}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.769526', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (152, 'ตรวจสอบอุณหภูมิ', NULL, 'ให้เขียนโปรแกรม Python รับค่าอุณหภูมิเป็นจำนวนเต็ม 1 ค่า
 จากนั้นให้แสดงผลตามเงื่อนไขต่อไปนี้
 ถ้าอุณหภูมิน้อยกว่า 20 ให้แสดงคำว่า หนาว
@@ -1431,36 +1441,20 @@ elif temp <= 30:
 else:
     print("ร้อน")
 ', 'stdio', '[{"input": "15", "expected": "หนาว"}, {"input": "20", "expected": "ปกติ"}, {"input": "25", "expected": "ปกติ"}, {"input": "30", "expected": "ปกติ"}, {"input": "35", "expected": "ร้อน"}]', 52, '2026-08-24 20:43:54.978192', '2026-08-25 11:40:56.203732', 1);
-INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (154, 'กำลังสองของทุกสมาชิก (Square List)', 'Square List', 'เขียนฟังก์ชัน "square_list(nums)" คืนค่าอาร์เรย์ตัวเลขที่ยกกำลังสองทุกตัว', 'Write a function "square_list(nums)" returning a list of squared numbers.', 'ยกกำลังใช้ ** ดังนั้น x ** 2 คือ x กำลังสอง แล้วเก็บเข้าลิสต์ด้วย out.append(...)', 'Exponentiation is **, so x ** 2 squares x. Collect it with out.append(...).', 'def square_list(nums):
-    out = []
-    for x in nums:
-        # TODO: เพิ่มค่า x ยกกำลังสอง (x ** 2) เข้าไปใน out
-        pass
-    return out', 'def square_list(nums):
-    out = []
-    for x in nums:
-        out.append(x ** 2)
-    return out', 'function', '[{"args": [[1, 2, 3]], "expected": [1, 4, 9]}, {"args": [[]], "expected": []}, {"args": [[0]], "expected": [0]}, {"args": [[-2, 5]], "expected": [4, 25]}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.77936', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (156, 'ตรวจสอบพาลินโดรม (Palindrome Check)', 'Palindrome Check', 'เขียนฟังก์ชัน "is_palindrome(s)" คืนค่า True หากคำอ่านจากหน้าไปหลังและหลังมาหน้าเหมือนกัน', 'Write a function "is_palindrome(s)" returning True if string is a palindrome.', 'เทียบสตริงเดิมกับตัวที่กลับด้าน c == c[::-1] บรรทัดแรกจัดการตัวพิมพ์และช่องว่างให้แล้ว จึงเทียบ c ไม่ใช่ s', 'Compare the string with its reverse: c == c[::-1]. The first line already stripped case and spaces, so compare c, not s.', 'def is_palindrome(s):
     c = s.lower().replace(" ", "")
     # TODO: คืน True ถ้า c เท่ากับ c ที่กลับด้าน (c[::-1])
     return None', 'def is_palindrome(s):
     c = s.lower().replace(" ", "")
-    return c == c[::-1]', 'function', '[{"args": ["racecar"], "expected": true}, {"args": ["python"], "expected": false}, {"args": [""], "expected": true}, {"args": ["a"], "expected": true}, {"args": ["never odd or even"], "expected": true}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.772771', 1);
+    return c == c[::-1]', 'function', '[{"args": ["racecar"], "expected": true}, {"args": ["python"], "expected": false}, {"args": [""], "expected": true}, {"args": ["a"], "expected": true}, {"args": ["never odd or even"], "expected": true}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.762615', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (167, 'ตัวอักษรพิมพ์ใหญ่ทั้งหมด (To Upper)', 'To Upper Case', 'เขียนฟังก์ชัน `to_upper(s)` แปลงข้อความเป็นตัวพิมพ์ใหญ่ทั้งหมด', 'Write a function `to_upper(s)` converting text to upper case.', 'สตริงมีเมธอด .upper() คืนสตริงใหม่เป็นตัวพิมพ์ใหญ่ (ไม่ได้แก้ตัวเดิม) จึงต้อง return ค่าที่มันคืนมา', 'Strings have .upper(), which returns a NEW uppercase string rather than changing the original — so return what it gives back.', 'def to_upper(s):
     # TODO: คืนสตริงตัวพิมพ์ใหญ่ทั้งหมด — สตริงมีเมธอด .upper()
     return ""', 'def to_upper(s):
-    return s.upper()', 'function', '[{"args": ["abc"], "expected": "ABC"}, {"args": [""], "expected": ""}, {"args": ["MiXeD"], "expected": "MIXED"}, {"args": ["a1b2"], "expected": "A1B2"}, {"args": ["hello world"], "expected": "HELLO WORLD"}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.894072', 1);
+    return s.upper()', 'function', '[{"args": ["abc"], "expected": "ABC"}, {"args": [""], "expected": ""}, {"args": ["MiXeD"], "expected": "MIXED"}, {"args": ["a1b2"], "expected": "A1B2"}, {"args": ["hello world"], "expected": "HELLO WORLD"}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.920704', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (168, 'สลับตัวพิมพ์ (Swap Case)', 'Swap Case', 'เขียนฟังก์ชัน `swap_case(s)` สลับตัวพิมพ์เล็กเป็นใหญ่และใหญ่เป็นเล็ก', 'Write a function `swap_case(s)` swapping upper and lower case.', 'Python มี .swapcase() ให้อยู่แล้ว สลับพิมพ์เล็กเป็นใหญ่และใหญ่เป็นเล็กในครั้งเดียว ไม่ต้องวนทีละตัว', 'Python already has .swapcase(), which flips lower to upper and upper to lower in one go — no loop required.', 'def swap_case(s):
     # TODO: สลับตัวพิมพ์เล็ก/ใหญ่ — สตริงมีเมธอด .swapcase()
     return ""', 'def swap_case(s):
-    return s.swapcase()', 'function', '[{"args": ["AbC"], "expected": "aBc"}, {"args": [""], "expected": ""}, {"args": ["abc"], "expected": "ABC"}, {"args": ["A1b"], "expected": "a1B"}, {"args": ["Hello World"], "expected": "hELLO wORLD"}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.912239', 1);
-INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (75, 'สุ่มเลือกรายการ', NULL, 'กำหนดให้ `colors = ["Red", "Green", "Blue"]` ให้นักเรียน import โมดูล `random` และใช้ `random.choice(colors)` เพื่อสุ่มเลือกสีขึ้นมา 1 สี (ในเทสเคสจำลองผลลัพธ์เป็น "Green")', NULL, NULL, NULL, 'import random
-colors = ["Red", "Green", "Blue"]
-# ใช้ random.choice(colors) แล้ว print
-', 'import random
-colors = ["Red", "Green", "Blue"]
-print(random.choice(colors))', 'stdio', '[{"input": "", "expected": "Green"}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-24 20:43:54.978192', 0);
+    return s.swapcase()', 'function', '[{"args": ["AbC"], "expected": "aBc"}, {"args": [""], "expected": ""}, {"args": ["abc"], "expected": "ABC"}, {"args": ["A1b"], "expected": "a1B"}, {"args": ["Hello World"], "expected": "hELLO wORLD"}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.959333', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (183, 'ตรวจสอบจำนวนเฉพาะ (Prime Number Check)', 'Prime Number Check', 'เขียนฟังก์ชัน "is_prime(n)" เพื่อตรวจสอบว่า n เป็นจำนวนเฉพาะหรือไม่', 'Write a function "is_prime(n)" returning True if n is a prime number.', 'ถ้าเจอตัวหารลงตัวแม้ตัวเดียวก็จบแล้ว return False ได้ทันที ไม่ต้องวนต่อ — ลูปที่ให้มาหยุดที่รากที่สองเพราะตัวหารที่ใหญ่กว่านั้นจับคู่กับตัวที่เล็กกว่าซึ่งตรวจไปแล้ว', 'One divisor is enough to decide: return False immediately, no need to finish the loop. The given range stops at the square root because any larger divisor pairs with a smaller one already checked.', 'def is_prime(n):
     if n <= 1:
         return False
@@ -1473,11 +1467,13 @@ INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, h
     for i in range(2, int(n ** 0.5) + 1):
         if n % i == 0:
             return False
-    return True', 'function', '[{"args": [11], "expected": true}, {"args": [4], "expected": false}, {"args": [1], "expected": false}, {"args": [2], "expected": true}, {"args": [97], "expected": true}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.827475', 1);
-INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (87, 'สร้าง Flask App', NULL, 'ให้นักเรียน import ไลบรารี `Flask` จากโมดูล `flask` แล้วสร้างออบเจ็กต์แอปพลิเคชันด้วย `app = Flask(__name__)`', NULL, NULL, NULL, 'from flask import Flask
-# สร้างตัวแปร app = Flask(__name__)
-', 'from flask import Flask
-app = Flask(__name__)', 'stdio', '[{"input": "", "expected": ""}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-24 20:43:54.978192', 0);
+    return True', 'function', '[{"args": [11], "expected": true}, {"args": [4], "expected": false}, {"args": [1], "expected": false}, {"args": [2], "expected": true}, {"args": [97], "expected": true}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.827825', 1);
+INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (75, 'สุ่มเลือกรายการ', NULL, 'กำหนดให้ `colors = ["Red", "Green", "Blue"]` ให้นักเรียน import โมดูล `random` และใช้ `random.choice(colors)` เพื่อสุ่มเลือกสีขึ้นมา 1 สี (ในเทสเคสจำลองผลลัพธ์เป็น "Green")', NULL, NULL, NULL, 'import random
+colors = ["Red", "Green", "Blue"]
+# ใช้ random.choice(colors) แล้ว print
+', 'import random
+colors = ["Red", "Green", "Blue"]
+print(random.choice(colors))', 'stdio', '[{"input": "", "expected": "Green"}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-24 20:43:54.978192', 0);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (174, 'ลบตัวเลขซ้ำในรายการ (Remove Duplicates)', 'Remove Duplicates', 'เขียนฟังก์ชัน "remove_duplicates(nums)" เพื่อลบตัวเลขซ้ำและคืนค่ารายการตัวเลขที่ไม่ซ้ำโดยคงลำดับเดิมไว้', 'Write a function "remove_duplicates(nums)" returning list with duplicates removed preserving order.', 'not in ถามว่ายังไม่มีอยู่ใช่ไหม — if num not in res แล้วค่อย append วิธีนี้รักษาลำดับเดิมไว้ (set() เร็วกว่าแต่ลำดับหาย)', 'not in asks whether something is absent: if num not in res, then append. This keeps the original order — set() is faster but loses it.', 'def remove_duplicates(nums):
     res = []
     for num in nums:
@@ -1488,7 +1484,11 @@ INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, h
     for num in nums:
         if num not in res:
             res.append(num)
-    return res', 'function', '[{"args": [[1, 2, 2, 3, 1]], "expected": [1, 2, 3]}, {"args": [[]], "expected": []}, {"args": [[1, 1, 1]], "expected": [1]}, {"args": [[5, 4, 5, 4, 3]], "expected": [5, 4, 3]}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.810394', 1);
+    return res', 'function', '[{"args": [[1, 2, 2, 3, 1]], "expected": [1, 2, 3]}, {"args": [[]], "expected": []}, {"args": [[1, 1, 1]], "expected": [1]}, {"args": [[5, 4, 5, 4, 3]], "expected": [5, 4, 3]}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.802126', 1);
+INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (87, 'สร้าง Flask App', NULL, 'ให้นักเรียน import ไลบรารี `Flask` จากโมดูล `flask` แล้วสร้างออบเจ็กต์แอปพลิเคชันด้วย `app = Flask(__name__)`', NULL, NULL, NULL, 'from flask import Flask
+# สร้างตัวแปร app = Flask(__name__)
+', 'from flask import Flask
+app = Flask(__name__)', 'stdio', '[{"input": "", "expected": ""}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-24 20:43:54.978192', 0);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (88, 'กำหนด Route หน้าแรก', NULL, 'สร้างแอป Flask และใช้เดคอเรเตอร์ `@app.route("/")` กำหนดฟังก์ชัน `home()` ที่คืนค่าข้อความ `"Welcome to Flask!"`', NULL, NULL, NULL, 'from flask import Flask
 app = Flask(__name__)
 
@@ -1509,7 +1509,7 @@ INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, h
     for n in nums:
         if n % 2 == 0:
             count += 1
-    return count', 'function', '[{"args": [[1, 2, 3, 4]], "expected": 2}, {"args": [[]], "expected": 0}, {"args": [[1, 3, 5]], "expected": 0}, {"args": [[2, 4, 6]], "expected": 3}, {"args": [[0, -2, 7]], "expected": 2}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.898469', 1);
+    return count', 'function', '[{"args": [[1, 2, 3, 4]], "expected": 2}, {"args": [[]], "expected": 0}, {"args": [[1, 3, 5]], "expected": 0}, {"args": [[2, 4, 6]], "expected": 3}, {"args": [[0, -2, 7]], "expected": 2}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.933935', 1);
 INSERT INTO public.problems (problem_id, title_th, title_en, desc_th, desc_en, hint_th, hint_en, starter_code, solution_code, test_kind, test_cases, created_by, created_at, updated_at, is_auto_gradable) VALUES (128, 'Mini 1: อธิบายโค้ดด้วยคอมเมนต์', 'Mini 1: Explain Code with Comments', 'เพิ่ม comment 1 บรรทัด แล้วแสดงข้อความ "อ่านโค้ดง่ายขึ้น"', 'Add 1 comment line, then display the message "อ่านโค้ดง่ายขึ้น"', NULL, NULL, '# เขียนคำอธิบายโค้ดตรงนี้
 print("อ่านโค้ดง่ายขึ้น")', '# แสดงข้อความว่าคอมเมนต์ช่วยให้อ่านง่าย
 print("อ่านโค้ดง่ายขึ้น")', 'stdio', '[{"input": "", "expected": "อ่านโค้ดง่ายขึ้น"}]', NULL, '2026-08-24 20:43:54.978192', '2026-08-25 05:07:00.183957', 1);
@@ -1862,41 +1862,41 @@ INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_i
 INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('minigame', 17, 137, 3, '1', NULL, 15, 5, NULL, '{}', 1, '2026-08-24 20:43:54.978192', '2026-08-24 20:43:54.978192', NULL);
 INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('minigame', 18, 138, 3, '2', NULL, 20, 5, NULL, '{}', 1, '2026-08-24 20:43:54.978192', '2026-08-24 20:43:54.978192', NULL);
 INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('minigame', 19, 139, 3, '3', NULL, 25, 5, NULL, '{}', 1, '2026-08-24 20:43:54.978192', '2026-08-24 20:43:54.978192', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 20, 170, NULL, NULL, 'medium', 0, 0, NULL, '{"work_chars": 34}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.848279', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 21, 176, NULL, NULL, 'hard', 0, 0, NULL, '{"work_chars": 81}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.852855', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 22, 175, NULL, NULL, 'hard', 0, 0, NULL, '{"work_chars": 72}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.859099', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 23, 185, NULL, NULL, 'hard', 0, 0, NULL, '{"work_chars": 91}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.864644', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 25, 179, NULL, NULL, 'hard', 0, 0, NULL, '{"work_chars": 35}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.880463', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 26, 163, NULL, NULL, 'easy', 0, 0, NULL, '{"work_chars": 21}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.88674', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 27, 160, NULL, NULL, 'easy', 0, 0, NULL, '{"work_chars": 10}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.891459', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 28, 167, NULL, NULL, 'easy', 0, 0, NULL, '{"work_chars": 16}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.895825', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 29, 182, NULL, NULL, 'easy', 0, 0, NULL, '{"work_chars": 24}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.900836', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 30, 162, NULL, NULL, 'easy', 0, 0, NULL, '{"work_chars": 28}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.905388', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 31, 192, NULL, NULL, 'medium', 0, 0, NULL, '{"work_chars": 40}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.909681', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 32, 168, NULL, NULL, 'medium', 0, 0, NULL, '{"work_chars": 19}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.915021', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 33, 189, NULL, NULL, 'medium', 0, 0, NULL, '{"work_chars": 15}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.920927', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 34, 181, NULL, NULL, 'medium', 0, 0, NULL, '{"work_chars": 35}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.926375', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 35, 164, NULL, NULL, 'medium', 0, 0, NULL, '{"work_chars": 18}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.931555', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 36, 165, NULL, NULL, 'hard', 0, 0, NULL, '{"work_chars": 42}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.941432', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 37, 166, NULL, NULL, 'hard', 0, 0, NULL, '{"work_chars": 30}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.947419', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 38, 190, NULL, NULL, 'hard', 0, 0, NULL, '{"work_chars": 16}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.952386', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 39, 191, NULL, NULL, 'hard', 0, 0, NULL, '{"work_chars": 33}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.957173', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 40, 178, NULL, NULL, 'hard', 0, 0, NULL, '{"work_chars": 28}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.962075', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 1, 158, NULL, NULL, 'easy', 0, 0, NULL, '{"work_chars": 30}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.718077', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 2, 153, NULL, NULL, 'easy', 0, 0, NULL, '{"work_chars": 17}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.727237', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 3, 155, NULL, NULL, 'easy', 0, 0, NULL, '{"work_chars": 14}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.733407', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 4, 180, NULL, NULL, 'easy', 0, 0, NULL, '{"work_chars": 10}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.741587', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 5, 171, NULL, NULL, 'easy', 0, 0, NULL, '{"work_chars": 20}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.748097', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 6, 172, NULL, NULL, 'easy', 0, 0, NULL, '{"work_chars": 36}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.756701', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 7, 169, NULL, NULL, 'easy', 0, 0, NULL, '{"work_chars": 23}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.762391', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 8, 157, NULL, NULL, 'easy', 0, 0, NULL, '{"work_chars": 27}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.769702', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 9, 156, NULL, NULL, 'easy', 0, 0, NULL, '{"work_chars": 19}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.77577', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 10, 154, NULL, NULL, 'easy', 0, 0, NULL, '{"work_chars": 18}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.782789', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 11, 159, NULL, NULL, 'medium', 0, 0, NULL, '{"work_chars": 29}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.789001', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 12, 184, NULL, NULL, 'medium', 0, 0, NULL, '{"work_chars": 38}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.796369', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 13, 186, NULL, NULL, 'medium', 0, 0, NULL, '{"work_chars": 66}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.805755', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 14, 174, NULL, NULL, 'medium', 0, 0, NULL, '{"work_chars": 33}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.813405', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 15, 173, NULL, NULL, 'medium', 0, 0, NULL, '{"work_chars": 22}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.819123', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 35, 164, NULL, NULL, 'medium', 0, 0, NULL, '{"work_chars": 18}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.996682', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 36, 165, NULL, NULL, 'hard', 0, 0, NULL, '{"work_chars": 42}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:57.007654', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 37, 166, NULL, NULL, 'hard', 0, 0, NULL, '{"work_chars": 30}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:57.016226', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 38, 190, NULL, NULL, 'hard', 0, 0, NULL, '{"work_chars": 16}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:57.02384', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 40, 178, NULL, NULL, 'hard', 0, 0, NULL, '{"work_chars": 28}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:57.04096', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 1, 158, NULL, NULL, 'easy', 0, 0, NULL, '{"work_chars": 30}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.708888', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 2, 153, NULL, NULL, 'easy', 0, 0, NULL, '{"work_chars": 17}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.715362', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 3, 155, NULL, NULL, 'easy', 0, 0, NULL, '{"work_chars": 14}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.726345', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 4, 180, NULL, NULL, 'easy', 0, 0, NULL, '{"work_chars": 10}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.732816', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 5, 171, NULL, NULL, 'easy', 0, 0, NULL, '{"work_chars": 20}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.738546', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 6, 172, NULL, NULL, 'easy', 0, 0, NULL, '{"work_chars": 36}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.744437', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 7, 169, NULL, NULL, 'easy', 0, 0, NULL, '{"work_chars": 23}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.751174', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 8, 157, NULL, NULL, 'easy', 0, 0, NULL, '{"work_chars": 27}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.757483', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 9, 156, NULL, NULL, 'easy', 0, 0, NULL, '{"work_chars": 19}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.765637', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 10, 154, NULL, NULL, 'easy', 0, 0, NULL, '{"work_chars": 18}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.772315', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 11, 159, NULL, NULL, 'medium', 0, 0, NULL, '{"work_chars": 29}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.781135', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 12, 184, NULL, NULL, 'medium', 0, 0, NULL, '{"work_chars": 38}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.791425', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 13, 186, NULL, NULL, 'medium', 0, 0, NULL, '{"work_chars": 66}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.797709', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 14, 174, NULL, NULL, 'medium', 0, 0, NULL, '{"work_chars": 33}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.804119', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 15, 173, NULL, NULL, 'medium', 0, 0, NULL, '{"work_chars": 22}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.811177', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 16, 187, NULL, NULL, 'medium', 0, 0, NULL, '{"work_chars": 30}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.822449', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 17, 183, NULL, NULL, 'medium', 0, 0, NULL, '{"work_chars": 14}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.831027', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 18, 177, NULL, NULL, 'medium', 0, 0, NULL, '{"work_chars": 54}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.838159', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 19, 161, NULL, NULL, 'medium', 0, 0, NULL, '{"work_chars": 40}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.84435', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 20, 170, NULL, NULL, 'medium', 0, 0, NULL, '{"work_chars": 34}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.850735', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 21, 176, NULL, NULL, 'hard', 0, 0, NULL, '{"work_chars": 81}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.857797', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 22, 175, NULL, NULL, 'hard', 0, 0, NULL, '{"work_chars": 72}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.867586', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 23, 185, NULL, NULL, 'hard', 0, 0, NULL, '{"work_chars": 91}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.880768', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 24, 188, NULL, NULL, 'hard', 0, 0, NULL, '{"work_chars": 59}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.893268', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 25, 179, NULL, NULL, 'hard', 0, 0, NULL, '{"work_chars": 35}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.902247', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 26, 163, NULL, NULL, 'easy', 0, 0, NULL, '{"work_chars": 21}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.908751', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 27, 160, NULL, NULL, 'easy', 0, 0, NULL, '{"work_chars": 10}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.914833', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 28, 167, NULL, NULL, 'easy', 0, 0, NULL, '{"work_chars": 16}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.92422', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 29, 182, NULL, NULL, 'easy', 0, 0, NULL, '{"work_chars": 24}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.937203', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 30, 162, NULL, NULL, 'easy', 0, 0, NULL, '{"work_chars": 28}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.944346', NULL);
 INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('competitive', 1, 140, NULL, NULL, 'Easy', 0, 800, 300, '{"is_test": 0, "expires_at": "2026-07-23T16:04:37.683Z"}', 1, '2026-08-24 20:43:54.978192', '2026-08-24 20:43:54.978192', '2026-07-23 23:04:37.683153');
 INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('competitive', 2, 141, NULL, NULL, 'Easy', 0, 1000, 300, '{"is_test": 0, "expires_at": "2026-07-23T16:04:37.683Z"}', 1, '2026-08-24 20:43:54.978192', '2026-08-24 20:43:54.978192', '2026-07-23 23:04:37.683153');
 INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('competitive', 3, 142, NULL, NULL, 'Easy', 0, 500, 300, '{"is_test": 0, "expires_at": "2026-07-23T16:04:37.683Z"}', 1, '2026-08-24 20:43:54.978192', '2026-08-24 20:43:54.978192', '2026-07-23 23:04:37.683153');
@@ -1904,17 +1904,18 @@ INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_i
 INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('competitive', 5, 144, NULL, NULL, 'Easy', 0, 500, 9999999, '{"is_test": 1, "expires_at": "2099-12-31T16:59:59.000Z"}', 1, '2026-08-24 20:43:54.978192', '2026-08-24 20:43:54.978192', '2099-12-31 23:59:59');
 INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('competitive', 6, 145, NULL, NULL, 'Easy', 0, 950, 500, '{"is_test": 0, "expires_at": "2026-07-17T16:25:31.913Z"}', 1, '2026-08-24 20:43:54.978192', '2026-08-24 20:43:54.978192', '2026-07-17 23:25:31.913');
 INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('competitive', 14, 146, NULL, NULL, 'Easy', 0, 300, 300, '{"is_test": 0, "expires_at": "2026-07-29T06:12:35.630Z"}', 1, '2026-08-24 20:43:54.978192', '2026-08-24 20:43:54.978192', '2026-07-29 13:12:35.63');
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 16, 187, NULL, NULL, 'medium', 0, 0, NULL, '{"work_chars": 30}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.824094', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 17, 183, NULL, NULL, 'medium', 0, 0, NULL, '{"work_chars": 14}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.83068', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 18, 177, NULL, NULL, 'medium', 0, 0, NULL, '{"work_chars": 54}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.835827', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 19, 161, NULL, NULL, 'medium', 0, 0, NULL, '{"work_chars": 40}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.842771', NULL);
-INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 24, 188, NULL, NULL, 'hard', 0, 0, NULL, '{"work_chars": 59}', 1, '2026-08-24 20:43:54.978192', '2026-08-25 21:04:18.874157', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 31, 192, NULL, NULL, 'medium', 0, 0, NULL, '{"work_chars": 40}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.953745', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 32, 168, NULL, NULL, 'medium', 0, 0, NULL, '{"work_chars": 19}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.963783', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 33, 189, NULL, NULL, 'medium', 0, 0, NULL, '{"work_chars": 15}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.978458', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 34, 181, NULL, NULL, 'medium', 0, 0, NULL, '{"work_chars": 35}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:56.98773', NULL);
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('arcade', 39, 191, NULL, NULL, 'hard', 0, 0, NULL, '{"work_chars": 33}', 1, '2026-08-24 20:43:54.978192', '2026-08-26 06:23:57.033465', NULL);
 INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('competitive', 15, 147, NULL, NULL, 'Easy', 0, 300, 300, '{"is_test": 0, "expires_at": "2026-07-30T06:45:24.738Z"}', 1, '2026-08-24 20:43:54.978192', '2026-08-24 20:43:54.978192', '2026-07-30 13:45:24.738');
 INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('competitive', 16, 148, NULL, NULL, 'Easy', 0, 100, 300, '{"is_test": 0, "expires_at": "2026-08-16T12:11:42.681Z"}', 1, '2026-08-24 20:43:54.978192', '2026-08-24 20:43:54.978192', '2026-08-16 19:11:42.681');
 INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('competitive', 17, 149, NULL, NULL, 'Easy', 0, 200, 300, '{"is_test": 0, "expires_at": "2026-08-16T13:11:11.414Z"}', 1, '2026-08-24 20:43:54.978192', '2026-08-24 20:43:54.978192', '2026-08-16 20:11:11.414');
 INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('competitive', 18, 150, NULL, NULL, 'Admin', 0, 100, 300, '{"is_test": 0, "expires_at": "2026-08-16T14:55:18.715Z"}', 1, '2026-08-24 20:43:54.978192', '2026-08-24 20:43:54.978192', '2026-08-16 21:55:18.715');
 INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('competitive', 19, 151, NULL, NULL, 'Admin', 0, 200, 300, '{"is_test": 0, "expires_at": "2026-08-16T16:10:50.824Z"}', 1, '2026-08-24 20:43:54.978192', '2026-08-24 20:43:54.978192', '2026-08-16 23:10:50.824');
 INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('competitive', 20, 152, NULL, NULL, 'Easy', 0, 200, 300, '{"is_test": 0, "expires_at": "2026-08-17T01:17:47.151Z"}', 1, '2026-08-24 20:43:54.978192', '2026-08-24 20:43:54.978192', '2026-08-17 08:17:47.151');
+INSERT INTO public.problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty, xp_reward, coin_reward, time_limit_sec, extra, is_active, created_at, updated_at, expires_at) VALUES ('competitive', 21, 200, NULL, NULL, 'Easy', 0, 19, 20, '{"is_test": 0, "challenge_type": "standard", "challenge_scope": "standard"}', 1, '2026-08-26 01:52:26.2985', '2026-08-26 01:52:26.2985', '2026-08-27 01:52:26.295');
 
 
 --
@@ -4626,19 +4627,25 @@ INSERT INTO public.question_choices (choice_id, question_id, choice_text) VALUES
 -- Data for Name: shop_items; Type: TABLE DATA; Schema: public; Owner: -
 --
 
+INSERT INTO public.shop_items (item_id, name, description, item_type, price, asset_url, preview_image, is_active, effects, type, rarity, preview_data, is_available, created_at, set_key) VALUES (44, 'กรอบดาวเคราะห์', 'กรอบวงโคจรไล่สีม่วง-ฟ้า พร้อมดาวเคราะห์และดวงดาว', 'PROFILE_FRAME', 80, '/uploads/frame-space.svg', NULL, 1, NULL, 'PROFILE_FRAME', 'RARE', NULL, 1, '2026-08-21 11:21:45.465149', 'space');
+INSERT INTO public.shop_items (item_id, name, description, item_type, price, asset_url, preview_image, is_active, effects, type, rarity, preview_data, is_available, created_at, set_key) VALUES (45, 'ฝุ่นดาว', 'คลิกแล้วมีประกายดาวกระจายตามเมาส์', 'MOUSE_EFFECT', 60, '', NULL, 1, '[{"size": 26, "color": "#7c3aed", "visual": "✨", "trigger": "click", "duration": 800}, {"size": 34, "color": "#38bdf8", "visual": "🪐", "trigger": "dblclick", "duration": 1000}]', 'MOUSE_EFFECT', 'RARE', NULL, 1, '2026-08-21 11:21:45.507386', 'space');
+INSERT INTO public.shop_items (item_id, name, description, item_type, price, asset_url, preview_image, is_active, effects, type, rarity, preview_data, is_available, created_at, set_key) VALUES (47, 'กลีบซากุระปลิว', 'คลิกแล้วมีกลีบซากุระร่วงตามเมาส์', 'MOUSE_EFFECT', 60, '', NULL, 1, '[{"size": 26, "color": "#ec4899", "visual": "🌸", "trigger": "click", "duration": 900}, {"size": 38, "color": "#f9a8d4", "visual": "🌸", "trigger": "dblclick", "duration": 1200}]', 'MOUSE_EFFECT', 'RARE', NULL, 1, '2026-08-21 11:21:45.642021', 'sakura');
 INSERT INTO public.shop_items (item_id, name, description, item_type, price, asset_url, preview_image, is_active, effects, type, rarity, preview_data, is_available, created_at, set_key) VALUES (12, 'Heart', '', 'MOUSE_EFFECT', 0, NULL, NULL, 1, '[{"size": 30, "color": "#FF69B4", "visual": "💖", "trigger": "dblclick", "duration": 800}]', 'MOUSE_EFFECT', 'COMMON', '[{"trigger":"dblclick","visual":"💖","color":"#FF69B4","size":30,"duration":800}]', 1, '2026-06-30 18:29:50', NULL);
 INSERT INTO public.shop_items (item_id, name, description, item_type, price, asset_url, preview_image, is_active, effects, type, rarity, preview_data, is_available, created_at, set_key) VALUES (41, 'fsdf', '', 'profile_background', 0, '/uploads/1772867494875-72153669.jpg', '', 0, '[]', NULL, NULL, NULL, 0, '2026-08-21 10:00:50.56592', NULL);
 INSERT INTO public.shop_items (item_id, name, description, item_type, price, asset_url, preview_image, is_active, effects, type, rarity, preview_data, is_available, created_at, set_key) VALUES (37, '?nasd', '', 'profile_background', 0, '/uploads/1772732995094-745411319.jpg', '', 0, '[]', NULL, NULL, NULL, 0, '2026-08-21 10:00:50.56592', NULL);
 INSERT INTO public.shop_items (item_id, name, description, item_type, price, asset_url, preview_image, is_active, effects, type, rarity, preview_data, is_available, created_at, set_key) VALUES (42, 'ffff', '', 'theme', 0, NULL, NULL, 0, '[{"size": 24, "color": "#FF69B4", "visual": "??", "trigger": "click", "duration": 800}]', NULL, NULL, NULL, 0, '2026-08-21 10:00:50.56592', NULL);
 INSERT INTO public.shop_items (item_id, name, description, item_type, price, asset_url, preview_image, is_active, effects, type, rarity, preview_data, is_available, created_at, set_key) VALUES (34, 'asd', '', 'theme', 0, NULL, NULL, 0, '[{"size": 24, "color": "#FF69B4", "visual": "??", "trigger": "click", "duration": 800}]', NULL, NULL, NULL, 0, '2026-08-21 10:00:50.56592', NULL);
 INSERT INTO public.shop_items (item_id, name, description, item_type, price, asset_url, preview_image, is_active, effects, type, rarity, preview_data, is_available, created_at, set_key) VALUES (35, 'rtt', '', 'theme', 0, NULL, NULL, 0, '[{"size": 24, "color": "#12f32c", "visual": "https://i.pinimg.com/originals/48/49/75/48497592504e248948b39e71c644e26e.jpg", "trigger": "click", "duration": 800}]', NULL, NULL, NULL, 0, '2026-08-21 10:00:50.56592', NULL);
+INSERT INTO public.shop_items (item_id, name, description, item_type, price, asset_url, preview_image, is_active, effects, type, rarity, preview_data, is_available, created_at, set_key) VALUES (51, 'ธีมไซเบอร์', 'เปลี่ยนพื้นหลังทั้งเว็บเป็นแผงวงจรนีออน เส้นทางสัญญาณสีชมพู-ฟ้า บนพื้นสว่าง', 'THEME', 120, '/uploads/cyber-theme.svg', NULL, 1, NULL, 'THEME', 'RARE', NULL, 1, '2026-08-25 22:11:14.947628', 'cyber');
+INSERT INTO public.shop_items (item_id, name, description, item_type, price, asset_url, preview_image, is_active, effects, type, rarity, preview_data, is_available, created_at, set_key) VALUES (38, '?nam', '', 'profile_frame', 0, '/uploads/1772734723648-640372036.png', '', 0, '[]', NULL, NULL, NULL, 0, '2026-08-21 10:00:50.56592', NULL);
 INSERT INTO public.shop_items (item_id, name, description, item_type, price, asset_url, preview_image, is_active, effects, type, rarity, preview_data, is_available, created_at, set_key) VALUES (43, 'ธีมอวกาศ', 'เปลี่ยนพื้นหลังและโทนสีทั้งเว็บเป็นห้วงอวกาศสีม่วงพาสเทล', 'THEME', 120, '/uploads/space-theme.png', NULL, 1, NULL, 'THEME', 'RARE', NULL, 1, '2026-08-21 11:21:45.417828', 'space');
-INSERT INTO public.shop_items (item_id, name, description, item_type, price, asset_url, preview_image, is_active, effects, type, rarity, preview_data, is_available, created_at, set_key) VALUES (44, 'กรอบดาวเคราะห์', 'กรอบวงโคจรไล่สีม่วง-ฟ้า พร้อมดาวเคราะห์และดวงดาว', 'PROFILE_FRAME', 80, '/uploads/frame-space.svg', NULL, 1, NULL, 'PROFILE_FRAME', 'RARE', NULL, 1, '2026-08-21 11:21:45.465149', 'space');
-INSERT INTO public.shop_items (item_id, name, description, item_type, price, asset_url, preview_image, is_active, effects, type, rarity, preview_data, is_available, created_at, set_key) VALUES (45, 'ฝุ่นดาว', 'คลิกแล้วมีประกายดาวกระจายตามเมาส์', 'MOUSE_EFFECT', 60, '', NULL, 1, '[{"size": 26, "color": "#7c3aed", "visual": "✨", "trigger": "click", "duration": 800}, {"size": 34, "color": "#38bdf8", "visual": "🪐", "trigger": "dblclick", "duration": 1000}]', 'MOUSE_EFFECT', 'RARE', NULL, 1, '2026-08-21 11:21:45.507386', 'space');
 INSERT INTO public.shop_items (item_id, name, description, item_type, price, asset_url, preview_image, is_active, effects, type, rarity, preview_data, is_available, created_at, set_key) VALUES (13, 'ธีมซากุระ', 'เปลี่ยนพื้นหลังและโทนสีทั้งเว็บเป็นสวนซากุระสีชมพู', 'THEME', 120, '/uploads/1782844342595-474510254.png', '', 1, NULL, 'THEME', 'RARE', NULL, 1, '2026-06-30 18:32:25', 'sakura');
 INSERT INTO public.shop_items (item_id, name, description, item_type, price, asset_url, preview_image, is_active, effects, type, rarity, preview_data, is_available, created_at, set_key) VALUES (46, 'กรอบกลีบซากุระ', 'กรอบวงกลมสีชมพูประดับดอกซากุระและกิ่งไม้', 'PROFILE_FRAME', 80, '/uploads/frame-sakura.svg', NULL, 1, NULL, 'PROFILE_FRAME', 'RARE', NULL, 1, '2026-08-21 11:21:45.606407', 'sakura');
-INSERT INTO public.shop_items (item_id, name, description, item_type, price, asset_url, preview_image, is_active, effects, type, rarity, preview_data, is_available, created_at, set_key) VALUES (47, 'กลีบซากุระปลิว', 'คลิกแล้วมีกลีบซากุระร่วงตามเมาส์', 'MOUSE_EFFECT', 60, '', NULL, 1, '[{"size": 26, "color": "#ec4899", "visual": "🌸", "trigger": "click", "duration": 900}, {"size": 38, "color": "#f9a8d4", "visual": "🌸", "trigger": "dblclick", "duration": 1200}]', 'MOUSE_EFFECT', 'RARE', NULL, 1, '2026-08-21 11:21:45.642021', 'sakura');
-INSERT INTO public.shop_items (item_id, name, description, item_type, price, asset_url, preview_image, is_active, effects, type, rarity, preview_data, is_available, created_at, set_key) VALUES (38, '?nam', '', 'profile_frame', 0, '/uploads/1772734723648-640372036.png', '', 0, '[]', NULL, NULL, NULL, 0, '2026-08-21 10:00:50.56592', NULL);
+INSERT INTO public.shop_items (item_id, name, description, item_type, price, asset_url, preview_image, is_active, effects, type, rarity, preview_data, is_available, created_at, set_key) VALUES (48, 'ธีมพิกเซลอาร์ต', 'เปลี่ยนพื้นหลังทั้งเว็บเป็นฉากเกม 8 บิต ก้อนเมฆพิกเซล พื้นหญ้า และกล่องปริศนา', 'THEME', 120, '/uploads/pixel-theme.svg', NULL, 1, NULL, 'THEME', 'RARE', NULL, 1, '2026-08-25 22:11:14.931465', 'pixel');
+INSERT INTO public.shop_items (item_id, name, description, item_type, price, asset_url, preview_image, is_active, effects, type, rarity, preview_data, is_available, created_at, set_key) VALUES (49, 'กรอบบล็อกพิกเซล', 'กรอบสี่เหลี่ยมแบบตารางบล็อก มุมเป็นขั้นบันได ประดับหัวใจและเหรียญ', 'PROFILE_FRAME', 80, '/uploads/frame-pixel.svg', NULL, 1, NULL, 'PROFILE_FRAME', 'RARE', NULL, 1, '2026-08-25 22:11:14.937269', 'pixel');
+INSERT INTO public.shop_items (item_id, name, description, item_type, price, asset_url, preview_image, is_active, effects, type, rarity, preview_data, is_available, created_at, set_key) VALUES (50, 'หัวใจพิกเซล', 'คลิกแล้วมีหัวใจกับเหรียญแบบเกม 8 บิตเด้งตามเมาส์', 'MOUSE_EFFECT', 60, '', NULL, 1, '[{"size": 26, "color": "#16a34a", "visual": "💚", "trigger": "click", "duration": 800}, {"size": 36, "color": "#4ade80", "visual": "👾", "trigger": "dblclick", "duration": 1100}]', 'MOUSE_EFFECT', 'RARE', NULL, 1, '2026-08-25 22:11:14.941008', 'pixel');
+INSERT INTO public.shop_items (item_id, name, description, item_type, price, asset_url, preview_image, is_active, effects, type, rarity, preview_data, is_available, created_at, set_key) VALUES (52, 'กรอบวงจรนีออน', 'กรอบวงกลมที่ถูกตัดเป็นช่วง มีจุดบัดกรีคั่น และมุมเล็งแบบ HUD', 'PROFILE_FRAME', 80, '/uploads/frame-cyber.svg', NULL, 1, NULL, 'PROFILE_FRAME', 'RARE', NULL, 1, '2026-08-25 22:11:14.953508', 'cyber');
+INSERT INTO public.shop_items (item_id, name, description, item_type, price, asset_url, preview_image, is_active, effects, type, rarity, preview_data, is_available, created_at, set_key) VALUES (53, 'ประกายไฟฟ้า', 'คลิกแล้วมีประกายไฟฟ้าและสัญญาณข้อมูลแล่นตามเมาส์', 'MOUSE_EFFECT', 60, '', NULL, 1, '[{"size": 26, "color": "#e11d8f", "visual": "⚡", "trigger": "click", "duration": 700}, {"size": 36, "color": "#22d3ee", "visual": "💠", "trigger": "dblclick", "duration": 1000}]', 'MOUSE_EFFECT', 'RARE', NULL, 1, '2026-08-25 22:11:14.9572', 'cyber');
 
 
 --
@@ -4647,6 +4654,8 @@ INSERT INTO public.shop_items (item_id, name, description, item_type, price, ass
 
 INSERT INTO public.shop_sets (set_key, name_th, name_en, description_th, price, is_active, created_at) VALUES ('space', 'เซ็ตธีมอวกาศ', 'Space Set', 'ธีมเว็บลายอวกาศ กรอบโปรไฟล์ดาวเคราะห์ และเคอร์เซอร์ฝุ่นดาว', 200, 1, '2026-08-21 11:21:45.375245');
 INSERT INTO public.shop_sets (set_key, name_th, name_en, description_th, price, is_active, created_at) VALUES ('sakura', 'เซ็ตธีมซากุระ', 'Sakura Set', 'ธีมเว็บลายซากุระ กรอบโปรไฟล์กลีบซากุระ และเคอร์เซอร์กลีบปลิว', 200, 1, '2026-08-21 11:21:45.540868');
+INSERT INTO public.shop_sets (set_key, name_th, name_en, description_th, price, is_active, created_at) VALUES ('pixel', 'เซ็ตธีมพิกเซลอาร์ต', 'Pixel Art Set', 'ธีมเว็บลายพิกเซล 8 บิต กรอบโปรไฟล์บล็อก และเคอร์เซอร์หัวใจพิกเซล', 200, 1, '2026-08-25 22:11:14.927519');
+INSERT INTO public.shop_sets (set_key, name_th, name_en, description_th, price, is_active, created_at) VALUES ('cyber', 'เซ็ตธีมไซเบอร์', 'Cyber Set', 'ธีมเว็บลายวงจรนีออน กรอบโปรไฟล์วงจร และเคอร์เซอร์ประกายไฟฟ้า', 200, 1, '2026-08-25 22:11:14.944044');
 
 
 --
@@ -4819,7 +4828,7 @@ SELECT pg_catalog.setval('public.music_tracks_track_id_seq', 1, true);
 -- Name: problems_problem_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.problems_problem_id_seq', 199, true);
+SELECT pg_catalog.setval('public.problems_problem_id_seq', 200, true);
 
 
 --
@@ -4840,7 +4849,7 @@ SELECT pg_catalog.setval('public.quiz_questions_question_id_seq', 190, true);
 -- Name: shop_items_item_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.shop_items_item_id_seq', 47, true);
+SELECT pg_catalog.setval('public.shop_items_item_id_seq', 53, true);
 
 
 --

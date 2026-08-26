@@ -41,6 +41,12 @@ services:
         condition: service_healthy
     # Keys and mail credentials come from server/.env, which is not in the
     # image and not in git.
+    #
+    # To use a hosted database (Supabase, Neon, RDS) instead of the `db` service
+    # above, put DATABASE_URL in server/.env: it is not named in the environment
+    # block below, so it is not overridden, and the app prefers it over the PG*
+    # variables. The `db` service can then be dropped from this file along with
+    # the depends_on above it. See docs/deploy.md.
     env_file:
       - server/.env
     environment:

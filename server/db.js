@@ -26,6 +26,7 @@
 // before removing either.
 require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 
+const fs = require('fs');
 const { Pool, types } = require('pg');
 
 // pg returns int8 and numeric as STRINGS, because they can exceed the range a
@@ -62,16 +63,63 @@ types.setTypeParser(1114, (value) => {
     return new Date(`${String(value).replace(' ', 'T')}Z`);
 });
 
-const DB_CONFIG = {
-    host: process.env.PGHOST || 'localhost',
-    port: Number(process.env.PGPORT || 5432),
-    user: process.env.PGUSER || 'postgres',
-    password: String(process.env.PGPASSWORD ?? 'postgres'),
-    database: process.env.PGDATABASE || 'postgres',
-    max: Number(process.env.DB_CONNECTION_LIMIT || 10),
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000,
+// TLS, and how it is decided.
+//
+// A managed database - Supabase, Neon, RDS - refuses an unencrypted
+// connection, so a deployment that cannot offer TLS cannot connect at all.
+// A local Postgres in Docker does not speak TLS at all, so offering it there
+// breaks development. The two needs are opposite, and neither should require
+// remembering a flag, so the default follows the host:
+//
+//   * localhost / 127.0.0.1 / a docker-compose service name -> no TLS
+//   * anything else (a real hostname on the internet)       -> TLS
+//
+// PGSSLMODE overrides the guess in both directions: 'disable' turns it off,
+// anything else turns it on. Set PGSSLROOTCERT to a CA file to verify the
+// server's certificate properly; without one the connection is encrypted but
+// the certificate is not checked, which is what every managed-Postgres quick
+// start does and is still far better than plaintext across the internet.
+const sslConfigFor = (host) => {
+    const mode = String(process.env.PGSSLMODE || '').trim().toLowerCase();
+    if (mode === 'disable') return false;
+
+    const local = !host || /^(localhost|127\.0\.0\.1|::1|db)$/i.test(host) || !host.includes('.');
+    if (!mode && local) return false;
+
+    const caPath = String(process.env.PGSSLROOTCERT || '').trim();
+    if (caPath) {
+        return { ca: fs.readFileSync(caPath, 'utf8'), rejectUnauthorized: true };
+    }
+    return { rejectUnauthorized: false };
 };
+
+// One connection string, or five separate variables. Hosted providers hand out
+// a URL, so accept it rather than making someone take it apart by hand - the
+// port alone is a trap, because the pooled and direct endpoints of the same
+// database differ only in that number.
+const CONNECTION_URL = String(process.env.DATABASE_URL || process.env.POSTGRES_URL || '').trim();
+
+const DB_CONFIG = CONNECTION_URL
+    ? {
+        connectionString: CONNECTION_URL,
+        ssl: sslConfigFor((() => {
+            try { return new URL(CONNECTION_URL).hostname; } catch { return ''; }
+        })()),
+        max: Number(process.env.DB_CONNECTION_LIMIT || 10),
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 10000,
+    }
+    : {
+        host: process.env.PGHOST || 'localhost',
+        port: Number(process.env.PGPORT || 5432),
+        user: process.env.PGUSER || 'postgres',
+        password: String(process.env.PGPASSWORD ?? 'postgres'),
+        database: process.env.PGDATABASE || 'postgres',
+        ssl: sslConfigFor(process.env.PGHOST || 'localhost'),
+        max: Number(process.env.DB_CONNECTION_LIMIT || 10),
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 10000,
+    };
 
 // Errors that mean "the connection died", not "the query was wrong". Only these
 // are worth rebuilding the pool and retrying once for.
@@ -454,6 +502,66 @@ const bootstrapEmptyDatabase = async () => {
 
 // Everything this file sets up, as one awaitable promise.
 //
+// Close the door a hosted database opens by default.
+//
+// Supabase - and any Postgres fronted by PostgREST - publishes the `public`
+// schema as a REST API, and grants the anonymous role access to tables created
+// there. This schema holds `users`: real email addresses and bcrypt hashes.
+// Left as-is on a deployment, anyone with the project's publishable key could
+// read the whole table over HTTPS. Nothing in the app would look wrong; there
+// would be no failed request and no log line anywhere.
+//
+// Row-level security with no policy attached denies every role that is subject
+// to it, which is what the API roles are. The table OWNER is not subject to it,
+// so the connection this app makes is unaffected - and that is exactly why only
+// owned tables are touched below. A table this role does not own could lock the
+// app out of its own data, so it is skipped and named in the log instead of
+// being taken on faith.
+//
+// Local development never reaches this: there is no REST API in front of a
+// container on this laptop, and the check below only runs against a remote
+// host. SUPABASE_RLS_LOCKDOWN=off turns it off for a deployment that publishes
+// the Data API deliberately.
+const lockDownPublicSchema = async () => {
+    if (String(process.env.SUPABASE_RLS_LOCKDOWN || '').trim().toLowerCase() === 'off') return;
+
+    const host = CONNECTION_URL
+        ? (() => { try { return new URL(CONNECTION_URL).hostname; } catch { return ''; } })()
+        : (process.env.PGHOST || 'localhost');
+    const isRemote = Boolean(host) && host.includes('.') && !/^(localhost|127\.0\.0\.1|::1)$/i.test(host);
+    if (!isRemote) return;
+
+    const [tables] = await db.query(
+        `SELECT c.relname AS name,
+                c.relrowsecurity AS enabled,
+                pg_get_userbyid(c.relowner) = current_user AS owned
+           FROM pg_class c
+           JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE n.nspname = 'public' AND c.relkind = 'r'
+          ORDER BY c.relname`
+    );
+
+    const mine = tables.filter((t) => t.owned && !t.enabled);
+    const notMine = tables.filter((t) => !t.owned && !t.enabled);
+
+    for (const table of mine) {
+        // Identifier, not a value, so it cannot be a bind parameter. It comes
+        // from pg_class on this same connection and is quoted, never from input.
+        await db.raw(`ALTER TABLE public."${table.name}" ENABLE ROW LEVEL SECURITY`);
+    }
+
+    if (mine.length > 0) {
+        console.log(`🔒 ปิดการเข้าถึงจาก Data API ให้ ${mine.length} ตาราง (เปิด RLS โดยไม่มี policy)`);
+    }
+    if (notMine.length > 0) {
+        console.warn(
+            `⚠️  ข้าม ${notMine.length} ตารางที่บัญชีนี้ไม่ได้เป็นเจ้าของ: ${notMine.map((t) => t.name).join(', ')}
+` +
+            '    เปิด RLS ให้ตารางเหล่านี้เองใน Supabase SQL editor ไม่งั้นข้อมูลจะอ่านได้ผ่าน Data API'
+        );
+    }
+};
+
 // server.js has its own boot work (ensureMergedSchemas) that used to run in
 // parallel with this, which is invisible on a database where both are no-ops
 // and a collision on a fresh one: both raced to create the same relations and
@@ -1422,9 +1530,16 @@ db.ready = (async () => {
         );
 
         console.log(`✅ แบบสำรวจตอนสมัคร: ${SURVEY.length} คำถาม (ซ่อนคำถามเก่าที่พังไว้ พร้อมตัวเลือก ${Number(staleOpts?.count || 0)} รายการ)`);
+
+        // Last, so that every table created above is already there to be closed
+        // off. server.js calls it again after its own schema step, for the same
+        // reason - it is idempotent and skips tables that already have RLS on.
+        await lockDownPublicSchema();
     } catch (err) {
         console.error('เชื่อมต่อ PostgreSQL ล้มเหลว:', err.message);
     }
 })();
+
+db.lockDownPublicSchema = lockDownPublicSchema;
 
 module.exports = db;

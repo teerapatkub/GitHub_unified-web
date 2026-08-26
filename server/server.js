@@ -8463,6 +8463,10 @@ app.listen(PORT, async () => {
     // aborted the rest of its own setup with "already exists".
     await db.ready;
     await ensureMergedSchemas();
+    // The tables ensureMergedSchemas() just created are as sensitive as the
+    // rest, and on a hosted database they are published by default. See
+    // lockDownPublicSchema() in db.js.
+    await db.lockDownPublicSchema();
     recomputeGradabilityAfterInstall();
     console.log('\u2705 ตารางของ Competitive Arena, Dashboard และการรีเซ็ตรหัสผ่าน พร้อมใช้งานแล้ว');
 });

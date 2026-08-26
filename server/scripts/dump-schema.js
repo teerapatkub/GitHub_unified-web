@@ -112,6 +112,12 @@ const stripPsqlDirectives = (sql) => sql
     // with "no schema has been selected to create in". Removed, and the path set
     // explicitly in the header instead.
     .filter((l) => !/^SELECT pg_catalog\.set_config\('search_path'/.test(l))
+    // SET transaction_timeout - a setting that only exists from PostgreSQL 17.
+    // The local database is 18, so pg_dump writes it; a managed database on 15
+    // or 16 rejects the whole file with "unrecognized configuration parameter".
+    // It is a timeout of 0, meaning "no timeout", which is already the default,
+    // so nothing is lost by leaving it out.
+    .filter((l) => !/^SET transaction_timeout = /.test(l))
     .join('\n');
 
 const header = (title, note) => `--
