@@ -2066,6 +2066,29 @@ const emailTransporter = nodemailer.createTransport({
 // ถ้าไม่มี config ให้ใช้ Console Mode
 const EMAIL_CONFIGURED = !!(process.env.EMAIL_USER && process.env.EMAIL_PASS);
 
+// Checked once at boot, because the alternative is finding out from a learner
+// who never got their code. Credentials that Gmail rejects look exactly like a
+// working setup until the first send: EMAIL_USER and EMAIL_PASS are both
+// present, so EMAIL_CONFIGURED is true, and the failure only appears deep in a
+// request. Gmail refuses ordinary account passwords outright - it wants an App
+// Password, which needs 2-step verification switched on first - and that is by
+// far the most common reason this fails.
+if (EMAIL_CONFIGURED) {
+    emailTransporter.verify()
+        .then(() => console.log(`✅ ระบบอีเมล: เชื่อมต่อ SMTP ได้ (${process.env.EMAIL_USER})`))
+        .catch((err) => {
+            console.error('❌ ระบบอีเมลใช้งานไม่ได้:', err.message);
+            console.error('   รหัสยืนยันจะไม่ถูกส่งออกไป และจะแสดงในล็อกนี้แทน');
+            if (/BadCredentials|535/.test(String(err.message))) {
+                console.error('   Gmail ไม่รับรหัสผ่านปกติของบัญชี ต้องใช้ App Password 16 หลัก');
+                console.error('   เปิด 2-Step Verification ก่อน แล้วสร้างที่ https://myaccount.google.com/apppasswords');
+                console.error('   จากนั้นใส่ค่านั้นเป็น EMAIL_PASS ใน server/.env (ไม่ต้องมีเว้นวรรค)');
+            }
+        });
+} else {
+    console.warn('⚠️ ยังไม่ได้ตั้งค่า EMAIL_USER / EMAIL_PASS — รหัสยืนยันจะแสดงในล็อกแทนการส่งอีเมล');
+}
+
 
 // ==========================================
 // Email verification by one-time code (OTP)
@@ -2110,6 +2133,10 @@ const issueOtp = async (userId) => {
     return code;
 };
 
+// Returns whether the mail actually left the building. The caller has to know:
+// telling someone "we sent you a code" when the send failed leaves them
+// staring at an inbox that will never receive anything, with no way to tell
+// that from a slow mail server.
 const sendOtpEmail = async (email, username, code) => {
     if (!EMAIL_CONFIGURED) {
         // With no SMTP configured the code goes to the server log so that
@@ -2117,7 +2144,7 @@ const sendOtpEmail = async (email, username, code) => {
         // that forgot to configure mail would otherwise hand the code to
         // whoever asked for it.
         console.log(`📧 [MOCK] รหัสยืนยันของ ${email}: ${code} (หมดอายุใน ${OTP_TTL_MINUTES} นาที)`);
-        return;
+        return { delivered: false, reason: 'not-configured' };
     }
     try {
         await emailTransporter.sendMail({
@@ -2136,13 +2163,23 @@ const sendOtpEmail = async (email, username, code) => {
             </div>`,
         });
         console.log(`📧 ส่งรหัสยืนยันไปที่ ${email}`);
+        return { delivered: true };
     } catch (mailErr) {
         // The account exists either way, so make the code recoverable from the
         // log rather than stranding someone mid-registration over an SMTP blip.
         console.error('⚠️ ส่งอีเมลรหัสยืนยันไม่สำเร็จ:', mailErr.message);
         console.log(`📧 [MOCK] รหัสยืนยันของ ${email}: ${code}`);
+        return { delivered: false, reason: 'smtp-error' };
     }
 };
+
+// What the person reading the screen should be told when no mail went out.
+// Not the SMTP error itself - "535-5.7.8 Username and Password not accepted"
+// is addressed to whoever configured the server, and it is already in the log
+// for them. The learner needs to know that waiting is pointless and who to ask.
+const MAIL_UNAVAILABLE_MESSAGE =
+    'สร้างบัญชีแล้ว แต่ระบบส่งอีเมลของเว็บใช้งานไม่ได้ตอนนี้ จึงยังส่งรหัสให้ไม่ได้ ' +
+    'กรุณาแจ้งผู้ดูแลระบบ แล้วกดขอรหัสใหม่อีกครั้งภายหลัง';
 
 // Is this account still waiting on the code it was sent at registration?
 // Asked at login. Deliberately NOT `users.email_verified = 0`: every account
@@ -2260,8 +2297,12 @@ app.post('/api/resend-otp', async (req, res) => {
         }
 
         const code = await issueOtp(user.user_id);
-        await sendOtpEmail(user.email, user.username, code);
-        res.json(genericOk);
+        const delivery = await sendOtpEmail(user.email, user.username, code);
+        res.json(delivery.delivered ? genericOk : {
+            ...genericOk,
+            message: MAIL_UNAVAILABLE_MESSAGE,
+            emailDelivered: false,
+        });
     } catch (err) {
         console.error('❌ Resend OTP Error:', err.message);
         res.status(500).json({ message: 'ส่งรหัสใหม่ไม่สำเร็จ กรุณาลองใหม่' });
@@ -2308,7 +2349,31 @@ app.post('/api/register', async (req, res) => {
 
     try {
         const [existing] = await db.execute('SELECT * FROM users WHERE username = ? OR email = ?', [username, email]);
-        if (existing.length > 0) return res.status(400).json({ message: 'Username หรือ Email นี้ถูกใช้ไปแล้ว' });
+        if (existing.length > 0) {
+            // Registering again with an address that already has an UNVERIFIED
+            // account is what someone does when the first code never arrived.
+            // "อีเมลนี้ถูกใช้ไปแล้ว" is a dead end for them: the account is
+            // theirs, they just cannot get into it. Send a fresh code and put
+            // them on the code screen instead.
+            //
+            // The existing account is not modified - not its password, not its
+            // username - so this cannot be used to take one over. Whoever holds
+            // the mailbox is still the only one who can finish.
+            const prior = existing.find((u) => String(u.email || '').toLowerCase() === email.toLowerCase());
+            if (prior && await hasPendingOtp(prior.user_id)) {
+                const code = await issueOtp(prior.user_id);
+                const delivery = await sendOtpEmail(prior.email, prior.username, code);
+                return res.status(200).json({
+                    message: delivery.delivered
+                        ? `บัญชีนี้สมัครไว้แล้วแต่ยังไม่ได้ยืนยัน ส่งรหัสใหม่ไปที่ ${email} แล้ว`
+                        : MAIL_UNAVAILABLE_MESSAGE,
+                    requiresOtp: true,
+                    emailDelivered: delivery.delivered,
+                    email: prior.email,
+                });
+            }
+            return res.status(400).json({ message: 'Username หรือ Email นี้ถูกใช้ไปแล้ว' });
+        }
 
         const hash = await bcrypt.hash(password, 10);
         // level = 0 → บังคับให้ทำ survey หลัง login
@@ -2321,11 +2386,14 @@ app.post('/api/register', async (req, res) => {
         // typed back in - see the OTP section above for why a code and not the
         // link this used to send.
         const code = await issueOtp(result.insertId);
-        await sendOtpEmail(email, username, code);
+        const delivery = await sendOtpEmail(email, username, code);
 
         res.status(201).json({
-            message: `ส่งรหัสยืนยัน 6 หลักไปที่ ${email} แล้ว`,
+            message: delivery.delivered
+                ? `ส่งรหัสยืนยัน 6 หลักไปที่ ${email} แล้ว`
+                : MAIL_UNAVAILABLE_MESSAGE,
             requiresOtp: true,
+            emailDelivered: delivery.delivered,
             email,
         });
     } catch (err) {

@@ -36,6 +36,10 @@ export default function LoginPage({ onLoginSuccess }) {
   const [otpEmail, setOtpEmail] = useState("");
   const [otpCode, setOtpCode] = useState("");
   const [otpCooldown, setOtpCooldown] = useState(0);
+  // Whether the last code actually got sent. The server knows - it watched the
+  // send fail - and saying nothing would leave someone watching an inbox that
+  // is never going to receive anything.
+  const [otpMailFailed, setOtpMailFailed] = useState(false);
   const [surveySteps, setSurveySteps] = useState([]);
   const [surveyStep, setSurveyStep] = useState(0);
   // Every choice made so far, keyed by question id, so going back and
@@ -116,10 +120,11 @@ export default function LoginPage({ onLoginSuccess }) {
     return () => clearTimeout(timer);
   }, [otpCooldown]);
 
-  const enterOtpStep = (emailForCode) => {
+  const enterOtpStep = (emailForCode, mailFailed = false) => {
     setOtpEmail(emailForCode);
     setOtpCode("");
     setOtpCooldown(60);
+    setOtpMailFailed(mailFailed);
     setStep("otp");
   };
 
@@ -180,7 +185,13 @@ export default function LoginPage({ onLoginSuccess }) {
       }
       setOtpCode("");
       setOtpCooldown(data.cooldownSeconds || 60);
-      setSuccess(data.message || "ส่งรหัสใหม่แล้ว");
+      if (data.emailDelivered === false) {
+        setOtpMailFailed(true);
+        setError(data.message);
+      } else {
+        setOtpMailFailed(false);
+        setSuccess(data.message || "ส่งรหัสใหม่แล้ว");
+      }
     } catch (err) {
       setError(err.message || "เกิดข้อผิดพลาด");
     } finally {
@@ -232,13 +243,17 @@ export default function LoginPage({ onLoginSuccess }) {
       const data = await res.json().catch(() => ({}));
 
       if (isRegister) {
-        if (!res.ok) throw new Error(data.message || "ไม่สามารถสมัครสมาชิกได้");
+        // A 200 with requiresOtp also comes back when the address already has
+        // an unverified account - the same person, coming back because the
+        // first code never arrived.
+        if (!res.ok && !data.requiresOtp) throw new Error(data.message || "ไม่สามารถสมัครสมาชิกได้");
         // The account is created but unusable until the emailed code is typed
         // back in, so registration no longer logs anyone in by itself.
         if (data.requiresOtp) {
-          setSuccess(data.message || `ส่งรหัสยืนยันไปที่ ${email} แล้ว`);
+          if (data.emailDelivered === false) setError(data.message);
+          else setSuccess(data.message || `ส่งรหัสยืนยันไปที่ ${email} แล้ว`);
           await new Promise((resolve) => setTimeout(resolve, 500));
-          enterOtpStep(data.email || email);
+          enterOtpStep(data.email || email, data.emailDelivered === false);
           return;
         }
         const loginData = await loginAfterRegister();
@@ -754,12 +769,19 @@ export default function LoginPage({ onLoginSuccess }) {
                 className="text-2xl font-bold text-pysim-on-surface"
               />
               <p className="text-pysim-on-surface-variant text-sm mt-2">
-                เราส่งรหัส 6 หลักไปที่
+                {otpMailFailed ? "บัญชีของอีเมลนี้ยังรอการยืนยัน" : "เราส่งรหัส 6 หลักไปที่"}
               </p>
               <p className="text-pysim-on-surface font-bold text-sm break-all">{otpEmail}</p>
-              <p className="text-pysim-outline text-xs mt-2">
-                ถ้าไม่เจอในกล่องจดหมาย ลองดูในจดหมายขยะ (Spam)
-              </p>
+              {otpMailFailed ? (
+                <p className="text-pysim-error text-xs mt-3 leading-relaxed">
+                  ระบบส่งอีเมลของเว็บใช้งานไม่ได้ตอนนี้ จึงยังไม่มีรหัสส่งไปถึงคุณ<br />
+                  บัญชีถูกสร้างไว้แล้ว กรุณาแจ้งผู้ดูแลระบบ แล้วกลับมากดขอรหัสใหม่
+                </p>
+              ) : (
+                <p className="text-pysim-outline text-xs mt-2">
+                  ถ้าไม่เจอในกล่องจดหมาย ลองดูในจดหมายขยะ (Spam)
+                </p>
+              )}
             </div>
 
             <form onSubmit={handleVerifyOtp} className="space-y-4">
