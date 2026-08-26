@@ -29,17 +29,6 @@ const getPasswordStrength = (password) => {
 // ======================================================
 export default function LoginPage({ onLoginSuccess }) {
   const [step, setStep] = useState("login");
-  // Email verification by code. `otpEmail` is kept separately from the email
-  // field of the register form, because this screen is also reached by logging
-  // in to an account that never finished verifying - and that form has no
-  // email in it at all.
-  const [otpEmail, setOtpEmail] = useState("");
-  const [otpCode, setOtpCode] = useState("");
-  const [otpCooldown, setOtpCooldown] = useState(0);
-  // Whether the last code actually got sent. The server knows - it watched the
-  // send fail - and saying nothing would leave someone watching an inbox that
-  // is never going to receive anything.
-  const [otpMailFailed, setOtpMailFailed] = useState(false);
   const [surveySteps, setSurveySteps] = useState([]);
   const [surveyStep, setSurveyStep] = useState(0);
   // Every choice made so far, keyed by question id, so going back and
@@ -112,93 +101,6 @@ export default function LoginPage({ onLoginSuccess }) {
   // ======================================================
   // Submit Login / Register
   // ======================================================
-  // The resend countdown. The server is the one enforcing the wait; this only
-  // shows how long is left, so the button does not look broken while it is.
-  useEffect(() => {
-    if (otpCooldown <= 0) return undefined;
-    const timer = setTimeout(() => setOtpCooldown((n) => n - 1), 1000);
-    return () => clearTimeout(timer);
-  }, [otpCooldown]);
-
-  const enterOtpStep = (emailForCode, mailFailed = false) => {
-    setOtpEmail(emailForCode);
-    setOtpCode("");
-    setOtpCooldown(60);
-    setOtpMailFailed(mailFailed);
-    setStep("otp");
-  };
-
-  const handleVerifyOtp = async (e) => {
-    e.preventDefault();
-    setError("");
-    setSuccess("");
-
-    if (!/^[0-9]{6}$/.test(otpCode)) {
-      setError("กรอกรหัส 6 หลักที่ส่งไปทางอีเมล");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/verify-otp`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: otpEmail, code: otpCode }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        // An expired or burnt-out code is not the same as a wrong one: there is
-        // nothing to retype, so clear the field and point at the resend button.
-        if (data.expired) setOtpCode("");
-        throw new Error(data.message || "ยืนยันอีเมลไม่สำเร็จ");
-      }
-
-      setSuccess("ยืนยันอีเมลเรียบร้อย");
-      setLoggedInUser(data);
-      await new Promise((resolve) => setTimeout(resolve, 600));
-      // A brand new account is at level 0 and goes to the survey; an older
-      // unverified one goes straight in.
-      if (data.level === 0) setStep("survey");
-      else onLoginSuccess(data);
-    } catch (err) {
-      setError(err.message || "เกิดข้อผิดพลาด");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleResendOtp = async () => {
-    if (otpCooldown > 0 || loading) return;
-    setError("");
-    setSuccess("");
-    setLoading(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/resend-otp`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: otpEmail }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        if (data.cooldownSeconds) setOtpCooldown(data.cooldownSeconds);
-        throw new Error(data.message || "ส่งรหัสใหม่ไม่สำเร็จ");
-      }
-      setOtpCode("");
-      setOtpCooldown(data.cooldownSeconds || 60);
-      if (data.emailDelivered === false) {
-        setOtpMailFailed(true);
-        setError(data.message);
-      } else {
-        setOtpMailFailed(false);
-        setSuccess(data.message || "ส่งรหัสใหม่แล้ว");
-      }
-    } catch (err) {
-      setError(err.message || "เกิดข้อผิดพลาด");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -243,33 +145,26 @@ export default function LoginPage({ onLoginSuccess }) {
       const data = await res.json().catch(() => ({}));
 
       if (isRegister) {
-        // A 200 with requiresOtp also comes back when the address already has
-        // an unverified account - the same person, coming back because the
-        // first code never arrived.
-        if (!res.ok && !data.requiresOtp) throw new Error(data.message || "ไม่สามารถสมัครสมาชิกได้");
-        // The account is created but unusable until the emailed code is typed
-        // back in, so registration no longer logs anyone in by itself.
-        if (data.requiresOtp) {
-          if (data.emailDelivered === false) setError(data.message);
-          else setSuccess(data.message || `ส่งรหัสยืนยันไปที่ ${email} แล้ว`);
-          await new Promise((resolve) => setTimeout(resolve, 500));
-          enterOtpStep(data.email || email, data.emailDelivered === false);
-          return;
+        let loginData;
+        let successMessage = data.message || "สมัครสมาชิกสำเร็จ";
+        if (!res.ok) {
+          if (res.status < 500) {
+            throw new Error(data.message || "ไม่สามารถสมัครสมาชิกได้");
+          }
+          try {
+            loginData = await loginAfterRegister();
+            successMessage = "สมัครสมาชิกสำเร็จ";
+          } catch {
+            throw new Error(data.message || "ไม่สามารถสมัครสมาชิกได้");
+          }
+        } else {
+          loginData = await loginAfterRegister();
         }
-        const loginData = await loginAfterRegister();
-        setSuccess(data.message || "สมัครสมาชิกสำเร็จ");
+        setSuccess(successMessage);
         setLoggedInUser(loginData);
         await new Promise((resolve) => setTimeout(resolve, 700));
         setStep("survey"); // ← แสดง Survey ทันทีหลังสมัคร
       } else {
-        // Logging in to an account that registered but never verified is not a
-        // failure - it is the same person coming back to finish. Send them to
-        // the code screen instead of an error they cannot act on.
-        if (res.status === 403 && data.requiresOtp) {
-          setSuccess(data.message || "บัญชีนี้ยังไม่ได้ยืนยันอีเมล");
-          enterOtpStep(data.email || email);
-          return;
-        }
         if (!res.ok) throw new Error(data.message || "ไม่สามารถดำเนินการได้");
         // Login ปกติ
         setLoggedInUser(data);
@@ -750,105 +645,6 @@ export default function LoginPage({ onLoginSuccess }) {
   // RENDER: Login / Register Form
   // ======================================================
   const strength = (isRegister || step === "resetPassword") ? getPasswordStrength(password) : null;
-
-  if (step === "otp") {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="w-full max-w-md relative z-10">
-          <div className="absolute inset-0 bg-pysim-primary/10 blur-3xl rounded-[3rem] -z-10"></div>
-          <div className="bg-white/80 backdrop-blur-2xl rounded-[2.5rem] whisper-shadow p-8 space-y-8 border border-white/50 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-amber-100/40 to-transparent -rotate-45 pointer-events-none blur-xl"></div>
-
-            <div className="text-center">
-              <div className={`w-16 h-16 mx-auto rounded-2xl flex items-center justify-center mb-6 shadow-xl relative group ${primaryGradientClass}`}>
-                <KeyRound className="w-6 h-6 text-white transition-transform duration-500 group-hover:scale-110" />
-              </div>
-              <Typewriter
-                text="ยืนยันอีเมล"
-                speed={50}
-                className="text-2xl font-bold text-pysim-on-surface"
-              />
-              <p className="text-pysim-on-surface-variant text-sm mt-2">
-                {otpMailFailed ? "บัญชีของอีเมลนี้ยังรอการยืนยัน" : "เราส่งรหัส 6 หลักไปที่"}
-              </p>
-              <p className="text-pysim-on-surface font-bold text-sm break-all">{otpEmail}</p>
-              {otpMailFailed ? (
-                <p className="text-pysim-error text-xs mt-3 leading-relaxed">
-                  ระบบส่งอีเมลของเว็บใช้งานไม่ได้ตอนนี้ จึงยังไม่มีรหัสส่งไปถึงคุณ<br />
-                  บัญชีถูกสร้างไว้แล้ว กรุณาแจ้งผู้ดูแลระบบ แล้วกลับมากดขอรหัสใหม่
-                </p>
-              ) : (
-                <p className="text-pysim-outline text-xs mt-2">
-                  ถ้าไม่เจอในกล่องจดหมาย ลองดูในจดหมายขยะ (Spam)
-                </p>
-              )}
-            </div>
-
-            <form onSubmit={handleVerifyOtp} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-pysim-primary mb-1.5 uppercase tracking-wider ml-1">
-                  รหัสยืนยัน
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  maxLength={6}
-                  placeholder="000000"
-                  autoFocus
-                  className="w-full p-4 bg-pysim-surface-low/50 border border-pysim-outline-variant/30 rounded-2xl outline-none focus:ring-2 focus:ring-pysim-primary/30 focus:border-pysim-primary text-pysim-on-surface transition-all placeholder:text-pysim-outline text-center text-3xl font-black tracking-[0.6em] indent-[0.6em]"
-                  value={otpCode}
-                  onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, "").slice(0, 6))}
-                  required
-                />
-                <p className="text-pysim-outline text-xs mt-2 text-center">รหัสหมดอายุใน 10 นาที</p>
-              </div>
-
-              {error && (
-                <div className="flex items-center gap-2 p-3 bg-pysim-error-container border border-pysim-error/20 rounded-xl text-pysim-error text-sm">
-                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                  {error}
-                </div>
-              )}
-
-              {success && (
-                <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm break-words">
-                  <Check className="w-4 h-4 flex-shrink-0" />
-                  {success}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={loading || otpCode.length !== 6}
-                className={`w-full py-4 mt-6 rounded-2xl font-bold hover:-translate-y-0.5 active:translate-y-0 transition-all duration-300 tracking-wide disabled:opacity-50 disabled:transform-none ${primaryGradientClass}`}
-              >
-                {loading ? "กำลังตรวจสอบ..." : "ยืนยันอีเมล"}
-              </button>
-            </form>
-
-            <button
-              type="button"
-              onClick={handleResendOtp}
-              disabled={otpCooldown > 0 || loading}
-              className="w-full text-sm font-bold text-pysim-primary hover:text-pysim-primary-container transition-colors disabled:text-pysim-outline disabled:cursor-not-allowed"
-            >
-              {otpCooldown > 0 ? `ขอรหัสใหม่ได้ในอีก ${otpCooldown} วินาที` : "ไม่ได้รับรหัส? ส่งใหม่อีกครั้ง"}
-            </button>
-
-            <button
-              type="button"
-              onClick={goToLogin}
-              className="w-full flex items-center justify-center gap-2 text-sm font-bold text-pysim-primary hover:text-pysim-primary-container transition-colors"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              กลับไปเข้าสู่ระบบ
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   if (step === "forgotPassword") {
     return (
