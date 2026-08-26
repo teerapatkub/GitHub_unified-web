@@ -16,6 +16,7 @@
     "check:sql": "node scripts/sql-dialect-check.js",
     "check:undef": "node scripts/undefined-call-check.js",
     "check:text": "node scripts/mojibake-check.js",
+    "test:lessons": "node scripts/lesson-progress-test.js",
     "test:shop": "node scripts/shop-sets-test.js",
     "test:achievements": "node scripts/achievements-test.js",
     "test:problems": "node scripts/problems-parity-check.js",

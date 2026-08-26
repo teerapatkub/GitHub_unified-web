@@ -165,7 +165,7 @@ export default function LearningPage({ onNavigate, user }) {
       )
       .filter(
         (lesson) =>
-          !lesson.post_quiz_completed &&
+          !lesson.is_completed &&
           currentLevel >= Number(lesson.required_level || 0)
       )
       .sort(
@@ -397,15 +397,20 @@ const ModuleAccordion = ({
 
   const progress = calculateProgress();
 
+  // The server decides what "started" and "finished" mean - see
+  // server/lessonProgress.js - so that this badge, the profile page and the
+  // achievements agree. It used to read fields the API never sent, so every
+  // lesson said "ยังไม่เริ่ม" even to someone who had already passed exercises
+  // in it, which reads as the app having thrown their work away.
   const getLessonStatus = (lesson) => {
-    if (lesson.post_quiz_completed) {
+    if (lesson.is_completed) {
       return {
         label: "เรียนเสร็จสิ้น",
         className: "bg-emerald-100 text-emerald-700",
       };
     }
 
-    if (lesson.pre_quiz_completed) {
+    if (lesson.is_started) {
       return {
         label: "กำลังเรียน",
         className: "bg-amber-100 text-amber-700",
@@ -524,12 +529,18 @@ const ModuleAccordion = ({
                   // one before it has been read - บทที่ 2 uses the variables
                   // บทที่ 1 introduced - so a beginner who opens the middle of a
                   // chapter first meets syntax nobody has explained to them and
-                  // concludes they cannot do this. The previous lesson counts as
-                  // finished when its post-quiz is done, the same signal the
-                  // "เรียนเสร็จสิ้น" badge already uses.
+                  // concludes they cannot do this.
+                  //
+                  // `opens_next` comes from the server and is deliberately not
+                  // the same as "เรียนเสร็จสิ้น": passing the post-test opens
+                  // the next lesson, while the badge also waits for every
+                  // practice exercise. One exercise a learner is stuck on must
+                  // not lock the rest of the course. Lessons with no post-test
+                  // at all - บทที่ 6 and all of บทที่ 8-9 - open the next one on
+                  // their exercises instead, so they cannot become a dead end.
                   const previousLesson = index > 0 ? lessons[index - 1] : null;
                   const sequenceLocked =
-                    Boolean(previousLesson) && !previousLesson.post_quiz_completed;
+                    Boolean(previousLesson) && !previousLesson.opens_next;
                   const isLessonLocked = levelLocked || sequenceLocked;
 
                   const lessonStatus = levelLocked
@@ -541,7 +552,9 @@ const ModuleAccordion = ({
                   const lockReason = levelLocked
                     ? `ต้องถึงเลเวล ${lesson.required_level} ก่อนถึงจะเรียนบทนี้ได้`
                     : sequenceLocked
-                      ? `เรียน "${previousLesson.title}" ให้จบก่อน แล้วบทนี้จะเปิดให้เอง`
+                      ? (previousLesson.has_post_quiz
+                          ? `ทำแบบทดสอบท้ายบทของ "${previousLesson.title}" ให้ผ่านก่อน แล้วบทนี้จะเปิดให้เอง`
+                          : `ทำแบบฝึกหัดของ "${previousLesson.title}" ให้ครบก่อน แล้วบทนี้จะเปิดให้เอง`)
                       : undefined;
 
                   return (

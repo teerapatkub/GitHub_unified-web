@@ -146,12 +146,12 @@ export default function ShopPage() {
         try {
             const user = JSON.parse(localStorage.getItem('user') || 'null');
             const setsUrl = user?.user_id && !user?.isGuest
-                ? `${API_BASE}/shop/sets?userId=${user.user_id}`
-                : `${API_BASE}/shop/sets`;
+                ? `${API_BASE}/api/shop/sets?userId=${user.user_id}`
+                : `${API_BASE}/api/shop/sets`;
             const [itemsRes, inventoryRes, setsRes] = await Promise.all([
-                fetch(`${API_BASE}/shop/items`),
+                fetch(`${API_BASE}/api/shop/items`),
                 user?.user_id && !user?.isGuest
-                    ? fetch(`${API_BASE}/shop/inventory/${user.user_id}`)
+                    ? fetch(`${API_BASE}/api/shop/inventory/${user.user_id}`)
                     : Promise.resolve(null),
                 fetch(setsUrl),
             ]);
@@ -211,7 +211,7 @@ export default function ShopPage() {
         }
 
         try {
-            const res = await fetch(`${API_BASE}/shop/buy`, {
+            const res = await fetch(`${API_BASE}/api/shop/buy`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId: user.user_id, itemId: item.itemId }),
@@ -253,7 +253,7 @@ export default function ShopPage() {
 
         setBuyingSet(set.set_key);
         try {
-            const res = await fetch(`${API_BASE}/shop/buy-set`, {
+            const res = await fetch(`${API_BASE}/api/shop/buy-set`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId: user.user_id, setKey: set.set_key }),
@@ -288,7 +288,7 @@ export default function ShopPage() {
         if (!user?.user_id || user?.isGuest) return;
 
         try {
-            const res = await fetch(`${API_BASE}/shop/equip`, {
+            const res = await fetch(`${API_BASE}/api/shop/equip`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId: user.user_id, itemId: item.itemId, type: item.type }),
@@ -335,7 +335,7 @@ export default function ShopPage() {
         if (!user?.user_id || user?.isGuest) return;
 
         try {
-            const res = await fetch(`${API_BASE}/shop/equip`, {
+            const res = await fetch(`${API_BASE}/api/shop/equip`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId: user.user_id, itemId: null, type: item.type }),

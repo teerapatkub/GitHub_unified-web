@@ -19,6 +19,9 @@ const arcadeConfig = require('../shared/arcadeConfig.json');
 // The single answer-checker. See server/problemGrader.js for why there is only
 // one now, and server/problemsSchema.js for the problem bank it grades against.
 const { gradeSubmission, screenUnverifiedSubmission } = require('./problemGrader');
+// The single definition of how far through a lesson a learner is - see the
+// header of server/lessonProgress.js for why it had to become one.
+const { evaluateLesson, POST_PASS_RATIO } = require('./lessonProgress');
 
 const app = express();
 app.use(cors());
@@ -829,8 +832,6 @@ const computeLevelFromXp = (xp = 0) => Math.max(1, Math.floor(Number(xp || 0) / 
 // submission or match that earned it.
 // ==========================================================================
 
-// The same 60% bar the lesson page enforces on a post-test.
-const LESSON_POST_PASS_RATIO = 0.6;
 
 async function computeAchievementMetrics(userId, username) {
     const one = async (sql, params = []) => {
@@ -838,8 +839,8 @@ async function computeAchievementMetrics(userId, username) {
         return Number(rows?.[0]?.n || 0);
     };
 
-    // A lesson counts as completed on the same terms the profile page uses:
-    // the post-test passed and every exercise attached to it passed.
+    // A lesson counts as completed on exactly the terms the learning page and
+    // the profile page use, because all three ask evaluateLesson().
     const [lessonRows] = await db.execute(
         `SELECT l.lesson_id,
                 (SELECT COUNT(*) FROM exercises e WHERE e.lesson_id = l.lesson_id) AS ex_total,
@@ -847,6 +848,8 @@ async function computeAchievementMetrics(userId, username) {
                    FROM exercise_submissions s
                    JOIN exercises e2 ON e2.exercise_id = s.exercise_id
                   WHERE e2.lesson_id = l.lesson_id AND s.user_id = ? AND s.is_passed = 1) AS ex_passed,
+                (SELECT COUNT(*) FROM lesson_quizzes q
+                  WHERE q.lesson_id = l.lesson_id AND q.quiz_type = 'post') AS has_post_quiz,
                 (SELECT MAX(a.score) FROM lesson_quiz_attempts a
                   WHERE a.user_id = ? AND a.lesson_id = l.lesson_id AND a.quiz_type = 'post') AS post_score,
                 (SELECT MAX(a.total_questions) FROM lesson_quiz_attempts a
@@ -856,9 +859,15 @@ async function computeAchievementMetrics(userId, username) {
     );
     let lessonsCompleted = 0;
     for (const r of lessonRows) {
-        const total = Number(r.post_total || 0);
-        const passed = total > 0 && Number(r.post_score || 0) >= Math.ceil(total * LESSON_POST_PASS_RATIO);
-        if (passed && Number(r.ex_passed || 0) >= Number(r.ex_total || 0)) lessonsCompleted += 1;
+        const progress = evaluateLesson({
+            post: Number(r.post_total || 0) > 0
+                ? { score: r.post_score, total_questions: r.post_total }
+                : null,
+            hasPostQuiz: Number(r.has_post_quiz || 0) > 0,
+            exercisesTotal: Number(r.ex_total || 0),
+            exercisesPassed: Number(r.ex_passed || 0),
+        });
+        if (progress.completed) lessonsCompleted += 1;
     }
 
     // Owning every piece of at least one cosmetic set.
@@ -1423,14 +1432,32 @@ app.get('/api/profile/:userId', async (req, res) => {
               GROUP BY e.lesson_id`,
             [userId]
         );
+        const [attemptedCounts] = await db.execute(
+            `SELECT e.lesson_id, COUNT(DISTINCT s.exercise_id) AS attempted
+               FROM exercise_submissions s
+               JOIN exercises e ON e.exercise_id = s.exercise_id
+              WHERE s.user_id = ?
+              GROUP BY e.lesson_id`,
+            [userId]
+        );
         const [quizAttempts] = await db.execute(
             `SELECT lesson_id, quiz_type, score, total_questions, updated_at, completed_at
                FROM lesson_quiz_attempts WHERE user_id = ?`,
             [userId]
         );
+        // Which quizzes each lesson HAS, which is a different question from which
+        // ones this learner has taken: five lessons ship without a post-test.
+        const [quizKindRows] = await db.execute('SELECT lesson_id, quiz_type FROM lesson_quizzes');
 
         const exTotal = new Map(exerciseCounts.map(r => [Number(r.lesson_id), Number(r.total)]));
         const exPassed = new Map(passedCounts.map(r => [Number(r.lesson_id), Number(r.passed)]));
+        const exAttempted = new Map(attemptedCounts.map(r => [Number(r.lesson_id), Number(r.attempted)]));
+        const quizKinds = new Map();
+        for (const row of quizKindRows) {
+            const key = Number(row.lesson_id);
+            if (!quizKinds.has(key)) quizKinds.set(key, new Set());
+            quizKinds.get(key).add(String(row.quiz_type).toLowerCase());
+        }
         const quizByLesson = new Map();
         for (const a of quizAttempts) {
             const key = Number(a.lesson_id);
@@ -1438,8 +1465,6 @@ app.get('/api/profile/:userId', async (req, res) => {
             quizByLesson.get(key)[String(a.quiz_type).toLowerCase()] = a;
         }
 
-        // The same 60% bar the lesson page enforces before it lets a post-test count.
-        const POST_PASS_RATIO = 0.6;
         let lastTouchedAt = null;
         let lastTouchedLesson = null;
 
@@ -1448,19 +1473,16 @@ app.get('/api/profile/:userId', async (req, res) => {
             const quizzes = quizByLesson.get(id) || {};
             const pre = quizzes.pre || null;
             const post = quizzes.post || null;
-            const exercisesTotal = exTotal.get(id) || 0;
-            const exercisesPassed = Math.min(exPassed.get(id) || 0, exercisesTotal);
-
-            const postPassed = Boolean(post && Number(post.total_questions) > 0
-                && Number(post.score) >= Math.ceil(Number(post.total_questions) * POST_PASS_RATIO));
-
-            const stepsTotal = 2 + exercisesTotal;                  // pre + post + exercises
-            const stepsDone = (pre ? 1 : 0) + (postPassed ? 1 : 0) + exercisesPassed;
-            const percent = stepsTotal > 0 ? Math.round((stepsDone / stepsTotal) * 100) : 0;
-
-            const status = stepsDone === 0
-                ? 'not_started'
-                : (postPassed && exercisesPassed >= exercisesTotal ? 'done' : 'in_progress');
+            const progress = evaluateLesson({
+                pre,
+                post,
+                hasPreQuiz: quizKinds.get(id)?.has('pre') || false,
+                hasPostQuiz: quizKinds.get(id)?.has('post') || false,
+                exercisesTotal: exTotal.get(id) || 0,
+                exercisesPassed: exPassed.get(id) || 0,
+                exercisesAttempted: exAttempted.get(id) || 0,
+            });
+            const { status, percent, postPassed, exercisesTotal, exercisesPassed } = progress;
 
             for (const stamp of [pre?.updated_at, pre?.completed_at, post?.updated_at, post?.completed_at]) {
                 if (!stamp) continue;
@@ -3956,22 +3978,51 @@ app.get('/api/course-content', async (req, res) => {
         const userId = req.query.user_id || req.query.userId || 0; // รับค่า userId จาก query
 
         // ปรับ Query โดยใช้ JOIN เพื่อดึงสถิติแบบฝึกหัดในคราวเดียว
+        //
+        // COUNT(DISTINCT ...) on both sides, not COUNT(*): the join fans out one
+        // row per submission, so a learner who submits the same exercise twice
+        // would otherwise be shown "ภาคปฏิบัติ 2/9" for a lesson that has five.
         const [modules] = await db.execute('SELECT module_id, title, order_index, required_level FROM modules ORDER BY order_index');
         const [lessons] = await db.execute(`
-            SELECT 
-                l.lesson_id, 
-                l.module_id, 
-                l.title, 
-                l.order_index, 
+            SELECT
+                l.lesson_id,
+                l.module_id,
+                l.title,
+                l.order_index,
                 l.required_level,
-                COUNT(e.exercise_id) as total_count,
-                SUM(CASE WHEN es.is_passed = 1 THEN 1 ELSE 0 END) as completed_count
+                COUNT(DISTINCT e.exercise_id) as total_count,
+                COUNT(DISTINCT CASE WHEN es.is_passed = 1 THEN es.exercise_id END) as completed_count,
+                COUNT(DISTINCT es.exercise_id) as attempted_count
             FROM lessons l
             LEFT JOIN exercises e ON l.lesson_id = e.lesson_id
             LEFT JOIN exercise_submissions es ON e.exercise_id = es.exercise_id AND es.user_id = ?
-            GROUP BY l.lesson_id
+            GROUP BY l.lesson_id, l.module_id, l.title, l.order_index, l.required_level
             ORDER BY l.order_index
         `, [userId]);
+
+        // What this learner has done in each lesson's quizzes, and - separately -
+        // which quizzes each lesson even has. The learning page's badge and its
+        // sub-lesson unlocking both hang off these, and until now the endpoint
+        // returned neither, so every lesson on screen read "ยังไม่เริ่ม".
+        const [quizAttempts] = await db.execute(
+            `SELECT lesson_id, quiz_type, score, total_questions
+               FROM lesson_quiz_attempts WHERE user_id = ?`,
+            [userId]
+        );
+        const [quizKindRows] = await db.execute('SELECT lesson_id, quiz_type FROM lesson_quizzes');
+
+        const attemptByLesson = new Map();
+        for (const a of quizAttempts) {
+            const key = Number(a.lesson_id);
+            if (!attemptByLesson.has(key)) attemptByLesson.set(key, {});
+            attemptByLesson.get(key)[String(a.quiz_type).toLowerCase()] = a;
+        }
+        const quizKinds = new Map();
+        for (const row of quizKindRows) {
+            const key = Number(row.lesson_id);
+            if (!quizKinds.has(key)) quizKinds.set(key, new Set());
+            quizKinds.get(key).add(String(row.quiz_type).toLowerCase());
+        }
 
         const moduleRows = Array.isArray(modules) ? modules : [];
         const lessonRows = Array.isArray(lessons) ? lessons : [];
@@ -3983,15 +4034,41 @@ app.get('/api/course-content', async (req, res) => {
             is_locked: currentLevel < Number(m.required_level || 0),
             lessons: lessonRows
                 .filter(l => l.module_id === m.module_id)
-                .map(l => ({
-                    lesson_id: l.lesson_id,
-                    id: l.lesson_id,
-                    title: l.title,
-                    required_level: l.required_level || 0,
-                    is_locked: currentLevel < Number(l.required_level || 0),
-                    completed_count: Number(l.completed_count || 0),
-                    total_count: Number(l.total_count || 0)
-                }))
+                .map(l => {
+                    const id = Number(l.lesson_id);
+                    const attempts = attemptByLesson.get(id) || {};
+                    const kinds = quizKinds.get(id) || new Set();
+                    const progress = evaluateLesson({
+                        pre: attempts.pre || null,
+                        post: attempts.post || null,
+                        hasPreQuiz: kinds.has('pre'),
+                        hasPostQuiz: kinds.has('post'),
+                        exercisesTotal: Number(l.total_count || 0),
+                        exercisesPassed: Number(l.completed_count || 0),
+                        exercisesAttempted: Number(l.attempted_count || 0),
+                    });
+                    return {
+                        lesson_id: l.lesson_id,
+                        id: l.lesson_id,
+                        title: l.title,
+                        required_level: l.required_level || 0,
+                        is_locked: currentLevel < Number(l.required_level || 0),
+                        completed_count: progress.exercisesPassed,
+                        total_count: progress.exercisesTotal,
+                        attempted_count: progress.exercisesAttempted,
+                        has_pre_quiz: kinds.has('pre'),
+                        has_post_quiz: kinds.has('post'),
+                        pre_quiz_completed: progress.preTaken,
+                        post_quiz_completed: progress.postPassed,
+                        // What the page actually renders: the badge reads
+                        // `status`, and the next sub-lesson opens on `opens_next`.
+                        status: progress.status,
+                        percent: progress.percent,
+                        is_started: progress.started,
+                        is_completed: progress.completed,
+                        opens_next: progress.opensNext,
+                    };
+                })
         }));
         
         res.json(data);
@@ -5118,7 +5195,21 @@ const ARCADE_TASKS = {
 // sim_money out of simulation_saves, which went away with the simulation.
 // ==========================================================================
 
-app.get('/shop/items', async (req, res) => {
+// Every shop route answers on BOTH /api/shop/... and the bare /shop/... it was
+// originally written as.
+//
+// /api is the real address, and the only one a deployed browser can rely on:
+// the dev server proxies exactly /api and /uploads through to this process, and
+// in production this process serves the front end and treats everything outside
+// those two prefixes as a page route. A bare /shop/items therefore came back as
+// index.html, and the shop page died on 'Unexpected token <' - HTML where JSON
+// was expected - which is what a learner saw instead of the store.
+//
+// The bare paths stay so that anything still calling them (a bookmark, a script,
+// a page not yet updated) keeps working rather than failing the same silent way.
+const shopPath = (suffix) => [`/api/shop${suffix}`, `/shop${suffix}`];
+
+app.get(shopPath('/items'), async (req, res) => {
     const { type } = req.query;
     let sql = `
         SELECT item_id, name, description, item_type AS type, price, asset_url, preview_image,
@@ -5143,7 +5234,7 @@ app.get('/shop/items', async (req, res) => {
     }
 });
 
-app.get('/shop/inventory/:userId', async (req, res) => {
+app.get(shopPath('/inventory/:userId'), async (req, res) => {
     const { userId } = req.params;
     try {
         const [items] = await db.execute(`
@@ -5166,7 +5257,7 @@ app.get('/shop/inventory/:userId', async (req, res) => {
 // Cosmetic sets: a theme, a profile frame and a cursor effect that belong
 // together. shop_sets.price is the bundle price for the whole set; buying the
 // three separately costs the sum of shop_items.price, which is deliberately more.
-app.get('/shop/sets', async (req, res) => {
+app.get(shopPath('/sets'), async (req, res) => {
     const { userId } = req.query;
     try {
         const [sets] = await db.execute(
@@ -5227,7 +5318,7 @@ app.get('/shop/sets', async (req, res) => {
 // Buys every piece of a set the player does not already own, at the bundle rate.
 // Owning part of a set does not forfeit the discount and is never charged twice:
 // the price is the bundle price scaled to the share of the set still missing.
-app.post('/shop/buy-set', async (req, res) => {
+app.post(shopPath('/buy-set'), async (req, res) => {
     const { userId, setKey } = req.body || {};
     if (!userId || !setKey) {
         return res.status(400).json({ error: 'userId and setKey are required' });
@@ -5317,7 +5408,7 @@ app.post('/shop/buy-set', async (req, res) => {
     }
 });
 
-app.post('/shop/buy', async (req, res) => {
+app.post(shopPath('/buy'), async (req, res) => {
     const { userId, itemId } = req.body;
     const connection = await db.getConnection();
     try {
@@ -5393,7 +5484,7 @@ app.post('/shop/buy', async (req, res) => {
     }
 });
 
-app.post('/shop/equip', async (req, res) => {
+app.post(shopPath('/equip'), async (req, res) => {
     const { userId, itemId, type } = req.body;
     const columnMap = {
         'THEME': 'equipped_theme_id',
