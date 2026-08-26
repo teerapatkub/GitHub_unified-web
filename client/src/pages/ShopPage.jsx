@@ -4,62 +4,11 @@ import { ShoppingBag, ShoppingCart, Coins, CheckCircle, Search } from 'lucide-re
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 import { API_BASE, assetUrl } from '../config/api.js';
+import { getShopThemePalette, shopThemeColors } from '../themes/shopPalette.js';
 
 
 const resolveAssetUrl = (value) => assetUrl(value);
 const userThemeKey = (user) => `game_theme:user:${user.user_id}`;
-const getShopThemePalette = (item) => {
-    const themeText = `${item?.name || ''} ${item?.assetUrl || ''} ${item?.previewImage || ''}`.toLowerCase();
-    if (themeText.includes('ocean')) {
-        return {
-            bg: '#f1fdff',
-            bgSoft: '#e6f9fb',
-            text: '#164e63',
-            textSoft: '#397281',
-            muted: '#6aa3ad',
-            accent: '#0891b2',
-            accentSoft: 'rgba(8, 145, 178, 0.14)',
-            accentHover: '#0e7490',
-            border: 'rgba(8, 145, 178, 0.2)',
-            surface: 'rgba(241, 253, 255, 0.9)',
-            navbarOverlay: 'rgba(241, 253, 255, 0.74)',
-            navbarBorder: 'rgba(8, 145, 178, 0.22)',
-            navBg: 'rgba(255, 255, 255, 0.78)',
-        };
-    }
-    if (themeText.includes('space')) {
-        return {
-            bg: '#f7f8ff',
-            bgSoft: '#eef1ff',
-            text: '#302e63',
-            textSoft: '#5b5f94',
-            muted: '#858dc3',
-            accent: '#7c3aed',
-            accentSoft: 'rgba(124, 58, 237, 0.13)',
-            accentHover: '#6d28d9',
-            border: 'rgba(124, 58, 237, 0.18)',
-            surface: 'rgba(247, 248, 255, 0.9)',
-            navbarOverlay: 'rgba(247, 248, 255, 0.74)',
-            navbarBorder: 'rgba(124, 58, 237, 0.2)',
-            navBg: 'rgba(255, 255, 255, 0.8)',
-        };
-    }
-    return {
-        bg: '#fff7fb',
-        bgSoft: '#fff0f6',
-        text: '#4a2338',
-        textSoft: '#85516b',
-        muted: '#b08098',
-        accent: '#ec4899',
-        accentSoft: 'rgba(236, 72, 153, 0.14)',
-        accentHover: '#db2777',
-        border: 'rgba(236, 72, 153, 0.16)',
-        surface: 'rgba(255, 247, 251, 0.88)',
-        navbarOverlay: 'rgba(255, 247, 251, 0.72)',
-        navbarBorder: 'rgba(236, 72, 153, 0.18)',
-        navBg: 'rgba(255, 255, 255, 0.76)',
-    };
-};
 const itemSlot = (type) => {
     if (type === 'THEME') return 'THEME';
     if (type === 'MOUSE_EFFECT') return 'MOUSE_EFFECT';
@@ -75,23 +24,7 @@ const createShopTheme = (item) => {
         category: 'shop',
         description: 'Theme Store',
         backgroundImage: resolveAssetUrl(item.assetUrl || item.previewImage),
-        colors: {
-            '--t-bg': palette.bg,
-            '--t-bg-soft': palette.bgSoft,
-            '--t-card': 'rgba(255, 255, 255, 0.82)',
-            '--t-card-hover': 'rgba(255, 255, 255, 0.94)',
-            '--t-text': palette.text,
-            '--t-text-soft': palette.textSoft,
-            '--t-muted': palette.muted,
-            '--t-accent': palette.accent,
-            '--t-accent-soft': palette.accentSoft,
-            '--t-accent-hover': palette.accentHover,
-            '--t-border': palette.border,
-            '--shop-theme-surface': palette.surface,
-            '--shop-theme-navbar-overlay': palette.navbarOverlay,
-            '--shop-theme-navbar-border': palette.navbarBorder,
-            '--shop-theme-nav-bg': palette.navBg,
-        },
+        colors: shopThemeColors(palette),
     };
 };
 

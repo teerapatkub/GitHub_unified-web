@@ -1,0 +1,128 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900"
+     preserveAspectRatio="xMidYMid slice" role="img" aria-label="ธีมเว็บลายพิกเซลอาร์ต">
+  <title>ธีมพิกเซลอาร์ต — Pixel Art Theme</title>
+  <!--
+    Same rule the Space and Sakura themes follow: the middle of the page stays
+    almost white and every piece of decoration is pushed to the edges. The app's
+    own text sits directly on this, so a busy centre is unreadable content, not
+    a livelier theme.
+
+    shape-rendering="crispEdges" is what makes it read as pixel art rather than
+    as squares: it turns off antialiasing, so the blocks keep hard edges at any
+    zoom. Everything is drawn on a 20px grid for the same reason.
+  -->
+  <defs>
+    <linearGradient id="pxSky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#dff3ff"/>
+      <stop offset="38%"  stop-color="#f2fbf6"/>
+      <stop offset="62%"  stop-color="#fbfffc"/>
+      <stop offset="100%" stop-color="#e8f7ec"/>
+    </linearGradient>
+
+    <!-- The faint grid that says "this world is made of tiles". -->
+    <pattern id="pxGrid" width="20" height="20" patternUnits="userSpaceOnUse">
+      <path d="M20 0 H0 V20" fill="none" stroke="#16a34a" stroke-width="1" opacity="0.05"/>
+    </pattern>
+
+    <!-- One cloud, reused. Pixel art repeats its sprites; so does this. -->
+    <g id="pxCloud" shape-rendering="crispEdges">
+      <rect x="40"  y="0"  width="80" height="20" fill="#ffffff"/>
+      <rect x="20"  y="20" width="140" height="20" fill="#ffffff"/>
+      <rect x="0"   y="40" width="180" height="20" fill="#ffffff"/>
+      <rect x="20"  y="60" width="140" height="20" fill="#eaf4ff"/>
+      <rect x="40"  y="0"  width="20" height="20" fill="#f4fbff"/>
+      <rect x="120" y="20" width="20" height="20" fill="#f4fbff"/>
+    </g>
+
+    <g id="pxHeart" shape-rendering="crispEdges">
+      <rect x="10" y="0"  width="20" height="10" fill="#f472b6"/>
+      <rect x="50" y="0"  width="20" height="10" fill="#f472b6"/>
+      <rect x="0"  y="10" width="80" height="20" fill="#ec4899"/>
+      <rect x="10" y="30" width="60" height="10" fill="#ec4899"/>
+      <rect x="20" y="40" width="40" height="10" fill="#db2777"/>
+      <rect x="30" y="50" width="20" height="10" fill="#db2777"/>
+      <rect x="10" y="10" width="10" height="10" fill="#fbcfe8"/>
+    </g>
+
+    <g id="pxCoin" shape-rendering="crispEdges">
+      <rect x="10" y="0"  width="20" height="10" fill="#fbbf24"/>
+      <rect x="0"  y="10" width="40" height="20" fill="#f59e0b"/>
+      <rect x="10" y="30" width="20" height="10" fill="#d97706"/>
+      <rect x="10" y="10" width="10" height="10" fill="#fef3c7"/>
+    </g>
+
+    <g id="pxStar" shape-rendering="crispEdges">
+      <rect x="10" y="0"  width="10" height="30" fill="#a7f3d0"/>
+      <rect x="0"  y="10" width="30" height="10" fill="#a7f3d0"/>
+    </g>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#pxSky)"/>
+  <rect width="1600" height="900" fill="url(#pxGrid)"/>
+
+  <!-- ── sky, top edge ─────────────────────────────────────────────── -->
+  <g opacity="0.85">
+    <use href="#pxCloud" x="80"   y="60"/>
+    <use href="#pxCloud" x="1280" y="40"  transform="translate(0,0)"/>
+    <use href="#pxCloud" x="620"  y="0"   opacity="0.55"/>
+    <use href="#pxCloud" x="1420" y="200" opacity="0.5"/>
+    <use href="#pxCloud" x="-40"  y="240" opacity="0.5"/>
+  </g>
+
+  <!-- ── ground, bottom edge ───────────────────────────────────────── -->
+  <g shape-rendering="crispEdges">
+    <!-- grass line, drawn as tiles rather than a rectangle so the top edge
+         steps the way a tilemap does -->
+    <rect x="0" y="820" width="1600" height="80" fill="#bbf7d0" opacity="0.55"/>
+    <rect x="0" y="860" width="1600" height="40" fill="#86efac" opacity="0.5"/>
+    <g fill="#86efac" opacity="0.55">
+      <rect x="0"    y="800" width="120" height="20"/>
+      <rect x="180"  y="800" width="80"  height="20"/>
+      <rect x="360"  y="800" width="140" height="20"/>
+      <rect x="700"  y="800" width="100" height="20"/>
+      <rect x="980"  y="800" width="160" height="20"/>
+      <rect x="1300" y="800" width="120" height="20"/>
+      <rect x="1500" y="800" width="100" height="20"/>
+    </g>
+
+    <!-- two question blocks, the most recognisable tile there is -->
+    <g opacity="0.7">
+      <rect x="220" y="700" width="60" height="60" fill="#fcd34d"/>
+      <rect x="220" y="700" width="60" height="10" fill="#fde68a"/>
+      <rect x="240" y="715" width="20" height="10" fill="#92400e"/>
+      <rect x="250" y="725" width="10" height="10" fill="#92400e"/>
+      <rect x="240" y="735" width="10" height="10" fill="#92400e"/>
+
+      <rect x="1320" y="660" width="60" height="60" fill="#fcd34d"/>
+      <rect x="1320" y="660" width="60" height="10" fill="#fde68a"/>
+      <rect x="1340" y="675" width="20" height="10" fill="#92400e"/>
+      <rect x="1350" y="685" width="10" height="10" fill="#92400e"/>
+      <rect x="1340" y="695" width="10" height="10" fill="#92400e"/>
+    </g>
+
+    <!-- pixel bushes -->
+    <g fill="#4ade80" opacity="0.45">
+      <rect x="500" y="760" width="120" height="20"/>
+      <rect x="520" y="740" width="80"  height="20"/>
+      <rect x="540" y="720" width="40"  height="20"/>
+      <rect x="1080" y="770" width="100" height="20"/>
+      <rect x="1100" y="750" width="60"  height="20"/>
+    </g>
+  </g>
+
+  <!-- ── collectibles, corners only ────────────────────────────────── -->
+  <g opacity="0.75">
+    <use href="#pxHeart" x="120"  y="620"/>
+    <use href="#pxCoin"  x="1480" y="420"/>
+    <use href="#pxCoin"  x="60"   y="430" opacity="0.7"/>
+    <use href="#pxHeart" x="1400" y="780" opacity="0.6"/>
+  </g>
+
+  <g opacity="0.6">
+    <use href="#pxStar" x="300"  y="180"/>
+    <use href="#pxStar" x="1180" y="260"/>
+    <use href="#pxStar" x="860"  y="120" opacity="0.6"/>
+    <use href="#pxStar" x="1540" y="600"/>
+    <use href="#pxStar" x="40"   y="700"/>
+  </g>
+</svg>

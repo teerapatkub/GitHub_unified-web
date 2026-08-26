@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200"
+     role="img" aria-label="กรอบโปรไฟล์ธีมพิกเซลอาร์ต">
+  <title>กรอบบล็อกพิกเซล — Pixel Block Frame</title>
+  <!--
+    A pixel frame cannot be a circle: a circle is the one shape a tile grid
+    cannot draw. This is a square ring built from 16px blocks with the corners
+    stepped, which is how an 8-bit UI draws a border, and the centre is left
+    fully transparent so the avatar shows through like every other frame here.
+  -->
+  <g shape-rendering="crispEdges">
+    <!-- outer ring, one block thick, corners stepped in -->
+    <g fill="#16a34a">
+      <rect x="32"  y="16"  width="136" height="16"/>
+      <rect x="32"  y="168" width="136" height="16"/>
+      <rect x="16"  y="32"  width="16"  height="136"/>
+      <rect x="168" y="32"  width="16"  height="136"/>
+      <rect x="32"  y="32"  width="16"  height="16"/>
+      <rect x="152" y="32"  width="16"  height="16"/>
+      <rect x="32"  y="152" width="16"  height="16"/>
+      <rect x="152" y="152" width="16"  height="16"/>
+    </g>
+
+    <!-- highlight along the top and left, shadow along the bottom and right:
+         the two-tone bevel is what makes a flat ring look like a raised tile -->
+    <g fill="#86efac">
+      <rect x="32"  y="16" width="136" height="6"/>
+      <rect x="16"  y="32" width="6"   height="136"/>
+      <rect x="32"  y="32" width="16"  height="6"/>
+    </g>
+    <g fill="#15803d">
+      <rect x="32"  y="178" width="136" height="6"/>
+      <rect x="178" y="32"  width="6"   height="136"/>
+      <rect x="152" y="162" width="16"  height="6"/>
+    </g>
+
+    <!-- inner accent line, one block in from the ring -->
+    <g fill="#4ade80" opacity="0.55">
+      <rect x="48"  y="32"  width="104" height="6"/>
+      <rect x="48"  y="162" width="104" height="6"/>
+      <rect x="32"  y="48"  width="6"   height="104"/>
+      <rect x="162" y="48"  width="6"   height="104"/>
+    </g>
+
+    <!-- corner studs, in the four colours a starter palette always has -->
+    <g>
+      <rect x="16"  y="16"  width="16" height="16" fill="#fbbf24"/>
+      <rect x="168" y="16"  width="16" height="16" fill="#38bdf8"/>
+      <rect x="16"  y="168" width="16" height="16" fill="#f472b6"/>
+      <rect x="168" y="168" width="16" height="16" fill="#a78bfa"/>
+      <rect x="16"  y="16"  width="6"  height="6"  fill="#fef3c7"/>
+      <rect x="168" y="16"  width="6"  height="6"  fill="#e0f2fe"/>
+      <rect x="16"  y="168" width="6"  height="6"  fill="#fce7f3"/>
+      <rect x="168" y="168" width="6"  height="6"  fill="#ede9fe"/>
+    </g>
+
+    <!-- a heart hanging off the top edge, the way a health bar sits above a
+         sprite -->
+    <g transform="translate(88 2)">
+      <rect x="2"  y="0" width="4" height="2" fill="#f472b6"/>
+      <rect x="10" y="0" width="4" height="2" fill="#f472b6"/>
+      <rect x="0"  y="2" width="16" height="4" fill="#ec4899"/>
+      <rect x="2"  y="6" width="12" height="2" fill="#ec4899"/>
+      <rect x="4"  y="8" width="8"  height="2" fill="#db2777"/>
+      <rect x="6"  y="10" width="4" height="2" fill="#db2777"/>
+    </g>
+
+    <!-- a coin resting on the bottom edge -->
+    <g transform="translate(92 186)">
+      <rect x="4"  y="0" width="8"  height="2" fill="#fbbf24"/>
+      <rect x="0"  y="2" width="16" height="8" fill="#f59e0b"/>
+      <rect x="4"  y="10" width="8" height="2" fill="#d97706"/>
+      <rect x="4"  y="2"  width="4" height="4" fill="#fef3c7"/>
+    </g>
+  </g>
+</svg>

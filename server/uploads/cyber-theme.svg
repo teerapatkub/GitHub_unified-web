@@ -1,0 +1,125 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900"
+     preserveAspectRatio="xMidYMid slice" role="img" aria-label="ธีมเว็บลายไซเบอร์">
+  <title>ธีมไซเบอร์ — Cyber Theme</title>
+  <!--
+    Cyberpunk usually means a dark screen with neon on top. That is the wrong
+    shape for this app: the page's own text colour is dark and its cards are
+    white, so a dark background would leave the text unreadable everywhere the
+    cards do not cover. This keeps the neon and inverts the ground - pale cyan,
+    magenta traces, everything pushed to the edges with a clear centre, the same
+    layout rule the Space and Sakura themes follow.
+  -->
+  <defs>
+    <linearGradient id="cyGround" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#dcf7fd"/>
+      <stop offset="40%"  stop-color="#f3feff"/>
+      <stop offset="60%"  stop-color="#fdffff"/>
+      <stop offset="100%" stop-color="#e6f9fd"/>
+    </linearGradient>
+
+    <linearGradient id="cyTrace" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%"   stop-color="#22d3ee"/>
+      <stop offset="60%"  stop-color="#e11d8f"/>
+      <stop offset="100%" stop-color="#a855f7"/>
+    </linearGradient>
+
+    <linearGradient id="cyScan" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#e11d8f" stop-opacity="0"/>
+      <stop offset="50%"  stop-color="#e11d8f" stop-opacity="0.16"/>
+      <stop offset="100%" stop-color="#e11d8f" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- the grid a circuit board is etched on -->
+    <pattern id="cyGrid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0 H0 V48" fill="none" stroke="#0ea5e9" stroke-width="1" opacity="0.06"/>
+      <circle cx="0" cy="0" r="1.6" fill="#0ea5e9" opacity="0.12"/>
+    </pattern>
+
+    <!-- a solder pad: ring plus centre, the thing every trace ends at -->
+    <g id="cyNode">
+      <circle r="9" fill="none" stroke="#22d3ee" stroke-width="2.5" opacity="0.75"/>
+      <circle r="3.5" fill="#e11d8f"/>
+    </g>
+
+    <g id="cyChip">
+      <rect x="-26" y="-26" width="52" height="52" rx="6" fill="#ffffff" opacity="0.75"
+            stroke="#22d3ee" stroke-width="2"/>
+      <rect x="-13" y="-13" width="26" height="26" rx="3" fill="#e11d8f" opacity="0.16"/>
+      <g stroke="#a855f7" stroke-width="3" stroke-linecap="round" opacity="0.7">
+        <path d="M-26 -14 H-36 M-26 0 H-36 M-26 14 H-36"/>
+        <path d="M26 -14 H36 M26 0 H36 M26 14 H36"/>
+        <path d="M-14 -26 V-36 M0 -26 V-36 M14 -26 V-36"/>
+        <path d="M-14 26 V36 M0 26 V36 M14 26 V36"/>
+      </g>
+    </g>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#cyGround)"/>
+  <rect width="1600" height="900" fill="url(#cyGrid)"/>
+
+  <!-- a single scanline band, low and wide, so it reads as atmosphere -->
+  <rect x="0" y="120" width="1600" height="90" fill="url(#cyScan)"/>
+  <rect x="0" y="720" width="1600" height="70" fill="url(#cyScan)" opacity="0.7"/>
+
+  <!-- ── circuit traces, left edge ─────────────────────────────────── -->
+  <g fill="none" stroke="url(#cyTrace)" stroke-width="3" stroke-linecap="round"
+     stroke-linejoin="round" opacity="0.55">
+    <path d="M0 300 H120 L170 250 H260 L300 290 V420"/>
+    <path d="M0 470 H80 L130 520 H240"/>
+    <path d="M0 640 H150 L200 590 H300 L340 630 H420"/>
+    <path d="M60 900 V800 L110 750 V690"/>
+  </g>
+
+  <!-- ── circuit traces, right edge ────────────────────────────────── -->
+  <g fill="none" stroke="url(#cyTrace)" stroke-width="3" stroke-linecap="round"
+     stroke-linejoin="round" opacity="0.5">
+    <path d="M1600 240 H1460 L1410 290 H1330 L1290 250 V150"/>
+    <path d="M1600 430 H1500 L1450 380 H1360"/>
+    <path d="M1600 610 H1440 L1390 660 H1300 L1260 620 H1180"/>
+    <path d="M1540 900 V820 L1490 770 V700"/>
+  </g>
+
+  <!-- ── traces skimming the top and bottom, well clear of the centre ── -->
+  <g fill="none" stroke="#22d3ee" stroke-width="2.5" stroke-linecap="round"
+     stroke-linejoin="round" opacity="0.35">
+    <path d="M420 0 V70 L470 120 H620"/>
+    <path d="M980 0 V60 L1030 110 H1160"/>
+    <path d="M520 900 V840 L570 790 H700"/>
+    <path d="M900 900 V860 L950 810 H1080"/>
+  </g>
+
+  <!-- ── solder pads at the trace ends ─────────────────────────────── -->
+  <g opacity="0.8">
+    <use href="#cyNode" x="300"  y="420"/>
+    <use href="#cyNode" x="240"  y="520"/>
+    <use href="#cyNode" x="420"  y="630"/>
+    <use href="#cyNode" x="110"  y="690"/>
+    <use href="#cyNode" x="1290" y="150"/>
+    <use href="#cyNode" x="1360" y="380"/>
+    <use href="#cyNode" x="1180" y="620"/>
+    <use href="#cyNode" x="1490" y="700"/>
+    <use href="#cyNode" x="620"  y="120" opacity="0.6"/>
+    <use href="#cyNode" x="1160" y="110" opacity="0.6"/>
+    <use href="#cyNode" x="700"  y="790" opacity="0.6"/>
+    <use href="#cyNode" x="1080" y="810" opacity="0.6"/>
+  </g>
+
+  <!-- ── two chips, opposite corners ───────────────────────────────── -->
+  <use href="#cyChip" x="170" y="180" opacity="0.85"/>
+  <use href="#cyChip" x="1430" y="770" opacity="0.75"/>
+
+  <!-- ── a little telemetry, bottom-left and top-right ─────────────── -->
+  <g fill="#e11d8f" opacity="0.3">
+    <rect x="40"  y="560" width="8" height="26" rx="3"/>
+    <rect x="56"  y="546" width="8" height="40" rx="3"/>
+    <rect x="72"  y="568" width="8" height="18" rx="3"/>
+    <rect x="88"  y="536" width="8" height="50" rx="3"/>
+    <rect x="104" y="558" width="8" height="28" rx="3"/>
+  </g>
+  <g fill="#22d3ee" opacity="0.3">
+    <rect x="1480" y="300" width="8" height="34" rx="3"/>
+    <rect x="1496" y="286" width="8" height="48" rx="3"/>
+    <rect x="1512" y="310" width="8" height="24" rx="3"/>
+    <rect x="1528" y="294" width="8" height="40" rx="3"/>
+  </g>
+</svg>

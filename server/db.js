@@ -1051,6 +1051,66 @@ db.ready = (async () => {
                     },
                 ],
             },
+            {
+                set_key: 'pixel',
+                name_th: 'เซ็ตธีมพิกเซลอาร์ต',
+                name_en: 'Pixel Art Set',
+                description_th: 'ธีมเว็บลายพิกเซล 8 บิต กรอบโปรไฟล์บล็อก และเคอร์เซอร์หัวใจพิกเซล',
+                price: 200,
+                items: [
+                    {
+                        item_type: 'THEME', name: 'ธีมพิกเซลอาร์ต', price: 120, rarity: 'RARE',
+                        description: 'เปลี่ยนพื้นหลังทั้งเว็บเป็นฉากเกม 8 บิต ก้อนเมฆพิกเซล พื้นหญ้า และกล่องปริศนา',
+                        asset_url: '/uploads/pixel-theme.svg',
+                        effects: null,
+                    },
+                    {
+                        item_type: 'PROFILE_FRAME', name: 'กรอบบล็อกพิกเซล', price: 80, rarity: 'RARE',
+                        description: 'กรอบสี่เหลี่ยมแบบตารางบล็อก มุมเป็นขั้นบันได ประดับหัวใจและเหรียญ',
+                        asset_url: '/uploads/frame-pixel.svg',
+                        effects: null,
+                    },
+                    {
+                        item_type: 'MOUSE_EFFECT', name: 'หัวใจพิกเซล', price: 60, rarity: 'RARE',
+                        description: 'คลิกแล้วมีหัวใจกับเหรียญแบบเกม 8 บิตเด้งตามเมาส์',
+                        asset_url: '',
+                        effects: [
+                            { trigger: 'click', visual: '💚', color: '#16a34a', size: 26, duration: 800 },
+                            { trigger: 'dblclick', visual: '👾', color: '#4ade80', size: 36, duration: 1100 },
+                        ],
+                    },
+                ],
+            },
+            {
+                set_key: 'cyber',
+                name_th: 'เซ็ตธีมไซเบอร์',
+                name_en: 'Cyber Set',
+                description_th: 'ธีมเว็บลายวงจรนีออน กรอบโปรไฟล์วงจร และเคอร์เซอร์ประกายไฟฟ้า',
+                price: 200,
+                items: [
+                    {
+                        item_type: 'THEME', name: 'ธีมไซเบอร์', price: 120, rarity: 'RARE',
+                        description: 'เปลี่ยนพื้นหลังทั้งเว็บเป็นแผงวงจรนีออน เส้นทางสัญญาณสีชมพู-ฟ้า บนพื้นสว่าง',
+                        asset_url: '/uploads/cyber-theme.svg',
+                        effects: null,
+                    },
+                    {
+                        item_type: 'PROFILE_FRAME', name: 'กรอบวงจรนีออน', price: 80, rarity: 'RARE',
+                        description: 'กรอบวงกลมที่ถูกตัดเป็นช่วง มีจุดบัดกรีคั่น และมุมเล็งแบบ HUD',
+                        asset_url: '/uploads/frame-cyber.svg',
+                        effects: null,
+                    },
+                    {
+                        item_type: 'MOUSE_EFFECT', name: 'ประกายไฟฟ้า', price: 60, rarity: 'RARE',
+                        description: 'คลิกแล้วมีประกายไฟฟ้าและสัญญาณข้อมูลแล่นตามเมาส์',
+                        asset_url: '',
+                        effects: [
+                            { trigger: 'click', visual: '⚡', color: '#e11d8f', size: 26, duration: 700 },
+                            { trigger: 'dblclick', visual: '💠', color: '#22d3ee', size: 36, duration: 1000 },
+                        ],
+                    },
+                ],
+            },
         ];
 
         // The Sakura theme already exists as a hand-uploaded item that a player
