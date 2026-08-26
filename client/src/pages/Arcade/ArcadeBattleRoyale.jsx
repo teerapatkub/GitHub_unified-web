@@ -625,7 +625,7 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
   }, [activeRoundHint]);
 
   return (
-    <div className="h-screen w-screen overflow-hidden flex flex-col bg-slate-50 relative font-sans select-none antialiased">
+    <div className="h-screen w-screen overflow-hidden flex flex-col bg-pysim-surface relative font-sans select-none antialiased">
       {/* Phase 8.1 — connection-instability banner. Deliberately a plain
           conditional render rather than an AnimatePresence exit animation:
           an animated wrapper that fails to unmount is exactly what left an
@@ -639,7 +639,7 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
       )}
 
       {/* 1. TOP BAR */}
-      <nav className="min-h-[4rem] border-b border-slate-200 bg-white flex flex-wrap items-center justify-between gap-y-2 px-4 sm:px-6 py-2 sm:py-0 z-10 shadow-sm shrink-0">
+      <nav className="pysim-theme-navbar min-h-[4rem] border-b border-slate-200 bg-white flex flex-wrap items-center justify-between gap-y-2 px-4 sm:px-6 py-2 sm:py-0 z-10 shadow-sm shrink-0">
         <div className="flex items-center space-x-3">
           <div className="bg-rose-500 text-white p-2 rounded-xl shadow-md shadow-rose-500/20">
             <Gamepad2 className="h-5 w-5 fill-white animate-bounce-slight" />
@@ -694,7 +694,7 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
       </nav>
 
       {/* 2. BODY CONTENT */}
-      <div className="flex-1 relative overflow-hidden bg-slate-50/50">
+      <div className="flex-1 relative overflow-hidden">
         
         {/* GLOSSARY OVERLAY */}
         <GlossaryModal show={showGlossary} onClose={() => setShowGlossary(false)} items={SHOP_ITEMS} t={t} />

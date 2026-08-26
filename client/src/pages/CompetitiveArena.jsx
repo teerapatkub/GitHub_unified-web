@@ -725,10 +725,10 @@ export default function CompetitiveArena() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/50 text-slate-800 flex flex-col font-sans antialiased overflow-x-hidden relative">
+    <div className="min-h-screen bg-pysim-surface text-slate-800 flex flex-col font-sans antialiased overflow-x-hidden relative">
       
       {/* 1. CUSTOM TOP NAVBAR (Adapting previous dark navbar to light site theme) */}
-      <nav className="h-16 sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-6 flex justify-between items-center shadow-sm w-full mb-8">
+      <nav className="pysim-theme-navbar h-16 sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-6 flex justify-between items-center shadow-sm w-full mb-8">
         <div className="flex items-center space-x-3">
           <button 
             onClick={() => navigate('/menu')}

@@ -52,7 +52,7 @@ export default function MainMenu() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/50 pb-16 font-sans antialiased">
+    <div className="min-h-screen bg-pysim-surface pb-16 font-sans antialiased">
       {/* 1. TOP NAVIGATION BAR */}
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200/80 px-6 py-4 flex justify-between items-center shadow-sm">
         <div className="flex items-center space-x-3">
