@@ -2068,6 +2068,207 @@ const EMAIL_CONFIGURED = !!(process.env.EMAIL_USER && process.env.EMAIL_PASS);
 
 
 // ==========================================
+// Email verification by one-time code (OTP)
+// ==========================================
+//
+// A six-digit code, emailed at registration and typed back into the page.
+// Registration used to send a link that nothing enforced - the account worked
+// whether or not it was ever opened, because `users.email_verified` was a
+// column no code path ever wrote - so verification was decorative.
+//
+// A code also fits how this actually happens: the mail is read on a phone and
+// the registering is done on a laptop, which is the case a link handles worst.
+//
+// Six digits is one guess in a million, which is only a real barrier because
+// the code dies after OTP_MAX_ATTEMPTS wrong tries and after OTP_TTL_MINUTES.
+// Both limits live on the row, so they survive restarts and hold no matter how
+// many browser tabs someone opens.
+const OTP_TTL_MINUTES = 10;
+const OTP_MAX_ATTEMPTS = 5;
+const OTP_RESEND_COOLDOWN_SECONDS = 60;
+
+// crypto.randomInt, not Math.random: this number is the whole secret.
+const generateOtp = () => String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+
+// Stored hashed, for the same reason passwords are: a leaked database must not
+// hand over live codes for every account currently mid-registration.
+const issueOtp = async (userId) => {
+    const code = generateOtp();
+    const codeHash = await bcrypt.hash(code, 10);
+    // One live code per account. Without this, every code ever sent would keep
+    // working until it expired, and "resend" would widen the target instead of
+    // replacing it.
+    await db.execute(
+        `DELETE FROM email_verifications WHERE user_id = ? AND purpose = 'otp' AND verified_at IS NULL`,
+        [userId]
+    );
+    await db.execute(
+        `INSERT INTO email_verifications (user_id, token, purpose, attempts, expires_at, last_sent_at)
+         VALUES (?, ?, 'otp', 0, NOW() + INTERVAL '${OTP_TTL_MINUTES} minutes', NOW())`,
+        [userId, codeHash]
+    );
+    return code;
+};
+
+const sendOtpEmail = async (email, username, code) => {
+    if (!EMAIL_CONFIGURED) {
+        // With no SMTP configured the code goes to the server log so that
+        // development works. It is never returned over the API: a deployment
+        // that forgot to configure mail would otherwise hand the code to
+        // whoever asked for it.
+        console.log(`📧 [MOCK] รหัสยืนยันของ ${email}: ${code} (หมดอายุใน ${OTP_TTL_MINUTES} นาที)`);
+        return;
+    }
+    try {
+        await emailTransporter.sendMail({
+            from: process.env.EMAIL_USER,
+            to: email,
+            subject: `รหัสยืนยัน ${code} — Python Coder Game`,
+            html: `<div style="font-family:sans-serif;max-width:480px;margin:auto;padding:24px">
+                <h2 style="margin:0 0 8px">สวัสดี ${username}</h2>
+                <p style="color:#475569;margin:0 0 20px">กรอกรหัสนี้ในหน้าสมัครสมาชิก เพื่อยืนยันอีเมลของคุณ</p>
+                <div style="font-size:34px;font-weight:800;letter-spacing:10px;text-align:center;
+                            padding:18px;background:#f1f5f9;border-radius:12px;color:#0f172a">${code}</div>
+                <p style="color:#94a3b8;margin-top:20px;font-size:12px">
+                    รหัสหมดอายุใน ${OTP_TTL_MINUTES} นาที และใช้ได้ครั้งเดียว<br>
+                    ถ้าคุณไม่ได้สมัครสมาชิก ไม่ต้องทำอะไรกับอีเมลฉบับนี้
+                </p>
+            </div>`,
+        });
+        console.log(`📧 ส่งรหัสยืนยันไปที่ ${email}`);
+    } catch (mailErr) {
+        // The account exists either way, so make the code recoverable from the
+        // log rather than stranding someone mid-registration over an SMTP blip.
+        console.error('⚠️ ส่งอีเมลรหัสยืนยันไม่สำเร็จ:', mailErr.message);
+        console.log(`📧 [MOCK] รหัสยืนยันของ ${email}: ${code}`);
+    }
+};
+
+// Is this account still waiting on the code it was sent at registration?
+// Asked at login. Deliberately NOT `users.email_verified = 0`: every account
+// that existed before this feature has that column at 0, because nothing ever
+// wrote it, and none of them should be locked out by a feature added today.
+const hasPendingOtp = async (userId) => {
+    const [rows] = await db.execute(
+        `SELECT 1 FROM email_verifications
+          WHERE user_id = ? AND purpose = 'otp' AND verified_at IS NULL LIMIT 1`,
+        [userId]
+    );
+    return rows.length > 0;
+};
+
+app.post('/api/verify-otp', async (req, res) => {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const code = String(req.body?.code || '').trim();
+
+    if (!email || !/^[0-9]{6}$/.test(code)) {
+        return res.status(400).json({ message: 'กรุณากรอกรหัส 6 หลักที่ส่งไปทางอีเมล' });
+    }
+
+    try {
+        const [users] = await db.execute('SELECT * FROM users WHERE LOWER(email) = ? LIMIT 1', [email]);
+        if (users.length === 0) return res.status(404).json({ message: 'ไม่พบบัญชีที่ใช้อีเมลนี้' });
+        const user = users[0];
+
+        const [rows] = await db.execute(
+            `SELECT * FROM email_verifications
+              WHERE user_id = ? AND purpose = 'otp' AND verified_at IS NULL
+              ORDER BY id DESC LIMIT 1`,
+            [user.user_id]
+        );
+        if (rows.length === 0) {
+            return res.status(400).json({ message: 'บัญชีนี้ยืนยันอีเมลเรียบร้อยแล้ว กรุณาเข้าสู่ระบบ' });
+        }
+
+        const record = rows[0];
+        if (new Date(record.expires_at).getTime() < Date.now()) {
+            return res.status(410).json({ message: 'รหัสหมดอายุแล้ว กดขอรหัสใหม่ได้เลย', expired: true });
+        }
+        if (Number(record.attempts || 0) >= OTP_MAX_ATTEMPTS) {
+            return res.status(429).json({
+                message: 'กรอกรหัสผิดเกินจำนวนที่กำหนด กรุณากดขอรหัสใหม่',
+                expired: true,
+            });
+        }
+
+        const matches = await bcrypt.compare(code, record.token);
+        if (!matches) {
+            await db.execute('UPDATE email_verifications SET attempts = attempts + 1 WHERE id = ?', [record.id]);
+            const left = OTP_MAX_ATTEMPTS - (Number(record.attempts || 0) + 1);
+            return res.status(400).json({
+                message: left > 0
+                    ? `รหัสไม่ถูกต้อง เหลืออีก ${left} ครั้ง`
+                    : 'กรอกรหัสผิดครบจำนวนแล้ว กรุณากดขอรหัสใหม่',
+                attemptsLeft: Math.max(left, 0),
+            });
+        }
+
+        await db.execute('UPDATE email_verifications SET verified_at = NOW() WHERE id = ?', [record.id]);
+        // This is what finally gives users.email_verified a meaning.
+        await db.execute('UPDATE users SET email_verified = 1 WHERE user_id = ?', [user.user_id]);
+
+        // Straight in, rather than "now go and log in". The person has just
+        // proved both the password and the mailbox, and a beginner sent back to
+        // a login form reads it as the code not having worked.
+        res.json({
+            message: 'ยืนยันอีเมลเรียบร้อย',
+            user_id: user.user_id,
+            username: user.username,
+            email: user.email,
+            role: user.role || 'user',
+            level: user.level || 0,
+            xp: user.xp || 0,
+        });
+    } catch (err) {
+        console.error('❌ Verify OTP Error:', err.message);
+        res.status(500).json({ message: 'ยืนยันอีเมลไม่สำเร็จ กรุณาลองใหม่' });
+    }
+});
+
+app.post('/api/resend-otp', async (req, res) => {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ message: 'กรุณาระบุอีเมล' });
+
+    try {
+        const [users] = await db.execute('SELECT * FROM users WHERE LOWER(email) = ? LIMIT 1', [email]);
+        // The same answer whether or not the address has an account, so this
+        // cannot be used to find out who is registered here.
+        const genericOk = {
+            message: `ส่งรหัสใหม่ไปที่ ${email} แล้ว`,
+            cooldownSeconds: OTP_RESEND_COOLDOWN_SECONDS,
+        };
+        if (users.length === 0) return res.json(genericOk);
+        const user = users[0];
+
+        const [rows] = await db.execute(
+            `SELECT * FROM email_verifications
+              WHERE user_id = ? AND purpose = 'otp' AND verified_at IS NULL
+              ORDER BY id DESC LIMIT 1`,
+            [user.user_id]
+        );
+        if (rows.length === 0) {
+            return res.status(400).json({ message: 'บัญชีนี้ยืนยันอีเมลเรียบร้อยแล้ว กรุณาเข้าสู่ระบบ' });
+        }
+
+        const sentAt = rows[0].last_sent_at ? new Date(rows[0].last_sent_at).getTime() : 0;
+        const waited = Math.floor((Date.now() - sentAt) / 1000);
+        if (waited < OTP_RESEND_COOLDOWN_SECONDS) {
+            return res.status(429).json({
+                message: `กรุณารออีก ${OTP_RESEND_COOLDOWN_SECONDS - waited} วินาที ก่อนขอรหัสใหม่`,
+                cooldownSeconds: OTP_RESEND_COOLDOWN_SECONDS - waited,
+            });
+        }
+
+        const code = await issueOtp(user.user_id);
+        await sendOtpEmail(user.email, user.username, code);
+        res.json(genericOk);
+    } catch (err) {
+        console.error('❌ Resend OTP Error:', err.message);
+        res.status(500).json({ message: 'ส่งรหัสใหม่ไม่สำเร็จ กรุณาลองใหม่' });
+    }
+});
+
+// ==========================================
 // 1. API: Login / Register / User Management
 // ==========================================
 
@@ -2116,38 +2317,17 @@ app.post('/api/register', async (req, res) => {
             [username, hash, email, 'user', 0, 0, 0]
         );
 
-        // สร้าง Email Verification Token
-        const verifyToken = crypto.randomBytes(32).toString('hex');
-        await db.execute(
-            'INSERT INTO email_verifications (user_id, token, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 24 HOUR))',
-            [result.insertId, verifyToken]
-        );
+        // The account exists but cannot be used until the code that follows is
+        // typed back in - see the OTP section above for why a code and not the
+        // link this used to send.
+        const code = await issueOtp(result.insertId);
+        await sendOtpEmail(email, username, code);
 
-        // ส่ง Verification Email
-        const verifyUrl = `${publicBaseUrl()}/api/verify-email/${verifyToken}`;
-        if (EMAIL_CONFIGURED) {
-            try {
-                await emailTransporter.sendMail({
-                    from: process.env.EMAIL_USER,
-                    to: email,
-                    subject: '🐍 Python Coder Game — ยืนยันอีเมล',
-                    html: `<div style="font-family:sans-serif;max-width:500px;margin:auto;padding:20px">
-                        <h2>ยินดีต้อนรับ ${username}!</h2>
-                        <p>กรุณาคลิกปุ่มด้านล่างเพื่อยืนยันอีเมลของคุณ:</p>
-                        <a href="${verifyUrl}" style="display:inline-block;padding:12px 24px;background:#3b82f6;color:white;text-decoration:none;border-radius:8px;font-weight:bold">ยืนยันอีเมล</a>
-                        <p style="color:#888;margin-top:20px;font-size:12px">ลิงก์นี้จะหมดอายุใน 24 ชั่วโมง</p>
-                    </div>`
-                });
-                console.log(`📧 ส่ง Verification Email ไปที่ ${email}`);
-            } catch (mailErr) {
-                console.error(`⚠️ ไม่สามารถส่งอีเมลยืนยันได้ (SMTP Error):`, mailErr.message);
-                console.log(`📧 [MOCK] Verification Link (เนื่องจาก SMTP ล้มเหลว): ${verifyUrl}`);
-            }
-        } else {
-            console.log(`📧 [MOCK] Verification Link: ${verifyUrl}`);
-        }
-
-        res.status(201).json({ message: 'สมัครสมาชิกสำเร็จ! กรุณาเข้าสู่ระบบ' });
+        res.status(201).json({
+            message: `ส่งรหัสยืนยัน 6 หลักไปที่ ${email} แล้ว`,
+            requiresOtp: true,
+            email,
+        });
     } catch (err) {
         console.error('❌ Register Error:', err.message);
         res.status(500).json({ message: 'Server error' });
@@ -2393,6 +2573,19 @@ app.post('/api/login', async (req, res) => {
         const user = users[0];
         const isMatch = await bcrypt.compare(password, user.password_hash);
         if (!isMatch) return res.status(401).json({ message: 'Wrong password' });
+
+        // An account that registered but never entered its code stops here.
+        // Checked after the password, so this cannot be used to find out which
+        // accounts exist. `requiresOtp` tells the page to show the code screen
+        // instead of an error a beginner cannot act on.
+        if (await hasPendingOtp(user.user_id)) {
+            return res.status(403).json({
+                message: 'บัญชีนี้ยังไม่ได้ยืนยันอีเมล กรุณากรอกรหัส 6 หลักที่ส่งไปให้',
+                requiresOtp: true,
+                email: user.email,
+            });
+        }
+
         res.json({
             user_id: user.user_id,
             username: user.username,

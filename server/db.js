@@ -1410,6 +1410,34 @@ db.ready = (async () => {
         console.log(`✅ ความสำเร็จ: ${ACHIEVEMENTS.length} รายการพร้อมเงื่อนไขที่ตรวจได้อัตโนมัติ`);
 
         // ==================================================================
+        // Email verification by one-time code.
+        //
+        // Registration used to email a link that stayed valid for 24 hours and
+        // that nothing ever checked: `users.email_verified` was never written
+        // by any code path, so an account with an unopened link behaved exactly
+        // like a verified one. A code the person types back in closes that,
+        // and it works from a phone reading the mail and a laptop doing the
+        // registering - which is the common case here, and the case a link
+        // handles worst.
+        //
+        // The same table carries both, told apart by `purpose`, because the
+        // outstanding links from before this change must keep working.
+        //
+        // `attempts` is what makes six digits enough. One in a million is only
+        // a real barrier if the guesser gets a handful of tries, so the code
+        // dies after five wrong ones and has to be resent.
+        // ==================================================================
+        await db.query(`ALTER TABLE email_verifications ADD COLUMN IF NOT EXISTS purpose VARCHAR(20) DEFAULT 'link';`);
+        await db.query(`ALTER TABLE email_verifications ADD COLUMN IF NOT EXISTS attempts INTEGER DEFAULT 0;`);
+        await db.query(`ALTER TABLE email_verifications ADD COLUMN IF NOT EXISTS last_sent_at TIMESTAMP;`);
+        await db.query(`
+            CREATE INDEX IF NOT EXISTS idx_email_verifications_user_purpose
+                ON email_verifications (user_id, purpose);
+        `);
+        // Rows written before this column existed are all links.
+        await db.query(`UPDATE email_verifications SET purpose = 'link' WHERE purpose IS NULL;`);
+
+        // ==================================================================
         // The survey a new account answers straight after registering.
         //
         // What was here before could not be finished: the last question is the
