@@ -95,6 +95,32 @@ h1, h2, h3, h4, h5, h6 {
 
 /* ===== Theme-Aware Component Classes ===== */
 @layer components {
+    /* Both classes below are used across the app - fourteen elements on six
+       pages for the gradient, eight files for the shadow - and neither was
+       ever defined in any stylesheet. Tailwind leaves an unknown class alone
+       rather than warning about it, so nothing anywhere reported this.
+
+       For .python-gradient that is not a cosmetic loss: the elements carrying
+       it also carry `text-white`, so they rendered as white text on a white
+       card. The shop's "ซื้อยกเซ็ต" button, the sign-in button and the profile
+       save buttons were all present and clickable but completely invisible.
+
+       The two stops are the PySim primary tokens from tailwind.config.js, so
+       this matches the buttons that were already visible.
+
+       The colour here is only a floor: these live in @layer components, so a
+       `text-*` utility on the same element still wins. */
+    .python-gradient {
+        background-image: linear-gradient(135deg, #145D91 0%, #3776AB 100%);
+        color: #FFFFFF;
+    }
+
+    .whisper-shadow {
+        box-shadow:
+            0 1px 2px rgba(25, 28, 29, 0.04),
+            0 8px 24px rgba(25, 28, 29, 0.06);
+    }
+
     .glass-panel {
         background: var(--t-glass);
         backdrop-filter: blur(16px);

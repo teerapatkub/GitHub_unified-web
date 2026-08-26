@@ -39,7 +39,6 @@ export default function ShopPage() {
     const [ownedItemIds, setOwnedItemIds] = useState(new Set());
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-    const [hoveredItemId, setHoveredItemId] = useState(null);
     const [sets, setSets] = useState([]);
     const [buyingSet, setBuyingSet] = useState('');
     const [equippedItems, setEquippedItems] = useState(() => {
@@ -512,8 +511,6 @@ export default function ShopPage() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                         {filteredItems.map((item, index) => (
                             <div key={item.id}
-                                onMouseEnter={() => setHoveredItemId(item.id)}
-                                onMouseLeave={() => setHoveredItemId(null)}
                                 className={`bg-white rounded-xl whisper-shadow hover:translate-y-[-4px] transition-all duration-300 overflow-hidden group
                                     ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
                                 style={{ transitionDelay: `${200 + index * 80}ms` }}>
@@ -536,37 +533,24 @@ export default function ShopPage() {
 
                                 <div className="p-5">
                                     <h3 className="text-lg font-bold text-pysim-on-surface mb-1">{item.name}</h3>
-                                    <div className="relative mt-4 h-10">
-                                        <div className={`absolute inset-0 items-center gap-1.5 ${hoveredItemId === item.id && !item.owned ? 'hidden' : 'flex'}`}>
+                                    <div className="mt-4 flex items-center justify-between gap-3">
+                                        <div className="flex shrink-0 items-center gap-1.5">
                                             <Coins size={16} className="text-pysim-secondary-container" />
                                             <span className="font-bold text-pysim-secondary text-sm">{item.price}</span>
                                         </div>
                                         {item.owned ? (
-                                            <>
-                                            <span
-                                                role={item.type === 'MOUSE_EFFECT' ? 'button' : undefined}
-                                                tabIndex={item.type === 'MOUSE_EFFECT' ? 0 : undefined}
-                                                title={item.type === 'MOUSE_EFFECT' ? 'Equip mouse effect' : undefined}
-                                                onClick={() => item.type === 'MOUSE_EFFECT' && handleEquip(item)}
-                                                onKeyDown={(event) => {
-                                                    if (item.type === 'MOUSE_EFFECT' && (event.key === 'Enter' || event.key === ' ')) handleEquip(item);
-                                                }}
-                                                className={`absolute inset-0 flex w-full items-center justify-center gap-1 rounded-lg px-4 py-2.5 text-sm font-bold transition-colors ${item.type === 'MOUSE_EFFECT' ? 'cursor-pointer bg-sky-400 text-white hover:bg-sky-500' : 'bg-emerald-50 text-emerald-600'}`}
-                                            >
-                                                <CheckCircle size={16} /> {t('shop.owned', 'มีแล้ว')}
-                                            </span>
                                             <button
                                                 type="button"
                                                 onClick={() => handleEquip(item)}
-                                                className={`absolute inset-0 flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold text-white transition-colors ${equippedItems[itemSlot(item.type)] === item.itemId ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-sky-400 hover:bg-sky-500'}`}
+                                                className={`flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors ${equippedItems[itemSlot(item.type)] === item.itemId ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-sky-400 hover:bg-sky-500'}`}
                                             >
-                                                <CheckCircle size={17} /> {equippedItems[itemSlot(item.type)] === item.itemId ? 'กำลังสวมใส่' : 'สวมใส่'}
+                                                <CheckCircle size={17} /> {equippedItems[itemSlot(item.type)] === item.itemId ? t('shop.equipped', 'กำลังสวมใส่') : t('shop.equip', 'สวมใส่')}
                                             </button>
-                                            </>
                                         ) : (
                                             <button
+                                                type="button"
                                                 onClick={() => handleBuy(item)}
-                                                className={`absolute inset-0 w-full items-center justify-center gap-2 rounded-lg bg-sky-400 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-sky-500 active:scale-[0.98] ${hoveredItemId === item.id ? 'flex' : 'hidden'}`}
+                                                className="flex items-center justify-center gap-2 rounded-lg bg-sky-400 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-sky-500 active:scale-[0.98]"
                                             >
                                                 <ShoppingCart size={17} />
                                                 {t('shop.buy', 'ซื้อ')}
