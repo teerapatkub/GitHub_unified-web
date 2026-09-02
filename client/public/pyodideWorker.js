@@ -11,8 +11,12 @@ self.onmessage = async function (e) {
         isLoading = true;
         self.postMessage({ type: 'status', status: 'loading' });
         try {
-            importScripts('https://cdn.jsdelivr.net/pyodide/v0.27.4/full/pyodide.js');
+            // Self-hosted (see client/scripts/sync-pyodide.mjs). A CDN <script> cannot
+            // be embedded once the page is cross-origin isolated, and self-hosting is
+            // what makes SharedArrayBuffer - and thus killing an infinite loop - possible.
+            importScripts('/pyodide/pyodide.js');
             pyodide = await loadPyodide({
+                indexURL: '/pyodide/',
                 stdout: (text) => self.postMessage({ type: 'stdout', text }),
                 stderr: (text) => self.postMessage({ type: 'stderr', text }),
             });

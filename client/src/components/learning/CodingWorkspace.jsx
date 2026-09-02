@@ -16,7 +16,7 @@ import {
 import { API_BASE } from '../../config/api.js';
 
 const PYODIDE_SCRIPT_ID = 'pyodide-runtime-loader';
-const PYODIDE_SCRIPT_URL = 'https://cdn.jsdelivr.net/pyodide/v0.27.7/full/pyodide.js';
+const PYODIDE_SCRIPT_URL = '/pyodide/pyodide.js'; // self-hosted, see scripts/sync-pyodide.mjs
 
 async function ensurePyodideLoader() {
   if (typeof window.loadPyodide === 'function') {
@@ -161,7 +161,7 @@ export default function CodingWorkspace({
       setIsLoading(true);
       try {
         const loadPyodide = await ensurePyodideLoader();
-        const instance = await loadPyodide();
+        const instance = await loadPyodide({ indexURL: '/pyodide/' });
         if (!isMounted) return;
 
         instance.setStdout({

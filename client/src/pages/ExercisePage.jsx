@@ -22,7 +22,7 @@ import { problemTitle, problemDescription } from "../utils/problemText";
 import { API_BASE } from '../config/api.js';
 
 const PYODIDE_SCRIPT_ID = "lesson-exercise-pyodide";
-const PYODIDE_SCRIPT_URL = "https://cdn.jsdelivr.net/pyodide/v0.27.7/full/pyodide.js";
+const PYODIDE_SCRIPT_URL = "/pyodide/pyodide.js"; // self-hosted, see scripts/sync-pyodide.mjs
 
 const parseTestCases = (raw) => {
   if (!raw) return [];
@@ -195,7 +195,7 @@ useEffect(() => {
     const initPyodide = async () => {
       try {
         const loadPyodide = await ensurePyodideLoader();
-        const instance = await loadPyodide();
+        const instance = await loadPyodide({ indexURL: "/pyodide/" });
 
         instance.setStdout({
           batched: (text) => {

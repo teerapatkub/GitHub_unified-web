@@ -9,6 +9,30 @@
 ไม่ใช่โค้ดชุดนี้โดยเฉพาะ
 
 
+
+---
+
+## 2026-08-27 — เฟส A: self-host Pyodide (เตรียมกันลูปค้าง)
+
+งานตาม `Plan2.md` ข้อ 1 ผู้ใช้เลือกทาง"self-host Pyodide + worker + cross-origin isolation"
+รอบนี้ทำชั้นแรก: **ย้าย Pyodide จาก CDN มาเสิร์ฟเอง** (ยังไม่เปิด isolation ไม่เปลี่ยนพฤติกรรม)
+จำเป็นเพราะ `<script>` จาก CDN ฝังใต้ COEP ไม่ได้ และ SharedArrayBuffer (ตัวที่จะใช้กันลูปค้าง +
+ทำ input() ให้บล็อกใน worker) ต้องมี isolation
+
+ไฟล์ของ Person 1 ที่แตะ (แค่เปลี่ยนที่มาของ Pyodide จาก CDN → `/pyodide/`):
+- `client/public/pyodideWorker.js` — `importScripts('/pyodide/pyodide.js')` + `indexURL:'/pyodide/'`
+  (เวอร์ชันขยับ 0.27.4 → 0.27.7 ให้ตรงกับหน้าอื่น)
+- `client/src/pages/ExercisePage.jsx`, `client/src/pages/MiNi_Game.jsx`,
+  `client/src/components/learning/CodingWorkspace.jsx` — `PYODIDE_SCRIPT_URL` และ `loadPyodide({indexURL})`
+- ตรรกะการรัน/ตัดสินไม่แตะเลย
+
+Pyodide (core 14MB) ก๊อปจาก `node_modules/pyodide` ไป `public/pyodide/` ด้วย
+`client/scripts/sync-pyodide.mjs` (รันอัตโนมัติผ่าน `predev`/`prebuild`) และ gitignore ไว้
+— `npm install` + build สร้างใหม่ได้เอง ไม่ commit ไฟล์ใหญ่
+
+ทดสอบบน dev server จริง: assets เสิร์ฟจาก origin เราครบ (wasm = application/wasm),
+โหลด+รัน `1+1`=2 ได้ใน 5.4s (main thread) และ worker ready+รันได้ใน 2.2s · prod:
+`express.static` เสิร์ฟ `/pyodide/*` ก่อน SPA fallback · `npm run build` ผ่าน
 ---
 
 ## 2026-08-27 — เฟส A (ส่วนที่ 1): error เป็นคำแนะนำ แทน traceback ดิบ

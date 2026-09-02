@@ -41,7 +41,7 @@ const triggerCelebration = async () => {
 
 const LUMI_AVATAR_BASE = "/data_MiNiGame/NPC_lumi";
 const PYODIDE_SCRIPT_ID = "mini-game-pyodide";
-const PYODIDE_SCRIPT_URL = "https://cdn.jsdelivr.net/pyodide/v0.27.7/full/pyodide.js";
+const PYODIDE_SCRIPT_URL = "/pyodide/pyodide.js"; // self-hosted, see scripts/sync-pyodide.mjs
 
 const getDefaultEndDialogues = () => [
   {
@@ -281,7 +281,7 @@ async function getPyodideInstance() {
       });
     }
 
-    const instance = await window.loadPyodide();
+    const instance = await window.loadPyodide({ indexURL: "/pyodide/" });
     _pyodideInstance = instance;
     return instance;
   })();
