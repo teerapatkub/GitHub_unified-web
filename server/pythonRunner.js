@@ -115,8 +115,36 @@ const runPythonScript = ({ code, input = '', timeoutMs = 4000, files = {}, mainF
         finish({ stdout, stderr, exitCode: null, error: 'Execution timed out', timedOut: true });
     }, timeoutMs);
 
-    child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
-    child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+    // A correct answer prints a handful of lines. Output anywhere near this size
+    // is a runaway `print` loop, and letting the buffers grow without a ceiling
+    // lets one submission exhaust the server's memory in the few seconds before
+    // the timeout fires - the timeout bounds TIME, not memory. When the ceiling
+    // is hit we stop the program early rather than wait it out, and report it as
+    // a beginner-readable Thai message, not a wrong answer with silent empty
+    // output.
+    const MAX_OUTPUT_BYTES = 256 * 1024;
+    let outputBytes = 0;
+    let outputCapped = false;
+    const appendOutput = (stream, chunk) => {
+        if (outputCapped) return;
+        const text = chunk.toString();
+        outputBytes += Buffer.byteLength(text, 'utf8');
+        if (stream === 'out') stdout += text; else stderr += text;
+        if (outputBytes >= MAX_OUTPUT_BYTES) {
+            outputCapped = true;
+            try { child.kill(); } catch { /* already gone; close/error reports it */ }
+            finish({
+                stdout,
+                stderr,
+                exitCode: null,
+                error: 'โปรแกรมพิมพ์ผลลัพธ์ออกมามากเกินไป อาจเกิดจากลูปที่ทำงานวนไม่รู้จบ',
+                timedOut: true,
+            });
+        }
+    };
+
+    child.stdout.on('data', (chunk) => appendOutput('out', chunk));
+    child.stderr.on('data', (chunk) => appendOutput('err', chunk));
     child.on('error', (error) => {
         finish({ stdout, stderr, exitCode: null, error: `Python runner failed (${pythonBin}): ${error.message}`, timedOut: false });
     });

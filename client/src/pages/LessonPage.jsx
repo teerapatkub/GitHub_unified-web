@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, ChevronRight, Play } from "lucide-react";
 import { useParams } from "react-router-dom";
 import usePyodide from "../hooks/usePyodide";
+import friendlyPyError from "../utils/friendlyPyError";
 import { API_BASE } from '../config/api.js';
 
 
@@ -224,9 +225,27 @@ export default function LessonPage({
     setIsRunning(true);
     clearOutput();
 
-    runPythonCode(currentCode).finally(() => {
-      setIsRunning(false);
-    });
+    runPythonCode(currentCode)
+      .then((result) => {
+        // The worker prints Python's own English traceback to stderr. To a
+        // first-time learner that names the fault and says nothing about what to
+        // do, so add the shared Thai explanation beneath it - the same sentence
+        // the server grader shows. The raw traceback stays visible above. No
+        // line number here: the worker's "<exec>" frames do not line up with the
+        // editor, and a wrong line number is worse than none.
+        if (result && result.success === false && result.error && result.error !== "Timeout") {
+          const explained = friendlyPyError(result.error);
+          if (explained.message) {
+            setTerminalOutput((prev) => [
+              ...prev,
+              { type: "hint", text: `💡 ${explained.message}` },
+            ]);
+          }
+        }
+      })
+      .finally(() => {
+        setIsRunning(false);
+      });
   };
 
   const hasPrev = currentSlide > 0;
@@ -508,6 +527,8 @@ export default function LessonPage({
                           className={`whitespace-pre-wrap ${
                             entry.type === "stderr"
                               ? "text-red-400"
+                              : entry.type === "hint"
+                                ? "text-amber-300 font-semibold"
                               : entry.type === "system"
                                 ? "text-slate-400"
                                 : entry.type === "command"

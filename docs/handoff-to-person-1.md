@@ -8,6 +8,40 @@
 ถ้าเจ้าของไฟล์ไม่เห็นด้วยกับวิธีที่ทำ ให้คุยกันได้ — งานที่ต้องได้ผลคือพฤติกรรมที่อธิบายไว้
 ไม่ใช่โค้ดชุดนี้โดยเฉพาะ
 
+
+---
+
+## 2026-08-27 — เฟส A (ส่วนที่ 1): error เป็นคำแนะนำ แทน traceback ดิบ
+
+งานตาม `Plan2.md` ข้อ 2 ผู้ใช้สั่งให้ error ตอนเขียนผิดเป็นคำแนะนำภาษาไทย ไม่ใช่ traceback
+ดิบภาษาอังกฤษ ใช้ตัวแปลตัวเดียว `server/pythonErrorMessages.js` (`explainPythonError`)
+ที่มีอยู่แล้ว โดยรอบนี้ทำให้ **client เรียกใช้ไฟล์เดียวกันกับ server ได้** (ผ่าน Vite alias
+`@shared` + util `client/src/utils/friendlyPyError.js`) — ไฟล์แปลมีชุดกฎเดียว ข้อความที่ผู้เรียน
+เห็นในเบราว์เซอร์จึงตรงกับที่ server ตัดสิน
+
+### `client/src/pages/LessonPage.jsx` (ของ Person 1)
+- ช่อง playground "Run Code" เดิมโชว์ stderr เป็น traceback อังกฤษดิบ ตอนนี้เพิ่มบรรทัด
+  คำแนะนำไทย (สีเหลืองอำพัน ขึ้นต้น 💡) ต่อท้ายผลรัน โดย traceback ดิบยังอยู่ด้านบนตามเดิม
+- **จงใจไม่โชว์เลขบรรทัด** ในจุดนี้ เพราะ worker รันโค้ดในเฟรม `<exec>` เลขบรรทัดไม่ตรงกับ
+  ในเอดิเตอร์ (เลขผิดแย่กว่าไม่มีเลข ตาม CLAUDE.md เรื่องผู้เริ่มต้น)
+- แก้ 3 จุด: import util, ต่อ `.then()` อ่านผลรัน, เพิ่มสไตล์ `type === "hint"` ในตัวเรนเดอร์เทอร์มินัล
+- **ไม่แตะ** ตรรกะการรัน/ตัดสิน/quiz ใดๆ
+
+### `client/src/pages/CompetitiveArena.jsx` (ของ Person 2)
+- ช่องผลรันเทส (`run-tests`) เดิมโชว์ `result.error` ดิบ ทั้งที่ server แนบ `result.hint` /
+  `result.errorLine` (ภาษาไทย จากตัวแปลตัวเดียวกัน) มาให้อยู่แล้ว — client แค่ไม่เคยอ่าน
+- ตอนนี้โชว์ 💡 hint ไทยก่อน แล้วตามด้วย "รายละเอียด: <error ดิบ>" เยื้องเข้าไป
+- แก้จุดเดียวใน `handleRunTests` (การ map ผลต่อ case) ไม่แตะการให้คะแนน/AI review
+
+### ที่ทดสอบแล้ว
+- `npm run build` ผ่าน — ยืนยันว่า Vite/Rollup แปลไฟล์ CommonJS ที่แชร์ได้ทั้ง dev และ prod
+  (ต้องตั้ง `build.commonjsOptions.include` ให้ครอบไฟล์นี้ ไม่งั้น prod build จะพังเพราะ Rollup
+  ไม่ synth named export จาก `module.exports`)
+- ตรวจ `explainPythonError` กับ traceback แบบ Pyodide จริง (NameError/SyntaxError/ZeroDivision)
+  ได้ข้อความไทยถูกต้อง
+- `npm run lint` เท่า baseline 57/9 ไม่มีของใหม่
+- **ยังไม่ได้** ทดสอบ E2E ในเบราว์เซอร์จริงของ hint บนหน้า LessonPage/Competitive (ต้องล็อกอิน
+  + เปิดสไลด์โค้ด) — ตรรกะเป็น React ตรงไปตรงมาและ build/lint ผ่าน แต่ยังไม่ถือว่า verified เต็ม
 ---
 
 ## 2026-08-26 — commit `61ed579`

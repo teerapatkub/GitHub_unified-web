@@ -580,7 +580,12 @@ export default function CompetitiveArena() {
           `Input: ${result.input || '(empty)'}`,
           `Expected: ${result.expected}`,
           `Actual: ${result.actual || '(empty)'}`,
-          result.error ? `Error: ${result.error}` : '',
+          // The server already attaches a Thai, beginner-readable explanation
+          // (result.hint / result.errorLine) built from the shared translator.
+          // Show that first; the raw traceback used to be all a learner saw here.
+          // The raw error stays, indented, for whoever wants the detail.
+          result.hint ? `💡 ${result.hint}${result.errorLine ? ` (บรรทัดที่ ${result.errorLine})` : ''}` : '',
+          result.error ? `   รายละเอียด: ${result.error}` : '',
         ].filter(Boolean).join('\n')),
       ];
 
