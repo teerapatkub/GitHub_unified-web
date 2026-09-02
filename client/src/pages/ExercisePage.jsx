@@ -333,10 +333,11 @@ const handleRun = async () => {
     });
 
     // A wrong answer is left to the server on Submit; this trial run only shows
-    // output. On a real error add the shared Thai explanation. No line number:
-    // the worker frames do not line up with the editor, and the server's Submit
-    // feedback is the line-accurate one.
-    if (!result.success && result.error && result.error !== "Timeout") {
+    // output. On a real error add the shared Thai explanation. Skip it when the
+    // watchdog interrupted a loop (the worker already showed a clear message) or
+    // on a hard timeout. No line number: the worker frames do not line up with
+    // the editor, and the server's Submit feedback is the line-accurate one.
+    if (!result.success && !result.interrupted && result.error && result.error !== "Timeout") {
       const explained = friendlyPyError(result.error);
       if (explained.message) appendLine(explained.message);
     }

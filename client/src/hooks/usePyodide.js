@@ -96,7 +96,10 @@ export default function usePyodide() {
                 case 'result':
                     setStatus('ready');
                     if (resolveRef.current) {
-                        resolveRef.current({ success, fsChanges: fsChanges || null, error });
+                        // `interrupted` marks a loop the watchdog stopped: the worker
+                        // already put a clear Thai message on stderr, so callers can
+                        // skip translating `error` again.
+                        resolveRef.current({ success, fsChanges: fsChanges || null, error, interrupted: Boolean(e.data.interrupted) });
                     }
                     resolveRef.current = null;
                     break;
