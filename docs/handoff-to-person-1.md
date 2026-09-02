@@ -11,6 +11,35 @@
 
 
 
+
+---
+
+## 2026-08-27 — เฟส A (1d): ExercisePage รันใน worker แล้ว
+
+ไฟล์: `client/src/pages/ExercisePage.jsx` (ของ Person 1), `client/public/pyodideWorker.js`,
+`client/src/hooks/usePyodide.js`
+
+ExercisePage เดิมโหลด Pyodide บน main thread เอง (`ensurePyodideLoader` + `loadPyodide`) ลูปค้าง
+= แท็บค้าง ตอนนี้ย้ายมารันผ่าน `usePyodide` (worker) — ลูปถูก interrupt แทนการค้าง
+
+- **worker เพิ่ม interactive input()**: bridge `requestInputFromJS` (async, ไม่ใช้ Atomics) +
+  wrapper `compile(PyCF_ALLOW_TOP_LEVEL_AWAIT)` แบบเดียวกับที่หน้านี้เคยทำบน main thread +
+  ใส่ cwd ลง sys.path ให้ `import` ไฟล์พี่น้องได้
+- **hook เพิ่ม**: options `interactive`, `onInput`, `onStdout`, `onStderr`, `mainFileName` และ
+  **พัก watchdog ระหว่างรอ input** (พิมพ์ช้าไม่ถูกตัดว่าลูปค้าง)
+- **ExercisePage**: ลบ init/ensurePyodideLoader/`window.requestInputFromJS` ทิ้ง; `handleRun`
+  เรียก `runCode(mainCode, files, {interactive, onInput, onStdout, onStderr})`; `handleSubmit`
+  รัน trial แต่ละ test case ใน worker (StringIO ป้อน input, จับ stdout) — trial ที่ลูปค้างก็ถูก
+  หยุด ไม่ freeze; **ไม่แตะการตัดสิน** (verdict ยังมาจาก server เท่านั้น ตาม CONTEXT.md "ลองรันไม่ตัดสิน")
+
+### ทดสอบแล้ว
+- กลไก worker: `input("ชื่อ:")` → รับ "Pong", `int(input())`→25 ถูก; `while True` ใน interactive
+  mode ถูกหยุดพร้อมข้อความไทย
+- `npm run build` ผ่าน, `npm run lint` 57/9 เท่าเดิม (ExercisePage ไม่มี error ใหม่)
+- **ยังไม่ได้ E2E บนหน้า ExercisePage จริง** เพราะ local Postgres ไม่ได้รันอยู่ตอนนี้ (หน้าโหลด
+  รายการแบบฝึกหัดไม่ได้ + ต้องล็อกอิน) — route guard ทำงานถูก (redirect /login), แอปไม่ crash
+  ต้องเปิด DB แล้วลองกด Run/Submit บนโจทย์ที่มี input() และโจทย์ที่ใส่ `while True` ให้ครบ
+
 ---
 
 ## 2026-08-27 — เฟส A: กันลูปค้างจริง (isolation + SharedArrayBuffer interrupt)

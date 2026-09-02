@@ -9,8 +9,54 @@ let isLoading = false;
 // to be cross-origin isolated (COOP/COEP) for SharedArrayBuffer to exist.
 let interruptBuffer = null;
 
+// Interactive input(): the worker cannot show a prompt, so it asks the main
+// thread and awaits the answer. No Atomics needed - the code runs under
+// runPythonAsync, so input() (rewritten to `await input()`) simply awaits a JS
+// promise that resolves when the page posts 'input_response' back. This is the
+// same bridge the pages used on the main thread, just moved in here.
+let pendingInputResolve = null;
+self.requestInputFromJS = (prompt) => new Promise((resolve) => {
+    pendingInputResolve = resolve;
+    self.postMessage({ type: 'input_request', prompt: prompt || '' });
+});
+
+// Wrap the learner's code so that input() works and top-level await is allowed.
+// input( -> await input( makes the (async) bridge callable inline, and compiling
+// with PyCF_ALLOW_TOP_LEVEL_AWAIT lets that await sit at module level. The user
+// code is compiled under its own filename, so a traceback's line numbers still
+// match the editor.
+function buildInteractiveWrapper(code, mainFileName) {
+    const processed = String(code == null ? '' : code).replace(/\binput\(/g, 'await input(');
+    return [
+        'import asyncio, sys, builtins, ast',
+        'from js import requestInputFromJS',
+        'async def custom_input(prompt=""):',
+        '    return await requestInputFromJS(prompt)',
+        'builtins.input = custom_input',
+        'async def __user_main__():',
+        '    local_vars = {}',
+        '    compiled = compile(' + JSON.stringify(processed) + ', ' + JSON.stringify(mainFileName || 'main.py') + ', "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)',
+        '    if compiled.co_flags & 0x80:',
+        '        await eval(compiled, globals(), local_vars)',
+        '    else:',
+        '        exec(compiled, globals(), local_vars)',
+        'await __user_main__()',
+    ].join('\n');
+}
+
 self.onmessage = async function (e) {
     const { type, payload } = e.data;
+
+    if (type === 'input_response') {
+        // The page collected the learner's typed line; hand it to the awaiting
+        // input() call. The main thread also restarts the run watchdog around
+        // this, so typing slowly is never mistaken for an infinite loop.
+        if (pendingInputResolve) {
+            pendingInputResolve(e.data.value == null ? '' : String(e.data.value));
+            pendingInputResolve = null;
+        }
+        return;
+    }
 
     if (type === 'init') {
         if (pyodide || isLoading) return;
@@ -44,10 +90,11 @@ self.onmessage = async function (e) {
             return;
         }
 
-        const { code, files, workDir } = payload;
+        const { code, files, workDir, interactive, mainFileName } = payload;
         // Clear a leftover interrupt from a previous run so this one is not
         // killed the instant it starts.
         if (interruptBuffer) interruptBuffer[0] = 0;
+        pendingInputResolve = null;
 
         try {
             // Setup virtual filesystem — create working directory
@@ -73,15 +120,23 @@ self.onmessage = async function (e) {
                 filesBefore = new Set(pyodide.FS.readdir(wd).filter(n => n !== '.' && n !== '..'));
             } catch { }
 
-            // Change to working directory and run code
+            // Change to working directory and run code. Put the cwd on sys.path
+            // too, so an exercise whose main.py does `import helper` finds the
+            // helper.py written alongside it.
             pyodide.runPython(`
-import os
+import os, sys
 os.chdir("${wd}")
+if "" not in sys.path:
+    sys.path.insert(0, "")
 `);
 
             self.postMessage({ type: 'run_start' });
 
-            await pyodide.runPythonAsync(code);
+            if (interactive) {
+                await pyodide.runPythonAsync(buildInteractiveWrapper(code, mainFileName));
+            } else {
+                await pyodide.runPythonAsync(code);
+            }
 
             // Check for file changes AFTER execution
             let filesAfter = [];

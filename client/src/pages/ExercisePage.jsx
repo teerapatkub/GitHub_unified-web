@@ -20,9 +20,8 @@ import {
 import ProgressCelebration from "../components/learning/ProgressCelebration";
 import { problemTitle, problemDescription } from "../utils/problemText";
 import { API_BASE } from '../config/api.js';
-
-const PYODIDE_SCRIPT_ID = "lesson-exercise-pyodide";
-const PYODIDE_SCRIPT_URL = "/pyodide/pyodide.js"; // self-hosted, see scripts/sync-pyodide.mjs
+import usePyodide from "../hooks/usePyodide";
+import friendlyPyError from "../utils/friendlyPyError";
 
 const parseTestCases = (raw) => {
   if (!raw) return [];
@@ -36,35 +35,6 @@ const parseTestCases = (raw) => {
   }
   return [];
 };
-
-async function ensurePyodideLoader() {
-  if (typeof window.loadPyodide === "function") {
-    return window.loadPyodide;
-  }
-
-  let script = document.getElementById(PYODIDE_SCRIPT_ID);
-  if (!script) {
-    script = document.createElement("script");
-    script.id = PYODIDE_SCRIPT_ID;
-    script.src = PYODIDE_SCRIPT_URL;
-    script.async = true;
-    document.head.appendChild(script);
-  }
-
-  await new Promise((resolve, reject) => {
-    if (typeof window.loadPyodide === "function") {
-      resolve();
-      return;
-    }
-
-    const handleLoad = () => resolve();
-    const handleError = () => reject(new Error("Unable to load Pyodide runtime."));
-    script.addEventListener("load", handleLoad, { once: true });
-    script.addEventListener("error", handleError, { once: true });
-  });
-
-  return window.loadPyodide;
-}
 
 function RewardModal({ xp, currency, hasNext, onClose, onNext }) {
   return (
@@ -120,11 +90,13 @@ export default function ExercisePage({ lessonId, user, onUserRefresh, onNavigate
   const [fetchError, setFetchError] = useState("");
   const [code, setCode] = useState("");
   const [terminalLines, setTerminalLines] = useState([]);
-  const [pyodide, setPyodide] = useState(null);
+  // Python runs in the shared Web Worker (usePyodide), not on this thread, so an
+  // infinite loop in a learner's code is interrupted instead of freezing the tab.
+  const { status: pyStatus, runCode } = usePyodide();
+  const pyReady = pyStatus === "ready";
   // The failing case from the last submission, so the learner can ask Lumi
   // about it. Only set when the SERVER says the answer is wrong.
   const [lastFailure, setLastFailure] = useState(null);
-  const [pyReady, setPyReady] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [passedExercises, setPassedExercises] = useState({});
   const [submittedCodeByExerciseId, setSubmittedCodeByExerciseId] = useState({});
@@ -191,52 +163,14 @@ useEffect(() => {
     }
   }, [chatHistory]);
 
-  useEffect(() => {
-    const initPyodide = async () => {
-      try {
-        const loadPyodide = await ensurePyodideLoader();
-        const instance = await loadPyodide({ indexURL: "/pyodide/" });
-
-        instance.setStdout({
-          batched: (text) => {
-            if (text.trim()) appendLine(text);
-          },
-        });
-        instance.setStderr({
-          batched: (text) => appendLine(`Error: ${text}`),
-        });
-
-        await instance.runPythonAsync(`
-import builtins
-from js import requestInputFromJS
-async def custom_input(prompt=""):
-    return await requestInputFromJS(prompt)
-builtins.input = custom_input
-`);
-
-        setPyodide(instance);
-        setPyReady(true);
-        appendLine("Python runtime ready.");
-      } catch (error) {
-        appendLine(`Failed to load Python: ${error.message}`);
-      }
-    };
-
-    window.requestInputFromJS = (promptText) => {
-      setCurrentPrompt(promptText);
-      return new Promise((resolve) => {
-        inputResolverRef.current = resolve;
-      });
-    };
-
-    initPyodide();
-
-    return () => {
-      if (window.requestInputFromJS) {
-        delete window.requestInputFromJS;
-      }
-    };
-  }, []);
+  // Interactive input() for the worker: the worker asks, this shows the prompt in
+  // the terminal and resolves once the learner presses Enter (see handleInputKeyDown).
+  const requestInputFromLearner = (promptText) => {
+    setCurrentPrompt(promptText);
+    return new Promise((resolve) => {
+      inputResolverRef.current = resolve;
+    });
+  };
 
   useEffect(() => {
     if (!lessonId && lessonId !== 0) {
@@ -373,65 +307,45 @@ const loadExercises = async () => {
   };
 
 const handleRun = async () => {
-    if (!pyodide || isRunning) return;
+    if (!pyReady || isRunning) return;
     setTerminalLines([]);
     setIsRunning(true);
 
-    try {
-      // 1. เขียนไฟล์ทั้งหมดในระบบ (main.py, data.txt, math_util.py, ฯลฯ) ลงใน VFS ของ Pyodide ก่อน
-      Object.entries(fileContents).forEach(([fileName, content]) => {
-        pyodide.FS.writeFile(fileName, content || "", { encoding: "utf8" });
-      });
+    // Every file in the exercise (main.py plus any data/helper files) goes into
+    // the worker's filesystem; main.py is the entry point. input()/await input()
+    // and top-level await are handled inside the worker (interactive mode), and
+    // an infinite loop is interrupted there instead of freezing the tab.
+    const files = Object.entries(fileContents).map(([name, content]) => ({
+      name,
+      type: "file",
+      content: content || "",
+    }));
+    const mainCode = fileContents["main.py"] || "";
 
-      // 2. ดึงโค้ดเฉพาะจากไฟล์หลักที่จะรัน (เช่น main.py)
-      const mainCode = fileContents["main.py"] || "";
+    const result = await runCode(mainCode, files, {
+      interactive: true,
+      mainFileName: "main.py",
+      onStdout: (text) => {
+        if (text.trim()) appendLine(text);
+      },
+      onStderr: (text) => appendLine(`Error: ${text}`),
+      onInput: requestInputFromLearner,
+    });
 
-      // 3. ปรับแก้ input() ให้รองรับการทำงานแบบ Async ของฝั่ง JS Terminal
-      const processedCode = mainCode.replace(/\binput\(/g, "await input(");
-
-      // 4. รันโค้ดผ่าน Python Environment อย่างถูกต้อง ปราศจากการ Map ย่อหน้ายัดฟังก์ชัน
-      await pyodide.runPythonAsync(`
-import asyncio, sys, builtins, ast
-from js import requestInputFromJS
-
-sys.stdout = sys.__stdout__
-sys.stdin = sys.__stdin__
-
-async def custom_input(prompt=""):
-    return await requestInputFromJS(prompt)
-builtins.input = custom_input
-
-# สร้างสภาพแวดล้อมที่รองรับคำสั่ง await นอกฟังก์ชัน
-async def __main__():
-    # รันโค้ดหลักของ user โดยใช้ exec และส่งตัวแปรระดับ Global ให้ใช้งานได้
-    local_vars = {}
-    # ใช้ compile พร้อม flag PyCF_ALLOW_TOP_LEVEL_AWAIT เพื่ออนุญาตให้มี await
-    # อยู่ระดับบนสุดของโค้ดที่ compile ได้ (ไม่งั้น compile() จะมองว่าเป็น
-    # module แยกต่างหากที่ไม่มี async def ครอบ แล้วโยน SyntaxError)
-    compiled_code = compile(
-        ${JSON.stringify(processedCode)},
-        "main.py",
-        "exec",
-        flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT,
-    )
-    # ถ้าโค้ดมี await อยู่ระดับบนสุดจริง ๆ ตัว code object ที่ได้จะถูกทำเครื่องหมาย
-    # เป็น coroutine (CO_COROUTINE) ต้องใช้ eval() แล้ว await ผลลัพธ์
-    if compiled_code.co_flags & 0x80:
-        await eval(compiled_code, globals(), local_vars)
-    else:
-        exec(compiled_code, globals(), local_vars)
-
-await __main__()
-`);
-    } catch (error) {
-      appendLine(`Error: ${error.message}`);
-    } finally {
-      setIsRunning(false);
+    // A wrong answer is left to the server on Submit; this trial run only shows
+    // output. On a real error add the shared Thai explanation. No line number:
+    // the worker frames do not line up with the editor, and the server's Submit
+    // feedback is the line-accurate one.
+    if (!result.success && result.error && result.error !== "Timeout") {
+      const explained = friendlyPyError(result.error);
+      if (explained.message) appendLine(explained.message);
     }
+
+    setIsRunning(false);
   };
 
 const handleSubmit = async () => {
-    if (!pyodide || isRunning || !currentEx) return;
+    if (!pyReady || isRunning || !currentEx) return;
 
     const testCases = parseTestCases(currentEx.test_cases);
     if (testCases.length === 0) {
@@ -442,73 +356,61 @@ const handleSubmit = async () => {
     setIsRunning(true);
     setTerminalLines(["--- กำลังตรวจแบบฝึกหัด ---"]);
 
-    try {
-      // 1. เขียนไฟล์ทั้งหมดในระบบ (รวมไฟล์เสริมทั้งหมด) ลงใน VFS ก่อนการรัน Test Cases
-      Object.entries(fileContents).forEach(([fileName, content]) => {
-        pyodide.FS.writeFile(fileName, content || "", { encoding: "utf8" });
-      });
+    // Data/helper files so a test-case run can open() them; main.py is exec'd
+    // from its encoded form below.
+    const files = Object.entries(fileContents).map(([name, content]) => ({
+      name,
+      type: "file",
+      content: content || "",
+    }));
+    const mainCode = fileContents["main.py"] || "";
 
-      // 2. ดึงโค้ดจาก main.py ที่ user เขียนมาเตรียมส่งและทดสอบ
-      const mainCode = fileContents["main.py"] || "";
-
-      for (let index = 0; index < testCases.length; index += 1) {
-        const testCase = testCases[index];
-        
-        // เข้ารหัสโค้ดหลักเพื่อส่งไปรันอย่างปลอดภัย
-        const encoded = btoa(unescape(encodeURIComponent(mainCode)));
-        
-        const script = `
+    for (let index = 0; index < testCases.length; index += 1) {
+      const testCase = testCases[index];
+      const encoded = btoa(unescape(encodeURIComponent(mainCode)));
+      // Feed the case's input via StringIO, capture what the code prints, then
+      // print it back so it reaches the worker's stdout. Runs in the worker, so a
+      // learner whose code loops forever is interrupted, not left freezing the tab.
+      const script = `
 import sys, builtins, base64
 from io import StringIO
-
 def sync_input(prompt=""):
-    return sys.stdin.readline().rstrip('\\n')
-
+    return sys.stdin.readline().rstrip('\n')
 builtins.input = sync_input
+_real_stdout = sys.stdout
 sys.stdin = StringIO(${JSON.stringify(String(testCase.input ?? ""))})
 sys.stdout = StringIO()
-
 try:
-    # รันโค้ดหลักในกระดานรันแบบปิดเพื่อให้ได้ output
     exec(base64.b64decode("${encoded}").decode("utf-8"), {"input": sync_input, "__builtins__": builtins}, {})
-    output = sys.stdout.getvalue()
+    _out = sys.stdout.getvalue()
 except Exception as e:
-    output = str(e)
-
-output.strip()
+    _out = str(e)
+sys.stdout = _real_stdout
+print(_out, end="")
 `;
-
-        const raw = await pyodide.runPythonAsync(script);
-        const actual = normalizeOut(raw);
-        const expected = normalizeOut(String(testCase.expected ?? testCase.expected_output ?? ""));
-
-        // A trial run: show what the code printed, and leave the verdict to
-        // the server. This used to compare with `actual.includes(expected)` and
-        // decide here - which passed `17` for an expected `7`, and gated the
-        // submission below so a learner whose code was wrong never saw the
-        // server's explanation at all. See CONTEXT.md: ลองรัน never judges.
-        appendLine(`Test ${index + 1} — คาด: ${expected}`);
-        appendLine(`Test ${index + 1} — ได้: ${actual || '(ไม่ได้พิมพ์อะไรออกมา)'}`);
+      let captured = "";
+      const runResult = await runCode(script, files, {
+        interactive: false,
+        onStdout: (t) => { captured += t; },
+        onStderr: (t) => { captured += t; },
+      });
+      const expected = normalizeOut(String(testCase.expected ?? testCase.expected_output ?? ""));
+      // A trial run: show what the code printed, and leave the verdict to the
+      // server. Never compares here - `actual.includes(expected)` once passed 17
+      // for an expected 7. See CONTEXT.md: ลองรัน never judges.
+      appendLine(`Test ${index + 1} — คาด: ${expected}`);
+      if (!runResult.success && runResult.error && runResult.error !== "Timeout") {
+        // An interrupted loop or a worker error: show it and stop - the rest of
+        // the cases would hit the same wall.
+        appendLine(`Test ${index + 1} — ${runResult.error}`);
+        break;
       }
-    } catch (error) {
-      appendLine(`System Error: ${error.message}`);
-    } finally {
-      try {
-        await pyodide.runPythonAsync(`
-import builtins
-from js import requestInputFromJS
-async def custom_input(prompt=""):
-    return await requestInputFromJS(prompt)
-builtins.input = custom_input
-`);
-      } catch {
-        // ignore bridge restore issues
-      }
-      setIsRunning(false);
+      const actual = normalizeOut(captured);
+      appendLine(`Test ${index + 1} — ได้: ${actual || '(ไม่ได้พิมพ์อะไรออกมา)'}`);
     }
 
-    // ดึงโค้ดจาก main.py เพื่ออัปเดตลง State สรุปผล
-    const mainCode = fileContents["main.py"] || "";
+    setIsRunning(false);
+
 
     setSubmittedCodeByExerciseId((prev) => ({
       ...prev,

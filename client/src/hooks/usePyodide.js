@@ -10,6 +10,10 @@ import { useState, useRef, useCallback, useEffect } from 'react';
  *     เองอย่างสะอาด (worker ยังอยู่ ไม่ต้องโหลด Python ใหม่)
  *  2. terminate — ถ้าชั้นแรกไม่ได้ผล (หน้าไม่ได้ cross-origin isolated จึงไม่มี
  *     SharedArrayBuffer หรือ interrupt ไม่ทำงาน) ก็ฆ่า worker ทั้งตัวแล้วสร้างใหม่
+ *
+ * รองรับ input() แบบโต้ตอบ: ส่ง options.onInput(prompt) => Promise<string> ให้
+ * runCode แล้วเมื่อโค้ดเรียก input() worker จะถาม main thread ผ่าน hook นี้
+ * โดย watchdog จะถูก "พัก" ระหว่างรอผู้ใช้พิมพ์ เพื่อไม่ให้การพิมพ์ช้าถูกตัดว่าเป็นลูปค้าง
  */
 
 const INTERRUPT_MS = 10000; // ขอให้ Python หยุด (raise KeyboardInterrupt)
@@ -35,6 +39,10 @@ export default function usePyodide() {
     const interruptRef = useRef(null);
     const messageHandlerRef = useRef(null);
     const runTimersRef = useRef([]);
+    const onInputRef = useRef(null);   // onInput(prompt) => Promise<string> for the active run
+    const onStdoutRef = useRef(null);  // per-run stdout(text) callback, for pages with their own terminal
+    const onStderrRef = useRef(null);  // per-run stderr(text) callback
+    const watchdogRef = useRef(null);  // { start, clear } for the active run
 
     // Initialize worker
     useEffect(() => {
@@ -57,11 +65,13 @@ export default function usePyodide() {
                     break;
 
                 case 'stdout':
+                    if (onStdoutRef.current) onStdoutRef.current(text);
                     outputRef.current.push({ type: 'stdout', text });
                     onOutputRef.current?.([...outputRef.current]);
                     break;
 
                 case 'stderr':
+                    if (onStderrRef.current) onStderrRef.current(text);
                     outputRef.current.push({ type: 'stderr', text });
                     onOutputRef.current?.([...outputRef.current]);
                     break;
@@ -69,6 +79,19 @@ export default function usePyodide() {
                 case 'run_start':
                     setStatus('running');
                     break;
+
+                case 'input_request': {
+                    // The worker's input() is waiting. Pause the watchdog (typing
+                    // is not running code), ask the page for a line, hand it back,
+                    // then restart the watchdog for the rest of the run.
+                    watchdogRef.current?.clear();
+                    const answer = onInputRef.current ? onInputRef.current(e.data.prompt) : Promise.resolve('');
+                    Promise.resolve(answer).then((value) => {
+                        if (workerRef.current) workerRef.current.postMessage({ type: 'input_response', value });
+                        watchdogRef.current?.start();
+                    });
+                    break;
+                }
 
                 case 'result':
                     setStatus('ready');
@@ -103,59 +126,70 @@ export default function usePyodide() {
      * รัน Python code
      * @param {string} code — Python code to execute
      * @param {Array} files — game files in the current folder [{name, type, content}]
+     * @param {Object} [options] — { interactive, onInput, mainFileName }
      * @returns {Promise<{success, fsChanges, error}>}
      */
-    const runCode = useCallback((code, files = []) => {
+    const runCode = useCallback((code, files = [], options = {}) => {
+        const { interactive = false, onInput = null, mainFileName = 'main.py', onStdout = null, onStderr = null } = options;
         return new Promise((resolve) => {
             if (!workerRef.current) {
                 resolve({ success: false, error: 'Worker not ready' });
                 return;
             }
 
+            onInputRef.current = onInput;
+            onStdoutRef.current = onStdout;
+            onStderrRef.current = onStderr;
+
             // Add run header to output
             outputRef.current.push({ type: 'command', text: `>>> Running...` });
             onOutputRef.current?.([...outputRef.current]);
 
-            runTimersRef.current.forEach(clearTimeout);
-            runTimersRef.current = [];
+            const clearWatchdog = () => {
+                runTimersRef.current.forEach(clearTimeout);
+                runTimersRef.current = [];
+            };
+            const startWatchdog = () => {
+                clearWatchdog();
+                // Stage 1: ask Python to stop (needs a SharedArrayBuffer). The
+                // worker raises KeyboardInterrupt and posts a normal 'result'.
+                if (interruptRef.current) {
+                    runTimersRef.current.push(setTimeout(() => {
+                        if (resolveRef.current && interruptRef.current) interruptRef.current[0] = 2;
+                    }, INTERRUPT_MS));
+                }
+                // Stage 2: hard fallback - kill the worker and stand a fresh one up
+                // so the whole app is not wedged behind a frozen runtime.
+                runTimersRef.current.push(setTimeout(() => {
+                    if (resolveRef.current) {
+                        outputRef.current.push({ type: 'stderr', text: '⏰ โค้ดรันนานเกินไป จึงถูกหยุด (อาจมีลูปที่วนไม่รู้จบ)' });
+                        onOutputRef.current?.([...outputRef.current]);
+                        const done = resolveRef.current;
+                        resolveRef.current = null;
+                        watchdogRef.current = null;
+                        setStatus('ready');
+                        workerRef.current?.terminate();
+                        const nextWorker = new Worker('/pyodideWorker.js');
+                        nextWorker.onmessage = messageHandlerRef.current;
+                        workerRef.current = nextWorker;
+                        nextWorker.postMessage({ type: 'init', payload: { interruptBuffer: interruptRef.current } });
+                        done({ success: false, error: 'Timeout' });
+                    }
+                }, TERMINATE_MS));
+            };
 
             // resolve that also tears down this run's watchdog timers.
             resolveRef.current = (result) => {
-                runTimersRef.current.forEach(clearTimeout);
-                runTimersRef.current = [];
+                clearWatchdog();
+                watchdogRef.current = null;
                 resolve(result);
             };
-
-            // Stage 1: ask Python to stop. Only possible with a SharedArrayBuffer;
-            // the worker raises KeyboardInterrupt and posts a normal 'result'.
-            if (interruptRef.current) {
-                runTimersRef.current.push(setTimeout(() => {
-                    if (resolveRef.current && interruptRef.current) interruptRef.current[0] = 2;
-                }, INTERRUPT_MS));
-            }
-
-            // Stage 2: hard fallback. If nothing came back - no SAB, or the
-            // interrupt did not land - kill the worker and stand a fresh one up so
-            // the whole app is not wedged behind a frozen runtime.
-            runTimersRef.current.push(setTimeout(() => {
-                if (resolveRef.current) {
-                    outputRef.current.push({ type: 'stderr', text: '⏰ โค้ดรันนานเกินไป จึงถูกหยุด (อาจมีลูปที่วนไม่รู้จบ)' });
-                    onOutputRef.current?.([...outputRef.current]);
-                    const done = resolveRef.current;
-                    resolveRef.current = null;
-                    setStatus('ready');
-                    workerRef.current?.terminate();
-                    const nextWorker = new Worker('/pyodideWorker.js');
-                    nextWorker.onmessage = messageHandlerRef.current;
-                    workerRef.current = nextWorker;
-                    nextWorker.postMessage({ type: 'init', payload: { interruptBuffer: interruptRef.current } });
-                    done({ success: false, error: 'Timeout' });
-                }
-            }, TERMINATE_MS));
+            watchdogRef.current = { start: startWatchdog, clear: clearWatchdog };
+            startWatchdog();
 
             workerRef.current.postMessage({
                 type: 'run',
-                payload: { code, files }
+                payload: { code, files, interactive, mainFileName }
             });
         });
     }, []);
