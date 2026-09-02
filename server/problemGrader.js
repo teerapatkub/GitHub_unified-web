@@ -23,7 +23,7 @@ const { runPythonScript, runPythonCase, normalizeOutput } = require('./pythonRun
 // One sentence a beginner can act on, attached to every failing case. See
 // server/pythonErrorMessages.js - the audience for this whole project is
 // people who have never written code, and a raw traceback tells them nothing.
-const { explainPythonError } = require('./pythonErrorMessages');
+const { explainPythonError } = require('./pythonErrorMessages.mjs');
 
 const MARKER = '__PYSIM_JUDGE__';
 

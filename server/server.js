@@ -8440,6 +8440,20 @@ const clientDist = process.env.CLIENT_DIST
     : path.join(__dirname, '..', 'client', 'dist');
 
 if (fs.existsSync(path.join(clientDist, 'index.html'))) {
+    // Cross-origin isolation for the built SPA. This is what gives the page a
+    // SharedArrayBuffer, which the Python worker needs to interrupt an infinite
+    // loop and to make input() block. It must be on the HTML document (and its
+    // assets), so it goes ahead of the static handler and the SPA fallback.
+    // COEP is `credentialless`, not `require-corp`, so the few cross-origin
+    // subresources the app still loads (Google Fonts) keep working. API and
+    // upload responses are served by handlers registered earlier and never reach
+    // here, so this scopes cleanly to the client. Mirrors the dev headers in
+    // client/vite.config.js.
+    app.use((req, res, next) => {
+        res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+        res.setHeader('Cross-Origin-Embedder-Policy', 'credentialless');
+        next();
+    });
     app.use(express.static(clientDist));
 
     // Single-page app fallback. React Router owns every path that is not an API

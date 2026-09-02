@@ -172,4 +172,4 @@ function explainPythonError(rawError) {
     };
 }
 
-module.exports = { explainPythonError };
+export { explainPythonError };

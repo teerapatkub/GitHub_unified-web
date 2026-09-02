@@ -2,6 +2,12 @@
 
 let pyodide = null;
 let isLoading = false;
+// A Uint8Array over a SharedArrayBuffer, handed in by the main thread. Pyodide
+// checks it while running Python; when the main-thread watchdog writes 2 (SIGINT)
+// into it, a KeyboardInterrupt is raised at the next bytecode check - which is
+// how a `while True:` gets stopped instead of freezing forever. Needs the page
+// to be cross-origin isolated (COOP/COEP) for SharedArrayBuffer to exist.
+let interruptBuffer = null;
 
 self.onmessage = async function (e) {
     const { type, payload } = e.data;
@@ -9,6 +15,7 @@ self.onmessage = async function (e) {
     if (type === 'init') {
         if (pyodide || isLoading) return;
         isLoading = true;
+        if (payload && payload.interruptBuffer) interruptBuffer = payload.interruptBuffer;
         self.postMessage({ type: 'status', status: 'loading' });
         try {
             // Self-hosted (see client/scripts/sync-pyodide.mjs). A CDN <script> cannot
@@ -20,6 +27,9 @@ self.onmessage = async function (e) {
                 stdout: (text) => self.postMessage({ type: 'stdout', text }),
                 stderr: (text) => self.postMessage({ type: 'stderr', text }),
             });
+            if (interruptBuffer) {
+                try { pyodide.setInterruptBuffer(interruptBuffer); } catch { /* no SAB: falls back to hard terminate */ }
+            }
             self.postMessage({ type: 'status', status: 'ready' });
         } catch (err) {
             self.postMessage({ type: 'error', error: 'Failed to load Pyodide: ' + err.message });
@@ -35,6 +45,9 @@ self.onmessage = async function (e) {
         }
 
         const { code, files, workDir } = payload;
+        // Clear a leftover interrupt from a previous run so this one is not
+        // killed the instant it starts.
+        if (interruptBuffer) interruptBuffer[0] = 0;
 
         try {
             // Setup virtual filesystem — create working directory
@@ -101,6 +114,14 @@ os.chdir("${wd}")
 
         } catch (err) {
             const errMsg = err.message || String(err);
+            // A KeyboardInterrupt here is the watchdog stopping a runaway loop,
+            // not a mistake in the learner's logic - say so in plain Thai.
+            if (errMsg.includes('KeyboardInterrupt')) {
+                const msg = 'โค้ดรันนานเกินไป อาจมีลูปที่วนไม่รู้จบ ระบบจึงหยุดให้ — ลองตรวจเงื่อนไขที่ทำให้ลูปไม่จบ';
+                self.postMessage({ type: 'stderr', text: msg });
+                self.postMessage({ type: 'result', success: false, error: msg, interrupted: true });
+                return;
+            }
             // Extract just the Python traceback if available
             const pyErr = errMsg.includes('PythonError')
                 ? errMsg.split('\n').filter(l => !l.includes('PythonError')).join('\n')

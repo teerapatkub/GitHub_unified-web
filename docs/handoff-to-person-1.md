@@ -10,6 +10,42 @@
 
 
 
+
+---
+
+## 2026-08-27 — เฟส A: กันลูปค้างจริง (isolation + SharedArrayBuffer interrupt)
+
+ต่อจาก self-host Pyodide รอบนี้เปิด cross-origin isolation แล้วใช้ SharedArrayBuffer หยุดลูปค้าง
+
+ไฟล์ของ Person 1 ที่แตะ:
+- `client/src/hooks/usePyodide.js` — เขียนใหม่: สร้าง SharedArrayBuffer(1) ส่งให้ worker,
+  watchdog สองชั้น (INTERRUPT_MS 10s เขียน SIGINT ลง buffer → Pyodide raise KeyboardInterrupt
+  โค้ดหยุดเองอย่างสะอาด worker ยังใช้ต่อได้; TERMINATE_MS 14s ฆ่า worker ทิ้งถ้าชั้นแรกไม่ได้ผล)
+  **แก้บั๊กเดิมด้วย**: การ recreate worker ตอน timeout เดิม copy `onmessage` จาก ref ที่ชี้ worker
+  ตัวใหม่ (undefined) ทำให้ worker ที่สร้างใหม่ไม่มี handler — ตอนนี้เก็บ handler ไว้ใน ref
+- `client/public/pyodideWorker.js` — รับ interruptBuffer ตอน init, `setInterruptBuffer`,
+  เคลียร์ก่อนรันแต่ละครั้ง, แปลง KeyboardInterrupt เป็นข้อความไทย "โค้ดรันนานเกินไป อาจมีลูป..."
+
+ไฟล์อื่น:
+- `client/vite.config.js` — COOP `same-origin` + COEP `credentialless` (dev)
+- `server/server.js` — COOP/COEP เดียวกันบน SPA ที่ build แล้ว (prod) วางก่อน static + fallback
+- `server/pythonErrorMessages.js` → **`.mjs`** (ESM) เพื่อให้ client import ตรงๆ ได้ทั้ง dev+build
+  โดยไม่ต้องพึ่ง CommonJS interop (dev esbuild ไม่ synth export ให้ไฟล์ .js นอก root) —
+  server (CommonJS) ยัง `require()` ไฟล์เดียวกันได้เพราะ Node 22 รองรับ require(ESM);
+  `problemGrader.js` และ `scripts/error-messages-test.js` อัปเดต path แล้ว
+- `client/eslint.config.js` — ignore `public/pyodide` (ไฟล์ runtime ที่ก๊อปมา ไม่ให้ lint พัง)
+
+### ทดสอบแล้ว (dev server จริง + isolation เปิด)
+- `crossOriginIsolated === true`, `SharedArrayBuffer` ใช้ได้ · แอปเรนเดอร์ปกติ (Google Fonts
+  ยังโหลดได้ใต้ COEP credentialless)
+- `while True: x+=1` ถูกหยุดที่ 1233ms (watchdog เขียน SIGINT ตอน 1200ms) ได้ข้อความไทย
+  `interrupted:true` และ worker ยังรันโค้ดถัดไปได้ (interrupt ไม่ใช่ terminate)
+- server error-messages-test 15/15 ผ่าน (require(ESM) ทำงาน) · client build ผ่าน · lint 57/9 เท่าเดิม
+
+### ยังไม่เสร็จ (เฟส A ต่อ)
+- ย้าย 3 หน้า main-thread (ExercisePage, MiNi_Game, CodingWorkspace) เข้า worker + blocking
+  input() ผ่าน SAB (ตอนนี้ยังรัน main thread — ลูปค้างในหน้าพวกนี้ยังไม่ถูกกัน) + แปล error ไทย
+- ทดสอบ E2E บนหน้า LessonPage playground จริง (กลไก interrupt ผ่านแล้วระดับ worker)
 ---
 
 ## 2026-08-27 — เฟส A: self-host Pyodide (เตรียมกันลูปค้าง)

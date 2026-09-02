@@ -12,7 +12,7 @@
  * line number points at the line the learner wrote.
  */
 const { runPythonScript } = require('../pythonRunner');
-const { explainPythonError } = require('../pythonErrorMessages');
+const { explainPythonError } = require('../pythonErrorMessages.mjs');
 
 let pass = 0, fail = 0;
 const check = (ok, label, detail) => {
