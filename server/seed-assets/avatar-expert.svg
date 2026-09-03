@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="รูปโปรไฟล์เริ่มต้นสำหรับผู้เชี่ยวชาญ">
+  <defs>
+    <linearGradient id="bgExpert" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6366f1"/>
+      <stop offset="1" stop-color="#1e293b"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" fill="url(#bgExpert)"/>
+  <!-- bust silhouette -->
+  <circle cx="64" cy="56" r="21" fill="#ffffff"/>
+  <path d="M26 118c0-21 17-33 38-33s38 12 38 33z" fill="#ffffff"/>
+  <!-- crown: the expert who has levelled up -->
+  <path d="M42 34l8 10 14-16 14 16 8-10v14H42z" fill="#fbbf24"/>
+  <circle cx="50" cy="30" r="3" fill="#fbbf24"/>
+  <circle cx="64" cy="24" r="3" fill="#fbbf24"/>
+  <circle cx="78" cy="30" r="3" fill="#fbbf24"/>
+</svg>

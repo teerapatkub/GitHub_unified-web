@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="รูปโปรไฟล์เริ่มต้นสำหรับผู้เริ่มต้น">
+  <defs>
+    <linearGradient id="bgBeginner" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5eead4"/>
+      <stop offset="1" stop-color="#38bdf8"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" fill="url(#bgBeginner)"/>
+  <!-- friendly bust silhouette -->
+  <circle cx="64" cy="52" r="21" fill="#ffffff"/>
+  <path d="M26 114c0-21 17-33 38-33s38 12 38 33z" fill="#ffffff"/>
+  <!-- a small sprout: the beginner who is just starting to grow -->
+  <path d="M64 34c0-9 7-15 15-15 0 9-6 15-15 15z" fill="#22c55e"/>
+  <path d="M64 34c0-9-7-15-15-15 0 9 6 15 15 15z" fill="#16a34a"/>
+</svg>

@@ -168,6 +168,18 @@ if (!fs.existsSync(uploadsDir)) {
 // database (shop_items.asset_url), so they have to be served back.
 app.use('/uploads', express.static(uploadsDir));
 
+// Images that ship WITH the app - the shop's seed themes and frames, and the
+// default profile pictures - live here rather than in uploadsDir, because
+// uploadsDir is a mounted volume that starts empty on a fresh deploy (and
+// server/uploads is in .dockerignore, so it is not even in the image). Serving
+// this bundled directory as a second /uploads mount means a seed asset URL like
+// /uploads/frame-space.svg resolves from the release when the volume does not
+// have it, so seeded art stops 404ing in production - without rewriting a single
+// asset_url in the seed data. The volume mount above wins for anything a user
+// actually uploaded; this is the fallback for everything that came with the app.
+const seedAssetsDir = path.join(__dirname, 'seed-assets');
+app.use('/uploads', express.static(seedAssetsDir));
+
 // The address this deployment is reachable at from OUTSIDE.
 //
 // Almost nothing needs it - the front end talks to the API with relative paths
@@ -737,6 +749,40 @@ const normalizePlayerLevel = (level) => {
     if (value === 'intermediate' || value === 'medium' || value === '2') return 'Intermediate';
     if (value === 'advanced' || value === 'hard' || value === '3') return 'Advanced';
     return 'Beginner';
+};
+
+// The single place that decides which profile picture a user shows. Everywhere a
+// user is rendered - profile, navbar, leaderboard - asks this, so the "which
+// picture wins" rule and the level threshold live in one spot rather than being
+// re-derived on the client (docs/adr: the avatar is chosen server-side, the same
+// way answers are graded server-side). A user who has picked a picture (uploaded
+// one, or chosen one they own) has it in avatar_url; until then they fall to one
+// of two shipped defaults, keyed to how far they have come. The default art is
+// served from seed-assets via the /uploads fallback mount above.
+// Where a chosen picture came from, written down in one place so every writer of
+// users.avatar_source keeps the column's value set honest: upload (ticket 3),
+// google (ticket 5), shop and achievement (tickets 6 and 9).
+const AVATAR_SOURCE = Object.freeze({
+    DEFAULT: 'default',
+    UPLOAD: 'upload',
+    GOOGLE: 'google',
+    SHOP: 'shop',
+    ACHIEVEMENT: 'achievement',
+});
+const AVATAR_DEFAULT_BEGINNER = '/uploads/avatar-beginner.svg';
+const AVATAR_DEFAULT_EXPERT = '/uploads/avatar-expert.svg';
+const AVATAR_EXPERT_LEVEL = 10;
+const resolveAvatar = (user) => {
+    if (user && user.avatar_url) {
+        // A picture is set but its provenance was never recorded: it was chosen
+        // before avatar_source existed, so call it an upload rather than a default.
+        return { url: user.avatar_url, source: user.avatar_source || AVATAR_SOURCE.UPLOAD };
+    }
+    const level = Number(user?.level || 1);
+    return {
+        url: level >= AVATAR_EXPERT_LEVEL ? AVATAR_DEFAULT_EXPERT : AVATAR_DEFAULT_BEGINNER,
+        source: AVATAR_SOURCE.DEFAULT,
+    };
 };
 
 const formatJobStatus = (job) => {
@@ -1399,7 +1445,8 @@ app.get('/api/profile/:userId', async (req, res) => {
     try {
         const [userRows] = await db.execute(
             `SELECT user_id, username, email, role, level, xp, virtual_currency, created_at,
-                    equipped_theme_id, equipped_profile_frame_id, equipped_mouse_effect_id
+                    equipped_theme_id, equipped_profile_frame_id, equipped_mouse_effect_id,
+                    avatar_url, avatar_source
                FROM users WHERE user_id = ? LIMIT 1`,
             [userId]
         );
@@ -1604,6 +1651,7 @@ app.get('/api/profile/:userId', async (req, res) => {
                 created_at: user.created_at,
                 virtual_currency: Number(user.virtual_currency || 0),
                 profile_frame_url: frameRow?.asset_url || null,
+                avatar: resolveAvatar(user),
             },
             progression: {
                 level,

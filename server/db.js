@@ -1077,6 +1077,18 @@ db.ready = (async () => {
         console.log('✅ ตารางข้อมูล Arcade Battle Royale, Arcade Tasks และ Arcade Items ใน PostgreSQL พร้อมใช้งานแล้ว');
 
         // ==================================================================
+        // Profile picture columns on users. avatar_url exists in schema.sql for
+        // a fresh database; these ADD COLUMN IF NOT EXISTS statements retrofit an
+        // existing one the same way the arcade and shop columns above are kept in
+        // sync. avatar_source records where the chosen picture came from
+        // (default/upload/google/shop/achievement); NULL avatar_url means the
+        // user has not chosen one and falls to a level-based default, decided by
+        // resolveAvatar() in server.js.
+        // ==================================================================
+        await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(255) DEFAULT NULL;`);
+        await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_source VARCHAR(20) DEFAULT NULL;`);
+
+        // ==================================================================
         // Cosmetic sets — a theme, a profile frame and a cursor effect that
         // belong together and cost less bought as one. shop_items keeps its
         // per-item price; shop_sets holds the bundle price, so the saving is a

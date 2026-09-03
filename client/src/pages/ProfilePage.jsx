@@ -15,7 +15,7 @@ import {
     CircleDot,
     Circle,
 } from 'lucide-react';
-import { API_BASE } from '../config/api.js';
+import { API_BASE, assetUrl } from '../config/api.js';
 
 
 const SKILL_TIER_TH = {
@@ -197,13 +197,24 @@ export default function ProfilePage({ user: propUser }) {
                 <div className="rounded-2xl bg-white p-6 whisper-shadow sm:p-8">
                     <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-start">
                         <div className="relative h-28 w-28 shrink-0">
-                            <div className="absolute inset-[14px] flex items-center justify-center rounded-full bg-gradient-to-br from-sky-400 to-indigo-500 text-3xl font-black text-white">
-                                {initial}
-                            </div>
+                            {/* The resolved profile picture: whatever the user chose, or a
+                                level-based default the server picked. The server always
+                                sends a url, so the initials only show if that ever fails. */}
+                            {user.avatar?.url ? (
+                                <img
+                                    src={assetUrl(user.avatar.url)}
+                                    alt=""
+                                    className="absolute inset-[14px] h-[calc(100%-28px)] w-[calc(100%-28px)] rounded-full bg-pysim-surface-low object-cover"
+                                />
+                            ) : (
+                                <div className="absolute inset-[14px] flex items-center justify-center rounded-full bg-gradient-to-br from-sky-400 to-indigo-500 text-3xl font-black text-white">
+                                    {initial}
+                                </div>
+                            )}
                             {/* The equipped profile frame, drawn around the avatar rather
                                 than replacing it — every frame has a transparent centre. */}
                             {user.profile_frame_url && (
-                                <img src={user.profile_frame_url} alt="" className="pointer-events-none absolute inset-0 h-full w-full" />
+                                <img src={assetUrl(user.profile_frame_url)} alt="" className="pointer-events-none absolute inset-0 h-full w-full" />
                             )}
                         </div>
 
