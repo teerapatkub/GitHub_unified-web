@@ -12,6 +12,29 @@
 
 
 
+
+---
+
+## 2026-08-27 — เฟส A (1d): MiNi_Game รันใน worker แล้ว
+
+ไฟล์: `client/src/pages/MiNi_Game.jsx` (ของ Person 1)
+
+เดิม MiNi_Game โหลด Pyodide เอง (singleton `_pyodideInstance` บน main thread) มี 3 เส้นรัน
+(`runCodeInTerminal`, `runCodeInStory`, `runCodeForCheck`) ลูปค้าง = แท็บค้าง ตอนนี้ทั้งหมดรันผ่าน
+`usePyodide` (worker) — ลูปถูก interrupt แทน
+
+- ลบ `getPyodideInstance`/singleton/`window.miniGameRequestInputFromJS`/`buildAsyncPythonBody` ทิ้ง
+- 2 เส้น interactive (terminal/story) → `runCode(code, files, {interactive, onInput, onStdout, onStderr})`
+  โดย `onStdout` เดินสายเดิม: สะสม `runOutputRef`, สตรีมเข้ากล่อง story dialogue, echo ลง terminal
+- `runCodeForCheck` (ตรวจคำตอบ) → รันใน worker แบบ non-interactive ป้อน input ผ่าน StringIO
+  แล้ว print กลับเพื่อจับ stdout — **ไม่แตะตรรกะการตรวจ** (ยังเทียบเหมือนเดิม)
+- input() โต้ตอบใช้ bridge เดิมย้ายเข้า worker; watchdog พักระหว่างรอ input
+
+### ทดสอบแล้ว (E2E บนหน้า MiNi_Game จริง, ล็อกอิน test1)
+- `input("ชื่อ:")` → พิมพ์ "Mini" → terminal: `ชื่อ: Mini` / `สวัสดี Mini` / `--- Program finished ---`
+- `while True` → พิมพ์ `start` แล้วถูกหยุดที่ ~10 วิ ด้วยข้อความไทย **แท็บไม่ค้าง**
+- `npm run build` ผ่าน, `npm run lint` 56/9 (น้อยกว่า baseline 1 เพราะลบโค้ดตาย ไม่มี error ใหม่)
+
 ---
 
 ## 2026-08-27 — เฟส A (1d): ExercisePage รันใน worker แล้ว

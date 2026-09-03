@@ -15,6 +15,8 @@ import {
   X,
 } from "lucide-react";
 import { API_BASE } from '../config/api.js';
+import usePyodide from "../hooks/usePyodide";
+import friendlyPyError from "../utils/friendlyPyError";
 // เปลี่ยนจากการโหลดใน useEffect แบบเดิม ให้มาใช้ฟังก์ชันช่วย
 const loadConfetti = () => {
   return new Promise((resolve) => {
@@ -40,8 +42,6 @@ const triggerCelebration = async () => {
 };
 
 const LUMI_AVATAR_BASE = "/data_MiNiGame/NPC_lumi";
-const PYODIDE_SCRIPT_ID = "mini-game-pyodide";
-const PYODIDE_SCRIPT_URL = "/pyodide/pyodide.js"; // self-hosted, see scripts/sync-pyodide.mjs
 
 const getDefaultEndDialogues = () => [
   {
@@ -81,8 +81,6 @@ const getNpcAvatarSrc = (dialogue) => {
 
 // Singleton: ป้องกัน loadPyodide() ถูกเรียกซ้ำเมื่อ component re-mount
 // ซึ่งเป็นสาเหตุของ "WebAssembly.Memory(): could not allocate memory"
-let _pyodideInstance = null;
-let _pyodideLoading = null;
 
 const parseJsonValue = (value, fallback = null) => {
   if (!value) return fallback;
@@ -255,39 +253,6 @@ const getBranchMissionCopy = (subtopic, branchKey = "default") => {
   };
 };
 
-async function getPyodideInstance() {
-  // คืน instance เดิมถ้ามีอยู่แล้ว — ป้องกัน WebAssembly OOM
-  if (_pyodideInstance) return _pyodideInstance;
-
-  // ถ้ากำลังโหลดอยู่ให้รอ Promise เดิม ไม่สร้างใหม่
-  if (_pyodideLoading) return _pyodideLoading;
-
-  _pyodideLoading = (async () => {
-    // โหลด script ถ้ายังไม่มี
-    if (typeof window.loadPyodide !== "function") {
-      let script = document.getElementById(PYODIDE_SCRIPT_ID);
-      if (!script) {
-        script = document.createElement("script");
-        script.id = PYODIDE_SCRIPT_ID;
-        script.src = PYODIDE_SCRIPT_URL;
-        script.async = true;
-        document.head.appendChild(script);
-      }
-
-      await new Promise((resolve, reject) => {
-        if (typeof window.loadPyodide === "function") { resolve(); return; }
-        script.addEventListener("load", resolve, { once: true });
-        script.addEventListener("error", () => reject(new Error("Unable to load Python runtime.")), { once: true });
-      });
-    }
-
-    const instance = await window.loadPyodide({ indexURL: "/pyodide/" });
-    _pyodideInstance = instance;
-    return instance;
-  })();
-
-  return _pyodideLoading;
-}
 
 export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate }) {
   const params = useParams();
@@ -314,9 +279,11 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
   const [currentSubtopicIndex, setCurrentSubtopicIndex] = useState(0);
   const [progressBySubtopic, setProgressBySubtopic] = useState({});
   const [pendingChoicesBySubtopic, setPendingChoicesBySubtopic] = useState({});
-  const [pyodide, setPyodide] = useState(null);
-  const [pyReady, setPyReady] = useState(false);
-  const [pyError, setPyError] = useState("");
+  // Python runs in the shared Web Worker (usePyodide) so an infinite loop in a
+  // learner's code is interrupted instead of freezing the tab.
+  const { status: pyStatus, runCode } = usePyodide();
+  const pyReady = pyStatus === "ready";
+  const pyError = pyStatus === "error" ? "โหลด Python ไม่สำเร็จ" : "";
   const [isRunning, setIsRunning] = useState(false);
   const [currentInput, setCurrentInput] = useState("");
   const [currentPrompt, setCurrentPrompt] = useState("");
@@ -341,12 +308,12 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
   const outputTargetRef = useRef("terminal");
     // --- วางฟังก์ชัน runDoneChecks ตรงนี้ ---
   const runDoneChecks = async (storyOutput = "") => {
-    if ((!pyodide || !pyReady) && pyError) {
+    if (!pyReady && pyError) {
       setProgramDialogue({ text: `Failed to load Python: ${pyError}` });
       return { ok: false, output: "", reply: null };
     }
 
-    if (!pyodide || !pyReady || isRunning || !currentSubtopic) {
+    if (!pyReady || isRunning || !currentSubtopic) {
       setProgramDialogue({ text: "Python runtime is loading. Please try again in a moment." });
       return { ok: false, output: "", reply: null };
     }
@@ -667,53 +634,29 @@ useEffect(() => {
     setTerminalLines((prev) => [...prev, text]);
   };
 
-  useEffect(() => {
-    const initPyodide = async () => {
-      try {
-        const instance = await getPyodideInstance();
+  // Interactive input() for the worker: show the prompt and resolve when the
+  // learner presses Enter (see handleInputKeyDown).
+  const requestInputFromLearner = (promptText = "") => {
+    setCurrentPrompt(String(promptText || ""));
+    setCurrentInput("");
+    return new Promise((resolve) => {
+      inputResolverRef.current = resolve;
+    });
+  };
 
-        // ตั้ง stdout/stderr ทุกครั้งที่ component mount ใหม่
-        // (instance เดิม แต่ callback ต้องชี้ไปที่ state ของ component ปัจจุบัน)
-        instance.setStdout({
-          batched: (text) => {
-            const value = String(text ?? "");
-            if (!value) return;
-            runOutputRef.current += value;
-            if (outputTargetRef.current === "story") {
-              setProgramDialogue((prev) => prev ? { text: `${prev.text || ""}${value}` } : prev);
-            }
-            if (value.trim()) appendTerminalLine(value.replace(/\n$/, ""));
-          },
-        });
-        instance.setStderr({
-          batched: (text) => appendTerminalLine(`Error: ${String(text ?? "").trim()}`),
-        });
-
-        setPyodide(instance);
-        setPyReady(true);
-        setPyError("");
-      } catch (runtimeError) {
-        setPyError(runtimeError.message);
-        appendTerminalLine(`Failed to load Python: ${runtimeError.message}`);
-      }
-    };
-
-    window.miniGameRequestInputFromJS = (promptText = "") => {
-      setCurrentPrompt(String(promptText || ""));
-      setCurrentInput("");
-      return new Promise((resolve) => {
-        inputResolverRef.current = resolve;
-      });
-    };
-
-    initPyodide();
-
-    return () => {
-      if (window.miniGameRequestInputFromJS) {
-        delete window.miniGameRequestInputFromJS;
-      }
-    };
-  }, []);
+  // Route the worker's stdout the way the old main-thread handler did: accumulate
+  // it, stream it into the story dialogue while a story run is active, and echo
+  // it to the terminal.
+  const handleWorkerStdout = (text) => {
+    const value = String(text ?? "");
+    if (!value) return;
+    runOutputRef.current += value;
+    if (outputTargetRef.current === "story") {
+      setProgramDialogue((prev) => (prev ? { text: `${prev.text || ""}${value}` } : prev));
+    }
+    if (value.trim()) appendTerminalLine(value.replace(/\n$/, ""));
+  };
+  const handleWorkerStderr = (text) => appendTerminalLine(`Error: ${String(text ?? "").trim()}`);
 
   // Memoize userId to prevent infinite loops from unstable prop references
   const userId = useMemo(() => {
@@ -868,20 +811,6 @@ const loadGameData = async () => {
     return errors;
   };
 
-  const buildAsyncPythonBody = (sourceCode = "") => {
-    const processedCode = String(sourceCode || "").replace(/\binput\(/g, "await input(");
-    const lines = processedCode.split("\n");
-    const hasExecutableLine = lines.some((line) => {
-      const trimmed = line.trim();
-      return trimmed && !trimmed.startsWith("#");
-    });
-
-    return [
-      ...lines.map((line) => `    ${line}`),
-      ...(hasExecutableLine ? [] : ["    pass"]),
-    ].join("\n");
-  };
-
   const resolveTerminalReply = () => {
     const output = runOutputRef.current.trim() || "(no output)";
     const matchedLogic = terminalLogic.find((item) => output.includes(item.trigger_input));
@@ -919,20 +848,16 @@ const loadGameData = async () => {
 
   // เขียนไฟล์เสริมทั้งหมด (data.txt, math_util.py, ฯลฯ) ลงใน Pyodide VFS
   // ก่อนรันโค้ด เพื่อให้ main.py เปิด/import ไฟล์เหล่านี้ได้ เหมือนกับ ExercisePage.jsx
-  const writeExtraFilesToFS = () => {
-    if (!pyodide) return;
-    Object.entries(fileContents).forEach(([fileName, content]) => {
-      try {
-        pyodide.FS.writeFile(fileName, content || "", { encoding: "utf8" });
-      } catch (e) {
-        // ignore individual file write failures
-      }
-    });
-  };
+  // Extra files (data.txt, helper modules, ...) handed to the worker so main.py
+  // can open/import them; the worker writes them into its filesystem.
+  const getExtraFiles = () =>
+    Object.entries(fileContents).map(([name, content]) => ({ name, type: "file", content: content || "" }));
 
   const runCodeForCheck = async (testInput = "") => {
-    writeExtraFilesToFS();
     const encoded = btoa(unescape(encodeURIComponent(code)));
+    // The captured output is printed back after stdout is restored, so it reaches
+    // the worker's stdout and we can read it here. Runs in the worker, so a loop
+    // in the learner's code is interrupted rather than freezing the tab.
     const script = `
 import sys, builtins, base64, textwrap
 from io import StringIO
@@ -959,10 +884,16 @@ finally:
     sys.stdin = _saved_stdin
     builtins.input = _saved_input
 
-output.strip()
+print(output.strip(), end="")
 `;
 
-    return pyodide.runPythonAsync(script);
+    let captured = "";
+    await runCode(script, getExtraFiles(), {
+      interactive: false,
+      onStdout: (t) => { captured += t; },
+      onStderr: (t) => { captured += t; },
+    });
+    return captured;
   };
 
   const runCodeInTerminal = async () => {
@@ -970,7 +901,7 @@ output.strip()
       return { ok: false, output: "", reply: null };
     }
 
-    if (!pyodide || !pyReady) {
+    if (!pyReady) {
       setShowTerminal(true);
       setTerminalLines([
         pyError
@@ -985,37 +916,26 @@ output.strip()
     setTerminalLines(["$ python main.py"]);
     setIsRunning(true);
     runOutputRef.current = "";
-    writeExtraFilesToFS();
 
-    try {
-      const pythonBody = buildAsyncPythonBody(code);
-      await pyodide.runPythonAsync(`
-import builtins
-from js import miniGameRequestInputFromJS
+    const result = await runCode(code, getExtraFiles(), {
+      interactive: true,
+      mainFileName: "main.py",
+      onInput: requestInputFromLearner,
+      onStdout: handleWorkerStdout,
+      onStderr: handleWorkerStderr,
+    });
+    setIsRunning(false);
+    setCurrentPrompt("");
+    setCurrentInput("");
+    inputResolverRef.current = null;
 
-async def input(prompt=""):
-    return await miniGameRequestInputFromJS(prompt)
-
-builtins.input = input
-
-async def __main__():
-${pythonBody}
-
-await __main__()
-`);
-
-      const { output, reply } = resolveTerminalReply();
-      appendTerminalLine("--- Program finished ---");
-      return { ok: true, output, reply };
-    } catch (runError) {
-      appendTerminalLine(`Error: ${runError.message}`);
-      return { ok: false, output: "", reply: null };
-    } finally {
-      setIsRunning(false);
-      setCurrentPrompt("");
-      setCurrentInput("");
-      inputResolverRef.current = null;
+    if (!result.success && !result.interrupted && result.error && result.error !== "Timeout") {
+      const explained = friendlyPyError(result.error);
+      if (explained.message) appendTerminalLine(explained.message);
     }
+    const { output, reply } = resolveTerminalReply();
+    appendTerminalLine("--- Program finished ---");
+    return { ok: result.success, output, reply };
   };
 
   const runCodeInStory = async () => {
@@ -1023,7 +943,7 @@ await __main__()
       return { ok: false, output: "", reply: null };
     }
 
-    if (!pyodide || !pyReady) {
+    if (!pyReady) {
       setProgramDialogue({
         text: pyError ? `Failed to load Python: ${pyError}` : "Python runtime is loading. Please try again in a moment.",
       });
@@ -1035,41 +955,29 @@ await __main__()
     setProgramDialogue({ text: "" });
     setIsRunning(true);
     runOutputRef.current = "";
-    writeExtraFilesToFS();
 
-    try {
-      const pythonBody = buildAsyncPythonBody(code);
-      await pyodide.runPythonAsync(`
-import builtins
-from js import miniGameRequestInputFromJS
+    const result = await runCode(code, getExtraFiles(), {
+      interactive: true,
+      mainFileName: "main.py",
+      onInput: requestInputFromLearner,
+      onStdout: handleWorkerStdout,
+      onStderr: handleWorkerStderr,
+    });
+    setIsRunning(false);
+    setCurrentPrompt("");
+    setCurrentInput("");
+    inputResolverRef.current = null;
 
-async def input(prompt=""):
-    return await miniGameRequestInputFromJS(prompt)
-
-builtins.input = input
-
-async def __main__():
-${pythonBody}
-
-await __main__()
-`);
-
-      const output = runOutputRef.current.trim();
-      setProgramDialogue((prev) => {
-        const existing = String(prev?.text || "").trim();
-        return { text: existing || output || "(no output)" };
-      });
-      return { ok: true, output: output || "(no output)", reply: null };
-    } catch (runError) {
-      const message = `Error: ${runError.message}`;
-      setProgramDialogue({ text: message });
-      return { ok: false, output: message, reply: null };
-    } finally {
-      setIsRunning(false);
-      setCurrentPrompt("");
-      setCurrentInput("");
-      inputResolverRef.current = null;
+    if (!result.success && !result.interrupted && result.error && result.error !== "Timeout") {
+      const explained = friendlyPyError(result.error);
+      if (explained.message) setProgramDialogue({ text: explained.message });
     }
+    const output = runOutputRef.current.trim();
+    setProgramDialogue((prev) => {
+      const existing = String(prev?.text || "").trim();
+      return { text: existing || output || "(no output)" };
+    });
+    return { ok: result.success, output: output || "(no output)", reply: null };
   };
 
   const handleRunOnly = async () => {
