@@ -1087,6 +1087,12 @@ db.ready = (async () => {
         // ==================================================================
         await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(255) DEFAULT NULL;`);
         await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_source VARCHAR(20) DEFAULT NULL;`);
+        // The latest picture the user got from each non-cosmetic source, kept so a
+        // later picture picker can switch back to one without re-uploading or
+        // re-logging-in. avatar_url holds whichever is shown now; these remember
+        // the rest. (uploaded: ticket 3; google: ticket 5.)
+        await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS uploaded_picture_url VARCHAR(255) DEFAULT NULL;`);
+        await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS google_picture_url VARCHAR(255) DEFAULT NULL;`);
 
         // ==================================================================
         // Cosmetic sets — a theme, a profile frame and a cursor effect that

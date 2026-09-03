@@ -495,8 +495,8 @@ function AppContent() {
               } />
 
               {/* Multiplayer Hub Route */}
-              <Route path="/profile" element={requireStudent(<ProfilePage user={user} />)} />
-              <Route path="/profile/:userId" element={requireStudent(<ProfilePage user={user} />)} />
+              <Route path="/profile" element={requireStudent(<ProfilePage user={user} onUserRefresh={refreshUserProfile} />)} />
+              <Route path="/profile/:userId" element={requireStudent(<ProfilePage user={user} onUserRefresh={refreshUserProfile} />)} />
               <Route path="/menu" element={requireGameModeRank(<MainMenu user={user} />)} />
               <Route path="/achievements" element={<Achievements />} />
               <Route path="/leaderboard" element={<LeaderboardPage user={user} />} />
@@ -549,6 +549,9 @@ const TopRightHeader = ({ user, onLogout }) => {
   const coinBalance = Number(user?.virtual_currency ?? user?.coins ?? 0);
   const gameModeUnlocked = canEnterGameModes(user);
   const profileImage = assetUrl(user?.profile_asset_url);
+  // The profile picture the server resolved (chosen, or a level default). The
+  // frame above still overlays it; initials show only if no picture resolved.
+  const avatarUrl = assetUrl(user?.avatar?.url);
 
   return (
     <div className="flex items-center space-x-3 rounded-2xl border border-slate-200/70 bg-white/80 p-2 pr-4 shadow-sm">
@@ -635,13 +638,21 @@ const TopRightHeader = ({ user, onLogout }) => {
             className="relative h-10 w-10 shrink-0 rounded-full transition-transform hover:scale-105"
             title={t('navbar.profile', 'ดูโปรไฟล์ของฉัน')}
           >
-            <div
-              className={`absolute inset-[5px] rounded-full bg-gradient-to-br from-sky-400 to-indigo-500
-                          flex items-center justify-center text-xs font-black text-white select-none
-                          ${profileImage ? '' : 'ring-2 ring-sky-300'}`}
-            >
-              {String(user?.username || '?').trim().charAt(0).toUpperCase()}
-            </div>
+            {avatarUrl ? (
+              <img
+                src={avatarUrl}
+                alt=""
+                className="absolute inset-[5px] h-[calc(100%-10px)] w-[calc(100%-10px)] rounded-full bg-white object-cover pointer-events-none"
+              />
+            ) : (
+              <div
+                className={`absolute inset-[5px] rounded-full bg-gradient-to-br from-sky-400 to-indigo-500
+                            flex items-center justify-center text-xs font-black text-white select-none
+                            ${profileImage ? '' : 'ring-2 ring-sky-300'}`}
+              >
+                {String(user?.username || '?').trim().charAt(0).toUpperCase()}
+              </div>
+            )}
             {profileImage && (
               <img src={profileImage} alt="" className="absolute inset-0 h-full w-full pointer-events-none" />
             )}

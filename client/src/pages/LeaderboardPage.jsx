@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Trophy, ArrowLeft, RefreshCw } from 'lucide-react';
+import { assetUrl } from '../config/api.js';
 
 // The learner-facing leaderboard, opened from the main menu's Leaderboard card.
 //
@@ -203,6 +204,14 @@ export default function LeaderboardPage({ user }) {
                                     <span className="w-10 text-center text-sm font-black text-slate-400">
                                         {MEDALS[row.rank - 1] || `#${row.rank}`}
                                     </span>
+
+                                    {row.avatar?.url && (
+                                        <img
+                                            src={assetUrl(row.avatar.url)}
+                                            alt=""
+                                            className="h-9 w-9 shrink-0 rounded-full bg-pysim-surface-low object-cover"
+                                        />
+                                    )}
 
                                     <div className="flex-1 min-w-0">
                                         <span className={`block truncate text-sm ${isMe ? 'font-black text-pysim-primary' : 'font-bold text-pysim-on-surface'}`}>

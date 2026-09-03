@@ -41,6 +41,22 @@ const call = async (method, p) => {
     return { status: r.status, d };
 };
 
+// A 1x1 transparent PNG - a real, valid image so the upload path is exercised
+// end to end, not just the reject cases.
+const PNG_1X1 = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+    'base64');
+
+const uploadAvatar = async (id, { bytes, type, name }) => {
+    const form = new FormData();
+    form.append('file', new Blob([bytes], { type }), name);
+    const r = await fetch(`${HOST}/api/profile/${id}/avatar`, {
+        method: 'POST', body: form, signal: AbortSignal.timeout(30000),
+    });
+    let d = null; try { d = await r.json(); } catch { /* */ }
+    return { status: r.status, d };
+};
+
 let pass = 0, fail = 0;
 const check = (ok, label, detail) => {
     console.log(`${ok ? 'PASS' : 'FAIL'}  ${label}${detail ? '  — ' + detail : ''}`);
@@ -104,6 +120,57 @@ const check = (ok, label, detail) => {
         // something.
         check((await call('GET', '/uploads/definitely-not-a-real-seed-file.svg')).status === 404,
             'ไฟล์ที่ไม่มีจริงยัง 404 (กันผลบวกลวง)');
+
+        // === ticket 3: upload your own picture, and reset ===================
+        const uploadId = await makeUser(2);
+
+        // The server enforces image-only and the size cap, not just the client.
+        const vid = await uploadAvatar(uploadId, { bytes: Buffer.from('not a video'), type: 'video/mp4', name: 'clip.mp4' });
+        check(vid.status === 400, 'อัปวิดีโอถูกปฏิเสธ (server บังคับ)', 'status ' + vid.status);
+        const big = await uploadAvatar(uploadId, { bytes: Buffer.alloc(6 * 1024 * 1024, 1), type: 'image/png', name: 'big.png' });
+        check(big.status === 400, 'ไฟล์รูป >5MB ถูกปฏิเสธ', 'status ' + big.status);
+
+        const okUp = await uploadAvatar(uploadId, { bytes: PNG_1X1, type: 'image/png', name: 'me.png' });
+        check(okUp.status === 200 && okUp.d?.avatar?.source === 'upload',
+            'อัปรูป .png สำเร็จ + source=upload', JSON.stringify(okUp.d));
+        const upAvatar = await avatarOf(uploadId);
+        check(upAvatar?.source === 'upload' && /\/uploads\//.test(upAvatar?.url || ''),
+            'โปรไฟล์แสดงรูปที่อัปโหลด', JSON.stringify(upAvatar));
+        const { rows: [urow] } = await c.query(
+            'SELECT uploaded_picture_url FROM users WHERE user_id = $1', [uploadId]);
+        check(urow.uploaded_picture_url === upAvatar.url,
+            'จำ uploaded_picture_url ไว้ให้สลับกลับได้ภายหลัง', urow.uploaded_picture_url);
+
+        const reset = await call('POST', `/api/profile/${uploadId}/avatar/reset`);
+        check(reset.status === 200 && reset.d?.avatar?.source === 'default',
+            'reset กลับเป็นรูป default', JSON.stringify(reset.d));
+        check((await avatarOf(uploadId))?.source === 'default',
+            'หลัง reset โปรไฟล์เป็น default', '');
+        // Reset clears the current choice but must NOT forget the upload, so a
+        // later picture picker can switch back to it without re-uploading.
+        const { rows: [afterReset] } = await c.query(
+            'SELECT uploaded_picture_url FROM users WHERE user_id = $1', [uploadId]);
+        check(afterReset.uploaded_picture_url === upAvatar.url,
+            'reset ไม่ลบ uploaded_picture_url (สลับกลับได้ภายหลัง)', afterReset.uploaded_picture_url);
+
+        // === ticket 4: the avatar shows everywhere ==========================
+        const nav = (await call('GET', `/api/user/profile/${uploadId}`)).d;
+        check(nav?.avatar?.url && nav?.avatar?.source,
+            'navbar refresh endpoint คืน avatar ที่ resolve แล้ว', JSON.stringify(nav?.avatar));
+
+        const lb = (await call('GET', '/api/leaderboard?board=xp')).d;
+        if (lb?.rows?.length) {
+            check(lb.rows.every(r => r.avatar && r.avatar.url),
+                'ทุกแถว leaderboard มี avatar', `${lb.rows.length} แถว`);
+        } else {
+            console.log('SKIP  leaderboard ว่าง (ไม่มีผู้ใช้ผ่านเกณฑ์) — ข้ามเช็ค avatar');
+        }
+
+        // === ticket 5: Google picture column is ready (e2e blocked externally)
+        const { rows: [gcol] } = await c.query(
+            `SELECT 1 AS ok FROM information_schema.columns
+              WHERE table_name = 'users' AND column_name = 'google_picture_url'`);
+        check(!!gcol, 'คอลัมน์ google_picture_url พร้อมเก็บรูปจาก Google');
     } finally {
         if (madeIds.length) {
             await c.query('DELETE FROM users WHERE user_id = ANY($1::int[])', [madeIds]);

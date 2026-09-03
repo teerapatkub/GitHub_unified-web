@@ -566,6 +566,24 @@ const upload = multer({
     },
 });
 
+// Profile pictures are narrower than the general uploader on purpose: an avatar
+// is a small still image, never a video, and never the 25MB a lesson asset may
+// need. Enforced on the server because a client-side check is advice, not a
+// guard - a crafted request skips it.
+const avatarUpload = multer({
+    storage: uploadStorage,
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+        const allowedMime = /^image\/(png|jpe?g|webp)$/i;
+        const allowedExt = /\.(png|jpg|jpeg|webp)$/i;
+        if (allowedMime.test(file.mimetype || '') && allowedExt.test(file.originalname || '')) {
+            cb(null, true);
+            return;
+        }
+        cb(new Error('รูปโปรไฟล์รับเฉพาะไฟล์ภาพ .png .jpg หรือ .webp'));
+    },
+});
+
 const ensureUserPresenceSchema = async () => {
     await db.execute(`
         CREATE TABLE IF NOT EXISTS user_presence (
@@ -1395,6 +1413,7 @@ app.get('/api/user/profile/:userId', async (req, res) => {
         const [rows] = await db.execute(
             `SELECT u.user_id, u.username, u.email, u.role, u.level, u.xp, u.virtual_currency,
                     u.equipped_mouse_effect_id, u.equipped_theme_id, u.equipped_profile_frame_id,
+                    u.avatar_url, u.avatar_source,
                     COALESCE(item.effects, '[]') AS mouse_effect_data,
                     theme.name AS theme_name, theme.asset_url AS theme_asset_url, theme.preview_image AS theme_preview_image,
                     frame.asset_url AS profile_asset_url, frame.preview_image AS profile_preview_image
@@ -1425,6 +1444,7 @@ app.get('/api/user/profile/:userId', async (req, res) => {
             xp: Number(user.xp || 0),
             virtual_currency: Number(user.virtual_currency || 0),
             streak_days: streakDays,
+            avatar: resolveAvatar(user),
         });
     } catch (error) {
         console.error('❌ /api/user/profile error:', error.message);
@@ -1768,6 +1788,53 @@ app.put('/api/profile/:userId/showcase', async (req, res) => {
         res.status(500).json({ error: 'บันทึกความสำเร็จที่เลือกไม่สำเร็จ' });
     } finally {
         connection.release();
+    }
+});
+
+// Choosing a profile picture by uploading one. The app has no server-side auth
+// layer yet: every mutation trusts the userId in the URL, the way the showcase
+// route above does, so this matches that pattern rather than inventing a lone
+// half-measure. Real per-user authorisation arrives with the account work
+// (Plan2 item 4), not here.
+app.post('/api/profile/:userId/avatar', (req, res) => {
+    const userId = Number(req.params.userId);
+    if (!userId) return res.status(400).json({ error: 'userId is required' });
+    avatarUpload.single('file')(req, res, async (error) => {
+        if (error) return res.status(400).json({ error: describeError(error) });
+        if (!req.file) return res.status(400).json({ error: 'ไม่พบไฟล์รูป' });
+        const url = `/uploads/${req.file.filename}`;
+        try {
+            const [result] = await db.execute(
+                `UPDATE users SET avatar_url = ?, avatar_source = ?, uploaded_picture_url = ?
+                  WHERE user_id = ?`,
+                [url, AVATAR_SOURCE.UPLOAD, url, userId]
+            );
+            if (!result.affectedRows) return res.status(404).json({ error: 'ไม่พบผู้ใช้' });
+            res.json({ avatar: resolveAvatar({ avatar_url: url, avatar_source: AVATAR_SOURCE.UPLOAD }) });
+        } catch (err) {
+            console.error('❌ POST /api/profile/:userId/avatar error:', describeError(err));
+            res.status(500).json({ error: 'บันทึกรูปโปรไฟล์ไม่สำเร็จ' });
+        }
+    });
+});
+
+// Back to the level-based default. The uploaded and Google pictures stay in
+// their own columns, so this clears the current choice without deleting what the
+// user could switch back to later.
+app.post('/api/profile/:userId/avatar/reset', async (req, res) => {
+    const userId = Number(req.params.userId);
+    if (!userId) return res.status(400).json({ error: 'userId is required' });
+    try {
+        const [result] = await db.execute(
+            'UPDATE users SET avatar_url = NULL, avatar_source = NULL WHERE user_id = ?',
+            [userId]
+        );
+        if (!result.affectedRows) return res.status(404).json({ error: 'ไม่พบผู้ใช้' });
+        const [rows] = await db.execute('SELECT level FROM users WHERE user_id = ? LIMIT 1', [userId]);
+        res.json({ avatar: resolveAvatar({ level: rows[0]?.level }) });
+    } catch (err) {
+        console.error('❌ POST /api/profile/:userId/avatar/reset error:', describeError(err));
+        res.status(500).json({ error: 'รีเซ็ตรูปโปรไฟล์ไม่สำเร็จ' });
     }
 });
 
@@ -2489,7 +2556,7 @@ app.post('/api/auth/google', async (req, res) => {
             audience: GOOGLE_CLIENT_ID,
         });
         const payload = ticket.getPayload();
-        const { email, name, email_verified: emailVerified } = payload || {};
+        const { email, name, email_verified: emailVerified, picture } = payload || {};
 
         if (!email) return res.status(400).json({ message: 'ไม่สามารถดึงอีเมลจาก Google ได้' });
         if (!emailVerified) return res.status(400).json({ message: 'บัญชี Google นี้ยังไม่ได้ยืนยันอีเมล' });
@@ -2500,6 +2567,23 @@ app.post('/api/auth/google', async (req, res) => {
         if (existing.length > 0) {
             // Login ถ้ามี user อยู่แล้ว
             const user = existing[0];
+            // Remember the Google picture, and show it only if the account has not
+            // already chosen a picture of its own - a returning user who uploaded
+            // one should keep it. Google sign-in is blocked externally right now
+            // (no GOOGLE_CLIENT_ID), so this path cannot run end to end yet; the
+            // storage is here and ready for the day it is unblocked.
+            if (picture) {
+                if (user.avatar_url) {
+                    await db.execute('UPDATE users SET google_picture_url = ? WHERE user_id = ?',
+                        [picture, user.user_id]);
+                } else {
+                    await db.execute(
+                        'UPDATE users SET google_picture_url = ?, avatar_url = ?, avatar_source = ? WHERE user_id = ?',
+                        [picture, picture, AVATAR_SOURCE.GOOGLE, user.user_id]);
+                    user.avatar_url = picture;
+                    user.avatar_source = AVATAR_SOURCE.GOOGLE;
+                }
+            }
             res.json({
                 user_id: user.user_id,
                 username: user.username,
@@ -2507,7 +2591,8 @@ app.post('/api/auth/google', async (req, res) => {
                 role: user.role || 'user',
                 level: user.level || 0,
                 xp: user.xp || 0,
-                email_verified: 1 // Google email ถือว่า verified แล้ว
+                email_verified: 1, // Google email ถือว่า verified แล้ว
+                avatar: resolveAvatar(user),
             });
         } else {
             // สร้าง user ใหม่จาก Google
@@ -2515,9 +2600,15 @@ app.post('/api/auth/google', async (req, res) => {
             const randomPass = crypto.randomBytes(16).toString('hex');
             const hash = await bcrypt.hash(randomPass, 10);
 
+            // A picture from Google is this new account's first chosen picture,
+            // stored in avatar_url (source google) and remembered in
+            // google_picture_url so it survives a later switch.
+            const googleSource = picture ? AVATAR_SOURCE.GOOGLE : null;
             const [result] = await db.execute(
-                'INSERT INTO users (username, password_hash, email, role, level, xp, virtual_currency) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                [username, hash, email, 'user', 0, 0, 0]
+                `INSERT INTO users (username, password_hash, email, role, level, xp, virtual_currency,
+                                    google_picture_url, avatar_url, avatar_source)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [username, hash, email, 'user', 0, 0, 0, picture || null, picture || null, googleSource]
             );
 
             // Google user ถือว่า email verified แล้ว
@@ -2533,7 +2624,8 @@ app.post('/api/auth/google', async (req, res) => {
                 role: 'user',
                 level: 0,  // ต้องทำ survey
                 xp: 0,
-                email_verified: 1
+                email_verified: 1,
+                avatar: resolveAvatar({ level: 0, avatar_url: picture || null, avatar_source: googleSource }),
             });
         }
     } catch (err) {
@@ -4775,10 +4867,33 @@ app.get('/api/leaderboard', async (req, res) => {
         const board = LEADERBOARD_BOARDS[boardKey];
 
         const [rows] = await db.query(board.sql, [...(board.params || []), limit]);
+
+        // Attach each player's avatar without touching the six board queries
+        // (two of which GROUP BY, so adding columns would mean adding them to the
+        // grouping too). One lookup keyed by the username every board already
+        // returns, then resolveAvatar() decides the picture the same way it does
+        // everywhere else. Usernames are unique in users.
+        const names = [...new Set(rows.map(r => r.username).filter(Boolean))];
+        const avatarByName = new Map();
+        if (names.length > 0) {
+            const placeholders = names.map(() => '?').join(', ');
+            const [avatarRows] = await db.query(
+                `SELECT username, level, avatar_url, avatar_source
+                   FROM users WHERE username IN (${placeholders})`,
+                names
+            );
+            for (const a of avatarRows) avatarByName.set(a.username, a);
+        }
+
         res.json({
             board: boardKey,
             minMatches: boardKey === 'arcade_winrate' ? ARCADE_WINRATE_MIN_MATCHES : undefined,
-            rows: rows.map((r, i) => ({ rank: i + 1, ...r, metric: Number(r.metric) || 0 })),
+            rows: rows.map((r, i) => ({
+                rank: i + 1,
+                ...r,
+                metric: Number(r.metric) || 0,
+                avatar: resolveAvatar(avatarByName.get(r.username) || { level: r.level }),
+            })),
         });
     } catch (err) {
         console.error('❌ GET /api/leaderboard error:', err.message);

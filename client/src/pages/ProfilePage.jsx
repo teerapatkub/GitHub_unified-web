@@ -62,7 +62,7 @@ const StatTile = ({ icon, label, value, hint }) => (
     </div>
 );
 
-export default function ProfilePage({ user: propUser }) {
+export default function ProfilePage({ user: propUser, onUserRefresh }) {
     const navigate = useNavigate();
     const params = useParams();
     const [data, setData] = useState(null);
@@ -73,6 +73,8 @@ export default function ProfilePage({ user: propUser }) {
     const [picked, setPicked] = useState([]);
     const [savingShowcase, setSavingShowcase] = useState(false);
     const [showcaseError, setShowcaseError] = useState('');
+    const [avatarBusy, setAvatarBusy] = useState(false);
+    const [avatarError, setAvatarError] = useState('');
 
     // Viewing someone else's profile is just /profile/:userId; with no id it is
     // the signed-in player's own.
@@ -145,6 +147,48 @@ export default function ProfilePage({ user: propUser }) {
         }
     };
 
+    // Upload and reset are the same shape: POST, then reload the profile and ask
+    // the navbar to refresh so the new picture shows everywhere at once. Only the
+    // request and the failure wording differ, so they share one runner.
+    const runAvatarChange = async (request, failMessage) => {
+        setAvatarBusy(true);
+        setAvatarError('');
+        try {
+            const res = await request();
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(body.error || failMessage);
+            await load();
+            onUserRefresh?.();
+        } catch (err) {
+            setAvatarError(err.message || failMessage);
+        } finally {
+            setAvatarBusy(false);
+        }
+    };
+
+    // Validated on the client for a fast, friendly message, but the server
+    // enforces the same limits again — a client check is advice, not a guard.
+    const handleAvatarUpload = (file) => {
+        if (!file) return;
+        if (!/^image\/(png|jpe?g|webp)$/i.test(file.type)) {
+            setAvatarError('รับเฉพาะไฟล์ภาพ .png .jpg หรือ .webp');
+            return;
+        }
+        if (file.size > 5 * 1024 * 1024) {
+            setAvatarError('ไฟล์ใหญ่เกิน 5MB');
+            return;
+        }
+        const form = new FormData();
+        form.append('file', file);
+        runAvatarChange(
+            () => fetch(`${API_BASE}/api/profile/${userId}/avatar`, { method: 'POST', body: form }),
+            'อัปโหลดรูปไม่สำเร็จ');
+    };
+
+    const handleAvatarReset = () => runAvatarChange(
+        () => fetch(`${API_BASE}/api/profile/${userId}/avatar/reset`, { method: 'POST' }),
+        'รีเซ็ตรูปไม่สำเร็จ');
+
     if (loading) {
         return (
             <div className="min-h-screen bg-pysim-surface px-4 py-16 text-center text-sm font-semibold text-pysim-outline">
@@ -196,25 +240,52 @@ export default function ProfilePage({ user: propUser }) {
                 {/* ---------- identity ---------- */}
                 <div className="rounded-2xl bg-white p-6 whisper-shadow sm:p-8">
                     <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-start">
-                        <div className="relative h-28 w-28 shrink-0">
-                            {/* The resolved profile picture: whatever the user chose, or a
-                                level-based default the server picked. The server always
-                                sends a url, so the initials only show if that ever fails. */}
-                            {user.avatar?.url ? (
-                                <img
-                                    src={assetUrl(user.avatar.url)}
-                                    alt=""
-                                    className="absolute inset-[14px] h-[calc(100%-28px)] w-[calc(100%-28px)] rounded-full bg-pysim-surface-low object-cover"
-                                />
-                            ) : (
-                                <div className="absolute inset-[14px] flex items-center justify-center rounded-full bg-gradient-to-br from-sky-400 to-indigo-500 text-3xl font-black text-white">
-                                    {initial}
+                        <div className="flex flex-col items-center gap-2 shrink-0">
+                            <div className="relative h-28 w-28">
+                                {/* The resolved profile picture: whatever the user chose, or a
+                                    level-based default the server picked. The server always
+                                    sends a url, so the initials only show if that ever fails. */}
+                                {user.avatar?.url ? (
+                                    <img
+                                        src={assetUrl(user.avatar.url)}
+                                        alt=""
+                                        className="absolute inset-[14px] h-[calc(100%-28px)] w-[calc(100%-28px)] rounded-full bg-pysim-surface-low object-cover"
+                                    />
+                                ) : (
+                                    <div className="absolute inset-[14px] flex items-center justify-center rounded-full bg-gradient-to-br from-sky-400 to-indigo-500 text-3xl font-black text-white">
+                                        {initial}
+                                    </div>
+                                )}
+                                {/* The equipped profile frame, drawn around the avatar rather
+                                    than replacing it — every frame has a transparent centre. */}
+                                {user.profile_frame_url && (
+                                    <img src={assetUrl(user.profile_frame_url)} alt="" className="pointer-events-none absolute inset-0 h-full w-full" />
+                                )}
+                            </div>
+
+                            {/* Only the owner can change their own picture. */}
+                            {isOwner && (
+                                <div className="flex flex-col items-center gap-1">
+                                    <div className="flex gap-2">
+                                        <label className={`cursor-pointer rounded-lg python-gradient px-3 py-1.5 text-xs font-bold text-white ${avatarBusy ? 'pointer-events-none opacity-60' : ''}`}>
+                                            เปลี่ยนรูป
+                                            <input
+                                                type="file"
+                                                accept="image/png,image/jpeg,image/webp"
+                                                className="hidden"
+                                                onChange={(e) => { handleAvatarUpload(e.target.files?.[0]); e.target.value = ''; }}
+                                            />
+                                        </label>
+                                        <button
+                                            onClick={handleAvatarReset}
+                                            disabled={avatarBusy}
+                                            className="rounded-lg bg-pysim-surface-low px-3 py-1.5 text-xs font-bold text-pysim-on-surface-variant hover:bg-pysim-surface disabled:opacity-60"
+                                        >
+                                            ใช้รูปเริ่มต้น
+                                        </button>
+                                    </div>
+                                    {avatarError && <p className="max-w-[12rem] text-center text-[11px] font-semibold text-red-500">{avatarError}</p>}
                                 </div>
-                            )}
-                            {/* The equipped profile frame, drawn around the avatar rather
-                                than replacing it — every frame has a transparent centre. */}
-                            {user.profile_frame_url && (
-                                <img src={assetUrl(user.profile_frame_url)} alt="" className="pointer-events-none absolute inset-0 h-full w-full" />
                             )}
                         </div>
 
