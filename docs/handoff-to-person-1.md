@@ -13,6 +13,34 @@
 
 
 
+
+---
+
+## 2026-08-27 — เฟส A (1d เสร็จ): CodingWorkspace รันใน worker แล้ว
+
+ไฟล์: `client/src/components/learning/CodingWorkspace.jsx` (ของ Person 1, ใช้โดย AiTaskPage
+ที่ `/debug` และ `/challenge`)
+
+เดิมโหลด Pyodide เอง (main thread) `handleRun` (interactive) + `handleRunTests` (ตรวจทีละ
+test case) ลูปค้าง = แท็บค้าง ตอนนี้ทั้งคู่รันผ่าน `usePyodide` (worker)
+
+- ลบ `ensurePyodideLoader`/constants/`window.requestInputFromJS` ทิ้ง
+- `handleRun` → `runCode(code, [], {interactive, onInput, onStdout, onStderr})`
+- `handleRunTests` → รันแต่ละ test case ใน worker แบบ non-interactive (StringIO + print กลับเพื่อจับ
+  stdout) — **ไม่แตะตรรกะการตรวจ** ยังใช้ `actual.includes(expected)` เดิม (แค่เปิดปุ่ม Submit
+  ฝั่ง client เท่านั้น การตัดสินจริงยังอยู่ที่ server ผ่าน onSubmitTask)
+- ถ้าโค้ดใน test ลูปค้าง จะถูก interrupt แล้วหยุด loop ไม่ freeze
+
+### ทดสอบแล้ว (E2E บนหน้า /debug จริง, ล็อกอิน test1)
+- Run + `input("เลข:")` → พิมพ์ "21" → terminal: `เลข: 21` / `42`
+- Run + `while True` → พิมพ์ `start` แล้วถูกหยุด ~10 วิ ด้วยข้อความไทย **แท็บไม่ค้าง**
+- Run Tests → รันครบ แสดง `FAIL Test Case 1 / Expected / Got` (เส้นตรวจทำงานผ่าน worker)
+- `npm run build` ผ่าน, `npm run lint` 56/9 (ไม่มี error ใหม่; prop `user` ที่ไม่ได้ใช้เป็นของเดิม)
+
+**สรุป 1d เสร็จครบ 3 หน้า** — ExercisePage, MiNi_Game, CodingWorkspace ย้ายเข้า worker แล้ว
+รวมกับ LessonPage playground + Arcade trial ที่อยู่บน worker อยู่แล้ว → โค้ด Python ฝั่ง client
+ทุกจุดกันลูปค้างได้หมด (เฟส A ข้อ 1 เสร็จสมบูรณ์)
+
 ---
 
 ## 2026-08-27 — เฟส A (1d): MiNi_Game รันใน worker แล้ว

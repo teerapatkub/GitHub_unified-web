@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
+import usePyodide from '../../hooks/usePyodide';
+import friendlyPyError from '../../utils/friendlyPyError';
 import Editor from '@monaco-editor/react';
 import axios from 'axios';
 import {
@@ -15,55 +17,6 @@ import {
 } from 'lucide-react';
 import { API_BASE } from '../../config/api.js';
 
-const PYODIDE_SCRIPT_ID = 'pyodide-runtime-loader';
-const PYODIDE_SCRIPT_URL = '/pyodide/pyodide.js'; // self-hosted, see scripts/sync-pyodide.mjs
-
-async function ensurePyodideLoader() {
-  if (typeof window.loadPyodide === 'function') {
-    return window.loadPyodide;
-  }
-
-  let script = document.getElementById(PYODIDE_SCRIPT_ID);
-  if (!script) {
-    script = document.createElement('script');
-    script.id = PYODIDE_SCRIPT_ID;
-    script.src = PYODIDE_SCRIPT_URL;
-    script.async = true;
-    document.head.appendChild(script);
-  }
-
-  await new Promise((resolve, reject) => {
-    if (typeof window.loadPyodide === 'function') {
-      resolve();
-      return;
-    }
-
-    const handleLoad = () => resolve();
-    const handleError = () => reject(new Error('Unable to load Pyodide runtime.'));
-
-    script.addEventListener('load', handleLoad, { once: true });
-    script.addEventListener('error', handleError, { once: true });
-  });
-
-  await new Promise((resolve, reject) => {
-    let attempts = 0;
-    const poll = () => {
-      if (typeof window.loadPyodide === 'function') {
-        resolve();
-        return;
-      }
-      attempts += 1;
-      if (attempts > 50) {
-        reject(new Error('Pyodide loader is not available.'));
-        return;
-      }
-      setTimeout(poll, 100);
-    };
-    poll();
-  });
-
-  return window.loadPyodide;
-}
 
 export default function CodingWorkspace({
   user,
@@ -93,8 +46,10 @@ export default function CodingWorkspace({
 }) {
   const [code, setCode] = useState(initialCode);
   const [terminalLines, setTerminalLines] = useState([]);
-  const [pyodide, setPyodide] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  // Python runs in the shared Web Worker (usePyodide) so an infinite loop in a
+  // learner's code is interrupted instead of freezing the tab.
+  const { status: pyStatus, runCode } = usePyodide();
+  const isLoading = pyStatus !== 'ready';
   const [isRunning, setIsRunning] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [hasPassedTests, setHasPassedTests] = useState(false);
@@ -154,61 +109,14 @@ export default function CodingWorkspace({
     setIsAiResponding(false);
   }, [initialCode, starterMessage, taskId]);
 
-  useEffect(() => {
-    let isMounted = true;
-
-    const initPyodide = async () => {
-      setIsLoading(true);
-      try {
-        const loadPyodide = await ensurePyodideLoader();
-        const instance = await loadPyodide({ indexURL: '/pyodide/' });
-        if (!isMounted) return;
-
-        instance.setStdout({
-          batched: (text) => {
-            if (text.trim()) appendLine(text);
-          },
-        });
-        instance.setStderr({
-          batched: (text) => appendLine(`Error: ${text}`),
-        });
-
-        const restoreBridge = `
-import builtins
-from js import requestInputFromJS
-async def custom_input(prompt=""):
-    return await requestInputFromJS(prompt)
-builtins.input = custom_input
-`;
-        await instance.runPythonAsync(restoreBridge);
-
-        if (!isMounted) return;
-        setPyodide(instance);
-        setIsLoading(false);
-        appendLine('Python runtime ready.');
-      } catch (error) {
-        if (!isMounted) return;
-        setIsLoading(false);
-        appendLine(`Failed to load Python: ${error.message}`);
-      }
-    };
-
-    window.requestInputFromJS = (promptText) => {
-      setCurrentPrompt(promptText);
-      return new Promise((resolve) => {
-        inputResolverRef.current = resolve;
-      });
-    };
-
-    initPyodide();
-
-    return () => {
-      isMounted = false;
-      if (window.requestInputFromJS) {
-        delete window.requestInputFromJS;
-      }
-    };
-  }, []);
+  // Interactive input() for the worker: show the prompt and resolve when the
+  // learner presses Enter (see handleInputKeyDown).
+  const requestInputFromLearner = (promptText = '') => {
+    setCurrentPrompt(promptText);
+    return new Promise((resolve) => {
+      inputResolverRef.current = resolve;
+    });
+  };
 
   const normalizeText = (text) => {
     if (!text) return '';
@@ -220,79 +128,87 @@ builtins.input = custom_input
   };
 
   const handleRun = async () => {
-    if (!pyodide || isRunning) return;
+    if (pyStatus !== 'ready' || isRunning) return;
     setTerminalLines([]);
     setIsRunning(true);
     setIsSuccess(false);
     setHasPassedTests(false);
 
-    try {
-      const processedCode = code.replace(/input\(/g, 'await input(');
-      const wrappedCode = `import asyncio\nimport sys, builtins\nfrom js import requestInputFromJS\nsys.stdout = sys.__stdout__\nsys.stdin = sys.__stdin__\nasync def custom_input(prompt=""):\n    return await requestInputFromJS(prompt)\nbuiltins.input = custom_input\nasync def __user_code__():\n${processedCode
-        .split('\n')
-        .map((line) => `    ${line}`)
-        .join('\n')}\nawait __user_code__()`;
-      await pyodide.runPythonAsync(wrappedCode);
-    } catch (error) {
-      appendLine(`Error: ${error.message}`);
-    } finally {
-      setIsRunning(false);
+    const result = await runCode(code, [], {
+      interactive: true,
+      mainFileName: 'main.py',
+      onInput: requestInputFromLearner,
+      onStdout: (text) => { if (text.trim()) appendLine(text); },
+      onStderr: (text) => appendLine(`Error: ${text}`),
+    });
+
+    if (!result.success && !result.interrupted && result.error && result.error !== 'Timeout') {
+      const explained = friendlyPyError(result.error);
+      if (explained.message) appendLine(explained.message);
     }
+    setIsRunning(false);
   };
 
   const handleRunTests = async () => {
-    if (!pyodide || isRunning) return;
+    if (pyStatus !== 'ready' || isRunning) return;
     setIsRunning(true);
     setTerminalLines(['--- Starting auto-grading ---']);
     let allPassed = true;
     setIsSuccess(false);
     setHasPassedTests(false);
 
-    try {
-      for (let index = 0; index < testCases.length; index += 1) {
-        const test = testCases[index];
-        const encodedCode = btoa(unescape(encodeURIComponent(code)));
-        const gradingScript = `
-import sys, builtins, base64
-from io import StringIO
-def sync_input(prompt=""):
-    return sys.stdin.readline().rstrip('\\n')
-builtins.input = sync_input
-sys.stdin = StringIO("${test.input}")
-sys.stdout = StringIO()
-try:
-    exec(base64.b64decode("${encodedCode}").decode("utf-8"), {"input": sync_input, "__builtins__": builtins}, {})
-    output = sys.stdout.getvalue()
-except Exception as e:
-    output = str(e)
-output.strip()
-`;
+    for (let index = 0; index < testCases.length; index += 1) {
+      const test = testCases[index];
+      const encodedCode = btoa(unescape(encodeURIComponent(code)));
+      // Feed the case's input via StringIO, capture what the code prints, then
+      // print it back so it reaches the worker's stdout. Runs in the worker, so a
+      // learner whose code loops forever is interrupted, not left freezing the tab.
+      const gradingScript = [
+        'import sys, builtins, base64',
+        'from io import StringIO',
+        'def sync_input(prompt=""):',
+        "    return sys.stdin.readline().rstrip('\\n')",
+        'builtins.input = sync_input',
+        '_real_stdout = sys.stdout',
+        'sys.stdin = StringIO(' + JSON.stringify(String(test.input ?? '')) + ')',
+        'sys.stdout = StringIO()',
+        'try:',
+        '    exec(base64.b64decode("' + encodedCode + '").decode("utf-8"), {"input": sync_input, "__builtins__": builtins}, {})',
+        '    _out = sys.stdout.getvalue()',
+        'except Exception as e:',
+        '    _out = str(e)',
+        'sys.stdout = _real_stdout',
+        'print(_out, end="")',
+      ].join('\n');
 
-        const rawResult = await pyodide.runPythonAsync(gradingScript);
-        const actual = normalizeText(rawResult);
-        const expected = normalizeText(test.expected);
+      let captured = '';
+      const runResult = await runCode(gradingScript, [], {
+        interactive: false,
+        onStdout: (t) => { captured += t; },
+        onStderr: (t) => { captured += t; },
+      });
 
-        if (actual.includes(expected)) {
-          appendLine(`PASS Test Case ${index + 1}`);
-        } else {
-          appendLine(`FAIL Test Case ${index + 1}`);
-          appendLine(`Expected: ${expected}`);
-          appendLine(`Got: ${actual}`);
-          allPassed = false;
-          break;
-        }
+      if (!runResult.success && runResult.error && runResult.error !== 'Timeout') {
+        // Interrupted loop or worker error: report and stop.
+        appendLine(runResult.error);
+        allPassed = false;
+        break;
       }
-    } catch (error) {
-      appendLine(`System Error: ${error.message}`);
-      allPassed = false;
-    } finally {
-      try {
-        await pyodide.runPythonAsync(`import builtins\nfrom js import requestInputFromJS\nasync def custom_input(prompt=""):\n    return await requestInputFromJS(prompt)\nbuiltins.input = custom_input`);
-      } catch {
-        // Ignore bridge restore errors.
+
+      const actual = normalizeText(captured);
+      const expected = normalizeText(test.expected);
+      if (actual.includes(expected)) {
+        appendLine(`PASS Test Case ${index + 1}`);
+      } else {
+        appendLine(`FAIL Test Case ${index + 1}`);
+        appendLine(`Expected: ${expected}`);
+        appendLine(`Got: ${actual}`);
+        allPassed = false;
+        break;
       }
-      setIsRunning(false);
     }
+
+    setIsRunning(false);
 
     if (allPassed) {
       setIsSuccess(true);
