@@ -5,6 +5,7 @@
 // change, only relocated.
 import { useState, useRef, useEffect, useCallback } from 'react';
 import usePyodide from '../../../hooks/usePyodide.js';
+import friendlyPyError from '../../../utils/friendlyPyError.js';
 import { PHASES, TASKS, TASK_TEST_CASES, ROUND_4_FALLBACK_TASK,
          FINALE_POOL_BY_DIFFICULTY, EXAMPLE_CASES_SHOWN, pyLiteral,
          TRIAL_MARKER, TRIAL_NO_FN, TRIAL_CODE_ERROR, buildTrialHarness } from '../constants.js';
@@ -242,8 +243,12 @@ export default function useRoundJudging({ playerState, setPlayerState, currentRo
 
     if (errorLine) {
       // The code could not even be loaded - a syntax error, or something that
-      // raised while the file was being run. No case ever got a chance.
-      setConsoleOutput([t('trialCodeError'), errorLine.slice(TRIAL_CODE_ERROR.length), printed]
+      // raised while the file was being run. No case ever got a chance. Show the
+      // shared Thai explanation instead of the raw traceback (the same one the
+      // learning pages use), falling back to the raw text if it is unrecognised.
+      const rawError = errorLine.slice(TRIAL_CODE_ERROR.length);
+      const explained = friendlyPyError(rawError);
+      setConsoleOutput([t('trialCodeError'), explained.message || rawError, printed]
         .filter(Boolean).join('\n'));
       return;
     }
