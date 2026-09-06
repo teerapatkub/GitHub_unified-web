@@ -1344,6 +1344,35 @@ db.ready = (async () => {
         }
         console.log(`✅ ร้านค้า: รูปโปรไฟล์ ${PROFILE_PICTURES.length} แบบ (เพิ่มใหม่ ${picturesSeeded} แบบ)`);
 
+        // Exclusive achievement pictures (item 9): PROFILE_PICTUREs that exist so
+        // they can be owned and worn, but are NOT for sale (is_available = 0), so
+        // the shop hides them and refuses to sell them. The only way to get one is
+        // to unlock the achievement that hands it out.
+        const EXCLUSIVE_PICTURES = [
+            { name: 'แชมป์สนาม', description: 'รูปโปรไฟล์แชมป์ ได้จากความสำเร็จเท่านั้น ซื้อไม่ได้', asset_url: '/uploads/avatar-ach-champion.svg' },
+            { name: 'บัณฑิตไพธอน', description: 'รูปโปรไฟล์บัณฑิต ได้จากความสำเร็จเท่านั้น ซื้อไม่ได้', asset_url: '/uploads/avatar-ach-graduate.svg' },
+        ];
+        for (const pic of EXCLUSIVE_PICTURES) {
+            const [existing] = await db.query(
+                `SELECT item_id FROM shop_items WHERE item_type = 'PROFILE_PICTURE' AND asset_url = ? LIMIT 1`,
+                [pic.asset_url]
+            );
+            if (existing.length > 0) {
+                await db.query(
+                    `UPDATE shop_items SET name = ?, description = ?, type = 'PROFILE_PICTURE',
+                            item_type = 'PROFILE_PICTURE', rarity = 'EPIC', price = 0, is_active = 1, is_available = 0
+                      WHERE item_id = ?`,
+                    [pic.name, pic.description, existing[0].item_id]
+                );
+            } else {
+                await db.query(
+                    `INSERT INTO shop_items (name, description, type, item_type, rarity, price, asset_url, effects, is_active, is_available)
+                     VALUES (?, ?, 'PROFILE_PICTURE', 'PROFILE_PICTURE', 'EPIC', 0, ?, NULL, 1, 0)`,
+                    [pic.name, pic.description, pic.asset_url]
+                );
+            }
+        }
+
         // Leftover test rows: mojibake names and asset URLs pointing at a
         // localhost:5000 that no longer exists. Hidden rather than deleted so
         // nothing referencing them breaks.
@@ -1373,6 +1402,9 @@ db.ready = (async () => {
         await db.query(`ALTER TABLE achievements ADD COLUMN IF NOT EXISTS threshold INTEGER;`);
         await db.query(`ALTER TABLE achievements ADD COLUMN IF NOT EXISTS is_active SMALLINT DEFAULT 1;`);
         await db.query(`ALTER TABLE achievements ADD COLUMN IF NOT EXISTS icon VARCHAR(20);`);
+        // The cosmetic (a PROFILE_PICTURE item) an achievement hands out on top of
+        // its coins, or NULL for coins only. Points at shop_items.item_id (item 9).
+        await db.query(`ALTER TABLE achievements ADD COLUMN IF NOT EXISTS reward_item_id INTEGER DEFAULT NULL;`);
 
         // Ordered by how early a player is likely to reach them, so the profile
         // list reads as a ladder rather than a jumble.
@@ -1385,6 +1417,7 @@ db.ready = (async () => {
             { id: 3,  code: 'half_course',       name: 'ครึ่งทางแล้ว',        icon: '📚', metric: 'lessons_completed',   threshold: 12,  difficulty: 'Hard',      reward: 400,
               desc: 'เรียนจบครึ่งหนึ่งของหลักสูตร (12 บท)' },
             { id: 4,  code: 'all_lessons',       name: 'จบหลักสูตร',         icon: '🎓', metric: 'lessons_completed',   threshold: 24,  difficulty: 'Very Hard', reward: 2000,
+              reward_asset: '/uploads/avatar-ach-graduate.svg',
               desc: 'เรียนจบครบทุกบทในหลักสูตร' },
 
             // --- exercises ------------------------------------------------
@@ -1415,6 +1448,7 @@ db.ready = (async () => {
             { id: 14, code: 'first_win',         name: 'ชนะครั้งแรก',        icon: '🏆', metric: 'arcade_wins',         threshold: 1,   difficulty: 'Medium',    reward: 150,
               desc: 'ชนะ Arcade เป็นครั้งแรก' },
             { id: 15, code: 'ten_wins',          name: 'เจ้าสนาม',           icon: '👑', metric: 'arcade_wins',         threshold: 10,  difficulty: 'Hard',      reward: 800,
+              reward_asset: '/uploads/avatar-ach-champion.svg',
               desc: 'ชนะ Arcade ครบ 10 ครั้ง' },
             { id: 16, code: 'perfect_round',     name: 'รอบไร้ที่ติ',         icon: '⚡', metric: 'arcade_perfect_rounds', threshold: 1, difficulty: 'Hard',      reward: 300,
               desc: 'ผ่านทุก test case ในหนึ่งรอบของ Arcade' },
@@ -1448,6 +1482,17 @@ db.ready = (async () => {
                     [a.id, a.code, a.name, a.desc, a.difficulty, a.reward, a.metric, a.threshold, a.icon]
                 );
             }
+            // Bind the exclusive picture, if this achievement hands one out. Done
+            // by asset_url because the shop item's id is auto-assigned; the
+            // pictures were seeded above, so the lookup resolves.
+            await db.query(
+                `UPDATE achievements
+                    SET reward_item_id = ${a.reward_asset
+                        ? `(SELECT item_id FROM shop_items WHERE asset_url = ? AND item_type = 'PROFILE_PICTURE' LIMIT 1)`
+                        : 'NULL'}
+                  WHERE achievement_id = ?`,
+                a.reward_asset ? [a.reward_asset, a.id] : [a.id]
+            );
         }
         // Anything beyond the twenty defined here is left over from the old
         // simulation set and can never be earned; hidden rather than deleted so

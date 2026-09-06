@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="รูปโปรไฟล์บัณฑิตไพธอน (รางวัลความสำเร็จ)">
+  <defs>
+    <linearGradient id="gradBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#34d399"/>
+      <stop offset="1" stop-color="#065f46"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" fill="url(#gradBg)"/>
+  <!-- head -->
+  <circle cx="64" cy="74" r="22" fill="#ecfdf5"/>
+  <!-- graduation cap -->
+  <path d="M28 50 L64 36 L100 50 L64 64 Z" fill="#064e3b"/>
+  <rect x="58" y="56" width="12" height="12" fill="#064e3b"/>
+  <!-- tassel -->
+  <line x1="100" y1="50" x2="100" y2="70" stroke="#fbbf24" stroke-width="2"/>
+  <circle cx="100" cy="72" r="3" fill="#fbbf24"/>
+  <!-- smile -->
+  <path d="M56 80 q8 6 16 0" stroke="#065f46" stroke-width="2.5" fill="none"/>
+</svg>

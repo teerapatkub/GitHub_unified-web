@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="รูปโปรไฟล์แชมป์ (รางวัลความสำเร็จ)">
+  <defs>
+    <linearGradient id="champBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fbbf24"/>
+      <stop offset="1" stop-color="#b45309"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" fill="url(#champBg)"/>
+  <!-- laurel-ish sparkles -->
+  <circle cx="24" cy="30" r="2.5" fill="#fff7ed"/>
+  <circle cx="104" cy="34" r="2.5" fill="#fff7ed"/>
+  <!-- trophy cup -->
+  <path d="M44 40 h40 v14 a20 20 0 0 1 -40 0 Z" fill="#fde68a"/>
+  <path d="M44 44 h-10 a10 10 0 0 0 10 12 M84 44 h10 a10 10 0 0 1 -10 12" fill="none" stroke="#fde68a" stroke-width="5"/>
+  <rect x="58" y="72" width="12" height="12" fill="#fde68a"/>
+  <rect x="48" y="84" width="32" height="8" rx="3" fill="#92400e"/>
+  <!-- star on cup -->
+  <path d="M64 46 l3 6 6 1 -4.5 4.5 1 6 -5.5-3 -5.5 3 1-6 -4.5-4.5 6-1 Z" fill="#b45309"/>
+</svg>

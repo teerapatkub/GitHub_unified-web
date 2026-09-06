@@ -211,10 +211,55 @@ const check = (ok, label, detail) => {
         } else {
             console.log('SKIP  ไม่พบรูปโปรไฟล์ในร้าน — ข้ามเช็คข้อ 6');
         }
+
+        // === item 9: exclusive achievement pictures =========================
+        const { rows: exRows } = await c.query(
+            `SELECT item_id, asset_url FROM shop_items
+              WHERE item_type = 'PROFILE_PICTURE' AND is_available = 0 AND is_active = 1`);
+        check(exRows.length >= 1, 'มีรูป exclusive ในระบบ (ซื้อไม่ได้)', `${exRows.length} รูป`);
+        if (exRows.length >= 1) {
+            const champ = exRows.find(r => /champion/.test(r.asset_url)) || exRows[0];
+
+            const buyable = (await call('GET', '/api/shop/items?type=PROFILE_PICTURE')).d || [];
+            check(!buyable.some(i => Number(i.item_id) === Number(champ.item_id)),
+                'รูป exclusive ไม่โผล่ในรายการร้านที่ซื้อได้', '');
+
+            const exBuyer = await makeUser(2);
+            await c.query('UPDATE users SET virtual_currency = 500 WHERE user_id = $1', [exBuyer]);
+            const exBuy = await callJson('POST', '/api/shop/buy', { userId: exBuyer, itemId: champ.item_id });
+            check(exBuy.status >= 400, 'ซื้อรูป exclusive ด้วยเหรียญไม่ได้ (ถูกปฏิเสธ)', 'status ' + exBuy.status);
+
+            const ach = (await call('GET', `/api/achievements/${exBuyer}`)).d || [];
+            const tenWins = ach.find(a => a.code === 'ten_wins');
+            check(tenWins?.reward_item_url === champ.asset_url,
+                'achievement เจ้าสนาม ผูกกับรูปแชมป์ (endpoint บอกรางวัล)', tenWins?.reward_item_url);
+
+            // Unlock it for real: 10 arcade wins, then a purchase runs the
+            // achievement check, which should hand over the exclusive picture.
+            const winnerId = await makeUser(2);
+            const { rows: [wu] } = await c.query('SELECT username FROM users WHERE user_id = $1', [winnerId]);
+            await c.query(
+                `INSERT INTO arcade_player_stats (user_name, matches_played, wins, best_rank, total_score, total_cash_earned)
+                 VALUES ($1, 10, 10, 1, 0, 0)
+                 ON CONFLICT (user_name) DO UPDATE SET matches_played = 10, wins = 10`, [wu.username]);
+            await c.query('UPDATE users SET virtual_currency = 500 WHERE user_id = $1', [winnerId]);
+            await callJson('POST', '/api/shop/buy', { userId: winnerId, itemId: buyable[0]?.item_id });
+
+            const { rows: ownEx } = await c.query(
+                'SELECT 1 FROM user_inventory WHERE user_id = $1 AND item_id = $2', [winnerId, champ.item_id]);
+            check(ownEx.length === 1, 'ปลดล็อก achievement แล้วได้รูปพิเศษเข้าคลังจริง', ownEx.length ? 'มี' : 'ไม่มี');
+
+            const wprof = (await call('GET', `/api/profile/${winnerId}`)).d;
+            const exOpt = wprof?.user?.avatar_options?.find(o => o.source === 'shop' && o.itemId === Number(champ.item_id));
+            check(!!exOpt, 'รูปพิเศษอยู่ใน avatar_options เลือกใช้เป็น avatar ได้', JSON.stringify(exOpt));
+        }
     } finally {
         if (madeIds.length) {
             await c.query('DELETE FROM users WHERE user_id = ANY($1::int[])', [madeIds]);
         }
+        // Stats rows are keyed by username, not user_id, so deleting the users
+        // does not take them; clean the probe rows up by their name pattern.
+        await c.query(`DELETE FROM arcade_player_stats WHERE user_name LIKE 'avatar_probe_%'`);
         await c.end();
     }
 

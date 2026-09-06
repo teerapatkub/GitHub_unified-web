@@ -1005,7 +1005,7 @@ async function evaluateAchievements(userId, username = null) {
         }
 
         const [defs] = await db.execute(
-            `SELECT a.achievement_id, a.code, a.name, a.metric, a.threshold, a.reward_money
+            `SELECT a.achievement_id, a.code, a.name, a.metric, a.threshold, a.reward_money, a.reward_item_id
                FROM achievements a
               WHERE a.is_active = 1 AND a.metric IS NOT NULL
                 AND NOT EXISTS (SELECT 1 FROM user_achievements ua
@@ -1036,8 +1036,18 @@ async function evaluateAchievements(userId, username = null) {
             if (reward > 0) {
                 await applyXpRewardToUser(db, uid, 0, reward);
             }
-            unlocked.push({ achievement_id: def.achievement_id, code: def.code, name: def.name, reward });
-            console.log(`🏆 ${name} unlocked "${def.name}" (+${reward} coins)`);
+            // A non-coin reward: the exclusive picture drops into the same
+            // inventory a shop purchase would, so it shows up in the player's
+            // avatar options and can be worn like any owned picture (item 9).
+            if (def.reward_item_id) {
+                await db.execute(
+                    `INSERT INTO user_inventory (user_id, item_id)
+                     SELECT ?, ? WHERE NOT EXISTS (SELECT 1 FROM user_inventory WHERE user_id = ? AND item_id = ?)`,
+                    [uid, def.reward_item_id, uid, def.reward_item_id]
+                );
+            }
+            unlocked.push({ achievement_id: def.achievement_id, code: def.code, name: def.name, reward, reward_item_id: def.reward_item_id || null });
+            console.log(`🏆 ${name} unlocked "${def.name}" (+${reward} coins${def.reward_item_id ? ' + รูปพิเศษ' : ''})`);
         }
 
         return unlocked;
@@ -2388,15 +2398,22 @@ app.post('/user/update', async (req, res) => {
 // 3. API: Achievements & Game Rooms (ของเดิม)
 // ==========================================
 
-app.get('/achievements/:userId', async (req, res) => {
+// Both paths: /api/... is what the dev server proxies, so the client uses that;
+// the bare path stays for anything already calling it.
+app.get(['/achievements/:userId', '/api/achievements/:userId'], async (req, res) => {
     const userId = req.params.userId;
+    // ri is the exclusive picture some achievements hand out (item 9); its
+    // asset_url and name ride along so the page can show what the reward is.
     const sql = `
         SELECT a.*,
-            (SELECT COUNT(*) FROM user_achievements ua WHERE ua.achievement_id = a.achievement_id) * 100.0 / (SELECT COUNT(*) FROM users) as global_percent,
-            CASE WHEN ua_me.id IS NOT NULL THEN 1 ELSE 0 END as is_unlocked
+            (SELECT COUNT(*) FROM user_achievements ua WHERE ua.achievement_id = a.achievement_id) * 100.0 / NULLIF((SELECT COUNT(*) FROM users), 0) as global_percent,
+            CASE WHEN ua_me.id IS NOT NULL THEN 1 ELSE 0 END as is_unlocked,
+            ri.asset_url AS reward_item_url, ri.name AS reward_item_name
         FROM achievements a
         LEFT JOIN user_achievements ua_me ON a.achievement_id = ua_me.achievement_id AND ua_me.user_id = ?
-        ORDER BY CASE a.difficulty WHEN 'Medium' THEN 1 WHEN 'Hard' THEN 2 WHEN 'Very Hard' THEN 3 END ASC
+        LEFT JOIN shop_items ri ON ri.item_id = a.reward_item_id
+        WHERE a.is_active = 1
+        ORDER BY CASE a.difficulty WHEN 'Medium' THEN 1 WHEN 'Hard' THEN 2 WHEN 'Very Hard' THEN 3 ELSE 4 END ASC, a.achievement_id ASC
     `;
     try {
         const [rows] = await db.execute(sql, [userId]);
@@ -5461,7 +5478,7 @@ app.get(shopPath('/items'), async (req, res) => {
         SELECT item_id, name, description, item_type AS type, price, asset_url, preview_image,
                effects AS preview_data, is_active AS is_available, rarity, set_key
         FROM shop_items
-        WHERE is_active = 1
+        WHERE is_active = 1 AND is_available = 1
     `;
     let params = [];
     if (type) {
@@ -5674,7 +5691,7 @@ app.post(shopPath('/buy'), async (req, res) => {
             SELECT item_id, name, description, item_type AS type, price, asset_url, preview_image,
                    effects AS preview_data, is_active AS is_available
             FROM shop_items
-            WHERE item_id = ? AND is_active = 1
+            WHERE item_id = ? AND is_active = 1 AND is_available = 1
         `, [itemId]);
         if (items.length === 0) {
             await connection.rollback();
