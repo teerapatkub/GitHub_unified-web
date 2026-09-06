@@ -364,6 +364,22 @@ export default function BattleRoyaleGameplayView({
                   </p>
                 </div>
               )}
+
+              {/* Submitted this round: the editor is locked on purpose, so say so
+                  plainly instead of letting the player type into a silent box. A
+                  debuff overlay (blackout/inkFog) takes the screen when active, so
+                  this only shows when the lock is the player's own submission. It
+                  is pointer-events-none: items on the right stay usable, which is
+                  the whole point of submitting early. */}
+              {spectating && !checkEffectActive('blackout') && !checkEffectActive('inkFog') && (
+                <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-slate-900/60 text-center pointer-events-none select-none">
+                  <div className="rounded-full border border-emerald-400/50 bg-emerald-500/20 px-4 py-1.5 text-sm font-black uppercase tracking-wider text-emerald-200">
+                    ✓ ส่งคำตอบรอบนี้แล้ว
+                  </div>
+                  <p className="text-sm font-bold text-white">แก้โค้ดไม่ได้จนจบรอบ · รอผลแล้วไปต่อรอบถัดไป</p>
+                  <p className="text-[11px] text-slate-300">ระหว่างนี้ยังกดใช้ไอเทมและดูโค้ดคนอื่นได้</p>
+                </div>
+              )}
             </div>
             )}
           </div>
