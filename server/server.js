@@ -1919,10 +1919,11 @@ app.post('/api/profile/:userId/avatar/select', async (req, res) => {
 });
 
 // A player's Competitive Arena history: the challenges they submitted to, the
-// score (0-100), how many test cases passed, and when. Derived from
-// multiplayer_submissions (one row per user per challenge, latest kept), so no
-// separate history table is needed - it pairs with Arcade's history on the
-// profile's two tabs (item 7).
+// score (0-100), how many test cases passed, and when. The submit flow updates
+// a player's existing row for a challenge rather than inserting a second, so
+// multiplayer_submissions already holds one row per user per challenge - reading
+// it back per user IS the history, with no separate history table. It pairs with
+// Arcade's history on the profile's two tabs (item 7).
 app.get('/api/competitive/players/:userId/history', async (req, res) => {
     const userId = Number(req.params.userId);
     if (!userId) return res.status(400).json({ error: 'userId is required' });

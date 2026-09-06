@@ -1310,11 +1310,36 @@ db.ready = (async () => {
             }
         }
 
-        // Standalone profile-picture cosmetics (item 6). Unlike the themed sets
-        // above these are single items with no theme/frame/cursor siblings, so
-        // they carry no set_key and are keyed for idempotency by asset_url.
-        // Buying one puts it in the player's inventory; choosing it as the shown
-        // avatar goes through avatar_url, not an equipped_* column (docs/adr 0002).
+        // Profile-picture cosmetics (items 6 and 9). Single items with no
+        // theme/frame/cursor siblings, so they carry no set_key and are keyed for
+        // idempotency by asset_url. Buying one, or unlocking it, puts it in the
+        // player's inventory; choosing it as the shown avatar goes through
+        // avatar_url, not an equipped_* column (docs/adr 0002). For-sale pictures
+        // and exclusive achievement pictures share this upsert, differing only in
+        // price, rarity, and whether the shop may sell them (is_available).
+        const upsertProfilePicture = async ({ name, description, asset_url, price, rarity, isAvailable }) => {
+            const [existing] = await db.query(
+                `SELECT item_id FROM shop_items WHERE item_type = 'PROFILE_PICTURE' AND asset_url = ? LIMIT 1`,
+                [asset_url]
+            );
+            if (existing.length > 0) {
+                await db.query(
+                    `UPDATE shop_items SET name = ?, description = ?, type = 'PROFILE_PICTURE',
+                            item_type = 'PROFILE_PICTURE', rarity = ?, price = ?, is_active = 1, is_available = ?
+                      WHERE item_id = ?`,
+                    [name, description, rarity, price, isAvailable, existing[0].item_id]
+                );
+                return false;
+            }
+            await db.query(
+                `INSERT INTO shop_items (name, description, type, item_type, rarity, price, asset_url, effects, is_active, is_available)
+                 VALUES (?, ?, 'PROFILE_PICTURE', 'PROFILE_PICTURE', ?, ?, ?, NULL, 1, ?)`,
+                [name, description, rarity, price, asset_url, isAvailable]
+            );
+            return true;
+        };
+
+        // For sale in the shop.
         const PROFILE_PICTURES = [
             { name: 'แมวส้ม', description: 'รูปโปรไฟล์แมวส้มหน้าตาเป็นมิตร', asset_url: '/uploads/avatar-shop-cat.svg', price: 100, rarity: 'RARE' },
             { name: 'หุ่นยนต์', description: 'รูปโปรไฟล์หุ่นยนต์ตาเรืองแสง', asset_url: '/uploads/avatar-shop-robot.svg', price: 100, rarity: 'RARE' },
@@ -1322,55 +1347,19 @@ db.ready = (async () => {
         ];
         let picturesSeeded = 0;
         for (const pic of PROFILE_PICTURES) {
-            const [existing] = await db.query(
-                `SELECT item_id FROM shop_items WHERE item_type = 'PROFILE_PICTURE' AND asset_url = ? LIMIT 1`,
-                [pic.asset_url]
-            );
-            if (existing.length > 0) {
-                await db.query(
-                    `UPDATE shop_items SET name = ?, description = ?, type = 'PROFILE_PICTURE',
-                            item_type = 'PROFILE_PICTURE', rarity = ?, price = ?, is_active = 1, is_available = 1
-                      WHERE item_id = ?`,
-                    [pic.name, pic.description, pic.rarity, pic.price, existing[0].item_id]
-                );
-            } else {
-                await db.query(
-                    `INSERT INTO shop_items (name, description, type, item_type, rarity, price, asset_url, effects, is_active, is_available)
-                     VALUES (?, ?, 'PROFILE_PICTURE', 'PROFILE_PICTURE', ?, ?, ?, NULL, 1, 1)`,
-                    [pic.name, pic.description, pic.rarity, pic.price, pic.asset_url]
-                );
-                picturesSeeded += 1;
-            }
+            if (await upsertProfilePicture({ ...pic, isAvailable: 1 })) picturesSeeded += 1;
         }
         console.log(`✅ ร้านค้า: รูปโปรไฟล์ ${PROFILE_PICTURES.length} แบบ (เพิ่มใหม่ ${picturesSeeded} แบบ)`);
 
-        // Exclusive achievement pictures (item 9): PROFILE_PICTUREs that exist so
-        // they can be owned and worn, but are NOT for sale (is_available = 0), so
-        // the shop hides them and refuses to sell them. The only way to get one is
-        // to unlock the achievement that hands it out.
+        // Exclusive achievement pictures (item 9): owned and worn like any other,
+        // but is_available = 0 so the shop hides them and refuses to sell them -
+        // the only way to get one is the achievement that hands it out.
         const EXCLUSIVE_PICTURES = [
             { name: 'แชมป์สนาม', description: 'รูปโปรไฟล์แชมป์ ได้จากความสำเร็จเท่านั้น ซื้อไม่ได้', asset_url: '/uploads/avatar-ach-champion.svg' },
             { name: 'บัณฑิตไพธอน', description: 'รูปโปรไฟล์บัณฑิต ได้จากความสำเร็จเท่านั้น ซื้อไม่ได้', asset_url: '/uploads/avatar-ach-graduate.svg' },
         ];
         for (const pic of EXCLUSIVE_PICTURES) {
-            const [existing] = await db.query(
-                `SELECT item_id FROM shop_items WHERE item_type = 'PROFILE_PICTURE' AND asset_url = ? LIMIT 1`,
-                [pic.asset_url]
-            );
-            if (existing.length > 0) {
-                await db.query(
-                    `UPDATE shop_items SET name = ?, description = ?, type = 'PROFILE_PICTURE',
-                            item_type = 'PROFILE_PICTURE', rarity = 'EPIC', price = 0, is_active = 1, is_available = 0
-                      WHERE item_id = ?`,
-                    [pic.name, pic.description, existing[0].item_id]
-                );
-            } else {
-                await db.query(
-                    `INSERT INTO shop_items (name, description, type, item_type, rarity, price, asset_url, effects, is_active, is_available)
-                     VALUES (?, ?, 'PROFILE_PICTURE', 'PROFILE_PICTURE', 'EPIC', 0, ?, NULL, 1, 0)`,
-                    [pic.name, pic.description, pic.asset_url]
-                );
-            }
+            await upsertProfilePicture({ ...pic, price: 0, rarity: 'EPIC', isAvailable: 0 });
         }
 
         // Leftover test rows: mojibake names and asset URLs pointing at a
