@@ -75,6 +75,9 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
     const [showcaseError, setShowcaseError] = useState('');
     const [avatarBusy, setAvatarBusy] = useState(false);
     const [avatarError, setAvatarError] = useState('');
+    const [historyTab, setHistoryTab] = useState('arcade');
+    const [compHistory, setCompHistory] = useState(null);
+    const [compLoading, setCompLoading] = useState(false);
 
     // Viewing someone else's profile is just /profile/:userId; with no id it is
     // the signed-in player's own.
@@ -108,6 +111,20 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
     }, [userId]);
 
     useEffect(() => { load(); }, [load]);
+
+    // Competitive history is its own endpoint and only fetched when the tab is
+    // opened, so a profile that never looks at it costs nothing extra.
+    useEffect(() => {
+        if (historyTab !== 'competitive' || compHistory !== null || !userId) return;
+        let cancelled = false;
+        setCompLoading(true);
+        fetch(`${API_BASE}/api/competitive/players/${userId}/history`)
+            .then(r => (r.ok ? r.json() : { history: [] }))
+            .then(d => { if (!cancelled) setCompHistory(d.history || []); })
+            .catch(() => { if (!cancelled) setCompHistory([]); })
+            .finally(() => { if (!cancelled) setCompLoading(false); });
+        return () => { cancelled = true; };
+    }, [historyTab, compHistory, userId]);
 
     const startEditing = () => {
         setPicked((data?.achievements?.showcase || []).map(a => a.achievement_id));
@@ -423,43 +440,94 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                         </div>
                     </div>
 
-                    {/* ---------- arcade record ---------- */}
+                    {/* ---------- match history: Arcade / Competitive tabs ---------- */}
                     <div className="rounded-2xl bg-white p-6 whisper-shadow">
-                        <h2 className="text-lg font-black text-pysim-on-surface">ประวัติการเล่น Arcade</h2>
-                        {arcade.recent_matches.length === 0 ? (
-                            <p className="mt-4 text-sm text-pysim-outline">ยังไม่มีแมตช์ที่เล่นจบ</p>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => setHistoryTab('arcade')}
+                                className={`rounded-lg px-3 py-1.5 text-xs font-black transition ${historyTab === 'arcade' ? 'python-gradient text-white' : 'bg-pysim-surface-low text-pysim-on-surface-variant hover:bg-pysim-surface'}`}
+                            >
+                                ประวัติ Arcade
+                            </button>
+                            <button
+                                onClick={() => setHistoryTab('competitive')}
+                                className={`rounded-lg px-3 py-1.5 text-xs font-black transition ${historyTab === 'competitive' ? 'python-gradient text-white' : 'bg-pysim-surface-low text-pysim-on-surface-variant hover:bg-pysim-surface'}`}
+                            >
+                                ประวัติ Competitive
+                            </button>
+                        </div>
+
+                        {historyTab === 'arcade' ? (
+                            <>
+                                {arcade.recent_matches.length === 0 ? (
+                                    <p className="mt-4 text-sm text-pysim-outline">ยังไม่มีแมตช์ที่เล่นจบ</p>
+                                ) : (
+                                    <div className="mt-4 overflow-x-auto">
+                                        <table className="w-full text-left text-xs">
+                                            <thead className="text-pysim-outline">
+                                                <tr>
+                                                    <th className="pb-2 font-bold">ห้อง</th>
+                                                    <th className="pb-2 font-bold">ระดับ</th>
+                                                    <th className="pb-2 text-right font-bold">คะแนน</th>
+                                                    <th className="pb-2 text-right font-bold">เทสต์</th>
+                                                    <th className="pb-2 text-right font-bold">เมื่อ</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="text-pysim-on-surface">
+                                                {arcade.recent_matches.map((m) => (
+                                                    <tr key={m.room_id} className="border-t border-pysim-outline/10">
+                                                        <td className="py-2 font-mono font-bold">{m.room_code}</td>
+                                                        <td className="py-2">
+                                                            {m.difficulty || '-'}
+                                                            <span className="text-pysim-outline"> · {m.round_duration_mode || '-'}</span>
+                                                        </td>
+                                                        <td className="py-2 text-right font-bold">{m.match_score}</td>
+                                                        <td className="py-2 text-right">{m.tests_passed}/{m.tests_total}</td>
+                                                        <td className="py-2 text-right text-pysim-outline">{formatDate(m.ended_at)}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                                <p className="mt-4 text-xs text-pysim-outline">
+                                    คะแนนสะสมทั้งหมด {arcade.total_score.toLocaleString()} · Survival Cash สะสม {arcade.total_cash_earned.toLocaleString()}
+                                </p>
+                            </>
                         ) : (
-                            <div className="mt-4 overflow-x-auto">
-                                <table className="w-full text-left text-xs">
-                                    <thead className="text-pysim-outline">
-                                        <tr>
-                                            <th className="pb-2 font-bold">ห้อง</th>
-                                            <th className="pb-2 font-bold">ระดับ</th>
-                                            <th className="pb-2 text-right font-bold">คะแนน</th>
-                                            <th className="pb-2 text-right font-bold">เทสต์</th>
-                                            <th className="pb-2 text-right font-bold">เมื่อ</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="text-pysim-on-surface">
-                                        {arcade.recent_matches.map((m) => (
-                                            <tr key={m.room_id} className="border-t border-pysim-outline/10">
-                                                <td className="py-2 font-mono font-bold">{m.room_code}</td>
-                                                <td className="py-2">
-                                                    {m.difficulty || '-'}
-                                                    <span className="text-pysim-outline"> · {m.round_duration_mode || '-'}</span>
-                                                </td>
-                                                <td className="py-2 text-right font-bold">{m.match_score}</td>
-                                                <td className="py-2 text-right">{m.tests_passed}/{m.tests_total}</td>
-                                                <td className="py-2 text-right text-pysim-outline">{formatDate(m.ended_at)}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
+                            <>
+                                {compLoading ? (
+                                    <p className="mt-4 text-sm text-pysim-outline">กำลังโหลด...</p>
+                                ) : !compHistory || compHistory.length === 0 ? (
+                                    <p className="mt-4 text-sm text-pysim-outline">ยังไม่มีประวัติการแข่ง Competitive</p>
+                                ) : (
+                                    <div className="mt-4 overflow-x-auto">
+                                        <table className="w-full text-left text-xs">
+                                            <thead className="text-pysim-outline">
+                                                <tr>
+                                                    <th className="pb-2 font-bold">โจทย์</th>
+                                                    <th className="pb-2 font-bold">ระดับ</th>
+                                                    <th className="pb-2 text-right font-bold">คะแนน</th>
+                                                    <th className="pb-2 text-right font-bold">เทสต์</th>
+                                                    <th className="pb-2 text-right font-bold">เมื่อ</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="text-pysim-on-surface">
+                                                {compHistory.map((m) => (
+                                                    <tr key={m.challenge_id} className="border-t border-pysim-outline/10">
+                                                        <td className="py-2 font-bold">{m.title}</td>
+                                                        <td className="py-2">{m.difficulty || '-'}</td>
+                                                        <td className="py-2 text-right font-bold">{m.score}</td>
+                                                        <td className="py-2 text-right">{m.passed_cases}/{m.total_cases}</td>
+                                                        <td className="py-2 text-right text-pysim-outline">{formatDate(m.submitted_at)}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </>
                         )}
-                        <p className="mt-4 text-xs text-pysim-outline">
-                            คะแนนสะสมทั้งหมด {arcade.total_score.toLocaleString()} · Survival Cash สะสม {arcade.total_cash_earned.toLocaleString()}
-                        </p>
                     </div>
                 </div>
 

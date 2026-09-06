@@ -253,8 +253,33 @@ const check = (ok, label, detail) => {
             const exOpt = wprof?.user?.avatar_options?.find(o => o.source === 'shop' && o.itemId === Number(champ.item_id));
             check(!!exOpt, 'รูปพิเศษอยู่ใน avatar_options เลือกใช้เป็น avatar ได้', JSON.stringify(exOpt));
         }
+
+        // === item 7: Competitive history endpoint ===========================
+        const histUser = await makeUser(2);
+        const empty = await call('GET', `/api/competitive/players/${histUser}/history`);
+        check(empty.status === 200 && Array.isArray(empty.d?.history),
+            'endpoint ประวัติ Competitive ตอบเป็น array (ว่างสำหรับผู้เล่นใหม่)', `status ${empty.status}`);
+
+        // multiplayer_challenges is a VIEW over the merged problem bank (CLAUDE.md),
+        // so a submission references an existing challenge rather than a made-up one.
+        const { rows: existingCh } = await c.query('SELECT challenge_id, title FROM multiplayer_challenges LIMIT 1');
+        if (existingCh.length) {
+            const ch = existingCh[0];
+            await c.query(
+                `INSERT INTO multiplayer_submissions (challenge_id, user_id, code, score, passed_cases, total_cases)
+                 VALUES ($1, $2, '# test', 88, 4, 5)`,
+                [ch.challenge_id, histUser]);
+            const hist = (await call('GET', `/api/competitive/players/${histUser}/history`)).d;
+            const row = hist?.history?.find(h => h.challenge_id === Number(ch.challenge_id));
+            check(row && row.score === 88 && row.passed_cases === 4 && row.total_cases === 5 && row.title === ch.title,
+                'ประวัติ Competitive คืนโจทย์+คะแนน+เทสต์ถูกต้อง', JSON.stringify(row));
+            await c.query('DELETE FROM multiplayer_submissions WHERE user_id = $1 AND challenge_id = $2', [histUser, ch.challenge_id]);
+        } else {
+            console.log('SKIP  ไม่มีโจทย์ Competitive ในระบบ — ข้ามเช็ค data-path ข้อ 7');
+        }
     } finally {
         if (madeIds.length) {
+            await c.query('DELETE FROM multiplayer_submissions WHERE user_id = ANY($1::int[])', [madeIds]);
             await c.query('DELETE FROM users WHERE user_id = ANY($1::int[])', [madeIds]);
         }
         // Stats rows are keyed by username, not user_id, so deleting the users

@@ -1918,6 +1918,42 @@ app.post('/api/profile/:userId/avatar/select', async (req, res) => {
     }
 });
 
+// A player's Competitive Arena history: the challenges they submitted to, the
+// score (0-100), how many test cases passed, and when. Derived from
+// multiplayer_submissions (one row per user per challenge, latest kept), so no
+// separate history table is needed - it pairs with Arcade's history on the
+// profile's two tabs (item 7).
+app.get('/api/competitive/players/:userId/history', async (req, res) => {
+    const userId = Number(req.params.userId);
+    if (!userId) return res.status(400).json({ error: 'userId is required' });
+    try {
+        const [rows] = await db.execute(
+            `SELECT s.challenge_id, c.title AS challenge_title, c.difficulty,
+                    s.score, s.passed_cases, s.total_cases, s.submitted_at
+               FROM multiplayer_submissions s
+               JOIN multiplayer_challenges c ON c.challenge_id = s.challenge_id
+              WHERE s.user_id = ?
+              ORDER BY s.submitted_at DESC
+              LIMIT 20`,
+            [userId]
+        );
+        res.json({
+            history: rows.map(r => ({
+                challenge_id: Number(r.challenge_id),
+                title: r.challenge_title,
+                difficulty: r.difficulty,
+                score: Number(r.score || 0),
+                passed_cases: Number(r.passed_cases || 0),
+                total_cases: Number(r.total_cases || 0),
+                submitted_at: r.submitted_at,
+            })),
+        });
+    } catch (err) {
+        console.error('❌ GET /api/competitive/players/:userId/history error:', describeError(err));
+        res.status(500).json({ error: 'โหลดประวัติ Competitive ไม่สำเร็จ' });
+    }
+});
+
 app.get('/api/learning/ai-task', async (req, res) => {
     const { userId, mode = 'exercise' } = req.query;
     if (!userId) return res.status(400).json({ error: 'userId is required' });
