@@ -189,6 +189,21 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
         () => fetch(`${API_BASE}/api/profile/${userId}/avatar/reset`, { method: 'POST' }),
         'รีเซ็ตรูปไม่สำเร็จ');
 
+    // Picking a picture the player already has. "Back to default" is the reset
+    // route; the rest go through the select route with their source (and, for a
+    // shop picture, the itemId the server checks ownership of).
+    const handleSelectOption = (opt) => {
+        if (opt.selected) return;
+        if (opt.source === 'default') { handleAvatarReset(); return; }
+        runAvatarChange(
+            () => fetch(`${API_BASE}/api/profile/${userId}/avatar/select`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ source: opt.source, itemId: opt.itemId }),
+            }),
+            'เลือกรูปไม่สำเร็จ');
+    };
+
     if (loading) {
         return (
             <div className="min-h-screen bg-pysim-surface px-4 py-16 text-center text-sm font-semibold text-pysim-outline">
@@ -263,27 +278,35 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                                 )}
                             </div>
 
-                            {/* Only the owner can change their own picture. */}
+                            {/* Only the owner can change their own picture. The picker
+                                shows every picture they can switch to; the button
+                                below adds a new one by upload. */}
                             {isOwner && (
-                                <div className="flex flex-col items-center gap-1">
-                                    <div className="flex gap-2">
-                                        <label className={`cursor-pointer rounded-lg python-gradient px-3 py-1.5 text-xs font-bold text-white ${avatarBusy ? 'pointer-events-none opacity-60' : ''}`}>
-                                            เปลี่ยนรูป
-                                            <input
-                                                type="file"
-                                                accept="image/png,image/jpeg,image/webp"
-                                                className="hidden"
-                                                onChange={(e) => { handleAvatarUpload(e.target.files?.[0]); e.target.value = ''; }}
-                                            />
-                                        </label>
-                                        <button
-                                            onClick={handleAvatarReset}
-                                            disabled={avatarBusy}
-                                            className="rounded-lg bg-pysim-surface-low px-3 py-1.5 text-xs font-bold text-pysim-on-surface-variant hover:bg-pysim-surface disabled:opacity-60"
-                                        >
-                                            ใช้รูปเริ่มต้น
-                                        </button>
-                                    </div>
+                                <div className="flex flex-col items-center gap-2">
+                                    {user.avatar_options?.length > 1 && (
+                                        <div className="flex max-w-[13rem] flex-wrap justify-center gap-2">
+                                            {user.avatar_options.map((opt) => (
+                                                <button
+                                                    key={`${opt.source}-${opt.itemId || opt.url}`}
+                                                    onClick={() => handleSelectOption(opt)}
+                                                    disabled={avatarBusy}
+                                                    title={opt.label}
+                                                    className={`h-11 w-11 overflow-hidden rounded-full border-2 transition disabled:opacity-60 ${opt.selected ? 'border-pysim-primary ring-2 ring-pysim-primary/30' : 'border-transparent hover:border-pysim-outline/40'}`}
+                                                >
+                                                    <img src={assetUrl(opt.url)} alt={opt.label} className="h-full w-full bg-pysim-surface-low object-cover" />
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                    <label className={`cursor-pointer rounded-lg python-gradient px-3 py-1.5 text-xs font-bold text-white ${avatarBusy ? 'pointer-events-none opacity-60' : ''}`}>
+                                        อัปโหลดรูป
+                                        <input
+                                            type="file"
+                                            accept="image/png,image/jpeg,image/webp"
+                                            className="hidden"
+                                            onChange={(e) => { handleAvatarUpload(e.target.files?.[0]); e.target.value = ''; }}
+                                        />
+                                    </label>
                                     {avatarError && <p className="max-w-[12rem] text-center text-[11px] font-semibold text-red-500">{avatarError}</p>}
                                 </div>
                             )}

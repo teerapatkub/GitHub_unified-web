@@ -1310,6 +1310,40 @@ db.ready = (async () => {
             }
         }
 
+        // Standalone profile-picture cosmetics (item 6). Unlike the themed sets
+        // above these are single items with no theme/frame/cursor siblings, so
+        // they carry no set_key and are keyed for idempotency by asset_url.
+        // Buying one puts it in the player's inventory; choosing it as the shown
+        // avatar goes through avatar_url, not an equipped_* column (docs/adr 0002).
+        const PROFILE_PICTURES = [
+            { name: 'แมวส้ม', description: 'รูปโปรไฟล์แมวส้มหน้าตาเป็นมิตร', asset_url: '/uploads/avatar-shop-cat.svg', price: 100, rarity: 'RARE' },
+            { name: 'หุ่นยนต์', description: 'รูปโปรไฟล์หุ่นยนต์ตาเรืองแสง', asset_url: '/uploads/avatar-shop-robot.svg', price: 100, rarity: 'RARE' },
+            { name: 'นักบินอวกาศ', description: 'รูปโปรไฟล์นักบินอวกาศในหมู่ดาว', asset_url: '/uploads/avatar-shop-astronaut.svg', price: 100, rarity: 'RARE' },
+        ];
+        let picturesSeeded = 0;
+        for (const pic of PROFILE_PICTURES) {
+            const [existing] = await db.query(
+                `SELECT item_id FROM shop_items WHERE item_type = 'PROFILE_PICTURE' AND asset_url = ? LIMIT 1`,
+                [pic.asset_url]
+            );
+            if (existing.length > 0) {
+                await db.query(
+                    `UPDATE shop_items SET name = ?, description = ?, type = 'PROFILE_PICTURE',
+                            item_type = 'PROFILE_PICTURE', rarity = ?, price = ?, is_active = 1, is_available = 1
+                      WHERE item_id = ?`,
+                    [pic.name, pic.description, pic.rarity, pic.price, existing[0].item_id]
+                );
+            } else {
+                await db.query(
+                    `INSERT INTO shop_items (name, description, type, item_type, rarity, price, asset_url, effects, is_active, is_available)
+                     VALUES (?, ?, 'PROFILE_PICTURE', 'PROFILE_PICTURE', ?, ?, ?, NULL, 1, 1)`,
+                    [pic.name, pic.description, pic.rarity, pic.price, pic.asset_url]
+                );
+                picturesSeeded += 1;
+            }
+        }
+        console.log(`✅ ร้านค้า: รูปโปรไฟล์ ${PROFILE_PICTURES.length} แบบ (เพิ่มใหม่ ${picturesSeeded} แบบ)`);
+
         // Leftover test rows: mojibake names and asset URLs pointing at a
         // localhost:5000 that no longer exists. Hidden rather than deleted so
         // nothing referencing them breaks.

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="รูปโปรไฟล์แมวส้ม">
+  <rect width="128" height="128" fill="#fb923c"/>
+  <!-- ears -->
+  <path d="M34 46 L40 22 L58 40 Z" fill="#fed7aa"/>
+  <path d="M94 46 L88 22 L70 40 Z" fill="#fed7aa"/>
+  <!-- face -->
+  <circle cx="64" cy="70" r="34" fill="#fff7ed"/>
+  <!-- eyes -->
+  <circle cx="52" cy="66" r="5" fill="#1f2937"/>
+  <circle cx="76" cy="66" r="5" fill="#1f2937"/>
+  <!-- nose + mouth -->
+  <path d="M60 78 L68 78 L64 84 Z" fill="#f472b6"/>
+  <path d="M64 84 q-6 6 -12 2 M64 84 q6 6 12 2" stroke="#9ca3af" stroke-width="2" fill="none"/>
+  <!-- whiskers -->
+  <path d="M40 74 L22 70 M40 80 L22 82 M88 74 L106 70 M88 80 L106 82" stroke="#d1d5db" stroke-width="2"/>
+</svg>

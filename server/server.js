@@ -803,6 +803,24 @@ const resolveAvatar = (user) => {
     };
 };
 
+// Set the shown picture to a PROFILE_PICTURE the player owns. Ownership is
+// checked against user_inventory, so a request naming a picture the player has
+// not bought changes nothing. Returns the resolved avatar, or null when they do
+// not own it. Shared by the shop's equip button and the profile's picker so the
+// two cannot drift.
+const selectShopAvatar = async (userId, itemId) => {
+    const [owned] = await db.execute(
+        `SELECT si.asset_url FROM user_inventory ui
+            JOIN shop_items si ON si.item_id = ui.item_id
+           WHERE ui.user_id = ? AND ui.item_id = ? AND si.item_type = 'PROFILE_PICTURE' AND si.is_active = 1`,
+        [userId, itemId]
+    );
+    if (owned.length === 0) return null;
+    await db.execute('UPDATE users SET avatar_url = ?, avatar_source = ? WHERE user_id = ?',
+        [owned[0].asset_url, AVATAR_SOURCE.SHOP, userId]);
+    return resolveAvatar({ avatar_url: owned[0].asset_url, avatar_source: AVATAR_SOURCE.SHOP });
+};
+
 const formatJobStatus = (job) => {
     const carriedDays = Number(job?.carried_days || 0);
     const status = String(job?.status || 'ACTIVE').toUpperCase();
@@ -1478,6 +1496,28 @@ app.get('/api/profile/:userId', async (req, res) => {
             [user.equipped_profile_frame_id || 0]
         ).catch(() => [[null]]);
 
+        // Every picture this player could switch the avatar to, for the profile
+        // picker: the two level defaults are always offered; the last upload and
+        // the last Google picture if they have them; and every PROFILE_PICTURE
+        // they own from the shop. `selected` marks whichever avatar_url points at
+        // now so the picker can highlight it.
+        const [ownedPics] = await db.execute(
+            `SELECT si.item_id, si.name, si.asset_url FROM user_inventory ui
+                JOIN shop_items si ON si.item_id = ui.item_id
+               WHERE ui.user_id = ? AND si.item_type = 'PROFILE_PICTURE' AND si.is_active = 1
+               ORDER BY si.item_id`,
+            [userId]
+        );
+        const defaultAvatar = resolveAvatar({ level: user.level });
+        const avatarOptions = [
+            { source: 'default', url: defaultAvatar.url, label: 'รูปเริ่มต้น' },
+            ...(user.uploaded_picture_url ? [{ source: 'upload', url: user.uploaded_picture_url, label: 'รูปที่อัปโหลด' }] : []),
+            ...(user.google_picture_url ? [{ source: 'google', url: user.google_picture_url, label: 'รูปจาก Google' }] : []),
+            ...ownedPics.map(p => ({ source: 'shop', itemId: Number(p.item_id), url: p.asset_url, label: p.name })),
+        ];
+        const currentUrl = resolveAvatar(user).url;
+        for (const opt of avatarOptions) opt.selected = opt.url === currentUrl;
+
         // --- curriculum -----------------------------------------------------
         // A lesson's progress is measured against what it actually contains: the
         // pre-quiz, the post-quiz, and however many exercises hang off it. There
@@ -1672,6 +1712,7 @@ app.get('/api/profile/:userId', async (req, res) => {
                 virtual_currency: Number(user.virtual_currency || 0),
                 profile_frame_url: frameRow?.asset_url || null,
                 avatar: resolveAvatar(user),
+                avatar_options: avatarOptions,
             },
             progression: {
                 level,
@@ -1835,6 +1876,35 @@ app.post('/api/profile/:userId/avatar/reset', async (req, res) => {
     } catch (err) {
         console.error('❌ POST /api/profile/:userId/avatar/reset error:', describeError(err));
         res.status(500).json({ error: 'รีเซ็ตรูปโปรไฟล์ไม่สำเร็จ' });
+    }
+});
+
+// Pick which picture to show, out of the ones the player already has. Uploaded
+// and Google pictures live in their own columns; a shop picture is named by its
+// itemId and verified against ownership. "Back to default" is the reset route
+// above, not a source here.
+app.post('/api/profile/:userId/avatar/select', async (req, res) => {
+    const userId = Number(req.params.userId);
+    const { source, itemId } = req.body || {};
+    if (!userId) return res.status(400).json({ error: 'userId is required' });
+    try {
+        if (source === AVATAR_SOURCE.UPLOAD || source === AVATAR_SOURCE.GOOGLE) {
+            const column = source === AVATAR_SOURCE.UPLOAD ? 'uploaded_picture_url' : 'google_picture_url';
+            const [rows] = await db.execute(`SELECT ${column} AS url FROM users WHERE user_id = ? LIMIT 1`, [userId]);
+            const url = rows[0]?.url;
+            if (!url) return res.status(400).json({ error: 'ยังไม่มีรูปจากแหล่งนี้' });
+            await db.execute('UPDATE users SET avatar_url = ?, avatar_source = ? WHERE user_id = ?', [url, source, userId]);
+            return res.json({ avatar: resolveAvatar({ avatar_url: url, avatar_source: source }) });
+        }
+        if (source === AVATAR_SOURCE.SHOP) {
+            const avatar = await selectShopAvatar(userId, Number(itemId));
+            if (!avatar) return res.status(400).json({ error: 'คุณไม่มีรูปนี้' });
+            return res.json({ avatar });
+        }
+        return res.status(400).json({ error: 'แหล่งรูปไม่ถูกต้อง' });
+    } catch (err) {
+        console.error('❌ POST /api/profile/:userId/avatar/select error:', describeError(err));
+        res.status(500).json({ error: 'เลือกรูปไม่สำเร็จ' });
     }
 });
 
@@ -5662,6 +5732,22 @@ app.post(shopPath('/buy'), async (req, res) => {
 
 app.post(shopPath('/equip'), async (req, res) => {
     const { userId, itemId, type } = req.body;
+
+    // A profile picture is not equipped into a column - it becomes the avatar
+    // through avatar_url, the single selector (docs/adr 0002). Equipping one from
+    // the shop is the same act as choosing it in the profile picker.
+    if (type === 'PROFILE_PICTURE') {
+        if (!userId || !itemId) return res.status(400).json({ error: 'userId and itemId are required' });
+        try {
+            const avatar = await selectShopAvatar(Number(userId), Number(itemId));
+            if (!avatar) return res.status(400).json({ error: 'คุณไม่มีรูปนี้' });
+            return res.json({ success: true, avatar });
+        } catch (err) {
+            console.error('❌ equip PROFILE_PICTURE error:', describeError(err));
+            return res.status(500).json({ error: 'เลือกรูปโปรไฟล์ไม่สำเร็จ' });
+        }
+    }
+
     const columnMap = {
         'THEME': 'equipped_theme_id',
         'MOUSE_EFFECT': 'equipped_mouse_effect_id',

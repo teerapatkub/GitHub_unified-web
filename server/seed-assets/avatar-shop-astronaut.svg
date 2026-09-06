@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="รูปโปรไฟล์นักบินอวกาศ">
+  <rect width="128" height="128" fill="#7c3aed"/>
+  <!-- stars -->
+  <circle cx="26" cy="30" r="2" fill="#e9d5ff"/>
+  <circle cx="104" cy="40" r="2.5" fill="#e9d5ff"/>
+  <circle cx="98" cy="96" r="2" fill="#e9d5ff"/>
+  <circle cx="30" cy="100" r="2.5" fill="#e9d5ff"/>
+  <!-- helmet -->
+  <circle cx="64" cy="66" r="36" fill="#f1f5f9"/>
+  <!-- visor -->
+  <path d="M40 62 a24 24 0 0 1 48 0 v10 a24 20 0 0 1 -48 0 Z" fill="#1e293b"/>
+  <!-- visor shine -->
+  <ellipse cx="54" cy="62" rx="7" ry="10" fill="#38bdf8" opacity="0.7"/>
+</svg>

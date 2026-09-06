@@ -47,6 +47,15 @@ const PNG_1X1 = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
     'base64');
 
+const callJson = async (method, p, body) => {
+    const r = await fetch(HOST + p, {
+        method, headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body), signal: AbortSignal.timeout(30000),
+    });
+    let d = null; try { d = await r.json(); } catch { /* */ }
+    return { status: r.status, d };
+};
+
 const uploadAvatar = async (id, { bytes, type, name }) => {
     const form = new FormData();
     form.append('file', new Blob([bytes], { type }), name);
@@ -171,6 +180,37 @@ const check = (ok, label, detail) => {
             `SELECT 1 AS ok FROM information_schema.columns
               WHERE table_name = 'users' AND column_name = 'google_picture_url'`);
         check(!!gcol, 'คอลัมน์ google_picture_url พร้อมเก็บรูปจาก Google');
+
+        // === item 6: buy a profile picture from the shop, then wear it =======
+        const pics = (await call('GET', '/api/shop/items?type=PROFILE_PICTURE')).d;
+        if (Array.isArray(pics) && pics.length) {
+            const pic = pics[0];
+            const buyerId = await makeUser(2);
+            await c.query('UPDATE users SET virtual_currency = 500 WHERE user_id = $1', [buyerId]);
+
+            const buy = await callJson('POST', '/api/shop/buy', { userId: buyerId, itemId: pic.item_id });
+            check(buy.status === 200, 'ซื้อรูปโปรไฟล์จากร้านสำเร็จ', JSON.stringify(buy.d));
+            // The endpoint's reported balance is after the price is deducted but
+            // before any achievement reward, so it is the clean proof the price
+            // was charged (the DB balance may then be higher: buying a first
+            // cosmetic legitimately pays out an achievement).
+            check(buy.d?.virtual_currency === 500 - pic.price,
+                'ซื้อแล้วหักเหรียญตามราคา', `500 - ${pic.price} → ${buy.d?.virtual_currency}`);
+
+            const sel = await callJson('POST', `/api/profile/${buyerId}/avatar/select`, { source: 'shop', itemId: pic.item_id });
+            check(sel.status === 200 && sel.d?.avatar?.source === 'shop' && sel.d?.avatar?.url === pic.asset_url,
+                'เลือกรูปร้านเป็น avatar (source=shop)', JSON.stringify(sel.d?.avatar));
+
+            const prof = (await call('GET', `/api/profile/${buyerId}`)).d;
+            const shopOpt = prof?.user?.avatar_options?.find(o => o.source === 'shop' && o.itemId === pic.item_id);
+            check(shopOpt?.selected === true, 'avatar_options มีรูปร้านที่กำลังเลือกอยู่', JSON.stringify(shopOpt));
+
+            const otherId = await makeUser(2);
+            const bad = await callJson('POST', `/api/profile/${otherId}/avatar/select`, { source: 'shop', itemId: pic.item_id });
+            check(bad.status === 400, 'เลือกรูปร้านที่ยังไม่ได้ซื้อ ถูกปฏิเสธ', 'status ' + bad.status);
+        } else {
+            console.log('SKIP  ไม่พบรูปโปรไฟล์ในร้าน — ข้ามเช็คข้อ 6');
+        }
     } finally {
         if (madeIds.length) {
             await c.query('DELETE FROM users WHERE user_id = ANY($1::int[])', [madeIds]);

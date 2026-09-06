@@ -12,6 +12,7 @@ const userThemeKey = (user) => `game_theme:user:${user.user_id}`;
 const itemSlot = (type) => {
     if (type === 'THEME') return 'THEME';
     if (type === 'MOUSE_EFFECT') return 'MOUSE_EFFECT';
+    if (type === 'PROFILE_PICTURE') return 'PROFILE_PICTURE';
     return 'PROFILE_FRAME';
 };
 
@@ -101,7 +102,7 @@ export default function ShopPage() {
 
     const getCategoryFromType = (type) => {
         if (type === 'MOUSE_EFFECT') return 'effects';
-        if (type === 'PROFILE_FRAME' || type === 'PROFILE_BACKGROUND') return 'avatars';
+        if (type === 'PROFILE_FRAME' || type === 'PROFILE_BACKGROUND' || type === 'PROFILE_PICTURE') return 'avatars';
         return 'themes';
     };
 
@@ -315,6 +316,11 @@ export default function ShopPage() {
                 window.dispatchEvent(new CustomEvent('pysim:mouse-effect-equipped', {
                     detail: { effects: item.effectData },
                 }));
+            } else if (slot === 'PROFILE_PICTURE') {
+                // A picture becomes the shown avatar (via avatar_url), not the
+                // frame. The server already set it; carry its resolved avatar so
+                // the navbar picks it up on the refresh below.
+                nextUser.avatar = data.avatar || nextUser.avatar;
             } else {
                 nextUser.equipped_profile_frame_id = item.itemId;
                 nextUser.profile_asset_url = item.assetUrl || item.previewImage;
