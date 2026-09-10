@@ -1473,15 +1473,20 @@ db.ready = (async () => {
             }
             // Bind the exclusive picture, if this achievement hands one out. Done
             // by asset_url because the shop item's id is auto-assigned; the
-            // pictures were seeded above, so the lookup resolves.
-            await db.query(
-                `UPDATE achievements
-                    SET reward_item_id = ${a.reward_asset
-                        ? `(SELECT item_id FROM shop_items WHERE asset_url = ? AND item_type = 'PROFILE_PICTURE' LIMIT 1)`
-                        : 'NULL'}
-                  WHERE achievement_id = ?`,
-                a.reward_asset ? [a.reward_asset, a.id] : [a.id]
-            );
+            // pictures were seeded above, so the lookup resolves. Two fixed
+            // statements rather than one with an interpolated fragment, so no SQL
+            // text is ever assembled by string-building.
+            if (a.reward_asset) {
+                await db.query(
+                    `UPDATE achievements
+                        SET reward_item_id = (SELECT item_id FROM shop_items
+                                               WHERE asset_url = ? AND item_type = 'PROFILE_PICTURE' LIMIT 1)
+                      WHERE achievement_id = ?`,
+                    [a.reward_asset, a.id]
+                );
+            } else {
+                await db.query('UPDATE achievements SET reward_item_id = NULL WHERE achievement_id = ?', [a.id]);
+            }
         }
         // Anything beyond the twenty defined here is left over from the old
         // simulation set and can never be earned; hidden rather than deleted so

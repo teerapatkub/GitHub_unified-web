@@ -161,6 +161,14 @@ const check = (ok, label, detail) => {
             'SELECT uploaded_picture_url FROM users WHERE user_id = $1', [uploadId]);
         check(afterReset.uploaded_picture_url === upAvatar.url,
             'reset ไม่ลบ uploaded_picture_url (สลับกลับได้ภายหลัง)', afterReset.uploaded_picture_url);
+        // Remembering it in the DB is not enough — the picker only offers what
+        // /api/profile puts in avatar_options. If that query forgets to select
+        // uploaded_picture_url, the "รูปที่อัปโหลด" option silently never renders
+        // and the user can't switch back through the UI.
+        const afterResetProf = (await call('GET', `/api/profile/${uploadId}`)).d;
+        const upOpt = afterResetProf?.user?.avatar_options?.find(o => o.source === 'upload');
+        check(upOpt?.url === upAvatar.url,
+            'avatar_options ยังมีตัวเลือก "รูปที่อัปโหลด" ให้สลับกลับ', JSON.stringify(upOpt));
 
         // === ticket 4: the avatar shows everywhere ==========================
         const nav = (await call('GET', `/api/user/profile/${uploadId}`)).d;

@@ -1494,7 +1494,7 @@ app.get('/api/profile/:userId', async (req, res) => {
         const [userRows] = await db.execute(
             `SELECT user_id, username, email, role, level, xp, virtual_currency, created_at,
                     equipped_theme_id, equipped_profile_frame_id, equipped_mouse_effect_id,
-                    avatar_url, avatar_source
+                    avatar_url, avatar_source, uploaded_picture_url, google_picture_url
                FROM users WHERE user_id = ? LIMIT 1`,
             [userId]
         );
@@ -1899,9 +1899,12 @@ app.post('/api/profile/:userId/avatar/select', async (req, res) => {
     if (!userId) return res.status(400).json({ error: 'userId is required' });
     try {
         if (source === AVATAR_SOURCE.UPLOAD || source === AVATAR_SOURCE.GOOGLE) {
-            const column = source === AVATAR_SOURCE.UPLOAD ? 'uploaded_picture_url' : 'google_picture_url';
-            const [rows] = await db.execute(`SELECT ${column} AS url FROM users WHERE user_id = ? LIMIT 1`, [userId]);
-            const url = rows[0]?.url;
+            // Read both remembered pictures with one fixed query, then pick the
+            // one for this source - rather than interpolating the column name into
+            // the SQL text.
+            const [rows] = await db.execute(
+                'SELECT uploaded_picture_url, google_picture_url FROM users WHERE user_id = ? LIMIT 1', [userId]);
+            const url = source === AVATAR_SOURCE.UPLOAD ? rows[0]?.uploaded_picture_url : rows[0]?.google_picture_url;
             if (!url) return res.status(400).json({ error: 'ยังไม่มีรูปจากแหล่งนี้' });
             await db.execute('UPDATE users SET avatar_url = ?, avatar_source = ? WHERE user_id = ?', [url, source, userId]);
             return res.json({ avatar: resolveAvatar({ avatar_url: url, avatar_source: source }) });
