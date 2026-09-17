@@ -66,6 +66,12 @@ check(
     finished.status === 'done' && finished.completed && finished.percent === 100
 );
 
+const quizzesFinished = evaluateLesson(fullLesson({ pre: attempt(5), post: attempt(5) }));
+check(
+    'ทำแบบทดสอบก่อนและหลังเรียนผ่าน = เรียนเสร็จสิ้น แม้แบบฝึกหัดยังไม่ครบ',
+    quizzesFinished.status === 'done' && quizzesFinished.completed && quizzesFinished.percent < 100
+);
+
 const postPassedOnly = evaluateLesson(fullLesson({ post: attempt(3), exercisesPassed: 0 }));
 check(
     'ผ่านแบบทดสอบท้ายบทแต่ยังไม่ได้ฝึก = ยังไม่เสร็จสิ้น',

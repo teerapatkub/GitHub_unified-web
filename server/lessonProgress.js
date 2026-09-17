@@ -71,12 +71,10 @@ const evaluateLesson = ({
     // as the app having lost their work.
     const started = preTaken || Boolean(post) || attempted > 0;
 
-    // Finished, in the strict sense used by the badge, the profile page and the
-    // "lessons completed" achievement: the post-test passed and every exercise
-    // passed. A lesson with neither counts as finished because there is nothing
-    // left in it to do.
+    // Finished means the required quizzes are complete. Exercises are practice
+    // and must not keep a learner in "กำลังเรียน" after both quizzes are done.
     const completed = hasPostQuiz
-        ? postPassed && passed >= total
+        ? postPassed && (!hasPreQuiz || preTaken)
         : total > 0
             ? passed >= total
             : true;

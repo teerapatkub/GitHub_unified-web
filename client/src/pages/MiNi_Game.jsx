@@ -277,11 +277,12 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
   const [rewardModal, setRewardModal] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [currentSubtopicIndex, setCurrentSubtopicIndex] = useState(0);
+  const [submittedNextSubtopicIndex, setSubmittedNextSubtopicIndex] = useState(-1);
   const [progressBySubtopic, setProgressBySubtopic] = useState({});
   const [pendingChoicesBySubtopic, setPendingChoicesBySubtopic] = useState({});
   // Python runs in the shared Web Worker (usePyodide) so an infinite loop in a
   // learner's code is interrupted instead of freezing the tab.
-  const { status: pyStatus, runCode } = usePyodide();
+  const { status: pyStatus, runCode, stopRun } = usePyodide();
   const pyReady = pyStatus === "ready";
   const pyError = pyStatus === "error" ? "โหลด Python ไม่สำเร็จ" : "";
   const [isRunning, setIsRunning] = useState(false);
@@ -304,6 +305,7 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
   const chatEndRef = useRef(null);
   const inputResolverRef = useRef(null);
   const runOutputRef = useRef("");
+  const storyInputRef = useRef("");
   const dialogueAudioRef = useRef(null);
   const outputTargetRef = useRef("terminal");
     // --- วางฟังก์ชัน runDoneChecks ตรงนี้ ---
@@ -374,42 +376,9 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
         }
       }
 
-      // ระบบกำหนด branch_key ที่แม่นยำ
-      const branchKey = testConfig.rules.length > 0
-        ? evaluateBranchRules(testConfig.rules, storyOutput || lastOutput)
-        : (resolveDialogueBranch(storyOutput || lastOutput)?.branch_key || selectedBranchKey || "default");
-
-      if (testConfig.rules.length > 0 && !branchKey) {
-        const message = "FAIL: No branch rule matched the output.";
-        setProgramDialogue({ text: message });
-        appendTerminalLine(message);
-        return { ok: false, output: storyOutput || lastOutput || "(no output)", reply: null };
-      }
-
-      const branch = { 
-        branch_key: branchKey, 
-        trigger_output: storyOutput || lastOutput, 
-        is_correct: 1 
-      };
-
-      // อัปเดต selectedBranchKey และ mark subtopic ว่า completed ใน progressBySubtopic
-      setSelectedBranchKey(branchKey);
-      setProgressBySubtopic((prev) => ({
-        ...prev,
-        [currentSubtopic.exercise_id]: {
-          ...(prev[currentSubtopic.exercise_id] || {}),
-          exercise_id: currentSubtopic.exercise_id,
-          completed_this_run: 1,
-          is_completed: 1,
-          selected_branch_key: branchKey,
-        },
-      }));
-
-      appendTerminalLine(`PASS Branch: ${branch.branch_key}`);
-      appendTerminalLine("Correct!");
       appendTerminalLine("--- All tests passed ---");
       
-      return { ok: true, output: storyOutput || lastOutput || "(no output)", reply: null, branch };
+      return { ok: true, output: lastOutput || "(no output)", reply: null };
     } catch (checkError) {
       const message = `System Error: ${checkError.message}`;
       setProgramDialogue({ text: message });
@@ -654,7 +623,9 @@ useEffect(() => {
     if (outputTargetRef.current === "story") {
       setProgramDialogue((prev) => (prev ? { text: `${prev.text || ""}${value}` } : prev));
     }
-    if (value.trim()) appendTerminalLine(value.replace(/\n$/, ""));
+    value.split(/\r?\n/).forEach((line) => {
+      if (line.trim()) appendTerminalLine(line);
+    });
   };
   const handleWorkerStderr = (text) => appendTerminalLine(`Error: ${String(text ?? "").trim()}`);
 
@@ -753,6 +724,7 @@ const loadGameData = async () => {
     setActiveFile("main.py");
 
     setDialogueIndex(0);
+    setSubmittedNextSubtopicIndex(-1);
     setShowTerminal(false);
     setTerminalLines([]);
     setCurrentInput("");
@@ -854,46 +826,20 @@ const loadGameData = async () => {
     Object.entries(fileContents).map(([name, content]) => ({ name, type: "file", content: content || "" }));
 
   const runCodeForCheck = async (testInput = "") => {
-    const encoded = btoa(unescape(encodeURIComponent(code)));
-    // The captured output is printed back after stdout is restored, so it reaches
-    // the worker's stdout and we can read it here. Runs in the worker, so a loop
-    // in the learner's code is interrupted rather than freezing the tab.
-    const script = `
-import sys, builtins, base64, textwrap
-from io import StringIO
-
-_saved_stdout = sys.stdout
-_saved_stdin = sys.stdin
-_saved_input = builtins.input
-
-def sync_input(prompt=""):
-    return sys.stdin.readline().rstrip('\\n')
-
-builtins.input = sync_input
-sys.stdin = StringIO(${JSON.stringify(String(testInput ?? ""))})
-sys.stdout = StringIO()
-
-try:
-    source = textwrap.dedent(base64.b64decode("${encoded}").decode("utf-8")).strip()
-    exec(source, {"input": sync_input, "__builtins__": builtins}, {})
-    output = sys.stdout.getvalue()
-except Exception as e:
-    output = "Error: " + str(e)
-finally:
-    sys.stdout = _saved_stdout
-    sys.stdin = _saved_stdin
-    builtins.input = _saved_input
-
-print(output.strip(), end="")
-`;
-
     let captured = "";
-    await runCode(script, getExtraFiles(), {
-      interactive: false,
+    const result = await runCode(code, getExtraFiles(), {
+      interactive: true,
+      mainFileName: "main.py",
+      onInput: () => String(testInput ?? ""),
       onStdout: (t) => { captured += t; },
       onStderr: (t) => { captured += t; },
     });
-    return captured;
+
+    if (!result.success && !result.interrupted) {
+      return captured.trim() || `Error: ${result.error || "Test run failed"}`;
+    }
+
+    return captured.trim();
   };
 
   const runCodeInTerminal = async () => {
@@ -953,6 +899,7 @@ print(output.strip(), end="")
     outputTargetRef.current = "story";
     setShowTerminal(false);
     setProgramDialogue({ text: "" });
+    storyInputRef.current = "";
     setIsRunning(true);
     runOutputRef.current = "";
 
@@ -982,6 +929,17 @@ print(output.strip(), end="")
 
   const handleRunOnly = async () => {
     await runCodeInTerminal();
+  };
+
+  const handleViewToggle = () => {
+    if (showTerminal && isRunning) {
+      stopRun();
+      inputResolverRef.current = null;
+      setCurrentPrompt("");
+      setCurrentInput("");
+      setIsRunning(false);
+    }
+    setShowTerminal((value) => !value);
   };
 
   const getMiniGameChatFallback = (message = "") => {
@@ -1054,6 +1012,7 @@ print(output.strip(), end="")
     if (event.key !== "Enter" || !inputResolverRef.current) return;
 
     const value = currentInput;
+    storyInputRef.current = value;
     appendTerminalLine(`${currentPrompt}${value}`);
     if (outputTargetRef.current === "story") {
       setProgramDialogue((prev) => prev ? { text: `${prev.text || ""}${currentPrompt}${value}\n` } : prev);
@@ -1176,19 +1135,48 @@ const handleSubmit = async () => {
     return;
   }
 
+  const execution = await runDoneChecks();
+  if (!execution.ok) {
+    setIsSubmitting(false);
+    return;
+  }
+
   const storyRun = await runCodeInStory();
   if (!storyRun.ok) {
     setIsSubmitting(false);
     return;
   }
 
-  const execution = await runDoneChecks(storyRun.output);
-  if (!execution.ok) {
+  const testConfig = getTestConfig(currentSubtopic.test_cases_json);
+  const branchSource = testConfig.rules.some((rule) =>
+    String(rule.condition || "").includes("float")
+  )
+    ? storyInputRef.current
+    : storyRun.output;
+  const branchKey = testConfig.rules.length > 0
+    ? evaluateBranchRules(testConfig.rules, branchSource)
+    : (resolveDialogueBranch(storyRun.output)?.branch_key || selectedBranchKey || "default");
+
+  if (testConfig.rules.length > 0 && !branchKey) {
+    const message = "FAIL: No branch rule matched the output.";
+    setProgramDialogue({ text: message });
+    appendTerminalLine(message);
     setIsSubmitting(false);
     return;
   }
 
-  const { output, reply, branch } = execution;
+  const branch = {
+    branch_key: branchKey,
+    trigger_output: storyRun.output,
+    is_correct: 1,
+  };
+  const destinationIndex = getSubtopicIndexForBranch(branchKey);
+  setSelectedBranchKey(branchKey);
+  setSubmittedNextSubtopicIndex(destinationIndex);
+  appendTerminalLine(`PASS Branch: ${branch.branch_key}`);
+
+  const output = storyRun.output || execution.output || "(no output)";
+  const reply = storyRun.reply;
   const nextBranchKey = branch?.branch_key || selectedBranchKey || "default";
   const isCompleted = true;
 
@@ -1462,7 +1450,7 @@ if (result?.is_module_completed) {
                 <div className="flex gap-2">
                   <button
                     onClick={handleRunOnly}
-                    disabled={isRunning}
+                    disabled={isRunning || isDoneSubmitted}
                     className="flex items-center gap-2 rounded-xl border bg-white px-4 py-1.5 text-xs font-bold text-slate-600 transition-all hover:bg-slate-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <Play size={12} className="text-emerald-500" />
@@ -1473,6 +1461,7 @@ if (result?.is_module_completed) {
   disabled={
     isSubmitting || 
     isRunning || 
+    isDoneSubmitted ||
     !canSubmit || 
     String(currentSubtopic.exercise_order) === "end" // <--- เพิ่มเงื่อนไขนี้
   }
@@ -1481,6 +1470,8 @@ if (result?.is_module_completed) {
       ? "บทเรียนจบแล้ว"
       : isCurrentSubtopicCompleted
         ? "This subtopic is already complete."
+        : isDoneSubmitted
+          ? "กด ไปด่านถัดไป ก่อนเริ่มด่านใหม่"
         : !canSubmit
           ? "Continue the dialogue to unlock submit."
           : "Submit this subtopic."
@@ -1498,13 +1489,18 @@ if (result?.is_module_completed) {
                 theme="light"
                 value={activeFile === "main.py" ? code : (fileContents[activeFile] || "")}
                 onChange={(value) => {
+                  if (isDoneSubmitted) return;
                   if (activeFile === "main.py") {
                     setCode(value || "");
                   } else {
                     setFileContents((prev) => ({ ...prev, [activeFile]: value || "" }));
                   }
                 }}
-                options={{ fontSize: 16, minimap: { enabled: false } }}
+                options={{
+                  fontSize: 16,
+                  minimap: { enabled: false },
+                  readOnly: isDoneSubmitted,
+                }}
               />
             </div>
 
@@ -1528,7 +1524,7 @@ if (result?.is_module_completed) {
 
               <div className="absolute left-8 top-6 z-30">
                 <button
-                  onClick={() => setShowTerminal((value) => !value)}
+                  onClick={handleViewToggle}
                   className={`flex items-center gap-2 rounded-full px-5 py-2 text-[10px] font-black uppercase shadow-md transition-all ${
                     showTerminal
                       ? "bg-slate-900 text-white"
@@ -1590,7 +1586,7 @@ if (result?.is_module_completed) {
       </div>
     )}
 
-    <div className="text-xl font-medium leading-relaxed text-slate-700 min-h-[80px]">
+    <div className="min-h-[80px] whitespace-pre-line text-xl font-medium leading-relaxed text-slate-700">
       {isProgramDialogue ? currentDialogueText : displayedDialogueText}
       {(isDialogueTyping || isRunning) && (
         <span className="animate-pulse text-indigo-500 ml-1">|</span>
@@ -1639,11 +1635,11 @@ if (result?.is_module_completed) {
       )}
 
       {/* 2. ปุ่ม ไปด่านถัดไป */}
-      {isDoneSubmitted && nextSubtopicIndex >= 0 && (
+      {isDoneSubmitted && submittedNextSubtopicIndex >= 0 && (
         <button
           onClick={() => { 
             setProgramDialogue(null); 
-            setCurrentSubtopicIndex(nextSubtopicIndex); 
+            setCurrentSubtopicIndex(submittedNextSubtopicIndex); 
             setIsDoneSubmitted(false); 
           }}
           className="rounded-xl bg-emerald-600 px-6 py-2 text-sm font-bold text-white transition-all hover:bg-emerald-700"

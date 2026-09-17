@@ -22,6 +22,7 @@ import { problemTitle, problemDescription } from "../utils/problemText";
 import { API_BASE } from '../config/api.js';
 import usePyodide from "../hooks/usePyodide";
 import friendlyPyError from "../utils/friendlyPyError";
+import { sanitizePyErrorText } from "../utils/sanitizePyErrorText.js";
 
 const parseTestCases = (raw) => {
   if (!raw) return [];
@@ -403,7 +404,7 @@ print(_out, end="")
       if (!runResult.success && runResult.error && runResult.error !== "Timeout") {
         // An interrupted loop or a worker error: show it and stop - the rest of
         // the cases would hit the same wall.
-        appendLine(`Test ${index + 1} — ${runResult.error}`);
+        appendLine(`Test ${index + 1} — ${sanitizePyErrorText(runResult.error) || runResult.error}`);
         break;
       }
       const actual = normalizeOut(captured);

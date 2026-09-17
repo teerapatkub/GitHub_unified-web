@@ -4,6 +4,8 @@ import { ChevronLeft, ChevronRight, Play } from "lucide-react";
 import { useParams } from "react-router-dom";
 import usePyodide from "../hooks/usePyodide";
 import friendlyPyError from "../utils/friendlyPyError";
+import { isQuizAnswerCorrect } from "../utils/quizAnswer.js";
+import { sanitizePyErrorText } from "../utils/sanitizePyErrorText.js";
 import { API_BASE } from '../config/api.js';
 
 
@@ -227,18 +229,19 @@ export default function LessonPage({
 
     runPythonCode(currentCode)
       .then((result) => {
-        // The worker prints Python's own English traceback to stderr. To a
-        // first-time learner that names the fault and says nothing about what to
-        // do, so add the shared Thai explanation beneath it - the same sentence
-        // the server grader shows. The raw traceback stays visible above. No
-        // line number here: the worker's "<exec>" frames do not line up with the
-        // editor, and a wrong line number is worse than none.
         if (result && result.success === false && result.error && result.error !== "Timeout") {
-          const explained = friendlyPyError(result.error);
+          const cleanError = sanitizePyErrorText(result.error);
+          const explained = friendlyPyError(cleanError || result.error);
+
           if (explained.message) {
             setTerminalOutput((prev) => [
               ...prev,
-              { type: "hint", text: `💡 ${explained.message}` },
+              { type: "hint", text: explained.message },
+            ]);
+          } else if (cleanError) {
+            setTerminalOutput((prev) => [
+              ...prev,
+              { type: "hint", text: cleanError },
             ]);
           }
         }
@@ -274,18 +277,8 @@ export default function LessonPage({
     return Boolean(quizLocked[quizId]) || (questionCount > 0 && answeredCount === questionCount);
   };
 
-  const isCorrectAnswer = (question, userAnswer) => {
-    if (!userAnswer) return false;
-
-    if (question.type === "fill") {
-      return (
-        userAnswer.trim().toLowerCase() ===
-        String(question.answer).trim().toLowerCase()
-      );
-    }
-
-    return userAnswer === question.answer;
-  };
+  const isCorrectAnswer = (question, userAnswer) =>
+    isQuizAnswerCorrect(question, userAnswer);
 
   const submitQuiz = async () => {
     if (!slide?.questions?.length) return;
@@ -395,7 +388,7 @@ export default function LessonPage({
   const restartLesson = () => {
     setShowSummary(false);
     setShowPostTestFailModal(false);
-    setCurrentSlide(0);
+    setCurrentSlide(1);
   };
 
   if (loading) {
@@ -536,7 +529,9 @@ export default function LessonPage({
                                   : "text-emerald-300"
                           }`}
                         >
-                          {entry.text}
+                          {entry.type === "stderr" && !entry.text.startsWith("Error:")
+                            ? `Error: ${entry.text}`
+                            : entry.text}
                         </div>
                       ))}
                     </div>

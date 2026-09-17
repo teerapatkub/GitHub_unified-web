@@ -13,9 +13,11 @@
 // CommonJS interop in the middle. The server loads the very same file through
 // Node's require(ESM).
 import { explainPythonError } from '@shared/pythonErrorMessages.mjs';
+import { sanitizePyErrorText } from './sanitizePyErrorText.js';
 
 export function friendlyPyError(raw) {
-  return explainPythonError(String(raw ?? ''));
+  const cleaned = sanitizePyErrorText(raw);
+  return explainPythonError(cleaned || String(raw ?? ''));
 }
 
 export default friendlyPyError;

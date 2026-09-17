@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { sanitizePyErrorText } from '../utils/sanitizePyErrorText.js';
 
 /**
  * usePyodide — React hook สำหรับจัดการ Pyodide Web Worker
@@ -70,11 +71,14 @@ export default function usePyodide() {
                     onOutputRef.current?.([...outputRef.current]);
                     break;
 
-                case 'stderr':
-                    if (onStderrRef.current) onStderrRef.current(text);
-                    outputRef.current.push({ type: 'stderr', text });
+                case 'stderr': {
+                    const cleanedText = sanitizePyErrorText(text);
+                    const finalText = cleanedText || text;
+                    if (onStderrRef.current) onStderrRef.current(finalText);
+                    outputRef.current.push({ type: 'stderr', text: finalText });
                     onOutputRef.current?.([...outputRef.current]);
                     break;
+                }
 
                 case 'run_start':
                     setStatus('running');
@@ -104,11 +108,13 @@ export default function usePyodide() {
                     resolveRef.current = null;
                     break;
 
-                case 'error':
+                case 'error': {
+                    const cleanedError = sanitizePyErrorText(error);
                     setStatus('error');
-                    outputRef.current.push({ type: 'stderr', text: error });
+                    outputRef.current.push({ type: 'stderr', text: cleanedError || error });
                     onOutputRef.current?.([...outputRef.current]);
                     break;
+                }
             }
         };
         messageHandlerRef.current = onMessage;
@@ -197,6 +203,29 @@ export default function usePyodide() {
         });
     }, []);
 
+    const stopRun = useCallback(() => {
+        if (!resolveRef.current) return false;
+
+        runTimersRef.current.forEach(clearTimeout);
+        runTimersRef.current = [];
+        watchdogRef.current = null;
+
+        const done = resolveRef.current;
+        resolveRef.current = null;
+        onInputRef.current = null;
+        onStdoutRef.current = null;
+        onStderrRef.current = null;
+
+        workerRef.current?.terminate();
+        const nextWorker = new Worker('/pyodideWorker.js');
+        nextWorker.onmessage = messageHandlerRef.current;
+        workerRef.current = nextWorker;
+        nextWorker.postMessage({ type: 'init', payload: { interruptBuffer: interruptRef.current } });
+        setStatus('loading');
+        done({ success: false, error: 'Stopped', interrupted: true });
+        return true;
+    }, []);
+
     const clearOutput = useCallback(() => {
         outputRef.current = [{ type: 'system', text: 'Python 3.12 (Pyodide WebAssembly)' }];
         onOutputRef.current?.([...outputRef.current]);
@@ -209,6 +238,7 @@ export default function usePyodide() {
     return {
         status,
         runCode,
+        stopRun,
         clearOutput,
         setOnOutput,
         output: outputRef.current

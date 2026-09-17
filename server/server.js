@@ -8011,8 +8011,7 @@ app.get('/api/mini-game/modules/:moduleId', async (req, res) => {
                     1 AS is_active
              FROM mini_game_exercises
              WHERE lesson_id = ?
-             ORDER BY CAST(exercise_order AS UNSIGNED) ASC, exercise_order ASC, exercise_id ASC
-             LIMIT 3`,
+             ORDER BY CAST(exercise_order AS UNSIGNED) ASC, exercise_order ASC, exercise_id ASC`,
             [lessonId]
         );
 
