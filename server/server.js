@@ -8292,6 +8292,7 @@ const [rows] = await db.execute(
        p.user_id,
        p.exercise_id,
        p.exercise_id AS mini_game_module_id,
+    p.is_completed,
        e.lesson_id,
        s.submitted_code,
        0 AS score,

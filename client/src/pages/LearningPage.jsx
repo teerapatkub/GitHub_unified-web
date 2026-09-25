@@ -4,11 +4,16 @@ import {
   Lock,
   PlayCircle,
   CheckCircle2,
+  CircleHelp,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { useTranslation } from "react-i18next";
 import { API_BASE } from '../config/api.js';
+import WebTutorialModal from "../components/WebTutorialModal";
+import { getWebTutorial } from "../data/webTutorials";
+
+const Motion = motion;
 
 const normalizeModulesForDisplay = (rows) => {
   if (!Array.isArray(rows) || rows.length === 0) return [];
@@ -101,7 +106,9 @@ export default function LearningPage({ onNavigate, user }) {
   const [modules, setModules] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCompleteModal, setShowCompleteModal] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
   const { t } = useTranslation();
+  const learningTutorial = getWebTutorial("learning-overview");
 
   const resolveText = (key, fallback) => {
     const translated = t(key);
@@ -216,7 +223,10 @@ export default function LearningPage({ onNavigate, user }) {
             </div>
 
             <div className="space-y-4">
-              <div className="rounded-xl bg-white/80 p-3 shadow-sm">
+              <div
+                data-tour="learning-progress"
+                className="rounded-xl bg-white/80 p-3 shadow-sm"
+              >
                 <div className="mb-2 flex items-center justify-between px-1">
                   <span className="text-sm font-medium text-pysim-on-surface-variant">
                     ความคืบหน้า XP
@@ -263,6 +273,7 @@ export default function LearningPage({ onNavigate, user }) {
               <button
                 type="button"
                 onClick={continueLearning}
+                data-tour="continue-learning"
                 className="flex w-full items-center justify-center gap-2 rounded-lg bg-pysim-secondary-container py-3 text-sm font-bold tracking-wide text-pysim-on-secondary-container transition-all hover:opacity-90 active:scale-95"
               >
                 เรียนต่อ
@@ -309,10 +320,11 @@ export default function LearningPage({ onNavigate, user }) {
             </div>
           ) : null}
 
-          <motion.div
+          <Motion.div
             variants={containerVariants}
             initial="hidden"
             animate="visible"
+            data-tour="lesson-modules"
             className="space-y-6"
           >
             {modules.map((mod, index) => {
@@ -331,7 +343,7 @@ export default function LearningPage({ onNavigate, user }) {
                 />
               );
             })}
-          </motion.div>
+          </Motion.div>
         </section>
       </main>
 
@@ -368,6 +380,26 @@ export default function LearningPage({ onNavigate, user }) {
           </div>
         </div>
       )}
+
+      {learningTutorial ? (
+        <>
+          <button
+            type="button"
+            onClick={() => setShowTutorial(true)}
+            aria-label="เปิดวิธีใช้งานเว็บ"
+            title="วิธีใช้งานเว็บ"
+            className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-xl border border-white/80 bg-pysim-primary text-white shadow-[0_12px_30px_rgba(15,23,42,0.22)] transition-all hover:-translate-y-1 hover:bg-pysim-primary/90 focus:outline-none focus:ring-4 focus:ring-pysim-primary/30 active:translate-y-0"
+          >
+            <CircleHelp className="h-7 w-7" aria-hidden="true" />
+          </button>
+          <WebTutorialModal
+            tutorial={learningTutorial}
+            isOpen={showTutorial}
+            onClose={() => setShowTutorial(false)}
+            onComplete={() => setShowTutorial(false)}
+          />
+        </>
+      ) : null}
     </div>
   );
 }
@@ -424,7 +456,7 @@ const ModuleAccordion = ({
   };
 
   return (
-    <motion.div
+    <Motion.div
       variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
       className={`group relative overflow-hidden rounded-xl transition-all ${
         isLocked
@@ -504,15 +536,15 @@ const ModuleAccordion = ({
         </div>
 
         {!isLocked && (
-          <motion.div animate={{ rotate: isOpen ? 180 : 0 }}>
+          <Motion.div animate={{ rotate: isOpen ? 180 : 0 }}>
             <ChevronDown className="h-5 w-5 text-pysim-on-surface-variant" />
-          </motion.div>
+          </Motion.div>
         )}
       </div>
 
       <AnimatePresence>
         {isOpen && !isLocked && (
-          <motion.div
+          <Motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
@@ -612,10 +644,10 @@ const ModuleAccordion = ({
                 })}
               </ul>
             </div>
-          </motion.div>
+          </Motion.div>
         )}
       </AnimatePresence>
-    </motion.div>
+    </Motion.div>
   );
 };
 
@@ -635,7 +667,7 @@ const HeroSection = () => {
 
       <div className="relative mx-auto flex h-full max-w-7xl flex-col justify-center px-4 sm:px-6 lg:px-8">
         <div className="max-w-3xl rounded-[28px] bg-white/72 px-8 py-7 shadow-[0_18px_55px_rgba(15,23,42,0.08)] backdrop-blur-sm">
-          <motion.div
+          <Motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
@@ -644,18 +676,18 @@ const HeroSection = () => {
             <span className="text-xl font-black text-pysim-primary">
               PySim Academy
             </span>
-          </motion.div>
+          </Motion.div>
 
-          <motion.h1
+          <Motion.h1
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.2 }}
             className="text-3xl font-extrabold tracking-tight text-pysim-on-surface md:text-5xl"
           >
             {resolveText("hero.title", "เริ่มต้นเส้นทางการเรียนรู้")}
-          </motion.h1>
+          </Motion.h1>
 
-          <motion.p
+          <Motion.p
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.3 }}
@@ -665,7 +697,7 @@ const HeroSection = () => {
               "hero.subtitle",
               "เรียนรู้ไปพร้อมกับความสนุก พัฒนาทักษะของคุณผ่านบทเรียนที่ออกแบบให้ค่อย ๆ เข้าใจง่าย"
             )}
-          </motion.p>
+          </Motion.p>
         </div>
       </div>
     </div>

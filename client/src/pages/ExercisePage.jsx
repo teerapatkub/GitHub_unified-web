@@ -16,9 +16,12 @@ import {
   Trophy,
   Loader2,
   ArrowLeft,
+  CircleHelp,
 } from "lucide-react";
 import ProgressCelebration from "../components/learning/ProgressCelebration";
+import WebTutorialModal from "../components/WebTutorialModal";
 import { problemTitle, problemDescription } from "../utils/problemText";
+import { getWebTutorial } from "../data/webTutorials";
 import { API_BASE } from '../config/api.js';
 import usePyodide from "../hooks/usePyodide";
 import friendlyPyError from "../utils/friendlyPyError";
@@ -110,6 +113,7 @@ export default function ExercisePage({ lessonId, user, onUserRefresh, onNavigate
   ]);
   const [chatInput, setChatInput] = useState("");
   const [isAiResponding, setIsAiResponding] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
 
   const inputResolverRef = useRef(null);
   const terminalRef = useRef(null);
@@ -124,6 +128,7 @@ export default function ExercisePage({ lessonId, user, onUserRefresh, onNavigate
   const lang = i18n.language === "en" ? "en" : "th";
   const exTitle = (exercise) => problemTitle(lang, exercise);
   const exDescription = (exercise) => problemDescription(lang, exercise);
+  const exerciseTutorial = getWebTutorial("exercise-page");
 
   const appendLine = (text) => setTerminalLines((prev) => [...prev, text]);
 
@@ -776,7 +781,10 @@ print(_out, end="")
     </div>
   </div>
 
-  <div className="h-[190px] sm:h-[210px] lg:h-[240px] xl:h-[280px]">
+  <div
+    data-tour="exercise-editor"
+    className="h-[190px] sm:h-[210px] lg:h-[240px] xl:h-[280px]"
+  >
     <Editor
       height="100%"
       defaultLanguage="python"
@@ -867,6 +875,7 @@ print(_out, end="")
     <button
       onClick={handleRun}
       disabled={!pyReady || isRunning}
+      data-tour="run-code"
       className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
     >
       <Play size={16} />
@@ -875,6 +884,7 @@ print(_out, end="")
     <button
       onClick={handleSubmit}
       disabled={!pyReady || isRunning}
+      data-tour="submit-exercise"
       className="inline-flex items-center gap-2 rounded-xl bg-blue-700 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-blue-300"
     >
       <CheckCircle2 size={16} />
@@ -1030,6 +1040,26 @@ print(_out, end="")
           }
         }}
       />
+
+      {exerciseTutorial ? (
+        <>
+          <button
+            type="button"
+            onClick={() => setShowTutorial(true)}
+            aria-label="เปิดวิธีใช้งานเว็บ"
+            title="วิธีใช้งานเว็บ"
+            className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-xl border border-white/80 bg-pysim-primary text-white shadow-[0_12px_30px_rgba(15,23,42,0.22)] transition-all hover:-translate-y-1 hover:bg-pysim-primary/90 focus:outline-none focus:ring-4 focus:ring-pysim-primary/30 active:translate-y-0"
+          >
+            <CircleHelp className="h-7 w-7" aria-hidden="true" />
+          </button>
+          <WebTutorialModal
+            tutorial={exerciseTutorial}
+            isOpen={showTutorial}
+            onClose={() => setShowTutorial(false)}
+            onComplete={() => setShowTutorial(false)}
+          />
+        </>
+      ) : null}
     </div>
   );
 }

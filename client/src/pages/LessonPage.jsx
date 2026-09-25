@@ -1,12 +1,16 @@
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronLeft, ChevronRight, Play } from "lucide-react";
+import { ChevronLeft, ChevronRight, CircleHelp, Play } from "lucide-react";
 import { useParams } from "react-router-dom";
 import usePyodide from "../hooks/usePyodide";
 import friendlyPyError from "../utils/friendlyPyError";
 import { isQuizAnswerCorrect } from "../utils/quizAnswer.js";
 import { sanitizePyErrorText } from "../utils/sanitizePyErrorText.js";
 import { API_BASE } from '../config/api.js';
+import WebTutorialModal from "../components/WebTutorialModal";
+import { getWebTutorial } from "../data/webTutorials";
+
+const Motion = motion;
 
 
 const buildSlideCodeKey = (slide, index) =>
@@ -45,6 +49,8 @@ export default function LessonPage({
   const [quizStatusMessage, setQuizStatusMessage] = useState("");
   const [showSummary, setShowSummary] = useState(false);
   const [showPostTestFailModal, setShowPostTestFailModal] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
+  const lessonTutorial = getWebTutorial("lesson-page");
   const [editableCodes, setEditableCodes] = useState({});
   const [savingQuiz, setSavingQuiz] = useState(false);
   const {
@@ -258,7 +264,6 @@ export default function LessonPage({
   const isLocked = isQuiz ? quizLocked[quizId] : false;
   const answers = isQuiz ? answersByQuiz[quizId] || {} : {};
 
-  const preQuiz = slides.find((item) => item.quizId === "pre");
   const postQuiz = slides.find((item) => item.quizId === "post");
   const preTotal = quizMeta.preTotal;
   const postTotal = quizMeta.postTotal;
@@ -452,9 +457,12 @@ export default function LessonPage({
           {lessonFullTitle}
         </h1>
 
-        <div className="flex min-h-[420px] flex-col justify-between rounded-xl bg-white p-6 whisper-shadow">
+        <div
+          data-tour="lesson-content"
+          className="flex min-h-[420px] flex-col justify-between rounded-xl bg-white p-6 whisper-shadow"
+        >
           <AnimatePresence mode="wait">
-            <motion.div
+            <Motion.div
               key={currentSlide}
               initial={{ opacity: 0, x: 40 }}
               animate={{ opacity: 1, x: 0 }}
@@ -647,7 +655,7 @@ export default function LessonPage({
                     : "ส่งคำตอบ"}
                 </button>
               )}
-            </motion.div>
+            </Motion.div>
           </AnimatePresence>
 
           <div className="mt-6 flex items-center justify-between">
@@ -708,6 +716,7 @@ export default function LessonPage({
     <button
       onClick={() => (postTestPassed ? onNavigate("exercise", resolvedLessonId) : restartLesson())}
       disabled={!postTestFinished}
+      data-tour="lesson-exercise"
       className={`rounded-lg px-6 py-3 text-sm font-bold text-white transition-colors ${
         postTestFinished
           ? "bg-emerald-600 hover:bg-emerald-700"
@@ -719,6 +728,26 @@ export default function LessonPage({
   </div>
 </div>
       </main>
+
+      {lessonTutorial ? (
+        <>
+          <button
+            type="button"
+            onClick={() => setShowTutorial(true)}
+            aria-label="เปิดวิธีใช้งานเว็บ"
+            title="วิธีใช้งานเว็บ"
+            className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-xl border border-white/80 bg-pysim-primary text-white shadow-[0_12px_30px_rgba(15,23,42,0.22)] transition-all hover:-translate-y-1 hover:bg-pysim-primary/90 focus:outline-none focus:ring-4 focus:ring-pysim-primary/30 active:translate-y-0"
+          >
+            <CircleHelp className="h-7 w-7" aria-hidden="true" />
+          </button>
+          <WebTutorialModal
+            tutorial={lessonTutorial}
+            isOpen={showTutorial}
+            onClose={() => setShowTutorial(false)}
+            onComplete={() => setShowTutorial(false)}
+          />
+        </>
+      ) : null}
 
       {showPostTestFailModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-pysim-on-surface/30 backdrop-blur-sm">

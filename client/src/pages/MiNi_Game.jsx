@@ -10,11 +10,16 @@ import {
   MessageSquareCode,
   Trophy,
   ArrowLeft,
+  Lock,
+  MapPinned,
   Loader2,
   Send,
   X,
+  CircleHelp,
 } from "lucide-react";
 import { API_BASE } from '../config/api.js';
+import WebTutorialModal from "../components/WebTutorialModal";
+import { getWebTutorial } from "../data/webTutorials";
 import usePyodide from "../hooks/usePyodide";
 import friendlyPyError from "../utils/friendlyPyError";
 // เปลี่ยนจากการโหลดใน useEffect แบบเดิม ให้มาใช้ฟังก์ชันช่วย
@@ -156,6 +161,11 @@ const normalizeOutput = (text = "") =>
     .replace(/\r/g, "")
     .replace(/\s+/g, " ");
 
+const isProgressCompleted = (progress) => {
+  const value = progress?.is_completed ?? progress?.completed ?? progress?.completed_this_run;
+  return value === true || value === 1 || value === "1" || value === "true";
+};
+
 const getVisibleDialogues = (rows = [], isCompleted = false, selectedBranchKey = "default") => {
   const activeBranchKey = selectedBranchKey || "default";
   const defaultPreSubmit = rows.filter((dialogue) =>
@@ -257,6 +267,7 @@ const getBranchMissionCopy = (subtopic, branchKey = "default") => {
 export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate }) {
   const params = useParams();
   const moduleId = Number(params.lessonId ?? lessonId ?? 1);
+  const miniGameTutorial = getWebTutorial("mini-game-page");
 
   // Which language the problem text is rendered in. Falls back to Thai for any
   // problem that has not been translated yet - see utils/problemText.js.
@@ -292,6 +303,7 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
   const [programDialogue, setProgramDialogue] = useState(null);
   const [selectedBranchKey, setSelectedBranchKey] = useState("default");
   const [isAiOpen, setIsAiOpen] = useState(false);
+  const [isMapOpen, setIsMapOpen] = useState(false);
   const [chatHistory, setChatHistory] = useState([
     {
       role: "ai",
@@ -300,6 +312,7 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
   ]);
   const [chatInput, setChatInput] = useState("");
   const [isAiResponding, setIsAiResponding] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
 
   const terminalRef = useRef(null);
   const chatEndRef = useRef(null);
@@ -419,27 +432,7 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
 
     const hasEnd = normalizedList.some((subtopic) => String(subtopic.exercise_order ?? "") === "end");
     const realSubtopics = normalizedList.filter((subtopic) => String(subtopic.exercise_order ?? "") !== "end");
-    if (hasEnd) return normalizedList;
-
-    const allDialogues = Array.isArray(moduleData.end_dialogues) && moduleData.end_dialogues.length > 0
-      ? moduleData.end_dialogues
-      : (Array.isArray(moduleData.dialogues)
-          ? moduleData.dialogues.filter((dialogue) => String(dialogue.exercise_order ?? "") === "end")
-          : []);
-
-    const endDialogues = getEndDialogues(allDialogues);
-
-    return [
-      ...realSubtopics,
-      {
-        exercise_id: -1,
-        exercise_order: "end",
-        title: "จบบทเรียน",
-        starter_code: 'print("Hello")',
-        test_cases_json: "{}",
-        dialogues: endDialogues,
-      },
-    ];
+    return hasEnd ? normalizedList : realSubtopics;
   }, [moduleData, lang]);
 
   const currentSubtopic = subtopics[currentSubtopicIndex] ?? null;
@@ -465,7 +458,7 @@ const isCurrentSubtopicCompleted = useMemo(() => {
   
   // บังคับเปลี่ยนเป็น String ทั้งคู่ เพื่อให้ตรงกับ Key ที่เก็บไว้ใน progressMap
   const currentId = String(currentSubtopic.exercise_id);
-  return !!progressBySubtopic[currentId];
+  return isProgressCompleted(progressBySubtopic[currentId]);
 }, [currentSubtopic, progressBySubtopic]);
 
   const inheritedBranchKey = useMemo(() => {
@@ -513,6 +506,79 @@ const isCurrentSubtopicCompleted = useMemo(() => {
     : currentSubtopicIndex + 1 < subtopics.length
       ? currentSubtopicIndex + 1
       : -1;
+
+  const conversationMap = useMemo(() => subtopics.map((subtopic, index) => {
+    const branchKeys = new Set();
+    const addBranchKey = (value) => {
+      const key = String(value || "").trim();
+      if (key && key !== "default") branchKeys.add(key);
+    };
+
+    (subtopic.dialogues || []).forEach((dialogue) => addBranchKey(dialogue.branch_key));
+    (subtopic.dialogue_choices || []).forEach((choice) => {
+      addBranchKey(choice.branch_key || choice.next_branch_key);
+    });
+    (subtopic.dialogue_branches || []).forEach((branch) => addBranchKey(branch.branch_key));
+    const testConfig = getTestConfig(subtopic.test_cases_json);
+    [...testConfig.rules, ...testConfig.correctness].forEach((item) => {
+      addBranchKey(item.branch_key || item.crossroad);
+    });
+
+    return {
+      subtopic,
+      index,
+      isCurrent: index === currentSubtopicIndex,
+      isCompleted: isProgressCompleted(progressBySubtopic[String(subtopic.exercise_id)]),
+      isEnd: String(subtopic.exercise_order ?? "") === "end",
+      branches: [...branchKeys].map((branchKey) => ({
+        branchKey,
+        destinationIndex: subtopics.findIndex((item) =>
+          String(item.exercise_order ?? item.order_index ?? item.branch_key ?? "") === branchKey
+        ),
+      })),
+    };
+  }), [currentSubtopicIndex, progressBySubtopic, subtopics]);
+
+  const conversationLayers = useMemo(() => {
+    if (conversationMap.length === 0) return [];
+
+    const getChildren = (node) => {
+      const branchDestinations = node.branches
+        .map((branch) => branch.destinationIndex)
+        .filter((destinationIndex) => destinationIndex >= 0 && destinationIndex !== node.index);
+      if (branchDestinations.length > 0) return [...new Set(branchDestinations)];
+      return node.index + 1 < conversationMap.length ? [node.index + 1] : [];
+    };
+
+    const layers = [];
+    const visited = new Set();
+    let frontier = [0];
+
+    while (frontier.length > 0) {
+      const nextFrontier = [];
+      const currentLayer = frontier.filter((index) => !visited.has(index));
+      currentLayer.forEach((index) => visited.add(index));
+      if (currentLayer.length === 0) break;
+      layers.push(currentLayer);
+
+      currentLayer.forEach((index) => {
+        getChildren(conversationMap[index]).forEach((childIndex) => {
+          if (!visited.has(childIndex) && !nextFrontier.includes(childIndex)) nextFrontier.push(childIndex);
+        });
+      });
+      frontier = nextFrontier;
+    }
+
+    const remaining = conversationMap
+      .map((node) => node.index)
+      .filter((index) => !visited.has(index));
+    if (remaining.length > 0) layers.push(remaining);
+
+    return layers.map((layer) => layer.map((index) => ({
+      ...conversationMap[index],
+      children: getChildren(conversationMap[index]),
+    })));
+  }, [conversationMap]);
   const isAtLastDialogue = dialogueIndex >= Math.max(dialogues.length - 1, 0);
   const canSubmit = Boolean(
     currentSubtopic
@@ -631,8 +697,8 @@ useEffect(() => {
 
   // Memoize userId to prevent infinite loops from unstable prop references
   const userId = useMemo(() => {
-    return user?.isGuest ? null : (user?.user_id ?? null);
-  }, [user?.isGuest, user?.user_id]);
+    return user?.isGuest ? null : (user?.user_id ?? user?.id ?? null);
+  }, [user?.id, user?.isGuest, user?.user_id]);
 
 // === ยุบรวมเหลือชุดเดียว ดึงข้อมูลครบจบในหนึ่งเดียว ไม่ยิงซ้ำซ้อน 100% ===
 useEffect(() => {
@@ -677,7 +743,10 @@ const loadGameData = async () => {
           
           // ปรับปรุง: บังคับใช้ String เป็น Key เสมอ
           progressMap = (Array.isArray(progressRows) ? progressRows : [progressRows]).reduce((acc, item) => {
-            acc[String(item.exercise_id)] = item;
+            const exerciseId = item.exercise_id ?? item.mini_game_module_id;
+            if (exerciseId !== undefined && exerciseId !== null) {
+              acc[String(exerciseId)] = item;
+            }
             return acc;
           }, {});
           
@@ -1289,6 +1358,15 @@ if (result?.is_module_completed) {
           </button>
           <button
             type="button"
+            onClick={() => setIsMapOpen(true)}
+            className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 transition-all hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600 active:scale-95"
+            title="ดูแผนที่เส้นทางบทสนทนา"
+          >
+            <MapPinned size={14} />
+            แผนที่เส้นทาง
+          </button>
+          <button
+            type="button"
             onClick={() => setIsAiOpen((value) => !value)}
             className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-bold transition-all active:scale-95 ${
               isAiOpen
@@ -1378,6 +1456,98 @@ if (result?.is_module_completed) {
         </div>
       </div>
 
+      {isMapOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="conversation-map-title"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setIsMapOpen(false);
+          }}
+        >
+          <div className="flex max-h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-white/70 bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-4 sm:px-7">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-600">
+                  <MapPinned size={20} />
+                </div>
+                <div>
+                  <h2 id="conversation-map-title" className="text-lg font-black text-slate-900">แผนที่เส้นทางบทสนทนา</h2>
+                  <p className="text-xs font-medium text-slate-500">เริ่มต้น → เลือกเส้นทาง → จบบทเรียน</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsMapOpen(false)}
+                className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-white hover:text-slate-700"
+                title="ปิดแผนที่"
+                aria-label="ปิดแผนที่"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="min-h-0 overflow-y-auto bg-slate-50/70 p-5 sm:p-7">
+              <div className="mb-5 flex flex-wrap items-center gap-3 text-[11px] font-bold text-slate-500">
+                <span className="text-indigo-600">อยู่ที่นี่</span>
+                <span className="text-emerald-600">ผ่านแล้ว </span>
+                <span className="text-slate-400">ยังไม่ถึง</span>
+              </div>
+
+              <div className="overflow-x-auto pb-4">
+                <div className="relative min-w-max" style={{ height: `${Math.max(conversationLayers.reduce((height, layer) => Math.max(height, layer.length * 150), 300), 300)}px`, width: `${conversationLayers.length * 280}px` }}>
+                  <svg className="pointer-events-none absolute inset-0 h-full w-full overflow-visible" aria-hidden="true">
+                    {conversationLayers.flatMap((layer, layerIndex) => layer.flatMap((node, nodeIndex) => {
+                      if (layerIndex >= conversationLayers.length - 1) return [];
+                      const nextLayer = conversationLayers[layerIndex + 1];
+                      const sourceY = (Math.max(conversationLayers[layerIndex].length * 150, 300) - layer.length * 150) / 2 + nodeIndex * 150 + 56;
+                      return node.children.map((childIndex) => {
+                        const childNodeIndex = nextLayer.findIndex((child) => child.index === childIndex);
+                        if (childNodeIndex < 0) return null;
+                        const targetY = (Math.max(nextLayer.length * 150, 300) - nextLayer.length * 150) / 2 + childNodeIndex * 150 + 56;
+                        return <path key={`${node.index}-${childIndex}`} d={`M ${layerIndex * 280 + 190} ${sourceY} C ${layerIndex * 280 + 235} ${sourceY}, ${(layerIndex + 1) * 280 - 45} ${targetY}, ${(layerIndex + 1) * 280} ${targetY}`} fill="none" stroke="#cbd5e1" strokeWidth="3" />;
+                      });
+                    }))}
+                  </svg>
+
+                  {conversationLayers.map((layer, layerIndex) => (
+                    <div key={`layer-${layerIndex}`} className="absolute flex w-[220px] flex-col gap-6" style={{ left: `${layerIndex * 280}px`, top: `${(Math.max(layer.length * 150, 300) - layer.length * 150) / 2}px` }}>
+                      {layer.map((node, nodeIndex) => {
+                        const isLocked = !node.isCompleted && !node.isCurrent && !node.isEnd;
+                        return (
+                          <div key={node.subtopic.exercise_id ?? node.index} className="relative flex h-[112px] w-[190px] flex-col justify-between rounded-2xl border p-3 shadow-sm transition-colors">
+                            <div className={`absolute inset-0 -z-10 rounded-2xl ${node.isCurrent ? "border border-indigo-300 bg-indigo-50 shadow-lg shadow-indigo-100" : node.isCompleted ? "border border-emerald-200 bg-emerald-50/80" : "border border-slate-200 bg-white"}`} />
+                            {isLocked ? (
+                              <div className="flex h-full items-center justify-center text-slate-300" title="ด่านนี้ยังไม่ผ่าน">
+                                <Lock size={28} strokeWidth={2.5} aria-label="ด่านที่ยังไม่ผ่าน" />
+                              </div>
+                            ) : (
+                              <>
+                                <div className="flex items-start justify-between gap-2">
+                                  <span className="text-[10px] font-black tracking-widest text-slate-400">#{node.index + 1}</span>
+  <div className="flex items-center gap-1">
+    {node.isCurrent ? <span className="rounded-lg bg-indigo-600 px-2 py-1 text-[9px] font-black text-white">ที่นี่</span> : null}
+    {node.isCompleted ? <span className="rounded-lg bg-emerald-600 px-2 py-1 text-[9px] font-black text-white">ผ่านแล้ว</span> : null}
+  </div>
+</div>
+                                <div className="flex min-h-0 flex-1 items-center justify-center text-center">
+                                  <h3 className="line-clamp-2 text-xs font-black leading-4 text-slate-800">{node.subtopic.title || "ด่านบทสนทนา"}</h3>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className="flex flex-1 overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-xl">
         <div className="grid flex-1 grid-cols-1 lg:grid-cols-[320px_1fr]">
           <aside className="hidden border-r bg-slate-50/50 p-6 lg:block">
@@ -1450,6 +1620,7 @@ if (result?.is_module_completed) {
                 <div className="flex gap-2">
                   <button
                     onClick={handleRunOnly}
+                    data-tour="mini-game-run"
                     disabled={isRunning || isDoneSubmitted}
                     className="flex items-center gap-2 rounded-xl border bg-white px-4 py-1.5 text-xs font-bold text-slate-600 transition-all hover:bg-slate-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
                   >
@@ -1458,6 +1629,7 @@ if (result?.is_module_completed) {
                   </button>
 <button
   onClick={handleSubmit}
+  data-tour="mini-game-submit"
   disabled={
     isSubmitting || 
     isRunning || 
@@ -1483,6 +1655,7 @@ if (result?.is_module_completed) {
 </button>
                 </div>
               </div>
+              <div data-tour="mini-game-editor" className="h-full">
               <Editor
                 height="100%"
                 defaultLanguage="python"
@@ -1502,6 +1675,7 @@ if (result?.is_module_completed) {
                   readOnly: isDoneSubmitted,
                 }}
               />
+              </div>
             </div>
 
             <div className="relative flex h-[360px] flex-col justify-end overflow-hidden border-t border-slate-100 bg-slate-900 p-10">
@@ -1666,6 +1840,26 @@ if (result?.is_module_completed) {
           </section>
         </div>
       </div>
+
+      {miniGameTutorial ? (
+        <>
+          <button
+            type="button"
+            onClick={() => setShowTutorial(true)}
+            aria-label="เปิดวิธีใช้งานเว็บ"
+            title="วิธีใช้งานเว็บ"
+            className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-xl border border-white/80 bg-pysim-primary text-white shadow-[0_12px_30px_rgba(15,23,42,0.22)] transition-all hover:-translate-y-1 hover:bg-pysim-primary/90 focus:outline-none focus:ring-4 focus:ring-pysim-primary/30 active:translate-y-0"
+          >
+            <CircleHelp className="h-7 w-7" aria-hidden="true" />
+          </button>
+          <WebTutorialModal
+            tutorial={miniGameTutorial}
+            isOpen={showTutorial}
+            onClose={() => setShowTutorial(false)}
+            onComplete={() => setShowTutorial(false)}
+          />
+        </>
+      ) : null}
 
       {rewardModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md">

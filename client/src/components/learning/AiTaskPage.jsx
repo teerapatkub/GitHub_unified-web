@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import { AlertTriangle, Loader2 } from 'lucide-react';
+import { AlertTriangle, CircleHelp, Loader2 } from 'lucide-react';
 import CodingWorkspace from './CodingWorkspace';
 import ProgressCelebration from './ProgressCelebration';
+import WebTutorialModal from '../WebTutorialModal';
+import { getWebTutorial } from '../../data/webTutorials';
 import { API_BASE } from '../../config/api.js';
 
 const MODE_COPY = {
@@ -30,9 +32,11 @@ export default function AiTaskPage({ mode = 'exercise', user, onUserRefresh }) {
   const [error, setError] = useState('');
   const [rerolling, setRerolling] = useState(false);
   const [celebrationQueue, setCelebrationQueue] = useState([]);
+  const [showTutorial, setShowTutorial] = useState(false);
 
   const userId = user?.user_id;
   const modeCopy = MODE_COPY[mode] || MODE_COPY.exercise;
+  const tutorial = getWebTutorial(mode === 'challenge' ? 'challenge-page' : 'debug-page');
   const cacheKey = useMemo(
     () => (userId ? `learning-ai-task:${userId}:${mode}` : null),
     [mode, userId]
@@ -282,6 +286,25 @@ export default function AiTaskPage({ mode = 'exercise', user, onUserRefresh }) {
       onTaskSubmitted={handleTaskSubmitted}
       workspaceNotice={error}
     />
+    {tutorial ? (
+      <>
+        <button
+          type="button"
+          onClick={() => setShowTutorial(true)}
+          aria-label="เปิดวิธีใช้งานเว็บ"
+          title="วิธีใช้งานเว็บ"
+          className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-xl border border-white/80 bg-pysim-primary text-white shadow-[0_12px_30px_rgba(15,23,42,0.22)] transition-all hover:-translate-y-1 hover:bg-pysim-primary/90 focus:outline-none focus:ring-4 focus:ring-pysim-primary/30 active:translate-y-0"
+        >
+          <CircleHelp className="h-7 w-7" aria-hidden="true" />
+        </button>
+        <WebTutorialModal
+          tutorial={tutorial}
+          isOpen={showTutorial}
+          onClose={() => setShowTutorial(false)}
+          onComplete={() => setShowTutorial(false)}
+        />
+      </>
+    ) : null}
     <ProgressCelebration event={activeCelebration} onClose={closeCelebration} />
     </>
   );
