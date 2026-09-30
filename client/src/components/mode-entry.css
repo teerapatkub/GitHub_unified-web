@@ -1,0 +1,457 @@
+/* Shared site navigation plus mode-specific entry-page accents. */
+.mode-entry,
+.mode-entry-header {
+  --mode-accent: #145d91;
+  --mode-soft: #eaf3fb;
+  --mode-card-radius: 1rem;
+  --mode-control-radius: 0.75rem;
+  font-family: 'Inter', 'Leelawadee UI', Tahoma, sans-serif;
+}
+
+.mode-entry--competitive {
+  --mode-accent: #4f46e5;
+  --mode-soft: #eef2ff;
+}
+.mode-entry--arcade {
+  --mode-accent: #e11d48;
+  --mode-soft: #fff1f2;
+}
+
+.mode-entry-header {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 40;
+  flex-shrink: 0;
+  width: 100%;
+  border-bottom: 1px solid #e2e8f0;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(16px);
+}
+
+.mode-entry-header__inner {
+  max-width: 80rem;
+  margin-inline: auto;
+  padding-inline: 1.5rem;
+}
+.mode-entry-header__row {
+  display: flex;
+  min-height: 5rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-block: 0.75rem;
+}
+.mode-entry-brand {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: 0.75rem;
+}
+.mode-entry-brand__mark {
+  display: grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  place-items: center;
+  border-radius: 0.875rem;
+  background: var(--mode-accent);
+  color: white;
+}
+.mode-entry-brand__mark svg {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+.mode-entry-brand__name {
+  display: block;
+  font-family: 'Outfit', 'Inter', sans-serif;
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.04em;
+  color: #0f172a;
+}
+.mode-entry-brand__mode {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--mode-accent);
+}
+.mode-entry-header__actions {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+.mode-entry-nav {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+}
+.mode-entry-nav__link {
+  position: relative;
+  display: inline-flex;
+  min-height: 3rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1.25rem;
+  border-bottom: 3px solid transparent;
+  border-radius: 0.5rem 0.5rem 0 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #475569;
+  transition: background-color 150ms, color 150ms;
+}
+.mode-entry-nav__link svg {
+  width: 1rem;
+  height: 1rem;
+}
+.mode-entry-nav__link:hover {
+  background: var(--mode-soft);
+  color: var(--mode-accent);
+}
+.mode-entry-nav__link[aria-current='page'] {
+  background: var(--mode-soft);
+  color: var(--mode-accent);
+}
+.mode-entry-button {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 0.875rem;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--mode-control-radius);
+  background: white;
+  color: #475569;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.5;
+  transition: background-color 150ms, border-color 150ms;
+}
+.mode-entry-button:hover {
+  border-color: var(--mode-accent);
+  background: var(--mode-soft);
+  color: var(--mode-accent);
+}
+.mode-entry-button--primary {
+  border-color: var(--mode-accent);
+  background: var(--mode-accent);
+  color: white;
+}
+.mode-entry-button--primary:hover {
+  background: var(--mode-accent);
+  color: white;
+  filter: brightness(0.93);
+}
+.mode-entry-button svg {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+}
+.mode-entry-balance {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: 0.75rem;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+.mode-entry-balance svg {
+  width: 1rem;
+  height: 1rem;
+}
+.mode-entry .mode-entry-action {
+  min-height: 2.75rem;
+  border-radius: var(--mode-control-radius);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.mode-entry .mode-entry-card {
+  border-radius: var(--mode-card-radius);
+}
+.mode-entry :where(h1, h2, h3, h4) {
+  font-family: 'Outfit', 'Leelawadee UI', Tahoma, sans-serif;
+}
+.mode-entry .mode-entry-title {
+  font-size: clamp(1.75rem, 3vw, 2.5rem);
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: -0.025em;
+}
+.mode-entry :where(button, input, select, textarea, a):focus-visible,
+.mode-entry-header :where(button, a):focus-visible {
+  outline: 3px solid var(--mode-accent);
+  outline-offset: 3px;
+}
+.mode-entry-shortcuts {
+  max-width: 80rem;
+  margin: 1rem auto;
+  padding-inline: 1.5rem;
+}
+.mode-entry-shortcuts .pysim-theme-nav {
+  justify-content: flex-start;
+}
+.mode-entry--competitive :is(.mode-entry-intro, .mode-entry-feed) {
+  max-width: 80rem;
+  padding-inline: 1.5rem;
+}
+.mode-entry--competitive .mode-entry-intro {
+  margin-top: 2rem;
+}
+.mode-entry--competitive .mode-entry-feed {
+  padding-bottom: 2rem;
+}
+
+@media (max-width: 639px) {
+  .mode-entry-header__inner {
+    padding-inline: 1rem;
+  }
+  .mode-entry-header__row {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+  .mode-entry-header__actions {
+    width: 100%;
+  }
+  .mode-entry-nav {
+    gap: 0;
+  }
+  .mode-entry-nav__link {
+    flex: 1 0 auto;
+    padding-inline: 0.625rem;
+    font-size: 0.8125rem;
+  }
+  .mode-entry-shortcuts {
+    padding-inline: 1rem;
+  }
+  .mode-entry-shortcuts .pysim-theme-nav {
+    flex-wrap: nowrap;
+  }
+  .mode-entry-shortcuts .pysim-theme-nav a {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    justify-content: center;
+  }
+  .mode-entry--competitive :is(.mode-entry-intro, .mode-entry-feed) {
+    padding-inline: 1rem;
+  }
+  .mode-entry .mode-entry-room-search {
+    width: 100%;
+  }
+  .mode-entry .mode-entry-room-search input {
+    min-width: 0;
+    width: 100%;
+    flex: 1;
+  }
+  .mode-entry .mode-entry-room-search button {
+    flex-shrink: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mode-entry *, .mode-entry-header * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.app-page-content {
+  min-height: calc(100dvh - var(--app-navbar-height, 132px));
+}
+.app-coding-workspace {
+  height: calc(100dvh - var(--app-navbar-height, 132px));
+}
+.app-profile-menu {
+  position: relative;
+}
+.app-profile-trigger {
+  cursor: pointer;
+  list-style: none;
+  padding: 0.25rem;
+}
+.app-profile-trigger::-webkit-details-marker {
+  display: none;
+}
+.app-profile-avatar {
+  position: relative;
+  display: block;
+  width: 2.125rem;
+  height: 2.125rem;
+  flex-shrink: 0;
+}
+.app-profile-picture, .app-profile-initial {
+  position: absolute;
+  inset: 4px;
+  width: calc(100% - 8px);
+  height: calc(100% - 8px);
+  border-radius: 50%;
+  object-fit: cover;
+}
+.app-profile-initial {
+  display: grid;
+  place-items: center;
+  background: var(--mode-accent);
+  color: white;
+  font-weight: 700;
+}
+.app-profile-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.app-profile-name {
+  display: none;
+  max-width: 7rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  padding-right: 0.5rem;
+}
+.app-profile-name small {
+  display: block;
+  color: var(--mode-accent);
+}
+.app-profile-dropdown {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  width: 12rem;
+  z-index: 50;
+  padding: 0.375rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.875rem;
+  background: white;
+  box-shadow: 0 12px 30px #0f172a1f;
+}
+.app-profile-dropdown a, .app-profile-dropdown button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 2.75rem;
+  border-radius: 0.5rem;
+  padding: 0.625rem;
+  font-size: 0.875rem;
+  color: #334155;
+  text-align: left;
+}
+.app-profile-dropdown a:hover, .app-profile-dropdown button:hover {
+  background: var(--mode-soft);
+}
+.app-profile-dropdown svg {
+  width: 1rem;
+  height: 1rem;
+}
+.app-action-label {
+  display: none;
+}
+.mode-entry-button[aria-current='page'] {
+  border-color: var(--mode-accent);
+  background: var(--mode-soft);
+  color: var(--mode-accent);
+}
+.mode-entry-nav__link--locked,
+.mode-entry-nav__link--locked:hover {
+  cursor: not-allowed;
+  color: #64748b;
+  background: #f8fafc;
+}
+.mode-entry-lock-level {
+  border-radius: 0.375rem;
+  padding: 0.125rem 0.375rem;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 0.625rem;
+  white-space: nowrap;
+}
+.mode-entry-lock-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding-block: 0.5rem;
+  color: #92400e;
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+.mode-entry-lock-hint svg {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex-shrink: 0;
+}
+.mode-entry-header summary:focus-visible {
+  outline: 3px solid var(--mode-accent);
+  outline-offset: 3px;
+}
+@media (min-width: 1200px) {
+  .app-action-label, .app-profile-name {
+    display: inline-block;
+  }
+}
+@media (max-width: 639px) {
+  .mode-entry-header__actions {
+    justify-content: flex-start;
+    gap: 0.375rem;
+  }
+  .mode-entry-header .mode-entry-button {
+    padding-inline: 0.625rem;
+  }
+  .mode-entry-header .app-profile-trigger {
+    padding: 0.25rem;
+  }
+  .mode-entry-nav {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    overflow: visible;
+  }
+  .mode-entry-nav__link {
+    flex-wrap: wrap;
+    align-content: center;
+    gap: 0.25rem;
+    padding-inline: 0.25rem;
+    font-size: 0.75rem;
+  }
+  .mode-entry-nav__link svg {
+    width: 0.875rem;
+    height: 0.875rem;
+  }
+}
+
+/* The indicator moves independently, keeping the fixed navbar stationary. */
+.mode-entry-nav__indicator {
+  position: absolute;
+  inset: auto 0 -3px;
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: var(--mode-accent);
+  transform-origin: left center;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .mode-entry-nav a svg {
+    transition: transform 150ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .mode-entry-nav a:hover svg {
+    transform: translateY(-2px);
+  }
+
+  .mode-entry-nav a:active svg {
+    transform: scale(0.92);
+  }
+}

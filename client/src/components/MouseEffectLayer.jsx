@@ -17,7 +17,7 @@ function effectDuration(effect) {
   return Math.max(200, Math.min(Number(effect?.duration) || 800, 5000));
 }
 
-export default function MouseEffectLayer({ user }) {
+export default function MouseEffectLayer({ user, targetRef }) {
   const [effects, setEffects] = useState([]);
   const [bursts, setBursts] = useState([]);
   const lastHoverAt = useRef(0);
@@ -27,10 +27,11 @@ export default function MouseEffectLayer({ user }) {
   }, [user?.mouse_effect_data]);
 
   useEffect(() => {
+    if (targetRef) return undefined;
     const onEquipped = (event) => setEffects(parseEffects(event.detail?.effects));
     window.addEventListener('pysim:mouse-effect-equipped', onEquipped);
     return () => window.removeEventListener('pysim:mouse-effect-equipped', onEquipped);
-  }, []);
+  }, [targetRef]);
 
   useEffect(() => {
     if (!effects.length) return undefined;
@@ -56,23 +57,25 @@ export default function MouseEffectLayer({ user }) {
       });
     };
 
-    const onClick = (event) => spawn('click', event.clientX, event.clientY);
-    const onDoubleClick = (event) => spawn('dblclick', event.clientX, event.clientY);
+    const target = targetRef?.current || window;
+    const isAllowed = (event) => targetRef || !event.target.closest?.('[data-profile-appearance]');
+    const onClick = (event) => { if (isAllowed(event)) spawn('click', event.clientX, event.clientY); };
+    const onDoubleClick = (event) => { if (isAllowed(event)) spawn('dblclick', event.clientX, event.clientY); };
     const onPointerMove = (event) => {
-      if (Date.now() - lastHoverAt.current < 160) return;
+      if (!isAllowed(event) || Date.now() - lastHoverAt.current < 160) return;
       lastHoverAt.current = Date.now();
       spawn('hover', event.clientX, event.clientY);
     };
 
-    window.addEventListener('click', onClick);
-    window.addEventListener('dblclick', onDoubleClick);
-    window.addEventListener('pointermove', onPointerMove);
+    target.addEventListener('click', onClick);
+    target.addEventListener('dblclick', onDoubleClick);
+    target.addEventListener('pointermove', onPointerMove);
     return () => {
-      window.removeEventListener('click', onClick);
-      window.removeEventListener('dblclick', onDoubleClick);
-      window.removeEventListener('pointermove', onPointerMove);
+      target.removeEventListener('click', onClick);
+      target.removeEventListener('dblclick', onDoubleClick);
+      target.removeEventListener('pointermove', onPointerMove);
     };
-  }, [effects]);
+  }, [effects, targetRef]);
 
   return (
     <div className="pointer-events-none fixed inset-0 z-[9999]" aria-hidden="true">

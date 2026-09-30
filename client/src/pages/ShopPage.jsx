@@ -578,7 +578,7 @@ export default function ShopPage() {
                     </div>
                 )}
 
-                <button onClick={() => navigate('/menu')}
+                <button onClick={() => navigate('/learn')}
                     className={`mt-10 text-pysim-outline hover:text-pysim-primary text-sm font-bold transition-colors uppercase tracking-widest ${mounted ? 'opacity-100' : 'opacity-0'}`}>
                     ← {t('shop.back', 'กลับหน้าหลัก')}
                 </button>

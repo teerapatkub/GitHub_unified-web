@@ -1501,10 +1501,14 @@ app.get('/api/profile/:userId', async (req, res) => {
         if (userRows.length === 0) return res.status(404).json({ error: 'User not found' });
         const user = userRows[0];
 
-        const [[frameRow]] = await db.execute(
-            'SELECT asset_url FROM shop_items WHERE item_id = ? LIMIT 1',
-            [user.equipped_profile_frame_id || 0]
-        ).catch(() => [[null]]);
+        const [equippedItems] = await db.execute(
+            'SELECT item_id, name, asset_url, preview_image, effects FROM shop_items WHERE item_id IN (?, ?, ?)',
+            [user.equipped_profile_frame_id || 0, user.equipped_theme_id || 0, user.equipped_mouse_effect_id || 0]
+        );
+        const equipped = (id) => equippedItems.find(item => Number(item.item_id) === Number(id));
+        const frameRow = equipped(user.equipped_profile_frame_id);
+        const themeRow = equipped(user.equipped_theme_id);
+        const mouseRow = equipped(user.equipped_mouse_effect_id);
 
         // Every picture this player could switch the avatar to, for the profile
         // picker: the two level defaults are always offered; the last upload and
@@ -1720,7 +1724,12 @@ app.get('/api/profile/:userId', async (req, res) => {
                 role: user.role,
                 created_at: user.created_at,
                 virtual_currency: Number(user.virtual_currency || 0),
-                profile_frame_url: frameRow?.asset_url || null,
+                profile_frame_url: frameRow?.asset_url || frameRow?.preview_image || null,
+                profile_frame_name: frameRow?.name || null,
+                theme_name: themeRow?.name || null,
+                theme_asset_url: themeRow?.asset_url || themeRow?.preview_image || null,
+                mouse_effect_name: mouseRow?.name || null,
+                mouse_effect_data: safeJsonParse(mouseRow?.effects, []) || [],
                 avatar: resolveAvatar(user),
                 avatar_options: avatarOptions,
             },
@@ -5005,7 +5014,7 @@ app.get('/api/leaderboard', async (req, res) => {
         if (names.length > 0) {
             const placeholders = names.map(() => '?').join(', ');
             const [avatarRows] = await db.query(
-                `SELECT username, level, avatar_url, avatar_source
+                `SELECT user_id, username, level, avatar_url, avatar_source
                    FROM users WHERE username IN (${placeholders})`,
                 names
             );
@@ -5019,6 +5028,7 @@ app.get('/api/leaderboard', async (req, res) => {
                 rank: i + 1,
                 ...r,
                 metric: Number(r.metric) || 0,
+                user_id: avatarByName.get(r.username)?.user_id || null,
                 avatar: resolveAvatar(avatarByName.get(r.username) || { level: r.level }),
             })),
         });

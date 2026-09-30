@@ -15,6 +15,7 @@ import {
     CircleDot,
     Circle,
 } from 'lucide-react';
+import ProfileAppearance from '../components/ProfileAppearance';
 import { API_BASE, assetUrl } from '../config/api.js';
 
 
@@ -259,7 +260,7 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
         : unlockedItems.slice(0, maxShowcase);
 
     return (
-        <div className="min-h-screen bg-pysim-surface">
+        <ProfileAppearance user={user}>
             <div className="mx-auto max-w-6xl px-4 py-8 sm:px-8">
 
                 <button
@@ -369,6 +370,16 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                         </div>
                     </div>
                 </div>
+
+                <section aria-label="ของตกแต่งที่กำลังใช้" className="mt-4 rounded-xl bg-white/95 p-4 text-sm text-slate-600 whisper-shadow">
+                    <h2 className="font-bold text-slate-800">ของตกแต่งที่กำลังใช้</h2>
+                    <div className="mt-2 flex flex-wrap gap-x-6 gap-y-2">
+                        <span>ธีม: {user.theme_name || 'ค่าเริ่มต้น'}</span>
+                        <span>กรอบโปรไฟล์: {user.profile_frame_name || 'ไม่ได้สวมใส่'}</span>
+                        <span>เอฟเฟกต์เมาส์: {user.mouse_effect_name || 'ไม่ได้สวมใส่'}</span>
+                    </div>
+                    {user.mouse_effect_name && <p className="mt-2 text-xs">ลองเลื่อนเมาส์ คลิก หรือดับเบิลคลิกในหน้าโปรไฟล์เพื่อดูเอฟเฟกต์</p>}
+                </section>
 
                 {/* ---------- headline numbers ---------- */}
                 <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -722,6 +733,6 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                 </div>
 
             </div>
-        </div>
+        </ProfileAppearance>
     );
 }

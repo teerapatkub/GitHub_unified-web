@@ -195,12 +195,12 @@ export default function LearningPage({ onNavigate, user }) {
   }
 
   return (
-    <div className="min-h-screen bg-pysim-surface pb-20">
+    <div className="mode-entry mode-entry--learn min-h-screen bg-pysim-surface pb-20">
       <HeroSection />
 
-      <main className="mx-auto flex max-w-7xl flex-col gap-12 px-4 py-12 md:flex-row">
-        <aside className="w-full space-y-8 md:w-72">
-          <div className="space-y-6 rounded-xl bg-pysim-surface-low p-6">
+      <main className="mx-auto flex max-w-7xl flex-col gap-8 px-4 py-8 sm:px-6 md:flex-row">
+        <aside className="w-full space-y-8 md:w-72 md:shrink-0">
+          <div className="mode-entry-card space-y-6 rounded-xl border border-slate-200 bg-pysim-surface-low p-6">
             <div className="flex flex-col items-center text-center">
               <div className="mb-4 flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border-4 border-white python-gradient">
                 <span className="text-3xl" role="img" aria-label="avatar">
@@ -263,7 +263,7 @@ export default function LearningPage({ onNavigate, user }) {
               <button
                 type="button"
                 onClick={continueLearning}
-                className="flex w-full items-center justify-center gap-2 rounded-lg bg-pysim-secondary-container py-3 text-sm font-bold tracking-wide text-pysim-on-secondary-container transition-all hover:opacity-90 active:scale-95"
+                className="mode-entry-action flex w-full items-center justify-center gap-2 min-h-11 rounded-xl bg-pysim-secondary-container py-3 text-sm font-bold tracking-wide text-pysim-on-secondary-container transition-all hover:opacity-90 active:scale-95"
               >
                 เรียนต่อ
               </button>
@@ -271,9 +271,9 @@ export default function LearningPage({ onNavigate, user }) {
           </div>
         </aside>
 
-        <section className="flex-1 space-y-12">
+        <section className="min-w-0 flex-1 space-y-8">
           <header className="space-y-2">
-            <h1 className="text-4xl font-extrabold tracking-tight text-pysim-primary">
+            <h1 className="mode-entry-title text-pysim-primary">
               {resolveText("hero.title", "เส้นทางการเรียนรู้ของคุณ")}
             </h1>
             <p className="max-w-2xl text-lg text-pysim-on-surface-variant">
@@ -426,7 +426,7 @@ const ModuleAccordion = ({
   return (
     <motion.div
       variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
-      className={`group relative overflow-hidden rounded-xl transition-all ${
+      className={`mode-entry-card group relative overflow-hidden rounded-xl transition-all ${
         isLocked
           ? "border-2 border-dashed border-pysim-outline-variant/20 bg-pysim-surface-low/50 opacity-80 grayscale"
           : "whisper-shadow bg-white hover:translate-y-[-2px]"
@@ -628,13 +628,13 @@ const HeroSection = () => {
   };
 
   return (
-    <div className="relative h-[280px] w-full overflow-hidden select-none">
+    <div className="relative min-h-[280px] w-full overflow-hidden select-none">
       <div className="absolute inset-0 python-gradient"></div>
       <div className="absolute -right-12 -top-12 h-64 w-64 rounded-full bg-pysim-secondary-container/20 blur-3xl"></div>
       <div className="absolute bottom-0 left-0 h-24 w-full bg-gradient-to-t from-pysim-surface to-transparent"></div>
 
-      <div className="relative mx-auto flex h-full max-w-7xl flex-col justify-center px-4 sm:px-6 lg:px-8">
-        <div className="max-w-3xl rounded-[28px] bg-white/72 px-8 py-7 shadow-[0_18px_55px_rgba(15,23,42,0.08)] backdrop-blur-sm">
+      <div className="relative mx-auto flex min-h-[280px] max-w-7xl flex-col justify-center px-4 py-6 sm:px-6">
+        <div className="mode-entry-card max-w-3xl rounded-[28px] bg-white/[0.92] px-5 py-6 sm:px-8 sm:py-7 shadow-[0_18px_55px_rgba(15,23,42,0.08)] backdrop-blur-sm">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -642,7 +642,7 @@ const HeroSection = () => {
             className="mb-4 flex items-center gap-2"
           >
             <span className="text-xl font-black text-pysim-primary">
-              PySim Academy
+              PyArena Academy
             </span>
           </motion.div>
 
@@ -650,7 +650,7 @@ const HeroSection = () => {
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.2 }}
-            className="text-3xl font-extrabold tracking-tight text-pysim-on-surface md:text-5xl"
+            className="mode-entry-title text-pysim-on-surface"
           >
             {resolveText("hero.title", "เริ่มต้นเส้นทางการเรียนรู้")}
           </motion.h1>

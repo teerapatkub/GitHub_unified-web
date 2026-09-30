@@ -30,7 +30,7 @@ export default function Login() {
             if (res.data.success) {
                 if (!isRegister) {
                     localStorage.setItem('user', JSON.stringify(res.data.user));
-                    navigate('/menu');
+                    navigate('/learn');
                 } else {
                     alert('ลงทะเบียนสำเร็จ! กรุณาล็อคอิน');
                     setIsRegister(false);

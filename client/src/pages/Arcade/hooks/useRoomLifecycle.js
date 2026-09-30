@@ -357,6 +357,8 @@ export default function useRoomLifecycle({
         console.error("Error leaving room:", err);
       }
     }
+    // Navigation can unmount the hook before its storage-sync effect runs.
+    localStorage.removeItem(activeRoomStorageKey(playerState.name));
     appliedPhaseRef.current = PHASES.LOBBY;
     lastShopRolledPhaseRef.current = null;
     setCurrentRoom(null);
@@ -435,10 +437,10 @@ export default function useRoomLifecycle({
     };
   }, [phase, setShowExitConfirm]);
 
-  const handleConfirmForfeitExit = async () => {
+  const handleConfirmForfeitExit = async (afterExit = () => navigate('/learn')) => {
     setShowExitConfirm(false);
     await handleLeaveRoom();
-    navigate('/menu');
+    afterExit();
   };
 
   return {

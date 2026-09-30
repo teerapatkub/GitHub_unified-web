@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
-  BookOpen, Target, FlaskConical, Globe, LogOut, Monitor, Store, Coins, Lock
+  BookOpen, Target, FlaskConical
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { TheInfiniteGrid } from './components/ui/the-infinite-grid';
 import { NavBar } from './components/ui/tubelight-navbar';
 import MouseEffectLayer from './components/MouseEffectLayer';
+import ModeEntryHeader from './components/ModeEntryHeader';
+import useModeTransition from './hooks/useModeTransition';
 
 
 // --- Friend's Learning Pages ---
@@ -21,9 +22,8 @@ import Achievements from './pages/Achievements';
 import LeaderboardPage from './pages/LeaderboardPage';
 
 // --- Your Original Pages ---
-import MainMenu from './pages/MainMenu';
 import GameModeLocked from './pages/GameModeLocked';
-import { canEnterGameModes, gameModeLockMessage } from './utils/gameModeAccess.js';
+import { canEnterGameModes } from './utils/gameModeAccess.js';
 import CompetitiveArena from './pages/CompetitiveArena';
 import ArcadeBattleRoyale from './pages/Arcade/ArcadeBattleRoyale';
 import ChallengePage from './pages/ChallengePage';
@@ -36,7 +36,7 @@ import ThemePage from './admin/pages/ThemePage';
 import AddLesson from './admin/pages/AddLesson';
 import Leaderboard from './admin/pages/Leaderboard';
 import CompetitiveChallengePage from './admin/pages/CompetitiveChallengePage';
-import { API_BASE, assetUrl } from './config/api.js';
+import { API_BASE } from './config/api.js';
 
 // ######################################################################
 // ### MAIN APP
@@ -72,6 +72,7 @@ export default function App() {
 function AppContent() {
   const navigate = useNavigate();
   const location = useLocation();
+  useModeTransition(location.pathname);
 
   // === Auth State ===
   // Seeded synchronously from localStorage on the very first render rather
@@ -150,7 +151,6 @@ function AppContent() {
       return { mode: 'challenge', activityLabel: 'กำลังทำความท้าทาย' };
     }
     if (
-      pathname.startsWith('/menu') ||
       pathname.startsWith('/online') ||
       pathname.startsWith('/competitive-arena') ||
       pathname.startsWith('/matchmaking') ||
@@ -229,12 +229,19 @@ function AppContent() {
   }, [location.pathname, location.search, navigate, syncUserToState]);
 
   useEffect(() => {
-    const onCosmeticEquipped = (event) => {
-      if (event.detail?.user) syncUserToState(event.detail.user);
+    const onUserUpdated = (event) => {
+      if (event.detail?.user) {
+        setUser(event.detail.user);
+        localStorage.setItem('user', JSON.stringify(event.detail.user));
+      }
     };
-    window.addEventListener('pysim:user-cosmetic-equipped', onCosmeticEquipped);
-    return () => window.removeEventListener('pysim:user-cosmetic-equipped', onCosmeticEquipped);
-  }, [syncUserToState]);
+    window.addEventListener('pysim:user-cosmetic-equipped', onUserUpdated);
+    window.addEventListener('pysim:user-updated', onUserUpdated);
+    return () => {
+      window.removeEventListener('pysim:user-cosmetic-equipped', onUserUpdated);
+      window.removeEventListener('pysim:user-updated', onUserUpdated);
+    };
+  }, []);
 
   useEffect(() => {
     if (!user || user.isGuest) return;
@@ -303,7 +310,8 @@ function AppContent() {
 
   const handleLogout = () => {
     localStorage.removeItem('user');
-    window.location.reload();
+    setUser(null);
+    navigate('/login', { replace: true });
   };
 
   // === Lesson Navigation (Bridge for friend's onNavigate) ===
@@ -338,15 +346,18 @@ function AppContent() {
       'promotion-exam': '/promotion-exam',
       'shop': '/shop',
       'login': '/login',
-      'simulation': '/menu', // Simulation now goes to MainMenu
+      'simulation': '/learn', // Legacy entry now lands on learning.
     };
     navigate(routeMap[page] || `/${page}`);
   };
 
-  // === Which pages show the Navbar ===
-  const hideNavbar = location.pathname === '/login';
-  const fullBleedRoutes = ['/menu', '/online', '/competitive-arena', '/matchmaking', '/achievements'];
-  const isSimulationMode = fullBleedRoutes.some(r => location.pathname.startsWith(r));
+  // Game pages render the shared navbar themselves to supply mode tools and
+  // guard navigation while a match is active. Locked routes use the app navbar.
+  const isGameRoute = ['/online', '/competitive-arena', '/matchmaking'].includes(location.pathname);
+  const isSimulationMode = isGameRoute && canEnterGameModes(user);
+  const hideNavbar = location.pathname === '/login' || location.pathname.startsWith('/admin');
+  const isLearningRoute = ['/learn', '/lesson', '/exercise', '/mini-game', '/challenge', '/debug', '/promotion-exam']
+    .some(route => location.pathname === route || location.pathname.startsWith(`${route}/`));
   const isCodingWorkspace = ['/exercise', '/mini-game', '/challenge', '/debug', '/promotion-exam']
     .some(route => location.pathname.startsWith(route));
   const isAdminUser = user?.role === 'admin';
@@ -376,54 +387,19 @@ function AppContent() {
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-transparent text-slate-800 font-sans transition-colors duration-300 relative">
       <MouseEffectLayer user={user} />
       <TheInfiniteGrid>
-        {/* TOP RIGHT FLOATING HEADER — Hide on login AND simulation routes */}
-        <AnimatePresence>
-          {!hideNavbar && !isSimulationMode && (
-            <motion.div
-              initial={{ y: -20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: -20, opacity: 0 }}
-              transition={{ duration: 0.3, ease: 'easeInOut' }}
-            >
-              <div className="pysim-theme-navbar fixed inset-x-0 top-0 z-40 border-b border-slate-200/70 bg-white/85 backdrop-blur-xl shadow-[0_10px_40px_rgba(15,23,42,0.08)]">
-                <div className="mx-auto flex h-20 max-w-[1700px] items-center gap-4 px-4 sm:px-6">
-                  <div className="hidden min-w-[150px] lg:block">
-                    <div className="text-xs font-black uppercase tracking-[0.24em] text-blue-600">PYSIM</div>
-                    <div className="mt-1 text-sm font-semibold text-slate-500">
-                      {isCodingWorkspace ? 'Coding Workspace' : 'Learning Portal'}
-                    </div>
-                  </div>
-                  <div className="flex-1">
-                  <BottomNavBarSimple />
-                  </div>
-                  <TopRightHeader
-                    user={user}
-                    onLogout={handleLogout}
-                  />
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {!hideNavbar && !isSimulationMode && (
+          <ModeEntryHeader mode={isLearningRoute ? 'learn' : undefined} user={user} onLogout={handleLogout} />
+        )}
 
-        {/* ROUTES with page transition */}
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={isSimulationMode ? 'sim' : 'study'}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
-            className={
-              isSimulationMode
-                ? 'min-h-screen'
-                : isCodingWorkspace
-                  ? 'box-border h-screen overflow-hidden px-4 pb-4 pt-24'
-                  : hideNavbar
-                    ? 'min-h-screen'
-                    : 'min-h-screen px-4 pb-8 pt-24'
-            }
-          >
+        {isLearningRoute && !hideNavbar && !isCodingWorkspace && (
+          <div className="mode-entry mode-entry-shortcuts"><BottomNavBarSimple /></div>
+        )}
+
+        <div className={isSimulationMode || hideNavbar
+          ? 'min-h-screen'
+          : isCodingWorkspace
+            ? 'app-coding-workspace box-border overflow-hidden p-4'
+            : 'app-page-content pb-8'}>
             <Routes location={location}>
               <Route path="/" element={
                 authReady
@@ -447,7 +423,7 @@ function AppContent() {
 
               {/* Friend's Learning Pages */}
               <Route path="/learn" element={
-                requireStudent(<LearningPage onNavigate={handleNavigate} user={user} />)
+                requireStudent(<div data-mode-transition-content><LearningPage onNavigate={handleNavigate} user={user} /></div>)
               } />
               <Route path="/lesson" element={<Navigate to="/learn" replace />} />
               <Route path="/lesson/:lessonId" element={
@@ -494,18 +470,18 @@ function AppContent() {
                   : <Navigate to="/login" replace />
               } />
 
-              {/* Multiplayer Hub Route */}
-              <Route path="/profile" element={requireStudent(<ProfilePage user={user} onUserRefresh={refreshUserProfile} />)} />
-              <Route path="/profile/:userId" element={requireStudent(<ProfilePage user={user} onUserRefresh={refreshUserProfile} />)} />
-              <Route path="/menu" element={requireGameModeRank(<MainMenu user={user} />)} />
+              {/* Student pages and direct mode routes */}
+              <Route path="/profile" element={requireStudent(<ProfilePage key={location.pathname} user={user} onUserRefresh={refreshUserProfile} />)} />
+              <Route path="/profile/:userId" element={requireStudent(<ProfilePage key={location.pathname} user={user} onUserRefresh={refreshUserProfile} />)} />
+              <Route path="/menu" element={<Navigate to="/learn" replace />} />
               <Route path="/achievements" element={<Achievements />} />
               <Route path="/leaderboard" element={<LeaderboardPage user={user} />} />
-              <Route path="/online" element={requireGameModeRank(<CompetitiveArena user={user} />)} />
+              <Route path="/online" element={requireGameModeRank(<CompetitiveArena user={user} onLogout={handleLogout} onUserUpdate={syncUserToState} />)} />
               {/* Person 2 reached the Competitive Arena at /competitive-arena on their
                   branch; kept as a second path so links and bookmarks from there
                   still land, rather than renaming /online out from under ours. */}
-              <Route path="/competitive-arena" element={requireGameModeRank(<CompetitiveArena user={user} />)} />
-              <Route path="/matchmaking" element={requireGameModeRank(<ArcadeBattleRoyale user={user} />)} />
+              <Route path="/competitive-arena" element={requireGameModeRank(<CompetitiveArena user={user} onLogout={handleLogout} onUserUpdate={syncUserToState} />)} />
+              <Route path="/matchmaking" element={requireGameModeRank(<ArcadeBattleRoyale user={user} onLogout={handleLogout} />)} />
               <Route
                 path="/admin/dashboard"
                 element={requireAdmin(<Dashboard />)}
@@ -531,165 +507,14 @@ function AppContent() {
                 element={requireAdmin(<CompetitiveChallengePage />)}
               />
             </Routes>
-          </motion.div>
-        </AnimatePresence>
+        </div>
 
       </TheInfiniteGrid>
     </div>
   );
 }
 
-// ######################################################################
-// ### TOP RIGHT HEADER (User Profile & Language)
-// ######################################################################
-const TopRightHeader = ({ user, onLogout }) => {
-  const { t, i18n } = useTranslation();
-  const navigate = useNavigate();
-  const [langMenuOpen, setLangMenuOpen] = useState(false);
-  const coinBalance = Number(user?.virtual_currency ?? user?.coins ?? 0);
-  const gameModeUnlocked = canEnterGameModes(user);
-  const profileImage = assetUrl(user?.profile_asset_url);
-  // The profile picture the server resolved (chosen, or a level default). The
-  // frame above still overlays it; initials show only if no picture resolved.
-  const avatarUrl = assetUrl(user?.avatar?.url);
-
-  return (
-    <div className="flex items-center space-x-3 rounded-2xl border border-slate-200/70 bg-white/80 p-2 pr-4 shadow-sm">
-      
-      {/* Game modes menu (Desktop Only) — this used to be labelled "Simulation",
-          which was the developer-life mode; that mode has been removed and the
-          button has always navigated to /menu, so the label now says so. */}
-      {!user?.isGuest && (
-        <button
-          onClick={() => navigate('/menu')}
-          title={gameModeUnlocked ? undefined : gameModeLockMessage(user, i18n.language)}
-          className={`hidden sm:flex items-center space-x-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all hover:shadow-md hover:scale-105 ${
-            gameModeUnlocked
-              ? 'bg-gradient-to-r from-amber-100 to-amber-200 text-amber-800'
-              : 'bg-slate-100 text-slate-400 border border-slate-200'
-          }`}
-        >
-          {/* Still clickable while locked: the destination explains the
-              requirement and how far off they are, which a dead button cannot. */}
-          {gameModeUnlocked ? <Monitor className="h-3 w-3" /> : <Lock className="h-3 w-3" />}
-          <span>{t('navbar.modes', 'โหมดเกม')}</span>
-        </button>
-      )}
-
-      {/* Divier */}
-      {!user?.isGuest && <div className="hidden sm:block h-6 w-px bg-slate-200 mx-1"></div>}
-
-      {/* Language Switcher */}
-      <div className="relative">
-        <button
-          onClick={() => setLangMenuOpen(!langMenuOpen)}
-          className="p-1.5 rounded-full hover:bg-slate-100 transition-colors text-slate-500"
-        >
-          <Globe className="h-4 w-4" />
-        </button>
-
-        <AnimatePresence>
-          {langMenuOpen && (
-            <motion.div
-              initial={{ opacity: 0, y: 10, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 10, scale: 0.95 }}
-              className="absolute right-0 mt-3 w-36 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden z-50 p-1"
-            >
-              <button
-                onClick={() => { i18n.changeLanguage('en'); setLangMenuOpen(false); }}
-                className="w-full flex items-center px-4 py-2.5 rounded-xl hover:bg-blue-50 text-sm text-slate-700 font-medium transition-colors"
-              >
-                <span className="mr-2">🇺🇸</span> EN
-              </button>
-              <button
-                onClick={() => { i18n.changeLanguage('th'); setLangMenuOpen(false); }}
-                className="w-full flex items-center px-4 py-2.5 rounded-xl hover:bg-blue-50 text-sm text-slate-700 font-medium transition-colors"
-              >
-                <span className="mr-2">🇹🇭</span> TH
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      <div className="h-6 w-px bg-slate-200 mx-1"></div>
-
-      {/* User Info & Logout */}
-      {user?.isGuest ? (
-        <div className="px-4 py-1.5 rounded-full bg-slate-100 text-slate-600 font-bold text-xs">
-          Guest Mode
-        </div>
-      ) : (
-        <div className="flex items-center space-x-3 pl-1">
-          <div
-            className="hidden sm:flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-black text-amber-700"
-            title="Coins"
-          >
-            <Coins className="h-4 w-4 text-amber-500" />
-            <span>{coinBalance.toLocaleString()}</span>
-          </div>
-          {/* Avatar, with the equipped profile frame drawn around it. profileImage
-              is the frame's artwork — it used to be rendered as the avatar itself,
-              which meant an equipped frame replaced the player rather than framing
-              them. The centre of every frame is transparent, so it overlays. */}
-          <button
-            onClick={() => navigate('/profile')}
-            className="relative h-10 w-10 shrink-0 rounded-full transition-transform hover:scale-105"
-            title={t('navbar.profile', 'ดูโปรไฟล์ของฉัน')}
-          >
-            {avatarUrl ? (
-              <img
-                src={avatarUrl}
-                alt=""
-                className="absolute inset-[5px] h-[calc(100%-10px)] w-[calc(100%-10px)] rounded-full bg-white object-cover pointer-events-none"
-              />
-            ) : (
-              <div
-                className={`absolute inset-[5px] rounded-full bg-gradient-to-br from-sky-400 to-indigo-500
-                            flex items-center justify-center text-xs font-black text-white select-none
-                            ${profileImage ? '' : 'ring-2 ring-sky-300'}`}
-              >
-                {String(user?.username || '?').trim().charAt(0).toUpperCase()}
-              </div>
-            )}
-            {profileImage && (
-              <img src={profileImage} alt="" className="absolute inset-0 h-full w-full pointer-events-none" />
-            )}
-          </button>
-          <div className="flex flex-col items-end hidden sm:flex">
-            <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">LV. {user?.level || 1}</span>
-            <span className="text-xs font-semibold text-slate-700">{user?.username}</span>
-          </div>
-          <button
-            onClick={onLogout}
-            className="p-1.5 rounded-full bg-slate-100 hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors"
-            title="Logout"
-          >
-            <LogOut className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-    </div>
-  );
-};
-
-// ######################################################################
-// ### BOTTOM TUBELIGHT NAVBAR
-// ######################################################################
-const BottomNavBar = () => {
-  const { t } = useTranslation();
-  
-  const navItems = [
-    { name: t('navbar.learn', 'บทเรียน'), icon: BookOpen, url: '/learn' },
-    { name: t('navbar.exercise', 'แบบฝึกหัด'), icon: FlaskConical, url: '/exercise' },
-    { name: t('navbar.challenge', 'ความท้าทาย'), icon: Target, url: '/challenge' },
-    { name: t('navbar.shop', 'ร้านค้า'), icon: Store, url: '/shop' },
-  ];
-
-  return <NavBar items={navItems} />;
-};
-
+// Learning shortcuts stay separate from the account and mode navigation.
 const BottomNavBarSimple = () => {
   const { t } = useTranslation();
 
@@ -697,7 +522,6 @@ const BottomNavBarSimple = () => {
     { name: t('navbar.learn', 'บทเรียน'), icon: BookOpen, url: '/learn' },
     { name: t('navbar.debug', 'แก้ไขโค้ด'), icon: FlaskConical, url: '/debug' },
     { name: t('navbar.challenge', 'ความท้าทาย'), icon: Target, url: '/challenge' },
-    { name: t('navbar.shop', 'ร้านค้า'), icon: Store, url: '/shop' },
   ];
 
   return <NavBar items={navItems} />;

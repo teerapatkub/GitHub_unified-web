@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Trophy, ArrowLeft, RefreshCw } from 'lucide-react';
 import { assetUrl } from '../config/api.js';
 
-// The learner-facing leaderboard, opened from the main menu's Leaderboard card.
+// The learner-facing leaderboard, with links to each player's public profile.
 //
 // Six boards, because there is no single number that everyone in this game is
 // playing for: someone grinding lessons, someone who only plays Arcade, and
@@ -125,7 +125,7 @@ export default function LeaderboardPage({ user }) {
             <div className="max-w-3xl mx-auto px-4 sm:px-8 py-8">
 
                 <button
-                    onClick={() => navigate('/menu')}
+                    onClick={() => navigate('/learn')}
                     className="mb-6 inline-flex items-center gap-2 text-sm font-bold text-pysim-on-surface-variant hover:text-pysim-on-surface"
                 >
                     <ArrowLeft size={16} /> กลับไปหน้าหลัก
@@ -195,10 +195,13 @@ export default function LeaderboardPage({ user }) {
                         {rows.map((row) => {
                             const isMe = myName && row.username === myName;
                             const detail = board.detail?.(row);
+                            const Row = row.user_id ? Link : 'div';
                             return (
-                                <div
+                                <Row
+                                    to={row.user_id ? `/profile/${row.user_id}` : undefined}
+                                    aria-label={row.user_id ? `ดูโปรไฟล์ของ ${row.username}` : undefined}
                                     key={`${boardKey}-${row.rank}`}
-                                    className={`flex items-center gap-4 px-5 py-4 border-b border-slate-100 last:border-0
+                                    className={`flex items-center gap-3 px-3 sm:px-5 py-4 border-b border-slate-100 last:border-0 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-600
                                         ${isMe ? 'bg-pysim-primary/5' : ''}`}
                                 >
                                     <span className="w-10 text-center text-sm font-black text-slate-400">
@@ -225,7 +228,7 @@ export default function LeaderboardPage({ user }) {
                                     <span className={`text-sm font-black whitespace-nowrap ${board.tone}`}>
                                         {board.format(row)}
                                     </span>
-                                </div>
+                                </Row>
                             );
                         })}
                     </div>

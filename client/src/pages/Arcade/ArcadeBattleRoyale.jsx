@@ -31,6 +31,7 @@ import PasswordPromptModal from './widgets/PasswordPromptModal.jsx';
 import GlossaryModal from './widgets/GlossaryModal.jsx';
 import NotificationStack from './widgets/NotificationStack.jsx';
 import PublicRoomBrowser from './widgets/PublicRoomBrowser.jsx';
+import ModeEntryHeader from '../../components/ModeEntryHeader';
 import RoomLobbyView from './widgets/RoomLobbyView.jsx';
 import ShopPhaseView from './widgets/ShopPhaseView.jsx';
 import BattleRoyaleGameplayView from './widgets/BattleRoyaleGameplayView.jsx';
@@ -44,7 +45,7 @@ import { TRANSLATIONS } from './translations.js';
 import { parseUtcTimestamp, PHASES, TASKS, TASK_TEST_CASES, SHOP_ITEMS, BOT_NAMES, AUTO_SUBMIT_LEAD_SECONDS,
          AUTO_SUBMIT_WARN_SECONDS, ROUND_TIMES, phaseDurationsFor } from './constants.js';
 
-export default function ArcadeBattleRoyale({ user: propUser }) {
+export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
   const { i18n } = useTranslation();
   const lang = i18n.language === 'th' ? 'th' : 'en';
   // Memoized on `lang` so its identity is stable across renders. As a plain
@@ -82,6 +83,7 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
   const [notifications, setNotifications] = useState([]);
   const [showGlossary, setShowGlossary] = useState(false);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const pendingNavigationRef = useRef(null);
   // Snapshot of the round that just finished — {roundNum, entries: [{name,
   // isPlayer, rank, cashGain, eliminated}]} — built server-side by
   // finalizeArcadePhase() (server/server.js), polled down via
@@ -231,6 +233,23 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
     setTimeLeft, setRoundSummary, getRound4Task, getPoolTask, tasksReady, setShowExitConfirm,
     currentRoom, setCurrentRoom, roomParticipants, setRoomParticipants
   });
+
+  const requestHeaderAction = async (action) => {
+    const isActiveMatch = phase !== PHASES.LOBBY && phase !== PHASES.RESULT;
+    if (isActiveMatch) {
+      pendingNavigationRef.current = action;
+      setShowExitConfirm(true);
+      return;
+    }
+    if (currentRoom) await handleLeaveRoom();
+    action();
+  };
+
+  const confirmHeaderExit = async () => {
+    const action = pendingNavigationRef.current || (() => navigate('/learn'));
+    pendingNavigationRef.current = null;
+    await handleConfirmForfeitExit(action);
+  };
 
   // Phase 8.1 — the room this client is sitting in no longer exists server
   // side. Drop every trace of it and put the player back in the room browser
@@ -614,6 +633,8 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
       testCases: builtIn?.cases
     };
   })();
+  const isModeEntry = phase === PHASES.LOBBY && !currentRoom;
+
   // Publish this round's hint for the aiHelper item. Sourced from the same
   // shaped task as the title, the description and the starter code, so the item
   // can never describe a different problem than the one being played. Written
@@ -625,7 +646,7 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
   }, [activeRoundHint]);
 
   return (
-    <div className="h-screen w-screen overflow-hidden flex flex-col bg-pysim-surface relative font-sans select-none antialiased">
+    <div className={`${isModeEntry ? 'mode-entry mode-entry--arcade ' : ''}h-dvh w-full overflow-hidden flex flex-col bg-pysim-surface relative font-sans select-none antialiased`}>
       {/* Phase 8.1 — connection-instability banner. Deliberately a plain
           conditional render rather than an AnimatePresence exit animation:
           an animated wrapper that fails to unmount is exactly what left an
@@ -638,63 +659,22 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
         </div>
       )}
 
-      {/* 1. TOP BAR */}
-      <nav className="pysim-theme-navbar min-h-[4rem] border-b border-slate-200 bg-white flex flex-wrap items-center justify-between gap-y-2 px-4 sm:px-6 py-2 sm:py-0 z-10 shadow-sm shrink-0">
-        <div className="flex items-center space-x-3">
-          <div className="bg-rose-500 text-white p-2 rounded-xl shadow-md shadow-rose-500/20">
-            <Gamepad2 className="h-5 w-5 fill-white animate-bounce-slight" />
-          </div>
-          <div>
-            <span className="text-sm font-black uppercase tracking-[0.24em] bg-gradient-to-r from-rose-500 to-orange-500 bg-clip-text text-transparent">
-              {t('title')}
-            </span>
-            <span className="block text-[9px] font-bold tracking-widest text-slate-400 uppercase">
-              {phase !== PHASES.LOBBY && phase !== PHASES.RESULT ? `ROUND PHASE: ${phase.replace('_', ' ')}` : 'MATCHMAKING ZONE'}
-            </span>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-4">
-          {playerState.eliminated && (
-            <div className="text-xs font-black text-rose-600 bg-rose-50 border border-rose-200 px-3 py-1.5 rounded-xl animate-pulse">
-              🛡️ {t('spectatorMode')}
-            </div>
-          )}
-          
-          <button 
-            onClick={() => setShowGlossary(true)}
-            className="text-xs bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-xl border border-slate-200 font-bold flex items-center gap-2 shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98]"
-          >
-            <BookOpen className="h-3.5 w-3.5 text-rose-500" />
-            <span className="hidden sm:inline">📖 {t('itemGlossary')}</span>
-          </button>
-
-          <button 
-            onClick={() => i18n.changeLanguage(lang === 'th' ? 'en' : 'th')}
-            className="text-xs bg-slate-50 hover:bg-slate-100 text-slate-600 px-4 py-2.5 rounded-xl border border-slate-200 transition-all font-bold flex items-center gap-2 hover:scale-[1.02] active:scale-[0.98]"
-          >
-            {t('langBtn')}
-          </button>
-
-          <button
-            onClick={() => {
-              const isActiveMatch = phase !== PHASES.LOBBY && phase !== PHASES.RESULT;
-              if (isActiveMatch) {
-                setShowExitConfirm(true);
-              } else {
-                navigate('/menu');
-              }
-            }}
-            className="flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-black transition-all bg-slate-900 hover:bg-slate-800 text-white shadow-md hover:scale-[1.02] active:scale-[0.98]"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">{t('backToHub')}</span>
-          </button>
-        </div>
-      </nav>
+      <ModeEntryHeader
+        mode="arcade"
+        user={propUser}
+        onLogout={onLogout ? () => requestHeaderAction(onLogout) : undefined}
+        onNavigate={(path) => {
+          if (path !== '/matchmaking') requestHeaderAction(() => navigate(path));
+        }}
+      >
+        <button type="button" className="mode-entry-button" onClick={() => setShowGlossary(true)} aria-label={t('itemGlossary')} title={t('itemGlossary')}>
+          <BookOpen aria-hidden="true" /><span className="app-action-label">{t('itemGlossary')}</span>
+        </button>
+        {playerState.eliminated && <span className="text-xs font-bold text-rose-600">{t('spectatorMode')}</span>}
+      </ModeEntryHeader>
 
       {/* 2. BODY CONTENT */}
-      <div className="flex-1 relative overflow-hidden">
+      <div data-mode-transition-content className="flex-1 relative overflow-hidden">
         
         {/* GLOSSARY OVERLAY */}
         <GlossaryModal show={showGlossary} onClose={() => setShowGlossary(false)} items={SHOP_ITEMS} t={t} />
@@ -702,14 +682,14 @@ export default function ArcadeBattleRoyale({ user: propUser }) {
         {/* EXIT-DURING-ACTIVE-MATCH CONFIRMATION (back button / Exit to Hub) */}
         <ExitConfirmModal
           show={showExitConfirm}
-          onCancel={() => setShowExitConfirm(false)}
-          onConfirm={handleConfirmForfeitExit}
+          onCancel={() => { pendingNavigationRef.current = null; setShowExitConfirm(false); }}
+          onConfirm={confirmHeaderExit}
           t={t}
         />
 
         {/* --- LOBBY PHASE VIEW (PUBLIC ROOM BROWSER & ROOM LOBBY) --- */}
         {phase === PHASES.LOBBY && (
-          <div className="h-full w-full overflow-y-auto p-6 max-w-6xl mx-auto space-y-6">
+          <div className={isModeEntry ? "h-full w-full overflow-y-auto px-4 py-8 sm:px-6 max-w-7xl mx-auto space-y-6" : "h-full w-full overflow-y-auto p-6 max-w-6xl mx-auto space-y-6"}>
             
             {/* VIEW A: NO ROOM JOINED -> PUBLIC ROOM BROWSER */}
             {!currentRoom ? (
