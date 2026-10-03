@@ -106,7 +106,7 @@ export default function ManageAccount() {
   const avatarChar = (user) =>
     (user.username || user.email || "?").charAt(0).toUpperCase();
 
-  const avatarColors = ["bg-cyan-400","bg-purple-400","bg-pink-400","bg-yellow-400","bg-blue-400","bg-emerald-400"];
+  const avatarColors = ["bg-pysim-primary", "bg-pysim-primary-container", "bg-pysim-on-primary-fixed"];
   const avatarColor  = (user) => {
     const str = user.username || user.email || "";
     return avatarColors[str.charCodeAt(0) % avatarColors.length];
@@ -124,7 +124,7 @@ export default function ManageAccount() {
 
       {/* Toast notification */}
       {toast && (
-        <div className={`fixed top-6 right-6 z-50 px-6 py-3 rounded-xl shadow-xl text-white text-sm font-semibold
+        <div className={`fixed top-6 right-6 z-50 px-6 py-3 rounded-xl whisper-shadow text-white text-sm font-semibold
           ${toast.type === "error" ? "bg-red-500" : "bg-emerald-500"}`}>
           {toast.msg}
         </div>
@@ -134,8 +134,8 @@ export default function ManageAccount() {
         <div className="max-w-4xl mx-auto space-y-6">
 
           {/* Header card */}
-          <div className="bg-white rounded-2xl p-6 shadow-xl">
-            <h1 className="text-2xl font-bold text-gray-800 mb-1">User Account</h1>
+          <div className="bg-white rounded-2xl p-6 whisper-shadow">
+            <h1 className="text-2xl font-bold text-pysim-on-surface mb-1">User Account</h1>
             
 
             {/* Tabs */}
@@ -145,23 +145,23 @@ export default function ManageAccount() {
                   key={t.key}
                   onClick={() => { setTab(t.key); setSelectedUser(null); }}
                   className={`px-4 py-2 rounded-xl text-sm font-semibold border-2 transition-all duration-200
-                    ${tab === t.key ? `${t.ring} bg-gray-50` : "border-transparent text-gray-400 hover:bg-gray-100"}`}
+                    ${tab === t.key ? `${t.ring} bg-pysim-surface` : "border-transparent text-pysim-outline hover:bg-pysim-surface-low"}`}
                 >
                   {t.label}
-                  <span className="ml-2 bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full text-xs">{t.count}</span>
+                  <span className="ml-2 bg-pysim-surface-low text-pysim-on-surface-variant px-2 py-0.5 rounded-full text-xs">{t.count}</span>
                 </button>
               ))}
             </div>
           </div>
 
           {/* User list */}
-          <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
+          <div className="bg-white rounded-2xl whisper-shadow overflow-hidden">
             {loading ? (
               <div className="flex justify-center items-center h-48">
-                <div className="w-8 h-8 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+                <div className="w-8 h-8 border-4 border-pysim-primary border-t-transparent rounded-full animate-spin" />
               </div>
             ) : displayedUsers.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-48 text-gray-400">
+              <div className="flex flex-col items-center justify-center h-48 text-pysim-outline">
                 <svg className="w-12 h-12 mb-2 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                     d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857
@@ -171,7 +171,7 @@ export default function ManageAccount() {
                 <p className="font-medium">No users in this category</p>
               </div>
             ) : (
-              <div className="divide-y divide-gray-100">
+              <div className="divide-y divide-pysim-outline-variant/30">
                 {displayedUsers.map((user) => {
                   const isSelected = selectedUser?.user_id === user.user_id;
                   return (
@@ -180,13 +180,13 @@ export default function ManageAccount() {
                       onClick={() => setSelectedUser(isSelected ? null : user)}
                       className={`flex items-center justify-between px-6 py-4 cursor-pointer transition-all duration-150
                         ${isSelected
-                          ? "bg-cyan-50 border-l-4 border-cyan-400"
-                          : "hover:bg-gray-50 border-l-4 border-transparent"}`}
+                          ? "bg-pysim-primary-fixed/30 border-l-4 border-pysim-primary"
+                          : "hover:bg-pysim-surface border-l-4 border-transparent"}`}
                     >
                       {/* Left: radio + avatar + info */}
                       <div className="flex items-center gap-4">
                         <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all
-                          ${isSelected ? "border-cyan-500 bg-cyan-500" : "border-gray-300"}`}>
+                          ${isSelected ? "border-pysim-primary bg-pysim-primary" : "border-pysim-outline-variant"}`}>
                           {isSelected && <div className="w-2 h-2 rounded-full bg-white" />}
                         </div>
 
@@ -195,15 +195,15 @@ export default function ManageAccount() {
                         </div>
 
                         <div>
-                          <p className="font-semibold text-gray-800 text-sm">{user.username || "—"}</p>
-                          <p className="text-gray-400 text-xs">{user.email}</p>
+                          <p className="font-semibold text-pysim-on-surface text-sm">{user.username || "—"}</p>
+                          <p className="text-pysim-outline text-xs">{user.email}</p>
                         </div>
                       </div>
 
                       {/* Right: status + ban expiry */}
                       <div className="flex items-center gap-4">
                         {user.is_banned && user.ban_until && (
-                          <span className="text-xs text-gray-400 hidden sm:block">
+                          <span className="text-xs text-pysim-outline hidden sm:block">
                             Until: {new Date(user.ban_until).toLocaleString()}
                           </span>
                         )}
@@ -223,7 +223,7 @@ export default function ManageAccount() {
               onClick={() => openModal("delete", selectedUser)}
               className="px-6 py-3 rounded-xl font-semibold text-sm bg-red-500 text-white
                          hover:bg-red-600 disabled:opacity-40 disabled:cursor-not-allowed
-                         transition-all duration-200 shadow-md hover:shadow-lg"
+                         transition-all duration-200 shadow-md hover:whisper-shadow"
             >
                Delete Account
             </button>
@@ -233,7 +233,7 @@ export default function ManageAccount() {
               onClick={() => openModal("ban", selectedUser)}
               className="px-6 py-3 rounded-xl font-semibold text-sm bg-orange-400 text-white
                          hover:bg-orange-500 disabled:opacity-40 disabled:cursor-not-allowed
-                         transition-all duration-200 shadow-md hover:shadow-lg"
+                         transition-all duration-200 shadow-md hover:whisper-shadow"
             >
                Ban Account
             </button>
@@ -243,7 +243,7 @@ export default function ManageAccount() {
               onClick={() => openModal("recover", selectedUser)}
               className="px-6 py-3 rounded-xl font-semibold text-sm bg-emerald-500 text-white
                          hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed
-                         transition-all duration-200 shadow-md hover:shadow-lg"
+                         transition-all duration-200 shadow-md hover:whisper-shadow"
             >
                Recover Account
             </button>
@@ -264,17 +264,17 @@ export default function ManageAccount() {
                   <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
                     <span className="text-3xl"></span>
                   </div>
-                  <h2 className="text-xl font-bold text-gray-800">Delete Account?</h2>
-                  <p className="text-gray-500 text-sm mt-2">
+                  <h2 className="text-xl font-bold text-pysim-on-surface">Delete Account?</h2>
+                  <p className="text-pysim-on-surface-variant text-sm mt-2">
                     The user will no longer be able to access the site.
                   </p>
-                  <p className="mt-3 font-semibold text-gray-700 bg-gray-100 rounded-xl px-4 py-2 text-sm break-all">
+                  <p className="mt-3 font-semibold text-pysim-on-surface-variant bg-pysim-surface-low rounded-xl px-4 py-2 text-sm break-all">
                     {selectedUser.email || selectedUser.username}
                   </p>
                 </div>
                 <div className="flex gap-3">
                   <button onClick={closeModal}
-                    className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-700 font-semibold hover:bg-gray-200 transition-colors">
+                    className="flex-1 py-3 rounded-xl bg-pysim-surface-low text-pysim-on-surface-variant font-semibold hover:bg-pysim-surface-container transition-colors">
                     Cancel
                   </button>
                   <button onClick={handleDelete}
@@ -292,17 +292,17 @@ export default function ManageAccount() {
                   <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
                     <span className="text-3xl"></span>
                   </div>
-                  <h2 className="text-xl font-bold text-gray-800">Ban Account?</h2>
-                  <p className="mt-3 font-semibold text-gray-700 bg-gray-100 rounded-xl px-4 py-2 text-sm break-all">
+                  <h2 className="text-xl font-bold text-pysim-on-surface">Ban Account?</h2>
+                  <p className="mt-3 font-semibold text-pysim-on-surface-variant bg-pysim-surface-low rounded-xl px-4 py-2 text-sm break-all">
                     {selectedUser.email || selectedUser.username}
                   </p>
                 </div>
                 <div className="mb-6">
-                  <label className="block text-sm font-semibold text-gray-600 mb-2">Ban Duration</label>
+                  <label className="block text-sm font-semibold text-pysim-on-surface-variant mb-2">Ban Duration</label>
                   <select
                     value={banDuration}
                     onChange={(e) => setBanDuration(e.target.value)}
-                    className="w-full border-2 border-gray-200 rounded-xl px-4 py-2.5 text-sm font-medium
+                    className="w-full border-2 border-pysim-outline-variant/50 rounded-xl px-4 py-2.5 text-sm font-medium
                                focus:outline-none focus:border-orange-400 transition-colors"
                   >
                     <option value="1">1 Hour</option>
@@ -317,7 +317,7 @@ export default function ManageAccount() {
                 </div>
                 <div className="flex gap-3">
                   <button onClick={closeModal}
-                    className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-700 font-semibold hover:bg-gray-200 transition-colors">
+                    className="flex-1 py-3 rounded-xl bg-pysim-surface-low text-pysim-on-surface-variant font-semibold hover:bg-pysim-surface-container transition-colors">
                     Cancel
                   </button>
                   <button onClick={handleBan}
@@ -335,17 +335,17 @@ export default function ManageAccount() {
                   <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
                     <span className="text-3xl"></span>
                   </div>
-                  <h2 className="text-xl font-bold text-gray-800">Recover Account?</h2>
-                  <p className="text-gray-500 text-sm mt-2">
+                  <h2 className="text-xl font-bold text-pysim-on-surface">Recover Account?</h2>
+                  <p className="text-pysim-on-surface-variant text-sm mt-2">
                     The account will be restored to active status.
                   </p>
-                  <p className="mt-3 font-semibold text-gray-700 bg-gray-100 rounded-xl px-4 py-2 text-sm break-all">
+                  <p className="mt-3 font-semibold text-pysim-on-surface-variant bg-pysim-surface-low rounded-xl px-4 py-2 text-sm break-all">
                     {selectedUser.email || selectedUser.username}
                   </p>
                 </div>
                 <div className="flex gap-3">
                   <button onClick={closeModal}
-                    className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-700 font-semibold hover:bg-gray-200 transition-colors">
+                    className="flex-1 py-3 rounded-xl bg-pysim-surface-low text-pysim-on-surface-variant font-semibold hover:bg-pysim-surface-container transition-colors">
                     Cancel
                   </button>
                   <button onClick={handleRecover}

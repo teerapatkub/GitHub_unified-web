@@ -5,14 +5,11 @@ import { API_BASE } from '../../config/api.js';
 
 const RANK_STYLE = [
   { bg: "bg-yellow-50", border: "border-yellow-200", badge: "bg-gradient-to-br from-yellow-400 to-amber-500", text: "text-yellow-700", icon: "🥇" },
-  { bg: "bg-slate-50",  border: "border-slate-200",  badge: "bg-gradient-to-br from-slate-400 to-slate-500", text: "text-slate-600",  icon: "🥈" },
+  { bg: "bg-pysim-surface",  border: "border-pysim-outline-variant/50",  badge: "bg-gradient-to-br from-slate-400 to-slate-500", text: "text-pysim-on-surface-variant",  icon: "🥈" },
   { bg: "bg-orange-50", border: "border-orange-200", badge: "bg-gradient-to-br from-orange-400 to-red-400",   text: "text-orange-700", icon: "🥉" },
 ];
 
-const avatarColors = [
-  "bg-cyan-400", "bg-purple-400", "bg-pink-400",
-  "bg-yellow-400", "bg-blue-400", "bg-emerald-400",
-];
+const avatarColors = ["bg-pysim-primary", "bg-pysim-primary-container", "bg-pysim-on-primary-fixed"];
 const avatarColor = (str = "") => avatarColors[str.charCodeAt(0) % avatarColors.length];
 
 export default function Leaderboard() {
@@ -57,19 +54,19 @@ export default function Leaderboard() {
     <>
       <AdminNavbar />
 
-      <div className="min-h-screen bg-slate-50 pt-24 pb-16 px-4">
+      <div className="min-h-screen bg-pysim-surface pt-24 pb-16 px-4">
         <div className="max-w-4xl mx-auto space-y-6">
 
           {/* ── Header ── */}
-          <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-100">
-            <div className="bg-gradient-to-r from-yellow-400 to-amber-500 p-6 flex items-center justify-between">
+          <div className="bg-white rounded-2xl whisper-shadow overflow-hidden border border-pysim-outline-variant/30">
+            <div className="python-gradient p-6 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
                   <Trophy size={20} className="text-white" />
                 </div>
                 <div>
                   <h1 className="text-xl font-bold text-white">ตารางอันดับ</h1>
-                  <p className="text-yellow-100 text-xs mt-0.5">Leaderboard — คะแนนรวมจาก Competitive Arena และ Arcade Coding Battle Royale</p>
+                  <p className="text-pysim-primary-fixed text-xs mt-0.5">Leaderboard — คะแนนรวมจาก Competitive Arena และ Arcade Coding Battle Royale</p>
                 </div>
               </div>
               <button
@@ -82,21 +79,21 @@ export default function Leaderboard() {
             </div>
 
             {/* Tabs */}
-            <div className="flex gap-2 p-4 border-b border-slate-100">
+            <div className="flex gap-2 p-4 border-b border-pysim-outline-variant/30">
               {tabs.map((t) => (
                 <button
                   key={t.key}
                   onClick={() => setTab(t.key)}
                   className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition
                     ${tab === t.key
-                      ? "bg-amber-50 text-amber-600 border-2 border-amber-300"
-                      : "text-slate-500 border-2 border-transparent hover:bg-slate-50"
+                      ? "bg-pysim-primary-fixed/30 text-pysim-primary border-2 border-pysim-primary"
+                      : "text-pysim-on-surface-variant border-2 border-transparent hover:bg-pysim-surface"
                     }`}
                 >
                   {t.icon} {t.label}
                 </button>
               ))}
-              <div className="ml-auto flex items-center gap-2 text-xs text-slate-400">
+              <div className="ml-auto flex items-center gap-2 text-xs text-pysim-outline">
                 <TrendingUp size={13} />
                 {users.length} ผู้เล่น
               </div>
@@ -124,7 +121,7 @@ export default function Leaderboard() {
                       {(user.username || "?").charAt(0).toUpperCase()}
                     </div>
                     <div className="text-center">
-                      <p className="font-bold text-slate-800 text-sm truncate max-w-[100px]">{user.username || "—"}</p>
+                      <p className="font-bold text-pysim-on-surface text-sm truncate max-w-[100px]">{user.username || "—"}</p>
                       <p className={`text-lg font-black ${s.text}`}>{statValue(user)}</p>
                     </div>
                   </div>
@@ -134,18 +131,18 @@ export default function Leaderboard() {
           )}
 
           {/* ── Full List ── */}
-          <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-100">
+          <div className="bg-white rounded-2xl whisper-shadow overflow-hidden border border-pysim-outline-variant/30">
             {loading ? (
               <div className="flex justify-center items-center h-48">
-                <div className="w-8 h-8 border-4 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                <div className="w-8 h-8 border-4 border-pysim-primary border-t-transparent rounded-full animate-spin" />
               </div>
             ) : sorted.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-48 text-slate-400 gap-2">
+              <div className="flex flex-col items-center justify-center h-48 text-pysim-outline gap-2">
                 <Trophy size={32} className="opacity-30" />
                 <p className="font-medium text-sm">ยังไม่มีข้อมูลผู้เล่น</p>
               </div>
             ) : (
-              <div className="divide-y divide-slate-100">
+              <div className="divide-y divide-pysim-outline-variant/30">
                 {sorted.map((user, idx) => {
                   const rank = idx + 1;
                   const topStyle = RANK_STYLE[rank - 1];
@@ -153,11 +150,11 @@ export default function Leaderboard() {
                     <div
                       key={user.user_id}
                       className={`flex items-center px-6 py-4 transition-all duration-150
-                        ${rank <= 3 ? `${topStyle.bg} border-l-4 ${topStyle.border.replace("border-", "border-l-")}` : "hover:bg-slate-50 border-l-4 border-transparent"}`}
+                        ${rank <= 3 ? `${topStyle.bg} border-l-4 ${topStyle.border.replace("border-", "border-l-")}` : "hover:bg-pysim-surface border-l-4 border-transparent"}`}
                     >
                       {/* Rank */}
                       <div className={`w-8 text-center font-black text-sm flex-shrink-0
-                        ${rank === 1 ? "text-yellow-500" : rank === 2 ? "text-slate-500" : rank === 3 ? "text-orange-500" : "text-slate-300"}`}>
+                        ${rank === 1 ? "text-yellow-500" : rank === 2 ? "text-pysim-on-surface-variant" : rank === 3 ? "text-orange-500" : "text-pysim-outline"}`}>
                         {rank <= 3 ? topStyle.icon : rank}
                       </div>
 
@@ -168,16 +165,16 @@ export default function Leaderboard() {
 
                       {/* Info */}
                       <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-slate-800 text-sm truncate">{user.username || "—"}</p>
-                        <p className="text-xs text-slate-400 truncate">{user.email}</p>
+                        <p className="font-semibold text-pysim-on-surface text-sm truncate">{user.username || "—"}</p>
+                        <p className="text-xs text-pysim-outline truncate">{user.email}</p>
                       </div>
 
                       {/* Stat */}
                       <div className="text-right flex-shrink-0">
-                        <p className={`font-black text-base ${rank <= 3 ? topStyle.text : "text-slate-700"}`}>
+                        <p className={`font-black text-base ${rank <= 3 ? topStyle.text : "text-pysim-on-surface-variant"}`}>
                           {statValue(user)}
                         </p>
-                        <p className="text-xs text-slate-400 capitalize">
+                        <p className="text-xs text-pysim-outline capitalize">
                           {tab === "score" ? "total score" : tab === "level" ? "level" : "coins"}
                         </p>
                       </div>

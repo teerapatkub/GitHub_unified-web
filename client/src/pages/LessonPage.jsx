@@ -1,10 +1,16 @@
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronLeft, ChevronRight, Play } from "lucide-react";
+import { ChevronLeft, ChevronRight, CircleHelp, Play } from "lucide-react";
 import { useParams } from "react-router-dom";
 import usePyodide from "../hooks/usePyodide";
 import friendlyPyError from "../utils/friendlyPyError";
-import { API_BASE } from '../config/api.js';
+import { isQuizAnswerCorrect } from "../utils/quizAnswer.js";
+import { sanitizePyErrorText } from "../utils/sanitizePyErrorText.js";
+import { API_BASE, assetUrl } from '../config/api.js';
+import WebTutorialModal from "../components/WebTutorialModal";
+import { getWebTutorial } from "../data/webTutorials";
+
+const Motion = motion;
 
 
 const buildSlideCodeKey = (slide, index) =>
@@ -24,9 +30,10 @@ export default function LessonPage({
   const lessonInfo = lessonSource?.lessons?.find(
     (item) => String(item.lesson_id ?? item.id) === String(resolvedLessonId)
   );
-
-  const lessonFullTitle = lessonInfo
-    ? `บทเรียน ${lessonId} ${lessonInfo.title}`
+  const [lessonDetails, setLessonDetails] = useState(null);
+  const displayedLesson = lessonDetails || lessonInfo;
+  const lessonFullTitle = displayedLesson
+    ? `บทเรียน ${displayedLesson.order_index ?? lessonId} ${displayedLesson.title}`
     : `บทเรียน ${lessonId}`;
 
   const [slides, setSlides] = useState([]);
@@ -43,6 +50,8 @@ export default function LessonPage({
   const [quizStatusMessage, setQuizStatusMessage] = useState("");
   const [showSummary, setShowSummary] = useState(false);
   const [showPostTestFailModal, setShowPostTestFailModal] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
+  const lessonTutorial = getWebTutorial("lesson-page");
   const [editableCodes, setEditableCodes] = useState({});
   const [savingQuiz, setSavingQuiz] = useState(false);
   const {
@@ -73,6 +82,7 @@ export default function LessonPage({
   }, [codeSlideKey, clearOutput]);
 
   useEffect(() => {
+    setLessonDetails(null);
     setCurrentSlide(0);
     setAnswersByQuiz({ pre: {}, post: {} });
     setScores({ pre: null, post: null });
@@ -89,6 +99,8 @@ export default function LessonPage({
   }, [resolvedLessonId]);
 
   useEffect(() => {
+    const controller = new AbortController();
+    const options = { signal: controller.signal };
     const fetchLesson = async () => {
       if (!resolvedLessonId) {
         setSlides([]);
@@ -103,12 +115,13 @@ export default function LessonPage({
 
         const shouldLoadQuizAttempts = Boolean(user?.user_id && !user?.isGuest);
 
-        const [slidesRes, quizRes, quizAttemptsRes] = await Promise.all([
-          fetch(`${API_BASE}/api/lessons/${resolvedLessonId}/slides`),
-          fetch(`${API_BASE}/api/lessons/${resolvedLessonId}/quizzes`),
+        const [slidesRes, quizRes, quizAttemptsRes, detailsRes] = await Promise.all([
+          fetch(`${API_BASE}/api/lessons/${resolvedLessonId}/slides`, options),
+          fetch(`${API_BASE}/api/lessons/${resolvedLessonId}/quizzes`, options),
           shouldLoadQuizAttempts
-            ? fetch(`${API_BASE}/api/lessons/${resolvedLessonId}/quiz-results/${user.user_id}`)
+            ? fetch(`${API_BASE}/api/lessons/${resolvedLessonId}/quiz-results/${user.user_id}`, options)
             : Promise.resolve(null),
+          fetch(`${API_BASE}/api/lessons/${resolvedLessonId}`, options),
         ]);
 
         if (!slidesRes.ok || !quizRes.ok) {
@@ -125,6 +138,7 @@ export default function LessonPage({
 
         const slidesData = await slidesRes.json();
         const rawQuizData = await quizRes.json();
+        if (detailsRes.ok) setLessonDetails(await detailsRes.json());
         const attemptRows =
           quizAttemptsRes && quizAttemptsRes.ok ? await quizAttemptsRes.json() : [];
         const attemptsByQuizType = Array.isArray(attemptRows)
@@ -136,7 +150,7 @@ export default function LessonPage({
         const lessonSlides = Array.isArray(slidesData)
           ? slidesData.map((item) => ({
               title: item.title,
-              src: item.slide_src,
+              src: assetUrl(item.slide_src),
               content: item.slide_content,
               code: item.slide_type === "code",
               video: item.slide_type === "video",
@@ -202,6 +216,7 @@ export default function LessonPage({
           ...quizSlides.filter((quiz) => quiz.quizId === "post"),
         ]);
       } catch (error) {
+        if (controller.signal.aborted) return;
         console.error("โหลดบทเรียนไม่สำเร็จ:", error);
         setSlides([]);
         setFetchError(
@@ -210,11 +225,12 @@ export default function LessonPage({
             : "Unable to load lesson data."
         );
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     };
 
     fetchLesson();
+    return () => controller.abort();
   }, [resolvedLessonId, user?.user_id, user?.isGuest]);
 
   const runCode = () => {
@@ -227,18 +243,19 @@ export default function LessonPage({
 
     runPythonCode(currentCode)
       .then((result) => {
-        // The worker prints Python's own English traceback to stderr. To a
-        // first-time learner that names the fault and says nothing about what to
-        // do, so add the shared Thai explanation beneath it - the same sentence
-        // the server grader shows. The raw traceback stays visible above. No
-        // line number here: the worker's "<exec>" frames do not line up with the
-        // editor, and a wrong line number is worse than none.
         if (result && result.success === false && result.error && result.error !== "Timeout") {
-          const explained = friendlyPyError(result.error);
+          const cleanError = sanitizePyErrorText(result.error);
+          const explained = friendlyPyError(cleanError || result.error);
+
           if (explained.message) {
             setTerminalOutput((prev) => [
               ...prev,
-              { type: "hint", text: `💡 ${explained.message}` },
+              { type: "hint", text: explained.message },
+            ]);
+          } else if (cleanError) {
+            setTerminalOutput((prev) => [
+              ...prev,
+              { type: "hint", text: cleanError },
             ]);
           }
         }
@@ -255,7 +272,6 @@ export default function LessonPage({
   const isLocked = isQuiz ? quizLocked[quizId] : false;
   const answers = isQuiz ? answersByQuiz[quizId] || {} : {};
 
-  const preQuiz = slides.find((item) => item.quizId === "pre");
   const postQuiz = slides.find((item) => item.quizId === "post");
   const preTotal = quizMeta.preTotal;
   const postTotal = quizMeta.postTotal;
@@ -274,18 +290,8 @@ export default function LessonPage({
     return Boolean(quizLocked[quizId]) || (questionCount > 0 && answeredCount === questionCount);
   };
 
-  const isCorrectAnswer = (question, userAnswer) => {
-    if (!userAnswer) return false;
-
-    if (question.type === "fill") {
-      return (
-        userAnswer.trim().toLowerCase() ===
-        String(question.answer).trim().toLowerCase()
-      );
-    }
-
-    return userAnswer === question.answer;
-  };
+  const isCorrectAnswer = (question, userAnswer) =>
+    isQuizAnswerCorrect(question, userAnswer);
 
   const submitQuiz = async () => {
     if (!slide?.questions?.length) return;
@@ -395,7 +401,7 @@ export default function LessonPage({
   const restartLesson = () => {
     setShowSummary(false);
     setShowPostTestFailModal(false);
-    setCurrentSlide(0);
+    setCurrentSlide(1);
   };
 
   if (loading) {
@@ -458,10 +464,14 @@ export default function LessonPage({
         <h1 className="mb-4 text-3xl font-bold text-pysim-on-surface">
           {lessonFullTitle}
         </h1>
+        {displayedLesson?.description && <p className="mb-5 whitespace-pre-line text-pysim-on-surface-variant">{displayedLesson.description}</p>}
 
-        <div className="flex min-h-[420px] flex-col justify-between rounded-xl bg-white p-6 whisper-shadow">
+        <div
+          data-tour="lesson-content"
+          className="flex min-h-[420px] flex-col justify-between rounded-xl bg-white p-6 whisper-shadow"
+        >
           <AnimatePresence mode="wait">
-            <motion.div
+            <Motion.div
               key={currentSlide}
               initial={{ opacity: 0, x: 40 }}
               animate={{ opacity: 1, x: 0 }}
@@ -473,7 +483,7 @@ export default function LessonPage({
                 {slide.title}
               </h2>
 
-              {!isQuiz && !slide.code && !slide.video && (
+              {!isQuiz && !slide.code && (
                 <div className="space-y-5">
                   {slide.content && (
                     <div className="rounded-2xl border border-pysim-outline-variant/10 bg-pysim-surface-low p-6">
@@ -482,13 +492,15 @@ export default function LessonPage({
                       </p>
                     </div>
                   )}
-                  {slide.src && (
+                  {slide.src && (slide.video ? (
+                    <video key={slide.src} src={slide.src} controls preload="metadata" aria-label={slide.title} className="mx-auto max-h-[420px] w-full rounded-lg" />
+                  ) : (
                     <img
                       src={slide.src}
-                      alt=""
-                      className="mx-auto max-h-[420px] rounded-lg"
+                      alt={slide.title || 'สไลด์บทเรียน'}
+                      className="mx-auto max-h-[420px] max-w-full rounded-lg object-contain"
                     />
-                  )}
+                  ))}
                 </div>
               )}
 
@@ -536,7 +548,9 @@ export default function LessonPage({
                                   : "text-emerald-300"
                           }`}
                         >
-                          {entry.text}
+                          {entry.type === "stderr" && !entry.text.startsWith("Error:")
+                            ? `Error: ${entry.text}`
+                            : entry.text}
                         </div>
                       ))}
                     </div>
@@ -652,7 +666,7 @@ export default function LessonPage({
                     : "ส่งคำตอบ"}
                 </button>
               )}
-            </motion.div>
+            </Motion.div>
           </AnimatePresence>
 
           <div className="mt-6 flex items-center justify-between">
@@ -713,6 +727,7 @@ export default function LessonPage({
     <button
       onClick={() => (postTestPassed ? onNavigate("exercise", resolvedLessonId) : restartLesson())}
       disabled={!postTestFinished}
+      data-tour="lesson-exercise"
       className={`rounded-lg px-6 py-3 text-sm font-bold text-white transition-colors ${
         postTestFinished
           ? "bg-emerald-600 hover:bg-emerald-700"
@@ -724,6 +739,26 @@ export default function LessonPage({
   </div>
 </div>
       </main>
+
+      {lessonTutorial ? (
+        <>
+          <button
+            type="button"
+            onClick={() => setShowTutorial(true)}
+            aria-label="เปิดวิธีใช้งานเว็บ"
+            title="วิธีใช้งานเว็บ"
+            className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-xl border border-white/80 bg-pysim-primary text-white shadow-[0_12px_30px_rgba(15,23,42,0.22)] transition-all hover:-translate-y-1 hover:bg-pysim-primary/90 focus:outline-none focus:ring-4 focus:ring-pysim-primary/30 active:translate-y-0"
+          >
+            <CircleHelp className="h-7 w-7" aria-hidden="true" />
+          </button>
+          <WebTutorialModal
+            tutorial={lessonTutorial}
+            isOpen={showTutorial}
+            onClose={() => setShowTutorial(false)}
+            onComplete={() => setShowTutorial(false)}
+          />
+        </>
+      ) : null}
 
       {showPostTestFailModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-pysim-on-surface/30 backdrop-blur-sm">

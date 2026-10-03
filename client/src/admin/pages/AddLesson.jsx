@@ -1,477 +1,189 @@
-import { useState, useRef } from "react";
-import { useTranslation } from "react-i18next";
-import {
-  Plus, Trash2, Upload, Loader2, ChevronUp, ChevronDown,
-  BookOpen, ClipboardList, FileQuestion, Image,
-  CheckCircle2, Circle, GripVertical, X, Save,
-} from "lucide-react";
-import AdminNavbar from "../components/AdminNavbar";
-import { API_BASE } from '../../config/api.js';
-const UPLOAD_API = `${API_BASE}/api/upload`;
+import { useEffect, useRef, useState } from 'react';
+import { NavLink, Navigate, useParams, useSearchParams } from 'react-router-dom';
+import { ArrowDown, ArrowUp, Plus, Save, Trash2 } from 'lucide-react';
+import AdminNavbar from '../components/AdminNavbar';
+import { API_BASE, assetUrl } from '../../config/api';
 
+const pages = [
+  { path: 'info', label: 'ข้อมูลบทเรียน' },
+  { path: 'slides', label: 'เพิ่มสไลด์สอน' },
+  { path: 'pre-test', label: 'Pre-test' },
+  { path: 'post-test', label: 'Post-test' },
+];
+const inputClass = 'w-full min-w-0 rounded-xl border-2 border-pysim-outline-variant/50 bg-white px-4 py-3 text-sm text-pysim-on-surface focus:outline-none focus:border-pysim-primary';
+const buttonClass = 'inline-flex items-center justify-center gap-2 rounded-xl border border-pysim-outline-variant/50 bg-white px-4 py-3 text-sm font-semibold text-pysim-on-surface-variant hover:bg-pysim-primary-fixed/30 disabled:opacity-50';
+const blankInfo = { moduleId: '', orderIndex: '', title: '', description: '' };
+const newSlide = () => ({ id: crypto.randomUUID(), title: '', content: '', mediaUrl: '', mediaType: 'image' });
+const newQuestion = (type = 'choice') => ({ id: crypto.randomUUID(), type, question: '', options: ['', '', '', ''], correct: 0, answer: '' });
 
-/* ══════════════════════════════════════════════
-   Upload Button — สไตล์เดียวกับ ThemePage
-══════════════════════════════════════════════ */
-function UploadButton({ onUploaded, accept = "image/*,video/*", label }) {
-  const inputRef = useRef(null);
-  const [loading, setLoading] = useState(false);
-
-  const handleChange = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setLoading(true);
-    try {
-      const form = new FormData();
-      form.append("file", file);
-      const res = await fetch(UPLOAD_API, { method: "POST", body: form });
-      const data = await res.json();
-      if (!res.ok) { alert(data.error || "อัปโหลดไม่สำเร็จ"); return; }
-      onUploaded(data.url);
-    } catch {
-      alert("เกิดข้อผิดพลาดในการอัปโหลด");
-    } finally {
-      setLoading(false);
-      e.target.value = "";
-    }
-  };
-
-  return (
-    <>
-      <input ref={inputRef} type="file" accept={accept} className="hidden" onChange={handleChange} />
-      <button
-        type="button"
-        onClick={() => inputRef.current?.click()}
-        disabled={loading}
-        className="flex items-center gap-1.5 px-3 py-2.5 border-2 border-dashed border-cyan-300 bg-cyan-50 text-cyan-600 rounded-xl text-xs font-semibold hover:bg-cyan-100 transition disabled:opacity-50 whitespace-nowrap"
-      >
-        {loading
-          ? <><Loader2 size={13} className="animate-spin" /> กำลังอัปโหลด...</>
-          : <><Upload size={13} /> {label || "เลือกไฟล์"}</>
-        }
-      </button>
-    </>
-  );
+function useDraft(key, create) {
+  const [value, setValue] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem(key)) ?? create(); } catch { return create(); }
+  });
+  useEffect(() => {
+    try { sessionStorage.setItem(key, JSON.stringify(value)); } catch { /* Retain the in-memory draft if storage is unavailable. */ }
+  }, [key, value]);
+  return [value, setValue];
 }
-
-/* ══════════════════════════════════════════════
-   Section Card — header gradient + white body
-══════════════════════════════════════════════ */
-function SectionCard({ icon: Icon, title, gradient, children }) {
-  return (
-    <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-100">
-      {/* Gradient Header */}
-      <div className={`bg-gradient-to-r ${gradient} p-5 flex items-center gap-3`}>
-        <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">
-          <Icon size={18} className="text-white" />
-        </div>
-        <h2 className="text-lg font-bold text-white">{title}</h2>
-      </div>
-      {/* White Body */}
-      <div className="p-6 space-y-5">{children}</div>
-    </div>
-  );
+function currentUser() {
+  try { return JSON.parse(localStorage.getItem('user') || '{}'); } catch { return {}; }
 }
-
-/* ══════════════════════════════════════════════
-   Form Field Label
-══════════════════════════════════════════════ */
-function FieldLabel({ children }) {
-  return (
-    <label className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5">
-      {children}
-    </label>
-  );
+async function request(path = '', body, signal) {
+  const res = await fetch(`${API_BASE}/api/admin/lessons${path}`, {
+    method: body ? 'POST' : 'GET', signal,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${currentUser().admin_token || ''}` },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data) throw new Error(data?.error || 'เชื่อมต่อระบบบทเรียนไม่สำเร็จ กรุณาตรวจสอบเซิร์ฟเวอร์');
+  return data;
 }
-
-/* ══════════════════════════════════════════════
-   Input / Textarea — เดียวกับ ThemePage
-══════════════════════════════════════════════ */
-const inputCls =
-  "w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 transition bg-white";
-
-const textareaCls =
-  "w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 transition resize-none bg-white";
-
-/* ══════════════════════════════════════════════
-   Add Row Button
-══════════════════════════════════════════════ */
-function AddBtn({ onClick, label }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex items-center gap-2 px-4 py-2.5 border-2 border-dashed border-slate-300 text-slate-500 rounded-xl text-sm font-semibold hover:border-cyan-400 hover:text-cyan-600 hover:bg-cyan-50 transition"
-    >
-      <Plus size={15} /> {label}
-    </button>
-  );
+function Field({ title, children }) {
+  return <label className="block min-w-0"><span className="mb-2 block text-sm font-semibold text-pysim-on-surface-variant">{title}</span>{children}</label>;
 }
-
-/* ════════════════════════════════════════════════
-   MAIN PAGE
-════════════════════════════════════════════════ */
 export default function AddLesson() {
-  const { t } = useTranslation();
-
-  const [lessonNo, setLessonNo] = useState("");
-  const [lessonTitle, setLessonTitle] = useState("");
-  const [lessonDesc, setLessonDesc] = useState("");
-
-  const [slides, setSlides] = useState([
-    { id: 1, title: "", content: "", mediaUrl: "", mediaType: "image", caption: "" },
-  ]);
-  const [preQuestions, setPreQuestions] = useState([
-    { id: 1, question: "", options: ["", "", "", ""], correct: 0 },
-  ]);
-  const [postQuestions, setPostQuestions] = useState([
-    { id: 1, type: "fill", question: "", answer: "", options: ["", "", "", ""], correct: 0 },
-  ]);
-
+  const { '*': path } = useParams();
+  const [params] = useSearchParams();
+  const page = pages.find(item => item.path === path);
+  if (!page) return <Navigate to={`/admin/add-lesson/info${params.size ? `?${params}` : ''}`} replace />;
+  return <LessonEditor key={`${path}:${path === 'info' ? 'new' : params.get('lesson') || 'new'}`} page={page} />;
+}
+function LessonEditor({ page }) {
+  const [params, setParams] = useSearchParams();
+  const lessonId = params.get('lesson') || '';
+  const isInfo = page.path === 'info';
+  const isSlides = page.path === 'slides';
+  const key = `admin-lesson:${currentUser().user_id}:${page.path}:${isInfo ? 'new' : lessonId}`;
+  const createDraft = () => isInfo ? blankInfo : [isSlides ? newSlide() : newQuestion(page.path === 'post-test' ? 'fill' : 'choice')];
+  const [draft, setDraft] = useDraft(key, createDraft);
+  const [catalog, setCatalog] = useState({ modules: [], lessons: [] });
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-
-  /* ── Slide helpers ── */
-  const addSlide    = () => setSlides((s) => [...s, { id: Date.now(), title: "", content: "", mediaUrl: "", mediaType: "image", caption: "" }]);
-  const removeSlide = (id) => setSlides((s) => s.filter((x) => x.id !== id));
-  const updateSlide = (id, key, val) => setSlides((s) => s.map((x) => x.id === id ? { ...x, [key]: val } : x));
-  const moveSlide   = (idx, dir) => {
-    const arr = [...slides], target = idx + dir;
-    if (target < 0 || target >= arr.length) return;
-    [arr[idx], arr[target]] = [arr[target], arr[idx]];
-    setSlides(arr);
-  };
-
-  /* ── Pre-Test helpers ── */
-  const addPreQ          = () => setPreQuestions((q) => [...q, { id: Date.now(), question: "", options: ["", "", "", ""], correct: 0 }]);
-  const removePreQ       = (id) => setPreQuestions((q) => q.filter((x) => x.id !== id));
-  const updatePreQ       = (id, key, val) => setPreQuestions((q) => q.map((x) => x.id === id ? { ...x, [key]: val } : x));
-  const updatePreOption  = (qid, idx, val) => setPreQuestions((q) => q.map((x) => {
-    if (x.id !== qid) return x;
-    const opts = [...x.options]; opts[idx] = val; return { ...x, options: opts };
-  }));
-
-  /* ── Post-Test helpers ── */
-  const addPostQ         = () => setPostQuestions((q) => [...q, { id: Date.now(), type: "fill", question: "", answer: "", options: ["", "", "", ""], correct: 0 }]);
-  const removePostQ      = (id) => setPostQuestions((q) => q.filter((x) => x.id !== id));
-  const updatePostQ      = (id, key, val) => setPostQuestions((q) => q.map((x) => x.id === id ? { ...x, [key]: val } : x));
-  const updatePostOption = (qid, idx, val) => setPostQuestions((q) => q.map((x) => {
-    if (x.id !== qid) return x;
-    const opts = [...x.options]; opts[idx] = val; return { ...x, options: opts };
-  }));
-
-  /* ── Save ── */
-  const handleSave = async () => {
-    if (!lessonTitle.trim()) { alert(t("addLesson.alertTitle")); return; }
-    setSaving(true);
+  const [uploading, setUploading] = useState(false);
+  const [notice, setNotice] = useState(null);
+  const [revision, setRevision] = useState(0);
+  const inFlight = useRef(false);
+  const selected = catalog.lessons.find(lesson => String(lesson.lesson_id) === lessonId);
+  const busy = saving || uploading;
+  useEffect(() => {
+    const controller = new AbortController();
+    request('', undefined, controller.signal).then(data => { setCatalog(data); setLoadError(''); }).catch(error => {
+      if (error.name !== 'AbortError') setLoadError(error.message);
+    }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [revision]);
+  const updateEntry = (id, patch) => setDraft(rows => rows.map(row => row.id === id ? { ...row, ...patch } : row));
+  const updateInfo = patch => setDraft(value => ({ ...value, ...patch }));
+  const move = (index, direction) => setDraft(rows => {
+    const next = [...rows];
+    [next[index], next[index + direction]] = [next[index + direction], next[index]];
+    return next;
+  });
+  const upload = async (id, file) => {
+    if (!file) return;
+    setUploading(true); setNotice(null);
     try {
-      const payload = { lessonNo, lessonTitle, lessonDesc, slides, preQuestions, postQuestions };
-      console.log("Lesson payload:", payload);
-      await new Promise((r) => setTimeout(r, 800));
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
-    } finally { setSaving(false); }
+      const form = new FormData(); form.append('file', file);
+      const response = await fetch(`${API_BASE}/api/upload`, { method: 'POST', body: form });
+      const data = await response.json();
+      if (!response.ok || !data.url) throw new Error(data.error || 'อัปโหลดไม่สำเร็จ');
+      updateEntry(id, { mediaUrl: data.url });
+    } catch (error) { setNotice({ error: true, text: error.message }); }
+    finally { setUploading(false); }
   };
-
-  /* ════ RENDER ════ */
-  return (
-    <div className="min-h-screen bg-slate-50">
-      <AdminNavbar />
-
-      <div className="max-w-5xl mx-auto px-4 pt-24 pb-16 space-y-6">
-
-        {/* ── Page Title ── */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800">{t("addLesson.pageTitle", "เพิ่มบทเรียน")}</h1>
-            <p className="text-slate-500 text-sm mt-1">{t("addLesson.pageSubtitle", "สร้างสไลด์บทเรียน โจทย์แบบทดสอบก่อนเรียนและหลังเรียน")}</p>
-          </div>
-          <SaveButton saving={saving} saved={saved} onClick={handleSave} t={t} />
-        </div>
-
-        {/* ══ SECTION 1 — ข้อมูลบทเรียน ══ */}
-        <SectionCard icon={BookOpen} title={t("addLesson.sectionInfo", "ข้อมูลบทเรียน")} gradient="from-amber-400 to-orange-500">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
-              <FieldLabel>{t("addLesson.lessonNo", "บทที่")}</FieldLabel>
-              <input value={lessonNo} onChange={(e) => setLessonNo(e.target.value)} placeholder="1" className={inputCls} />
-            </div>
-            <div className="sm:col-span-2">
-              <FieldLabel>{t("addLesson.lessonTitle", "ชื่อบทเรียน")}</FieldLabel>
-              <input
-                value={lessonTitle}
-                onChange={(e) => setLessonTitle(e.target.value)}
-                placeholder={t("addLesson.lessonTitlePlaceholder", "เช่น เริ่มต้นกับ Python")}
-                className={inputCls}
-              />
-            </div>
-          </div>
-          <div>
-            <FieldLabel>{t("addLesson.lessonDesc", "คำอธิบาย")}</FieldLabel>
-            <textarea
-              value={lessonDesc}
-              onChange={(e) => setLessonDesc(e.target.value)}
-              rows={2}
-              placeholder={t("addLesson.lessonDescPlaceholder", "คำอธิบายสั้น ๆ ของบทเรียนนี้...")}
-              className={textareaCls}
-            />
-          </div>
-        </SectionCard>
-
-        {/* ══ SECTION 2 — สไลด์บทเรียน ══ */}
-        <SectionCard icon={Image} title={t("addLesson.sectionSlides", "สไลด์บทเรียน")} gradient="from-cyan-500 to-blue-500">
-          <div className="space-y-4">
-            {slides.map((slide, idx) => (
-              <div key={slide.id} className="border-2 border-slate-100 rounded-xl p-4 bg-slate-50 hover:border-cyan-200 transition">
-                {/* Slide header */}
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <GripVertical size={16} className="text-slate-400" />
-                    <span className="text-sm font-bold text-cyan-600 bg-cyan-50 px-2 py-0.5 rounded-lg">
-                      {t("addLesson.slide", "สไลด์ที่")} {idx + 1}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button type="button" onClick={() => moveSlide(idx, -1)} disabled={idx === 0}
-                      className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-400 disabled:opacity-30 transition">
-                      <ChevronUp size={14} />
-                    </button>
-                    <button type="button" onClick={() => moveSlide(idx, 1)} disabled={idx === slides.length - 1}
-                      className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-400 disabled:opacity-30 transition">
-                      <ChevronDown size={14} />
-                    </button>
-                    {slides.length > 1 && (
-                      <button type="button" onClick={() => removeSlide(slide.id)}
-                        className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition">
-                        <X size={14} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <FieldLabel>{t("addLesson.slideTitle", "หัวข้อสไลด์")}</FieldLabel>
-                    <input value={slide.title} onChange={(e) => updateSlide(slide.id, "title", e.target.value)}
-                      placeholder={t("addLesson.slideTitlePlaceholder", "เช่น ตัวอย่างการใช้ print()")} className={inputCls} />
-                  </div>
-                  <div>
-                    <FieldLabel>{t("addLesson.mediaType", "ประเภทสื่อ")}</FieldLabel>
-                    <select value={slide.mediaType} onChange={(e) => updateSlide(slide.id, "mediaType", e.target.value)}
-                      className={inputCls}>
-                      <option value="image">{t("addLesson.mediaImage", "รูปภาพ")}</option>
-                      <option value="gif">{t("addLesson.mediaGif", "GIF")}</option>
-                      <option value="video">{t("addLesson.mediaVideo", "วิดีโอ")}</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="mt-3">
-                  <FieldLabel>{t("addLesson.slideContent", "เนื้อหา / คำอธิบาย")}</FieldLabel>
-                  <textarea value={slide.content} onChange={(e) => updateSlide(slide.id, "content", e.target.value)}
-                    rows={3} placeholder={t("addLesson.slideContentPlaceholder", "อธิบายเนื้อหาของสไลด์นี้...")}
-                    className={textareaCls} />
-                </div>
-
-                <div className="mt-3">
-                  <FieldLabel>{t("addLesson.mediaUpload", "อัปโหลดไฟล์สื่อ")}</FieldLabel>
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <UploadButton
-                      accept={slide.mediaType === "video" ? "video/*,image/gif" : "image/*"}
-                      onUploaded={(url) => updateSlide(slide.id, "mediaUrl", url)}
-                      label={t("addLesson.chooseFile", "เลือกไฟล์")}
-                    />
-                    {slide.mediaUrl && (
-                      <div className="relative group">
-                        {slide.mediaType === "video"
-                          ? <video src={`${API_BASE}${slide.mediaUrl}`} className="h-20 w-32 object-cover rounded-xl border-2 border-slate-200" controls />
-                          : <img src={`${API_BASE}${slide.mediaUrl}`} alt="preview" className="h-20 w-32 object-cover rounded-xl border-2 border-slate-200" />
-                        }
-                        <button type="button" onClick={() => updateSlide(slide.id, "mediaUrl", "")}
-                          className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition">
-                          <X size={11} />
-                        </button>
-                      </div>
-                    )}
-                    {slide.mediaUrl && (
-                      <input value={slide.caption} onChange={(e) => updateSlide(slide.id, "caption", e.target.value)}
-                        placeholder={t("addLesson.captionPlaceholder", "คำอธิบายภาพ...")}
-                        className="flex-1 min-w-[160px] border-2 border-gray-200 rounded-xl px-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-cyan-400 transition bg-white" />
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-          <AddBtn onClick={addSlide} label={t("addLesson.addSlide", "+ เพิ่มสไลด์")} />
-        </SectionCard>
-
-        {/* ══ SECTION 3 — Pre-Test ══ */}
-        <SectionCard icon={ClipboardList} title={t("addLesson.sectionPreTest", "แบบทดสอบก่อนเรียน (Pre-Test)")} gradient="from-violet-500 to-purple-600">
-          <p className="text-xs text-slate-400 -mt-2">{t("addLesson.preTestDesc", "ข้อสอบปรนัย 4 ตัวเลือก — คลิกวงกลมหน้าตัวเลือกเพื่อตั้งเป็นคำตอบที่ถูก")}</p>
-          <div className="space-y-4">
-            {preQuestions.map((q, idx) => (
-              <QuestionCard key={q.id} q={q} idx={idx} accentClass="purple"
-                onRemove={() => removePreQ(q.id)} canRemove={preQuestions.length > 1}
-                onUpdateQ={(key, val) => updatePreQ(q.id, key, val)}
-                onUpdateOption={(i, val) => updatePreOption(q.id, i, val)} t={t} />
-            ))}
-          </div>
-          <AddBtn onClick={addPreQ} label={t("addLesson.addQuestion", "+ เพิ่มคำถาม")} />
-        </SectionCard>
-
-        {/* ══ SECTION 4 — Post-Test ══ */}
-        <SectionCard icon={FileQuestion} title={t("addLesson.sectionPostTest", "แบบทดสอบหลังเรียน (Post-Test)")} gradient="from-emerald-500 to-teal-600">
-          <p className="text-xs text-slate-400 -mt-2">{t("addLesson.postTestDesc", "รองรับทั้งแบบ เติมคำ และ ปรนัย")}</p>
-          <div className="space-y-4">
-            {postQuestions.map((q, idx) => (
-              <PostQuestionCard key={q.id} q={q} idx={idx}
-                onRemove={() => removePostQ(q.id)} canRemove={postQuestions.length > 1}
-                onUpdateQ={(key, val) => updatePostQ(q.id, key, val)}
-                onUpdateOption={(i, val) => updatePostOption(q.id, i, val)} t={t} />
-            ))}
-          </div>
-          <AddBtn onClick={addPostQ} label={t("addLesson.addQuestion", "+ เพิ่มคำถาม")} />
-        </SectionCard>
-
-        {/* ── Bottom Save ── */}
-        <div className="flex justify-end pt-2">
-          <SaveButton saving={saving} saved={saved} onClick={handleSave} t={t} large />
-        </div>
-
-      </div>
-    </div>
-  );
-}
-
-/* ══════════════════════════════════════════════
-   Save Button Component
-══════════════════════════════════════════════ */
-function SaveButton({ saving, saved, onClick, t, large }) {
-  const sizeClass = large ? "px-10 py-3.5 text-base" : "px-6 py-2.5 text-sm";
-  return (
-    <button
-      onClick={onClick}
-      disabled={saving}
-      className={`flex items-center gap-2 ${sizeClass} rounded-xl font-bold transition shadow-md
-        ${saved
-          ? "bg-emerald-500 text-white shadow-emerald-200"
-          : "bg-gradient-to-r from-cyan-500 to-blue-500 text-white hover:opacity-90 shadow-blue-200"
-        } disabled:opacity-60`}
-    >
-      {saving
-        ? <><Loader2 size={16} className="animate-spin" /> {t("addLesson.saving", "กำลังบันทึก...")}</>
-        : saved
-        ? <><CheckCircle2 size={16} /> {t("addLesson.saved", "บันทึกแล้ว!")}</>
-        : <><Save size={16} /> {t("addLesson.save", "บันทึกบทเรียน")}</>
+  const save = async event => {
+    event.preventDefault();
+    if (inFlight.current) return;
+    inFlight.current = true; setSaving(true); setNotice(null);
+    try {
+      if (isInfo) {
+        const result = await request('', { ...draft, moduleId: Number(draft.moduleId), orderIndex: Number(draft.orderIndex) });
+        setDraft(blankInfo);
+        setParams({ lesson: String(result.lesson_id), created: '1' });
+      } else {
+        if (!selected) throw new Error('กรุณาเลือกบทเรียนก่อนบันทึก');
+        const section = isSlides ? 'slides' : page.path === 'pre-test' ? 'pre' : 'post';
+        const result = await request(`/${lessonId}/${section}`, { entries: draft });
+        setDraft(createDraft());
+        setNotice({ text: `บันทึก${isSlides ? 'สไลด์' : page.label}แล้ว ${result.added} รายการใน “${selected.title}” ผู้เรียนจะเห็นเมื่อเปิดบทเรียนครั้งถัดไปหรือรีเฟรชหน้า` });
       }
-    </button>
-  );
-}
-
-/* ══════════════════════════════════════════════
-   Pre-Test Question Card
-══════════════════════════════════════════════ */
-function QuestionCard({ q, idx, onRemove, canRemove, onUpdateQ, onUpdateOption, t }) {
-  return (
-    <div className="border-2 border-violet-100 rounded-xl p-4 bg-violet-50/50 hover:border-violet-200 transition">
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-sm font-bold text-violet-600 bg-violet-100 px-2.5 py-0.5 rounded-lg">
-          {t("addLesson.question", "คำถาม")} {idx + 1}
-        </span>
-        {canRemove && (
-          <button type="button" onClick={onRemove}
-            className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition">
-            <Trash2 size={14} />
-          </button>
-        )}
-      </div>
-
-      <input value={q.question} onChange={(e) => onUpdateQ("question", e.target.value)}
-        placeholder={t("addLesson.questionPlaceholder", "พิมพ์คำถามที่นี่...")}
-        className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 transition bg-white mb-3" />
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        {q.options.map((opt, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <button type="button" onClick={() => onUpdateQ("correct", i)}
-              className={`flex-shrink-0 transition ${q.correct === i ? "ring-2 ring-violet-400 rounded-full" : ""}`}>
-              {q.correct === i
-                ? <CheckCircle2 size={18} className="text-violet-500" />
-                : <Circle size={18} className="text-slate-300" />}
-            </button>
-            <input value={opt} onChange={(e) => onUpdateOption(i, e.target.value)}
-              placeholder={`${t("addLesson.option", "ตัวเลือก")} ${i + 1}`}
-              className="flex-1 border-2 border-gray-200 rounded-xl px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-violet-400 transition bg-white" />
+      setRevision(value => value + 1);
+    } catch (error) { setNotice({ error: true, text: error.message }); }
+    finally { inFlight.current = false; setSaving(false); }
+  };
+  return <div className="min-h-screen bg-pysim-surface">
+    <AdminNavbar />
+    <main className="mx-auto max-w-5xl space-y-6 px-4 pb-16 pt-24">
+      <header><h1 className="text-2xl font-bold text-pysim-on-surface">{page.label}</h1><p className="mt-2 text-sm text-pysim-on-surface-variant">เลือกหน้าเพื่อเพิ่มข้อมูลแต่ละส่วน ร่างที่ยังไม่บันทึกจะเก็บไว้ในแท็บนี้</p></header>
+      <p className="rounded-xl bg-pysim-primary-fixed/30 p-4 text-sm leading-6 text-pysim-primary">ข้อมูลที่บันทึกจะแสดงในฝั่งผู้เรียน: Pre-test → สไลด์บทเรียน → Post-test โดยยังใช้เงื่อนไขเลเวลและการผ่านบทก่อนหน้าตามเดิม</p>
+      <nav aria-label="จัดการบทเรียน" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {pages.map(item => <NavLink key={item.path} to={`/admin/add-lesson/${item.path}${lessonId ? `?lesson=${lessonId}` : ''}`}
+          onClick={event => { if (busy) event.preventDefault(); }} aria-disabled={busy}
+          className={({ isActive }) => `rounded-xl border px-4 py-4 text-center text-sm font-bold transition ${isActive ? 'border-pysim-primary bg-pysim-primary text-white shadow-md' : 'border-pysim-outline-variant/50 bg-white text-pysim-on-surface-variant hover:border-pysim-primary'}`}>
+          {item.label}</NavLink>)}
+      </nav>
+      {loadError && <div role="alert" className="rounded-xl bg-red-50 p-4 text-red-700">{loadError}<button type="button" className="ml-3 underline" onClick={() => setRevision(value => value + 1)}>ลองโหลดใหม่</button></div>}
+      {notice && <p role={notice.error ? 'alert' : 'status'} className={`rounded-xl p-4 ${notice.error ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>{notice.text}</p>}
+      {params.get('created') && <p role="status" className="rounded-xl bg-emerald-50 p-4 text-emerald-700">สร้างบทเรียน{selected ? ` “${selected.title}”` : ''}แล้วและแสดงในรายการบทเรียนของผู้เรียน เลือกหน้าเพิ่มสไลด์สอน, Pre-test หรือ Post-test เพื่อเพิ่มเนื้อหาให้บทเรียนนี้</p>}
+      {!isInfo && <section className="space-y-3 rounded-2xl border border-pysim-outline-variant/50 bg-white p-5">
+        <Field title="เลือกบทเรียน"><select required value={lessonId} disabled={busy || loading} className={inputClass} onChange={event => setParams(event.target.value ? { lesson: event.target.value } : {})}>
+          <option value="">{loading ? 'กำลังโหลดบทเรียน...' : 'เลือกบทเรียนที่จะเพิ่มข้อมูล'}</option>
+          {catalog.modules.map(module => <optgroup key={module.module_id} label={module.title}>{catalog.lessons.filter(lesson => lesson.module_id === module.module_id).map(lesson => <option key={lesson.lesson_id} value={lesson.lesson_id}>{lesson.order_index}. {lesson.title}</option>)}</optgroup>)}
+        </select></Field>
+        {selected ? <p className="text-sm text-pysim-on-surface-variant">มีสไลด์ {selected.slide_count} รายการ · Pre-test {selected.pre_count} ข้อ · Post-test {selected.post_count} ข้อ — รายการใหม่จะเพิ่มต่อท้าย</p> : <p className="text-sm text-pysim-on-surface-variant">หากยังไม่มีบทเรียน ให้สร้างที่หน้า “ข้อมูลบทเรียน” ก่อน</p>}
+      </section>}
+      <form onSubmit={save}>
+        <fieldset disabled={busy || loading || !!loadError || (!isInfo && !selected)} className="min-w-0 overflow-hidden rounded-2xl border border-pysim-outline-variant/30 bg-white whisper-shadow disabled:opacity-60">
+          <div className="python-gradient p-5"><h2 className="text-lg font-bold text-white">{isInfo ? 'สร้างบทเรียนใหม่' : page.label}</h2></div>
+          <div className="space-y-5 p-4 sm:p-6">
+            {isInfo ? <>
+              <Field title="หมวดบทเรียน"><select required className={inputClass} value={draft.moduleId} onChange={event => updateInfo({ moduleId: event.target.value })}><option value="">เลือกหมวดบทเรียน</option>{catalog.modules.map(module => <option key={module.module_id} value={module.module_id}>{module.title}</option>)}</select></Field>
+              {draft.moduleId && <p className="text-sm text-pysim-on-surface-variant">ลำดับที่มีแล้ว: {catalog.lessons.filter(lesson => String(lesson.module_id) === draft.moduleId).map(lesson => lesson.order_index).join(', ') || 'ยังไม่มี'}</p>}
+              <div className="grid gap-4 sm:grid-cols-3"><Field title="ลำดับบทเรียน"><input required type="number" min="1" step="1" className={inputClass} value={draft.orderIndex} onChange={event => updateInfo({ orderIndex: event.target.value })} /></Field>
+                <div className="sm:col-span-2"><Field title="ชื่อบทเรียน"><input required maxLength={100} className={inputClass} value={draft.title} onChange={event => updateInfo({ title: event.target.value })} placeholder="เช่น เริ่มต้นกับ Python" /></Field></div></div>
+              <Field title="คำอธิบายบทเรียน"><textarea rows={3} maxLength={10000} className={inputClass} value={draft.description} onChange={event => updateInfo({ description: event.target.value })} /></Field>
+            </> : <>
+              {!isSlides && <p className="text-sm text-pysim-on-surface-variant">เพิ่มข้อสอบแบบเติมคำหรือปรนัย 4 ตัวเลือก สำหรับปรนัยให้เลือกวงกลมหน้าคำตอบที่ถูกต้อง</p>}
+              {draft.map((entry, index) => <section key={entry.id} className="min-w-0 space-y-4 rounded-xl border border-pysim-outline-variant/50 bg-pysim-surface p-4">
+                <div className="flex items-center justify-between gap-2"><h3 className="font-bold text-pysim-on-surface-variant">{isSlides ? 'สไลด์' : 'คำถาม'}ที่ {index + 1}</h3><div className="flex gap-1">
+                  <button type="button" className="rounded-lg p-2 hover:bg-pysim-surface-container disabled:opacity-30" aria-label="เลื่อนขึ้น" disabled={index === 0} onClick={() => move(index, -1)}><ArrowUp size={16} /></button>
+                  <button type="button" className="rounded-lg p-2 hover:bg-pysim-surface-container disabled:opacity-30" aria-label="เลื่อนลง" disabled={index === draft.length - 1} onClick={() => move(index, 1)}><ArrowDown size={16} /></button>
+                  <button type="button" className="rounded-lg p-2 text-red-500 hover:bg-red-50 disabled:opacity-30" aria-label="ลบรายการร่าง" disabled={draft.length === 1} onClick={() => setDraft(rows => rows.filter(row => row.id !== entry.id))}><Trash2 size={16} /></button></div></div>
+                {isSlides ? <>
+                  <Field title="หัวข้อสไลด์"><input required maxLength={255} className={inputClass} value={entry.title} onChange={event => updateEntry(entry.id, { title: event.target.value })} /></Field>
+                  <Field title="เนื้อหา / คำอธิบาย"><textarea rows={4} maxLength={20000} className={inputClass} value={entry.content} onChange={event => updateEntry(entry.id, { content: event.target.value })} /></Field>
+                  <Field title="ประเภทสื่อ"><select className={inputClass} value={entry.mediaType} onChange={event => updateEntry(entry.id, { mediaType: event.target.value })}><option value="image">รูปภาพ</option><option value="gif">GIF</option><option value="video">วิดีโอ</option></select></Field>
+                  <Field title="อัปโหลดไฟล์สื่อ (ไม่บังคับ)"><input type="file" className="block w-full min-w-0 text-sm" accept={entry.mediaType === 'video' ? 'video/*' : 'image/*'} onChange={event => { upload(entry.id, event.target.files?.[0]); event.target.value = ''; }} /></Field>
+                  <Field title="หรือใส่ URL สื่อ"><input maxLength={255} className={inputClass} value={entry.mediaUrl} onChange={event => updateEntry(entry.id, { mediaUrl: event.target.value })} placeholder="https://... หรือ /uploads/..." /></Field>
+                  {entry.mediaUrl && (entry.mediaType === 'video' ? <video src={assetUrl(entry.mediaUrl)} controls className="max-h-64 max-w-full rounded-xl" /> : <img src={assetUrl(entry.mediaUrl)} alt="ตัวอย่างสไลด์" className="max-h-64 max-w-full rounded-xl object-contain" />)}
+                </> : <>
+                  <Field title="ประเภทคำถาม"><select className={inputClass} value={entry.type} onChange={event => updateEntry(entry.id, { type: event.target.value })}><option value="fill">เติมคำ</option><option value="choice">ปรนัย</option></select></Field>
+                  <Field title="คำถาม"><textarea required rows={2} maxLength={10000} className={inputClass} value={entry.question} onChange={event => updateEntry(entry.id, { question: event.target.value })} /></Field>
+                  {entry.type === 'fill' ? <Field title="คำตอบที่ถูกต้อง"><input required maxLength={10000} className={inputClass} value={entry.answer} onChange={event => updateEntry(entry.id, { answer: event.target.value })} /></Field> : <div className="grid gap-3 sm:grid-cols-2">{entry.options.map((option, optionIndex) => <div key={optionIndex} className="flex min-w-0 items-center gap-2">
+                    <input type="radio" className="h-5 w-5 shrink-0 accent-pysim-primary" name={`correct-${entry.id}`} aria-label={`เลือกตัวเลือก ${optionIndex + 1} เป็นคำตอบที่ถูกต้อง`} checked={entry.correct === optionIndex} onChange={() => updateEntry(entry.id, { correct: optionIndex })} />
+                    <input required maxLength={255} className={inputClass} aria-label={`ตัวเลือก ${optionIndex + 1}`} placeholder={`ตัวเลือก ${optionIndex + 1}`} value={option} onChange={event => updateEntry(entry.id, { options: entry.options.map((value, i) => i === optionIndex ? event.target.value : value) })} />
+                  </div>)}</div>}
+                </>}
+              </section>)}
+              <button type="button" className={buttonClass} disabled={draft.length >= 100} onClick={() => setDraft(rows => [...rows, isSlides ? newSlide() : newQuestion(page.path === 'post-test' ? 'fill' : 'choice')])}><Plus size={16} />{isSlides ? 'เพิ่มสไลด์' : 'เพิ่มคำถาม'}</button>
+            </>}
+            <div className="flex justify-end border-t border-pysim-outline-variant/30 pt-5"><button type="submit" className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-pysim-primary px-6 py-3 font-bold text-white hover:bg-pysim-on-primary-fixed sm:w-auto"><Save size={18} />{saving ? 'กำลังบันทึก...' : uploading ? 'กำลังอัปโหลด...' : `บันทึก${isSlides ? 'สไลด์' : page.label}`}</button></div>
           </div>
-        ))}
-      </div>
-      <p className="text-xs text-slate-400 mt-2">{t("addLesson.clickToCorrect", "คลิกที่วงกลมเพื่อตั้งเป็นคำตอบที่ถูกต้อง")}</p>
-    </div>
-  );
-}
-
-/* ══════════════════════════════════════════════
-   Post-Test Question Card
-══════════════════════════════════════════════ */
-function PostQuestionCard({ q, idx, onRemove, canRemove, onUpdateQ, onUpdateOption, t }) {
-  return (
-    <div className="border-2 border-emerald-100 rounded-xl p-4 bg-emerald-50/50 hover:border-emerald-200 transition">
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-sm font-bold text-emerald-600 bg-emerald-100 px-2.5 py-0.5 rounded-lg">
-          {t("addLesson.question", "คำถาม")} {idx + 1}
-        </span>
-        {canRemove && (
-          <button type="button" onClick={onRemove}
-            className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition">
-            <Trash2 size={14} />
-          </button>
-        )}
-      </div>
-
-      {/* Type Toggle */}
-      <div className="flex gap-2 mb-3">
-        {["fill", "choice"].map((type) => (
-          <button key={type} type="button" onClick={() => onUpdateQ("type", type)}
-            className={`px-4 py-1.5 rounded-xl text-xs font-bold transition ${
-              q.type === type
-                ? "bg-emerald-500 text-white shadow-sm"
-                : "bg-white border-2 border-slate-200 text-slate-500 hover:border-emerald-300 hover:text-emerald-600"
-            }`}>
-            {type === "fill" ? t("addLesson.typeFill", "เติมคำ") : t("addLesson.typeChoice", "ปรนัย")}
-          </button>
-        ))}
-      </div>
-
-      <input value={q.question} onChange={(e) => onUpdateQ("question", e.target.value)}
-        placeholder={t("addLesson.questionPlaceholder", "พิมพ์คำถามที่นี่...")}
-        className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 transition bg-white mb-3" />
-
-      {q.type === "fill" ? (
-        <div>
-          <FieldLabel>{t("addLesson.correctAnswer", "คำตอบที่ถูกต้อง")}</FieldLabel>
-          <input value={q.answer} onChange={(e) => onUpdateQ("answer", e.target.value)}
-            placeholder={t("addLesson.answerPlaceholder", "พิมพ์คำตอบ...")}
-            className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-400 transition bg-white" />
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {q.options.map((opt, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <button type="button" onClick={() => onUpdateQ("correct", i)}
-                className={`flex-shrink-0 transition ${q.correct === i ? "ring-2 ring-emerald-400 rounded-full" : ""}`}>
-                {q.correct === i
-                  ? <CheckCircle2 size={18} className="text-emerald-500" />
-                  : <Circle size={18} className="text-slate-300" />}
-              </button>
-              <input value={opt} onChange={(e) => onUpdateOption(i, e.target.value)}
-                placeholder={`${t("addLesson.option", "ตัวเลือก")} ${i + 1}`}
-                className="flex-1 border-2 border-gray-200 rounded-xl px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-400 transition bg-white" />
-            </div>
-          ))}
-          <p className="text-xs text-slate-400 sm:col-span-2">{t("addLesson.clickToCorrect", "คลิกที่วงกลมเพื่อตั้งเป็นคำตอบที่ถูกต้อง")}</p>
-        </div>
-      )}
-    </div>
-  );
+        </fieldset>
+      </form>
+      {isInfo && <section className="rounded-2xl border border-pysim-outline-variant/50 bg-white p-5">
+        <h2 className="text-lg font-bold text-pysim-on-surface">บทเรียนในระบบ ({catalog.lessons.length})</h2>
+        <p className="mt-1 text-sm text-pysim-on-surface-variant">เลือกบทเรียนเพื่อเพิ่มเนื้อหา รายการใหม่จะเพิ่มต่อท้ายข้อมูลเดิม</p>
+        <div className="mt-4 space-y-3">{catalog.modules.map(module => <details key={module.module_id} className="rounded-xl border border-pysim-outline-variant/50 p-4" open={selected?.module_id === module.module_id || undefined}>
+          <summary className="cursor-pointer font-semibold text-pysim-primary">{module.title}</summary>
+          <div className="mt-3 space-y-3">{catalog.lessons.filter(lesson => lesson.module_id === module.module_id).map(lesson => <article key={lesson.lesson_id} className="rounded-xl bg-pysim-surface p-4">
+            <h3 className="font-semibold">{lesson.order_index}. {lesson.title}</h3>
+            <p className="mt-1 text-sm text-pysim-on-surface-variant">สไลด์ {lesson.slide_count} รายการ · Pre-test {lesson.pre_count} ข้อ · Post-test {lesson.post_count} ข้อ</p>
+            <div className="mt-3 flex flex-wrap gap-2">{pages.filter(item => item.path !== 'info').map(item => <NavLink key={item.path} to={`/admin/add-lesson/${item.path}?lesson=${lesson.lesson_id}`} className={buttonClass}>{item.label}</NavLink>)}</div>
+          </article>)}</div>
+        </details>)}</div>
+      </section>}
+    </main>
+  </div>;
 }

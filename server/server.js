@@ -27,6 +27,15 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 const db = require('./db');
+const { createThemeRouter } = require('./themeRoutes');
+const { issueAdminToken } = require('./adminAccess');
+app.use('/api/themes', createThemeRouter(db));
+const { createLessonAdminRouter } = require('./lessonAdminRoutes');
+app.use('/api/admin/lessons', createLessonAdminRouter(db));
+const { createLessonContentRouter } = require('./lessonContentRoutes');
+app.use('/api', createLessonContentRouter(db));
+const { createStudentProgressRouter } = require('./studentProgressRoutes');
+app.use('/api/admin/student-progress', createStudentProgressRouter(db));
 
 const GOOGLE_CLIENT_ID = String(process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || '').trim();
 const isValidGoogleClientId = (clientId) => /^[\w.-]+\.apps\.googleusercontent\.com$/.test(clientId);
@@ -2410,6 +2419,7 @@ app.post('/login', async (req, res) => {
             res.json({
                 success: true,
                 user_id: users[0].user_id,
+                admin_token: issueAdminToken(users[0]),
                 username: users[0].username,
                 email: users[0].email,
                 role: users[0].role || 'user',
@@ -2417,6 +2427,7 @@ app.post('/login', async (req, res) => {
                 xp: users[0].xp || 0,
                 user: { 
                     id: users[0].user_id, 
+                    admin_token: issueAdminToken(users[0]),
                     user_id: users[0].user_id, 
                     username: users[0].username,
                     role: users[0].role || 'user',
@@ -2646,6 +2657,7 @@ app.post('/api/login', async (req, res) => {
         if (!isMatch) return res.status(401).json({ message: 'Wrong password' });
         res.json({
             user_id: user.user_id,
+            admin_token: issueAdminToken(user),
             username: user.username,
             email: user.email,
             role: user.role || 'user',
@@ -2722,6 +2734,7 @@ app.post('/api/auth/google', async (req, res) => {
             }
             res.json({
                 user_id: user.user_id,
+                admin_token: issueAdminToken(user),
                 username: user.username,
                 email: user.email,
                 role: user.role || 'user',
@@ -4261,112 +4274,6 @@ app.post('/api/password/reset', async (req, res) => {
     }
 });
 
-app.get('/api/course-content', async (req, res) => {
-    try {
-        const currentLevel = Number(req.query.user_level || req.query.userLevel || 0);
-        const userId = req.query.user_id || req.query.userId || 0; // รับค่า userId จาก query
-
-        // ปรับ Query โดยใช้ JOIN เพื่อดึงสถิติแบบฝึกหัดในคราวเดียว
-        //
-        // COUNT(DISTINCT ...) on both sides, not COUNT(*): the join fans out one
-        // row per submission, so a learner who submits the same exercise twice
-        // would otherwise be shown "ภาคปฏิบัติ 2/9" for a lesson that has five.
-        const [modules] = await db.execute('SELECT module_id, title, order_index, required_level FROM modules ORDER BY order_index');
-        const [lessons] = await db.execute(`
-            SELECT
-                l.lesson_id,
-                l.module_id,
-                l.title,
-                l.order_index,
-                l.required_level,
-                COUNT(DISTINCT e.exercise_id) as total_count,
-                COUNT(DISTINCT CASE WHEN es.is_passed = 1 THEN es.exercise_id END) as completed_count,
-                COUNT(DISTINCT es.exercise_id) as attempted_count
-            FROM lessons l
-            LEFT JOIN exercises e ON l.lesson_id = e.lesson_id
-            LEFT JOIN exercise_submissions es ON e.exercise_id = es.exercise_id AND es.user_id = ?
-            GROUP BY l.lesson_id, l.module_id, l.title, l.order_index, l.required_level
-            ORDER BY l.order_index
-        `, [userId]);
-
-        // What this learner has done in each lesson's quizzes, and - separately -
-        // which quizzes each lesson even has. The learning page's badge and its
-        // sub-lesson unlocking both hang off these, and until now the endpoint
-        // returned neither, so every lesson on screen read "ยังไม่เริ่ม".
-        const [quizAttempts] = await db.execute(
-            `SELECT lesson_id, quiz_type, score, total_questions
-               FROM lesson_quiz_attempts WHERE user_id = ?`,
-            [userId]
-        );
-        const [quizKindRows] = await db.execute('SELECT lesson_id, quiz_type FROM lesson_quizzes');
-
-        const attemptByLesson = new Map();
-        for (const a of quizAttempts) {
-            const key = Number(a.lesson_id);
-            if (!attemptByLesson.has(key)) attemptByLesson.set(key, {});
-            attemptByLesson.get(key)[String(a.quiz_type).toLowerCase()] = a;
-        }
-        const quizKinds = new Map();
-        for (const row of quizKindRows) {
-            const key = Number(row.lesson_id);
-            if (!quizKinds.has(key)) quizKinds.set(key, new Set());
-            quizKinds.get(key).add(String(row.quiz_type).toLowerCase());
-        }
-
-        const moduleRows = Array.isArray(modules) ? modules : [];
-        const lessonRows = Array.isArray(lessons) ? lessons : [];
-
-        const data = moduleRows.map((m) => ({
-            module_id: m.module_id,
-            title: m.title,
-            required_level: m.required_level || 0,
-            is_locked: currentLevel < Number(m.required_level || 0),
-            lessons: lessonRows
-                .filter(l => l.module_id === m.module_id)
-                .map(l => {
-                    const id = Number(l.lesson_id);
-                    const attempts = attemptByLesson.get(id) || {};
-                    const kinds = quizKinds.get(id) || new Set();
-                    const progress = evaluateLesson({
-                        pre: attempts.pre || null,
-                        post: attempts.post || null,
-                        hasPreQuiz: kinds.has('pre'),
-                        hasPostQuiz: kinds.has('post'),
-                        exercisesTotal: Number(l.total_count || 0),
-                        exercisesPassed: Number(l.completed_count || 0),
-                        exercisesAttempted: Number(l.attempted_count || 0),
-                    });
-                    return {
-                        lesson_id: l.lesson_id,
-                        id: l.lesson_id,
-                        title: l.title,
-                        required_level: l.required_level || 0,
-                        is_locked: currentLevel < Number(l.required_level || 0),
-                        completed_count: progress.exercisesPassed,
-                        total_count: progress.exercisesTotal,
-                        attempted_count: progress.exercisesAttempted,
-                        has_pre_quiz: kinds.has('pre'),
-                        has_post_quiz: kinds.has('post'),
-                        pre_quiz_completed: progress.preTaken,
-                        post_quiz_completed: progress.postPassed,
-                        // What the page actually renders: the badge reads
-                        // `status`, and the next sub-lesson opens on `opens_next`.
-                        status: progress.status,
-                        percent: progress.percent,
-                        is_started: progress.started,
-                        is_completed: progress.completed,
-                        opens_next: progress.opensNext,
-                    };
-                })
-        }));
-        
-        res.json(data);
-    } catch (err) {
-        const message = logRouteError('❌ Course Content Error:', err);
-        res.status(500).json({ error: message });
-    }
-});
-
 app.get('/api/competitive/challenges', async (req, res) => {
     const userId = Number(req.query.userId);
 
@@ -5276,37 +5183,6 @@ const ensurePasswordResetSchema = async () => {
 
 
 // --- Lesson Slides ---
-app.get('/api/lessons/:lessonId/slides', async (req, res) => {
-    try {
-        const [rows] = await db.execute(
-            'SELECT slide_id, slide_order, slide_title AS title, slide_content, slide_src, slide_type FROM lesson_slides WHERE lesson_id = ? ORDER BY slide_order',
-            [req.params.lessonId]
-        );
-        res.json(rows);
-    } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-// --- Lesson Quizzes ---
-app.get('/api/lessons/:lessonId/quizzes', async (req, res) => {
-    try {
-        const [quizRows] = await db.execute('SELECT quiz_id, quiz_type FROM lesson_quizzes WHERE lesson_id = ? ORDER BY quiz_type', [req.params.lessonId]);
-        const quizzes = [];
-        for (const quiz of quizRows) {
-            const [questions] = await db.execute('SELECT question_id, question_text, question_type, correct_answer FROM quiz_questions WHERE quiz_id = ? ORDER BY question_order', [quiz.quiz_id]);
-            for (const q of questions) {
-                if (q.question_type === 'choice') {
-                    const [choices] = await db.execute('SELECT choice_text FROM question_choices WHERE question_id = ? ORDER BY choice_id', [q.question_id]);
-                    q.choices = choices;
-                } else {
-                    q.choices = [];
-                }
-            }
-            quizzes.push({ quiz_type: quiz.quiz_type, questions });
-        }
-        res.json(quizzes);
-    } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
 // --- User Level Update ---
 app.post('/api/user/update-level', async (req, res) => {
     const { user_id, level } = req.body;
@@ -8327,8 +8203,7 @@ app.get('/api/mini-game/modules/:moduleId', async (req, res) => {
                     1 AS is_active
              FROM mini_game_exercises
              WHERE lesson_id = ?
-             ORDER BY CAST(exercise_order AS UNSIGNED) ASC, exercise_order ASC, exercise_id ASC
-             LIMIT 3`,
+             ORDER BY CAST(exercise_order AS UNSIGNED) ASC, exercise_order ASC, exercise_id ASC`,
             [lessonId]
         );
 
@@ -8609,6 +8484,7 @@ const [rows] = await db.execute(
        p.user_id,
        p.exercise_id,
        p.exercise_id AS mini_game_module_id,
+    p.is_completed,
        e.lesson_id,
        s.submitted_code,
        0 AS score,

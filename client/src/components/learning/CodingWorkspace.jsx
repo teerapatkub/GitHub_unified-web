@@ -423,6 +423,7 @@ export default function CodingWorkspace({
 
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-b-xl border border-t-0 border-slate-200 bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]">
                 <div className="relative min-h-0 flex-1 overflow-hidden bg-white">
+                  <div data-tour="ai-task-editor" className="h-full">
                   <Editor
                     height="100%"
                     defaultLanguage="python"
@@ -448,6 +449,7 @@ export default function CodingWorkspace({
                       },
                     }}
                   />
+                  </div>
 
                   {isLoading ? (
                     <div className={`absolute right-5 top-4 flex items-center gap-2 text-xs font-bold ${accentStyles.text}`}>
@@ -496,6 +498,7 @@ export default function CodingWorkspace({
                     <button
                       type="button"
                       onClick={handleRunTests}
+                      data-tour="ai-task-tests"
                       disabled={isRunning || isLoading}
                       className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold text-white shadow transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${isSuccess ? 'bg-emerald-500 hover:bg-emerald-600' : accentStyles.button}`}
                     >
@@ -505,6 +508,7 @@ export default function CodingWorkspace({
                     <button
                       type="button"
                       onClick={handleSubmit}
+                      data-tour="ai-task-submit"
                       disabled={isRunning || isLoading || isSubmitting || !hasPassedTests}
                       className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold text-white shadow transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${accentStyles.button}`}
                     >

@@ -1287,16 +1287,9 @@ db.ready = (async () => {
                     [set.set_key, item.item_type]
                 );
                 const effects = item.effects ? JSON.stringify(item.effects) : null;
-                if (existing.length > 0) {
-                    await db.query(
-                        `UPDATE shop_items
-                            SET name = ?, description = ?, type = ?, item_type = ?, rarity = ?,
-                                price = ?, asset_url = ?, effects = ?, is_active = 1, is_available = 1
-                          WHERE item_id = ?`,
-                        [item.name, item.description, item.item_type, item.item_type, item.rarity,
-                         item.price, item.asset_url, effects, existing[0].item_id]
-                    );
-                } else {
+                // Existing art, prices and visibility belong to the administrator.
+                // Seeding must never undo edits (including directly imported art).
+                if (existing.length === 0) {
                     await db.query(
                         `INSERT INTO shop_items
                             (name, description, type, item_type, rarity, price, asset_url, effects,

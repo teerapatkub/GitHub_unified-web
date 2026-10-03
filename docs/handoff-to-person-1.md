@@ -1,5 +1,16 @@
 # ไฟล์ของ Person 1 ที่ Person 3 เข้าไปแก้
 
+## 2026-10-02 — หน้าแอดมินเพิ่มของตกแต่ง (งาน Person 2 ตามคำขอผู้ใช้)
+
+- เพิ่ม `server/themeRoutes.js` และเชื่อม `ThemePage.jsx` กับ `shop_items` เดิมทั้งสี่หมวด แก้ Cannot POST /api/themes
+- เพิ่ม token จาก login ปกติ/Google สำหรับ API จัดการของตกแต่ง ตรวจ role ปัจจุบันในฐานข้อมูลซ้ำ ผู้ใช้ต้องล็อกอินใหม่หลังรีสตาร์ต
+- การแก้รายการคง item_id, set_key, rarity และความเป็นเจ้าของเดิม ใช้ปิดแสดงในร้านค้าแทนปุ่มลบที่ไม่มี API
+- แก้ seed ของชุดธีมให้เพิ่มเฉพาะชิ้นที่ไม่มี เพื่อไม่ทับรูป/ราคา/สถานะที่แอดมินหรือเพื่อนแก้ไว้
+- `npm run test:themes`: 46 checks ผ่าน โดยใช้ PostgreSQL TEMP tables แยกจากข้อมูลจริง
+- ทดสอบ browser เพิ่มธีม/เอฟเฟกต์ รีเฟรช และ viewport 390×844 / 1280×900; build และ lint เฉพาะ ThemePage ผ่าน
+- หลังรีสตาร์ต API ตรวจ checksum ของ shop_items 24 รายการและ shop_sets 4 เซ็ตตรงกับก่อนรีสตาร์ต และบัญชีแอดมินจริง GET API ทั้งสี่หมวดได้ 200
+- Upload ยังใช้ /api/upload และไฟล์บน server ตามเดิม งานนี้ไม่ได้เปลี่ยนเป็น Supabase Storage หรือเพิ่ม UI จัดชุด shop_sets
+
 `CLAUDE.md` กำหนดให้แต่ละคนแก้เฉพาะไฟล์ในขอบเขตของตัวเอง และถ้าจำเป็นต้องข้ามเขต
 ให้แจ้งก่อน หน้านี้คือที่รวมรายการนั้น เพื่อให้เจ้าของไฟล์รู้ตัวก่อน merge
 ไม่ใช่มาเจอเอาตอนที่โค้ดของตัวเองเปลี่ยนไปแล้ว
@@ -314,3 +325,54 @@ Pyodide (core 14MB) ก๊อปจาก `node_modules/pyodide` ไป `public/
 
 เขียนต่อท้ายด้วยหัวข้อวันที่และเลข commit ระบุว่าผู้ใช้สั่งอะไรมา แก้อะไรจริง
 และอะไรที่จงใจไม่แตะ
+
+## 2026-10-02 — แยกหน้าจัดการบทเรียน (ยังไม่ commit)
+
+ผู้ใช้ขอแยกข้อมูลบทเรียน, สไลด์สอน, Pre-test และ Post-test ให้เพิ่มแต่ละส่วนได้คนละหน้า
+
+- `client/src/admin/pages/AddLesson.jsx`: หน้าแยกตาม route พร้อมเลือกบทเรียน บันทึกเฉพาะส่วน เก็บร่างใน sessionStorage แยกผู้ใช้/บทเรียน/หน้า และแจ้งผลบันทึกจริง
+- `client/src/App.jsx`, `client/src/admin/components/AdminNavbar.jsx`: รองรับ `/admin/add-lesson/*`, เมนู active ของหน้าย่อย และซ่อน navbar ผู้เรียนเฉพาะหน้านี้เพื่อไม่ให้ซ้อนกัน
+- `server/lessonAdminRoutes.js`, `server/server.js`: เพิ่ม `/api/admin/lessons` ใช้ signed admin token และตรวจ role ปัจจุบัน สร้าง lesson ภายใต้ module เดิม และเพิ่ม slides/pre/post ต่อท้ายใน transaction
+- ใช้ schema เดิมทั้ง 6 ตาราง ไม่แก้ข้อมูลเดิม ไม่ลบ quiz attempts ไม่แตะตัวตรวจคำตอบหรือรางวัล; correct_answer แบบปรนัยเก็บข้อความตัวเลือกตามรูปแบบที่ LessonPage ใช้อยู่
+- ระดับบทเรียนใหม่สืบทอด required_level จาก module; ลำดับซ้ำใน module ถูกปฏิเสธ ข้อมูลสไลด์ใหม่เก็บคำอธิบายใน slide_content ตามหน้าเรียนเดิม
+- ปัจจุบันรองรับเพิ่มข้อมูล ยังไม่ใช่หน้าแก้ไข/ลบเนื้อหาเดิม; เนื้อหาที่บันทึกจะอยู่ในหลักสูตรทันทีตามระบบเดิม ไม่มีขั้นเผยแพร่
+
+ตรวจแล้ว: API 30 checks ด้วย PostgreSQL TEMP tables (ข้อมูล public และแถวเดิมในสำเนาตรงเดิม), theme regression 46 checks, production build และ lint ของ AddLesson ผ่าน; ทดสอบเบราว์เซอร์สร้างบทเรียน/สไลด์/pre/post ทั้ง fill และ choice, เปลี่ยนหน้า/refresh ยังมีร่าง, refresh หลังบันทึกมี counts ถูกต้อง, จอ 390x844 และ 1280x900
+ข้อจำกัดชุดตรวจเดิม: npm test ไม่มี script ทั้ง client/server; lint ทั้ง client ยังมี 53 errors/9 warnings เดิมนอก AddLesson
+
+## 2026-10-02 — หน้าสรุปความคืบหน้าผู้เรียนรายบุคคล (ยังไม่ commit)
+
+ผู้ใช้ขอเพิ่มหน้าในแอดมินให้ติดตามผลเรียนรายคน จึงเพิ่ม `/admin/student-progress` และเมนูความคืบหน้าผู้เรียน พร้อมเมนูแอดมินแบบ select สำหรับจอแคบ
+
+- Frontend: `StudentProgressPage.jsx`, `AdminNavbar.jsx`, route ใน `App.jsx`; ค้นหาชื่อ/อีเมล แบ่งหน้า เลือกรายคน ตัวชี้วัดความคืบหน้า คะแนนก่อน/หลัง พัฒนาการเฉพาะคู่บทเรียนเดียวกัน กราฟตามหมวด กรองบทเรียน/สถานะ และเวลา activity ล่าสุดที่บันทึก
+- Backend: `studentProgressRoutes.js` และ mount ใน `server.js`; API GET `/api/admin/student-progress` และ `/:id` ตรวจ signed admin token + role/ban/deleted ปัจจุบันทุกครั้ง, no-store, เลือกเฉพาะคอลัมน์จำเป็น ไม่ส่ง password hash/reset token/answers/code
+- ใช้ `evaluateLesson` เดิมเพื่อตัดสินผ่าน; บทที่ไม่มี post-test และไม่มีแบบฝึกหัดแยกเป็น `no_criteria` ไม่รวมตัวหาร เพื่อไม่อ้างว่าผู้เรียนใหม่ผ่านเนื้อหาว่างแล้ว
+- คะแนนใช้ผลล่าสุดที่ระบบเก็บ ไม่ใช่ประวัติสอบทั้งหมด; คะแนนที่ยังไม่มีเป็น null ไม่ใช่ 0; การเปลี่ยนแปลงคะแนนใช้คู่ของบทเรียนเดียวกันเท่านั้น; แบบฝึกหัดนับ DISTINCT exercise_id ที่เคยผ่าน
+- ไม่เปลี่ยน schema หรือเขียนข้อมูลผู้เรียนจริง ไม่เปลี่ยนระบบให้คะแนน/รางวัล และไม่ได้แก้เกณฑ์คำนวณของ dashboard เก่า
+
+ทดสอบ: report API 30 checks ด้วย TEMP fixture (สิทธิ์, ค้นหา, pagination, invalid/missing IDs, zero-data learner, scores, duplicate submissions, paired gains, revoked access, DB failure), lesson progress 19 checks, lesson-admin regression 30 checks; production build ผ่าน; lint หน้าใหม่และ navbar ผ่าน แต่ lint ทั้ง repo ยังมี 52 errors/9 warnings เดิม; npm test ไม่มี script
+Browser: desktop 1440x1000/mobile 390x844 เลือกรายคน, filter post-test ไม่ผ่าน, ค้นหาอีเมล/ไม่พบผล, สลับคน, refresh/direct URL, สลับเมนูแอดมินบนมือถือ และตรวจไม่มี overflow นอกตาราง
+
+## 2026-10-03 — นำกิจกรรมล่าสุดออกจากแดชบอร์ด (ยังไม่ commit)
+ผู้ใช้ขอเอาการ์ดกิจกรรมล่าสุดตามภาพออก แก้เฉพาะ Dashboard.jsx: ลบ section, state, fetch recent-activities และ metadata/imports ที่ไม่ใช้ ปรับคำอธิบายหน้า ไม่แก้ข้อมูลหรือ API ฝั่ง server
+Build ผ่าน; lint ไม่มี errors มี warning onlineUsers เดิม 1 รายการ; npm test ไม่มี script; browser mock preview ตรวจ desktop, refresh และมือถือว่าหัวข้อกิจกรรมล่าสุดไม่มีแล้ว
+
+## 2026-10-03 — ปรับโทนสีแอดมินให้ตรงกับเว็บ (ยังไม่ commit)
+ใช้ชุดสี PySim ที่มีอยู่ใน tailwind.config.js กับหน้าจัดการทั้ง 7 หน้าและ AdminNavbar: น้ำเงิน #145D91/#3776AB พื้นเทาอ่อน การ์ดขาว และเงา whisper-shadow; เก็บสีสถานะและเหรียญอันดับตามความหมายเดิม ฟอร์มบทเรียนทั้งสี่ส่วนใช้หัวแถบ python-gradient แบบเดียวกัน
+
+App.jsx ซ่อนเมนูผู้เรียนในทุก /admin/ route และใช้พื้นหลังแอดมินเดียวกัน แก้เมนูซ้อน/ระยะด้านบนซ้ำ งานนี้ไม่แก้ API หรือฐานข้อมูล และไม่เปลี่ยนสีเอฟเฟกต์/รูปธีมที่บันทึกไว้
+
+Build ผ่าน; ตรวจเบราว์เซอร์ด้วยข้อมูลจำลองครบทุกหน้า รวม modal เอฟเฟกต์ รายงานผู้เรียน รีเฟรช และจอมือถือ 390x844; ไม่พบ console error; lint เทียบก่อนแก้มีปัญหาเดิม 4 errors/2 warnings ไม่มีเพิ่ม; npm test ไม่มี script รายละเอียดใน project_logs/2026-10-03/0418-admin-pysim-colors.md
+
+## 2026-10-03 — เชื่อมการเพิ่มบทเรียนจากแอดมินถึงผู้เรียน
+AddLesson มีรายการบทเรียนพร้อมจำนวนเนื้อหาและลิงก์เพิ่มแต่ละส่วน บันทึกลงตารางเดิมและแจ้งว่าแสดงฝั่งผู้เรียนแล้ว Pre-test เพิ่มได้ทั้งเติมคำและปรนัยเหมือน Post-test
+
+ย้าย GET course-content/slides/quizzes จาก server.js ไป lessonContentRoutes.js เพื่อใช้ router เดียวกันในการทดสอบ เพิ่ม GET /api/lessons/:lessonId สำหรับรายละเอียดหลังรีเฟรช LearningPage เลิกตัดหมวดตามชื่อซ้ำ/รวมหมวดตามจำนวนตายตัวและโหลดรายการใหม่เมื่อกลับมาที่แท็บ LessonPage แสดงชื่อ คำอธิบาย และวิดีโอจากข้อมูลที่แอดมินบันทึก พร้อม normalize URL สื่อและยกเลิก request เก่า
+
+คงเกณฑ์ปลดล็อกเลเวล/ลำดับและการวัดผลเดิม ไม่เปลี่ยนข้อมูลจริง ทดสอบ API 46 checks + progress 19 checks ผ่าน; build และ lint ไฟล์ที่แก้ผ่าน Browser ทดสอบเพิ่มจริงใน TEMP tables แล้วเข้าสู่ฝั่งผู้เรียน ทำ Pre-test → สไลด์ → Post-test ครบ รวม refresh และมือถือ การบันทึกผลสอบใน preview ใช้ fixture ไม่เรียก reward จริง รายละเอียดใน project_logs/2026-10-03/0500-admin-lesson-publishing.md
+
+เซิร์ฟเวอร์เก่าที่เปิดค้างต้อง restart เพื่อโหลด router ใหม่ และเข้าสู่ระบบแอดมินใหม่หลัง restart
+
+
+## 2026-10-03: Merge admin work with main
+Combined main navigation and mode styling with admin lesson publishing and tutorial hooks in App.jsx/LearningPage.jsx. Build and 19 lesson-progress tests pass. Database integration test is blocked by SSL configuration; full lint still reports errors. See project_logs/2026-10-03/merge-admin-with-main.md.

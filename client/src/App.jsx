@@ -34,6 +34,7 @@ import Dashboard from './admin/pages/Dashboard';
 import ManageAccount from './admin/pages/ManageAccount';
 import ThemePage from './admin/pages/ThemePage';
 import AddLesson from './admin/pages/AddLesson';
+import StudentProgressPage from './admin/pages/StudentProgressPage';
 import Leaderboard from './admin/pages/Leaderboard';
 import CompetitiveChallengePage from './admin/pages/CompetitiveChallengePage';
 import { API_BASE } from './config/api.js';
@@ -355,7 +356,8 @@ function AppContent() {
   // guard navigation while a match is active. Locked routes use the app navbar.
   const isGameRoute = ['/online', '/competitive-arena', '/matchmaking'].includes(location.pathname);
   const isSimulationMode = isGameRoute && canEnterGameModes(user);
-  const hideNavbar = location.pathname === '/login' || location.pathname.startsWith('/admin');
+  const isAdminRoute = location.pathname === '/admin' || location.pathname.startsWith('/admin/');
+  const hideNavbar = location.pathname === '/login' || isAdminRoute;
   const isLearningRoute = ['/learn', '/lesson', '/exercise', '/mini-game', '/challenge', '/debug', '/promotion-exam']
     .some(route => location.pathname === route || location.pathname.startsWith(`${route}/`));
   const isCodingWorkspace = ['/exercise', '/mini-game', '/challenge', '/debug', '/promotion-exam']
@@ -395,7 +397,9 @@ function AppContent() {
           <div className="mode-entry mode-entry-shortcuts"><BottomNavBarSimple /></div>
         )}
 
-        <div className={isSimulationMode || hideNavbar
+        <div className={isAdminRoute
+          ? 'min-h-screen bg-pysim-surface text-pysim-on-surface'
+          : isSimulationMode || hideNavbar
           ? 'min-h-screen'
           : isCodingWorkspace
             ? 'app-coding-workspace box-border overflow-hidden p-4'
@@ -495,7 +499,11 @@ function AppContent() {
                 element={requireAdmin(<ThemePage />)}
               />
               <Route
-                path="/admin/add-lesson"
+                  path="/admin/student-progress"
+                  element={requireAdmin(<StudentProgressPage />)}
+                />
+                <Route
+                  path="/admin/add-lesson/*"
                 element={requireAdmin(<AddLesson />)}
               />
               <Route
