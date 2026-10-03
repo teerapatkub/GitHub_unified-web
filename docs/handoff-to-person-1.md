@@ -376,3 +376,7 @@ AddLesson มีรายการบทเรียนพร้อมจำน�
 
 ## 2026-10-03: Merge admin work with main
 Combined main navigation and mode styling with admin lesson publishing and tutorial hooks in App.jsx/LearningPage.jsx. Build and 19 lesson-progress tests pass. Database integration test is blocked by SSL configuration; full lint still reports errors. See project_logs/2026-10-03/merge-admin-with-main.md.
+
+
+## 2026-10-03: Dashboard progress threshold
+Fixed undefined LESSON_PASS_PERCENT using POST_PASS_RATIO * 100. Read-only route validation returns 6 students and 24 lessons. No database changes; restart server to load fix.

@@ -3982,7 +3982,7 @@ app.get('/api/dashboard/learning-progress', async (_req, res) => {
 
         recordMap.forEach((record) => {
             const requiredExercises = exerciseTotals.get(Number(record.lesson_id)) || 0;
-            const passedPostTest = Number(record.post_percent || 0) >= LESSON_PASS_PERCENT;
+            const passedPostTest = Number(record.post_percent || 0) >= POST_PASS_RATIO * 100;
             const passedExercises = Number(record.passed_exercises || 0) >= requiredExercises;
             record.completed = passedPostTest && passedExercises;
             record.status = record.completed ? 'completed' : record.started ? 'in_progress' : 'not_started';
