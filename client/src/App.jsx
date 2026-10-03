@@ -34,6 +34,7 @@ import Dashboard from './admin/pages/Dashboard';
 import ManageAccount from './admin/pages/ManageAccount';
 import ThemePage from './admin/pages/ThemePage';
 import AddLesson from './admin/pages/AddLesson';
+import StudentProgressPage from './admin/pages/StudentProgressPage';
 import Leaderboard from './admin/pages/Leaderboard';
 import CompetitiveChallengePage from './admin/pages/CompetitiveChallengePage';
 import { API_BASE, assetUrl } from './config/api.js';
@@ -344,7 +345,8 @@ function AppContent() {
   };
 
   // === Which pages show the Navbar ===
-  const hideNavbar = location.pathname === '/login';
+  const isAdminRoute = location.pathname.startsWith('/admin/');
+  const hideNavbar = location.pathname === '/login' || isAdminRoute;
   const fullBleedRoutes = ['/menu', '/online', '/competitive-arena', '/matchmaking', '/achievements'];
   const isSimulationMode = fullBleedRoutes.some(r => location.pathname.startsWith(r));
   const isCodingWorkspace = ['/exercise', '/mini-game', '/challenge', '/debug', '/promotion-exam']
@@ -376,7 +378,7 @@ function AppContent() {
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-transparent text-slate-800 font-sans transition-colors duration-300 relative">
       <MouseEffectLayer user={user} />
       <TheInfiniteGrid>
-        {/* TOP RIGHT FLOATING HEADER — Hide on login AND simulation routes */}
+        {/* Student header — admin pages have their own navigation. */}
         <AnimatePresence>
           {!hideNavbar && !isSimulationMode && (
             <motion.div
@@ -415,13 +417,15 @@ function AppContent() {
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
             className={
-              isSimulationMode
-                ? 'min-h-screen'
-                : isCodingWorkspace
-                  ? 'box-border h-screen overflow-hidden px-4 pb-4 pt-24'
-                  : hideNavbar
-                    ? 'min-h-screen'
-                    : 'min-h-screen px-4 pb-8 pt-24'
+              isAdminRoute
+                ? 'min-h-screen bg-pysim-surface text-pysim-on-surface'
+                : isSimulationMode
+                  ? 'min-h-screen'
+                  : isCodingWorkspace
+                    ? 'box-border h-screen overflow-hidden px-4 pb-4 pt-24'
+                    : hideNavbar
+                      ? 'min-h-screen'
+                      : 'min-h-screen px-4 pb-8 pt-24'
             }
           >
             <Routes location={location}>
@@ -519,7 +523,11 @@ function AppContent() {
                 element={requireAdmin(<ThemePage />)}
               />
               <Route
-                path="/admin/add-lesson"
+                  path="/admin/student-progress"
+                  element={requireAdmin(<StudentProgressPage />)}
+                />
+                <Route
+                  path="/admin/add-lesson/*"
                 element={requireAdmin(<AddLesson />)}
               />
               <Route

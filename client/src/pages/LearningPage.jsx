@@ -15,74 +15,6 @@ import { getWebTutorial } from "../data/webTutorials";
 
 const Motion = motion;
 
-const normalizeModulesForDisplay = (rows) => {
-  if (!Array.isArray(rows) || rows.length === 0) return [];
-
-  const beginnerModules = rows.filter(
-    (module) =>
-      Number(module?.required_level || 0) <= 1 &&
-      Array.isArray(module?.lessons) &&
-      module.lessons.length > 0
-  );
-
-  const beginnerLessonTotal = beginnerModules.reduce(
-    (sum, module) => sum + module.lessons.length,
-    0
-  );
-
-  if (beginnerModules.length < 2 || beginnerLessonTotal !== 5) {
-    return rows;
-  }
-
-  const firstModule = beginnerModules[0];
-  const mergedModule = {
-    ...firstModule,
-    title: firstModule.title || "Python พื้นฐาน",
-    lessons: beginnerModules
-      .flatMap((module) => module.lessons || [])
-      .sort(
-        (a, b) =>
-          Number(a.lesson_id || a.id || 0) - Number(b.lesson_id || b.id || 0)
-      ),
-  };
-
-  const remainingModules = rows.filter(
-    (module) =>
-      !beginnerModules.some(
-        (candidate) => candidate.module_id === module.module_id
-      )
-  );
-
-  return [mergedModule, ...remainingModules];
-};
-
-const buildTitleSignature = (title) => {
-  return String(title || "")
-    .toLowerCase()
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .sort()
-    .join(" ");
-};
-
-const removeDuplicateModules = (rows) => {
-  if (!Array.isArray(rows) || rows.length <= 1) return rows;
-
-  const seen = new Set();
-
-  return [...rows]
-    .reverse()
-    .filter((module) => {
-      const signature = buildTitleSignature(module?.title);
-      if (!signature) return true;
-      if (seen.has(signature)) return false;
-      seen.add(signature);
-      return true;
-    })
-    .reverse();
-};
-
 const getLevelProgress = (xp = 0) => {
   const numericXp = Number(xp || 0);
   let level = 1;
@@ -140,25 +72,36 @@ export default function LearningPage({ onNavigate, user }) {
   };
 
   useEffect(() => {
-    if (!user) return;
-
-    const fetchData = async () => {
+    if (!user?.user_id) return;
+    let controller;
+    const fetchData = async (initial = false) => {
+      controller?.abort();
+      controller = new AbortController();
+      const signal = controller.signal;
       try {
-        setLoading(true);
+        if (initial) setLoading(true);
         const res = await axios.get(`${API_BASE}/api/course-content`, {
-          params: { user_id: user.user_id, user_level: user.level },
+          params: { user_id: user.user_id, user_level: user.level }, signal,
         });
-        const normalizedModules = normalizeModulesForDisplay(res.data);
-        setModules(removeDuplicateModules(normalizedModules));
+        // Module IDs, not titles, identify curriculum entries. Keep every lesson
+        // added by an admin, including modules with the same display title.
+        if (!signal.aborted) setModules(Array.isArray(res.data) ? res.data : []);
       } catch (err) {
-        console.error("โหลดข้อมูลบทเรียนไม่สำเร็จ:", err);
+        if (!signal.aborted) console.error('โหลดข้อมูลบทเรียนไม่สำเร็จ:', err);
       } finally {
-        setLoading(false);
+        if (!signal.aborted) setLoading(false);
       }
     };
-
-    fetchData();
-  }, [user]);
+    const refresh = () => { if (!document.hidden) fetchData(); };
+    fetchData(true);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      controller?.abort();
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [user?.user_id, user?.level]);
 
   const continueLearning = () => {
     const nextLesson = modules

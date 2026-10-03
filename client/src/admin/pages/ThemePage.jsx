@@ -1,9 +1,26 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Plus, X, Pencil, Trash2, ChevronDown, Upload, Loader2 } from "lucide-react";
 import AdminNavbar from "../components/AdminNavbar";
-import { API_BASE } from '../../config/api.js';
+import { API_BASE, assetUrl } from '../../config/api.js';
 const UPLOAD_API = `${API_BASE}/api/upload`;
 const API = `${API_BASE}/api/themes`;
+
+const adminHeaders = () => {
+  try {
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    return user.admin_token ? { Authorization: `Bearer ${user.admin_token}` } : {};
+  } catch { return {}; }
+};
+
+async function readResponse(res) {
+  const isJson = res.headers.get('content-type')?.includes('application/json');
+  const data = isJson ? await res.json() : null;
+  if (!res.ok) throw new Error(data?.error || `ติดต่อระบบจัดการร้านค้าไม่สำเร็จ (${res.status}) กรุณาตรวจสอบว่าเซิร์ฟเวอร์เป็นเวอร์ชันล่าสุด`);
+  if (!isJson) throw new Error('เซิร์ฟเวอร์ส่งข้อมูลไม่ถูกต้อง กรุณาลองใหม่');
+  return data;
+}
+
+const isImage = (value) => /^(https?:\/\/|\/)/i.test(value || '');
 
 
 /* ── ปุ่มอัปโหลดไฟล์จากคอมพ์ ── */
@@ -19,8 +36,7 @@ function UploadButton({ onUploaded, accept = "image/*" }) {
       const form = new FormData();
       form.append("file", file);
       const res  = await fetch(UPLOAD_API, { method: "POST", body: form });
-      const data = await res.json();
-      if (!res.ok) { alert(data.error || "อัปโหลดไม่สำเร็จ"); return; }
+      const data = await readResponse(res);
       onUploaded(data.url);
     } catch (err) {
       console.error(err);
@@ -44,7 +60,7 @@ function UploadButton({ onUploaded, accept = "image/*" }) {
         type="button"
         onClick={() => inputRef.current?.click()}
         disabled={loading}
-        className="flex items-center gap-1.5 px-3 py-2.5 border-2 border-dashed border-cyan-300 bg-cyan-50 text-cyan-600 rounded-xl text-xs font-semibold hover:bg-cyan-100 transition disabled:opacity-50 whitespace-nowrap"
+        className="flex items-center gap-1.5 px-3 py-2.5 border-2 border-dashed border-pysim-primary-fixed bg-pysim-primary-fixed/30 text-pysim-primary rounded-xl text-xs font-semibold hover:bg-pysim-primary-fixed/60 transition disabled:opacity-50 whitespace-nowrap"
       >
         {loading
           ? <><Loader2 size={13} className="animate-spin" /> กำลังอัปโหลด...</>
@@ -64,10 +80,10 @@ const TABS = [
 
 
 const EP = {
-  effect:             { get: API,                   post: API,                   put: (id) => `${API}/${id}`,              del: (id) => `${API}/${id}` },
-  ui_theme:           { get: `${API}/themes`,        post: `${API}/themes`,        put: (id) => `${API}/themes/${id}`,       del: (id) => `${API}/themes/${id}` },
-  profile_frame:      { get: `${API}/frames`,        post: `${API}/frames`,        put: (id) => `${API}/frames/${id}`,       del: (id) => `${API}/frames/${id}` },
-  profile_background: { get: `${API}/backgrounds`,   post: `${API}/backgrounds`,   put: (id) => `${API}/backgrounds/${id}`,  del: (id) => `${API}/backgrounds/${id}` },
+  effect:             { get: API,                   post: API,                   put: (id) => `${API}/${id}` },
+  ui_theme:           { get: `${API}/themes`,        post: `${API}/themes`,        put: (id) => `${API}/themes/${id}` },
+  profile_frame:      { get: `${API}/frames`,        post: `${API}/frames`,        put: (id) => `${API}/frames/${id}` },
+  profile_background: { get: `${API}/backgrounds`,   post: `${API}/backgrounds`,   put: (id) => `${API}/backgrounds/${id}` },
 };
 
 const TRIGGERS = [
@@ -85,8 +101,11 @@ const TRIGGER_COLOR = {
 function parseEffects(raw) {
   try {
     if (Array.isArray(raw)) return raw;
-    if (typeof raw === "string") return JSON.parse(raw);
-  } catch (_) {}
+    if (typeof raw === "string") {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    }
+  } catch { /* Legacy rows may contain no effect data. */ }
   return [];
 }
 
@@ -109,17 +128,24 @@ export default function ThemePage() {
   const [editingItem, setEditingItem] = useState(null);
   const [formData, setFormData]       = useState(EMPTY_FORM);
   const [saving, setSaving]           = useState(false);
+  const [loading, setLoading]         = useState(false);
+  const [message, setMessage]         = useState(null);
+  const requestId = useRef(0);
 
   const [showEffectModal, setShowEffectModal]       = useState(false);
   const [currentEffectIndex, setCurrentEffectIndex] = useState(null);
   const [effectData, setEffectData]                 = useState(DEFAULT_EFFECT);
 
   const fetchItems = useCallback(async () => {
+    const id = ++requestId.current;
+    setLoading(true);
     try {
-      const res  = await fetch(EP[activeTab].get);
-      const data = await res.json();
-      setItems((Array.isArray(data) ? data : []).map((t) => ({ ...t, effects: parseEffects(t.effects) })));
-    } catch (err) { console.error(err); setItems([]); }
+      const res = await fetch(EP[activeTab].get, { headers: adminHeaders() });
+      const data = await readResponse(res);
+      if (id === requestId.current) setItems((Array.isArray(data) ? data : []).map((t) => ({ ...t, is_active: t.is_active === true || Number(t.is_active) === 1, effects: parseEffects(t.effects) })));
+    } catch (err) {
+      if (id === requestId.current) { setMessage({ error: true, text: err.message }); setItems([]); }
+    } finally { if (id === requestId.current) setLoading(false); }
   }, [activeTab]);
 
   const resetForm = useCallback(() => {
@@ -130,32 +156,26 @@ export default function ThemePage() {
     setShowEffectModal(false);
   }, []);
 
-  useEffect(() => { fetchItems(); resetForm(); }, [activeTab, fetchItems, resetForm]);
+  useEffect(() => { fetchItems(); resetForm(); setMessage(null); }, [activeTab, fetchItems, resetForm]);
 
   const handleSave = async () => {
-    if (!formData.name || formData.price === "") { alert("กรุณากรอกชื่อและราคา"); return; }
+    if (!formData.name.trim() || formData.price === "") { setMessage({ error: true, text: 'กรุณากรอกชื่อและราคา' }); return; }
     setSaving(true);
+    setMessage(null);
     try {
       const url    = editingItem ? EP[activeTab].put(editingItem.item_id) : EP[activeTab].post;
       const method = editingItem ? "PUT" : "POST";
       const res    = await fetch(url, {
         method,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...adminHeaders() },
         body: JSON.stringify({ ...formData, price: Number(formData.price) }),
       });
-      if (!res.ok) { alert("บันทึกไม่สำเร็จ: " + await res.text()); return; }
+      await readResponse(res);
+      setMessage({ error: false, text: 'บันทึกรายการเรียบร้อยแล้ว' });
       await fetchItems();
       resetForm();
-    } catch (err) { console.error(err); alert("เกิดข้อผิดพลาด"); }
+    } catch (err) { setMessage({ error: true, text: err.message }); }
     finally { setSaving(false); }
-  };
-
-  const handleDelete = async (id) => {
-    if (!window.confirm("ลบรายการนี้?")) return;
-    try {
-      await fetch(EP[activeTab].del(id), { method: "DELETE" });
-      fetchItems();
-    } catch (err) { console.error(err); }
   };
 
   const handleEdit = (item) => {
@@ -199,16 +219,19 @@ export default function ThemePage() {
       <div className="min-h-screen pt-24">
         <div className="max-w-5xl mx-auto space-y-6 px-4 pb-12">
 
+          {message && <div role={message.error ? 'alert' : 'status'} className={`rounded-xl p-4 ${message.error ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{message.text}</div>}
+
           {/* TABS */}
           <div className="flex gap-2 flex-wrap">
             {TABS.map((tab) => (
               <button
                 key={tab.key}
+                disabled={saving}
                 onClick={() => setActiveTab(tab.key)}
                 className={`px-5 py-2.5 rounded-xl font-semibold text-sm transition ${
                   activeTab === tab.key
-                    ? "bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-md"
-                    : "bg-white text-gray-500 shadow hover:bg-gray-50"
+                    ? "bg-gradient-to-r from-pysim-primary to-pysim-primary-container text-white shadow-md"
+                    : "bg-white text-pysim-on-surface-variant shadow hover:bg-pysim-surface"
                 }`}
               >
                 {tab.label}
@@ -217,8 +240,8 @@ export default function ThemePage() {
           </div>
 
           {/* FORM CARD */}
-          <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
-            <div className="bg-gradient-to-r from-cyan-500 to-blue-500 p-6 flex items-center justify-between">
+          <div className="bg-white rounded-2xl whisper-shadow overflow-hidden">
+            <div className="bg-gradient-to-r from-pysim-primary to-pysim-primary-container p-6 flex items-center justify-between">
               <h2 className="text-2xl font-bold text-white">
                 {editingItem ? `แก้ไข: ${editingItem.name}` : tabLabel}
               </h2>
@@ -236,19 +259,21 @@ export default function ThemePage() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-widest text-gray-400">ชื่อ</label>
+                  <label className="text-xs font-bold uppercase tracking-widest text-pysim-outline">ชื่อ</label>
                   <input
-                    className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 transition"
+                    className="w-full border-2 border-pysim-outline-variant/50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-pysim-primary focus:ring-2 focus:ring-pysim-primary-fixed transition"
                     placeholder="เช่น Neon Glow"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-widest text-gray-400">ราคา (฿)</label>
+                  <label className="text-xs font-bold uppercase tracking-widest text-pysim-outline">ราคา (เหรียญ)</label>
                   <input
                     type="number"
-                    className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 transition"
+                    min="0"
+                    step="1"
+                    className="w-full border-2 border-pysim-outline-variant/50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-pysim-primary focus:ring-2 focus:ring-pysim-primary-fixed transition"
                     placeholder="เช่น 250"
                     value={formData.price}
                     onChange={(e) => setFormData({ ...formData, price: e.target.value })}
@@ -257,9 +282,9 @@ export default function ThemePage() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-widest text-gray-400">คำอธิบาย</label>
+                <label className="text-xs font-bold uppercase tracking-widest text-pysim-outline">คำอธิบาย</label>
                 <input
-                  className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 transition"
+                  className="w-full border-2 border-pysim-outline-variant/50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-pysim-primary focus:ring-2 focus:ring-pysim-primary-fixed transition"
                   placeholder="อธิบาย"
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
@@ -270,10 +295,10 @@ export default function ThemePage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* ── Asset URL ── */}
                   <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-widest text-gray-400">URL (PNG / GIF)</label>
-                    <div className="flex gap-2">
+                    <label className="text-xs font-bold uppercase tracking-widest text-pysim-outline">URL (PNG / GIF)</label>
+                    <div className="flex flex-wrap gap-2">
                       <input
-                        className="flex-1 border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 transition"
+                        className="min-w-0 flex-1 border-2 border-pysim-outline-variant/50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-pysim-primary focus:ring-2 focus:ring-pysim-primary-fixed transition"
                         placeholder="https://... หรืออัปโหลดไฟล์"
                         value={formData.asset_url}
                         onChange={(e) => setFormData({ ...formData, asset_url: e.target.value })}
@@ -281,16 +306,16 @@ export default function ThemePage() {
                       <UploadButton onUploaded={(url) => setFormData({ ...formData, asset_url: url })} />
                     </div>
                     {formData.asset_url && (
-                      <img src={formData.asset_url} alt="asset" className="h-20 rounded-xl border-2 border-gray-200 object-contain bg-gray-50 mt-1" />
+                      <img src={assetUrl(formData.asset_url)} alt="asset" className="h-20 rounded-xl border-2 border-pysim-outline-variant/50 object-contain bg-pysim-surface mt-1" />
                     )}
                   </div>
 
                   {/* ── Preview Image URL ── */}
                   <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Preview Image URL</label>
-                    <div className="flex gap-2">
+                    <label className="text-xs font-bold uppercase tracking-widest text-pysim-outline">Preview Image URL</label>
+                    <div className="flex flex-wrap gap-2">
                       <input
-                        className="flex-1 border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 transition"
+                        className="min-w-0 flex-1 border-2 border-pysim-outline-variant/50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-pysim-primary focus:ring-2 focus:ring-pysim-primary-fixed transition"
                         placeholder="https://... หรืออัปโหลดไฟล์"
                         value={formData.preview_image}
                         onChange={(e) => setFormData({ ...formData, preview_image: e.target.value })}
@@ -298,7 +323,7 @@ export default function ThemePage() {
                       <UploadButton onUploaded={(url) => setFormData({ ...formData, preview_image: url })} />
                     </div>
                     {formData.preview_image && (
-                      <img src={formData.preview_image} alt="preview" className="h-20 rounded-xl border-2 border-gray-200 object-contain bg-gray-50 mt-1" />
+                      <img src={assetUrl(formData.preview_image)} alt="preview" className="h-20 rounded-xl border-2 border-pysim-outline-variant/50 object-contain bg-pysim-surface mt-1" />
                     )}
                   </div>
                 </div>
@@ -311,23 +336,23 @@ export default function ThemePage() {
                   id="is_active"
                   checked={formData.is_active}
                   onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                  className="w-4 h-4 accent-cyan-500"
+                  className="w-4 h-4 accent-pysim-primary"
                 />
-                <label htmlFor="is_active" className="text-sm font-semibold text-gray-600">
+                <label htmlFor="is_active" className="text-sm font-semibold text-pysim-on-surface-variant">
                   แสดงในร้านค้า
                 </label>
               </div>
 
               {isEffect && (
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-widest text-gray-400">
+                  <label className="text-xs font-bold uppercase tracking-widest text-pysim-outline">
                     Effects ({formData.effects.length})
                   </label>
                   <div className="flex flex-wrap gap-3 items-center">
                     {formData.effects.map((eff, idx) => (
                       <div
                         key={idx}
-                        className="relative w-16 h-16 rounded-xl border-2 border-gray-200 bg-gray-50 flex items-center justify-center cursor-pointer hover:border-cyan-400 hover:shadow-md transition group"
+                        className="relative w-16 h-16 rounded-xl border-2 border-pysim-outline-variant/50 bg-pysim-surface flex items-center justify-center cursor-pointer hover:border-pysim-primary hover:shadow-md transition group"
                         onClick={() => openEditEffect(eff, idx)}
                       >
                         <span className={`absolute -top-1 -left-1 w-3 h-3 rounded-full border-2 border-white ${TRIGGER_COLOR[eff.trigger] || "bg-indigo-400"}`} />
@@ -345,7 +370,7 @@ export default function ThemePage() {
                     ))}
                     <button
                       onClick={openAddEffect}
-                      className="w-16 h-16 rounded-xl border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400 hover:border-cyan-400 hover:text-cyan-500 transition"
+                      className="w-16 h-16 rounded-xl border-2 border-dashed border-pysim-outline-variant flex items-center justify-center text-pysim-outline hover:border-pysim-primary hover:text-pysim-primary transition"
                     >
                       <Plus size={20} />
                     </button>
@@ -357,7 +382,7 @@ export default function ThemePage() {
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="w-full py-4 rounded-xl font-bold text-white text-sm bg-gradient-to-r from-cyan-500 to-blue-500 hover:opacity-90 active:scale-[.99] transition disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full py-4 rounded-xl font-bold text-white text-sm bg-gradient-to-r from-pysim-primary to-pysim-primary-container hover:opacity-90 active:scale-[.99] transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {saving ? "กำลังบันทึก..." : editingItem ? `อัปเดต${tabLabel}` : tabLabel}
               </button>
@@ -365,46 +390,47 @@ export default function ThemePage() {
           </div>
 
           {/* LIST */}
-          <div className="bg-white rounded-2xl p-8 shadow-xl">
+          <div className="bg-white rounded-2xl p-8 whisper-shadow">
             <div className="flex items-center gap-3 mb-6">
               <h2 className="text-2xl font-bold">{tabLabel} ทั้งหมด</h2>
-              <span className="bg-gradient-to-r from-cyan-500 to-blue-500 text-white text-xs font-bold px-3 py-1 rounded-full">
+              <span className="bg-gradient-to-r from-pysim-primary to-pysim-primary-container text-white text-xs font-bold px-3 py-1 rounded-full">
                 {items.length}
               </span>
             </div>
 
-            {items.length === 0 && <p className="text-center text-gray-300 py-8">ยังไม่มีรายการ</p>}
+            {loading ? <p role="status" className="text-center py-8">กำลังโหลดรายการ...</p> : items.length === 0 && <p className="text-center text-pysim-on-surface-variant py-8">ยังไม่มีรายการ</p>}
+            <p className="mb-4 text-sm text-pysim-on-surface-variant">ต้องการซ่อนรายการ: กด Edit แล้วนำเครื่องหมาย “แสดงในร้านค้า” ออก</p>
 
             <div className="space-y-3">
               {items.map((item) => (
                 <div
                   key={item.item_id}
-                  className="flex justify-between items-center bg-gray-100 rounded-xl px-6 py-4 hover:bg-gray-50 transition"
+                  className="flex flex-wrap gap-3 justify-between items-center bg-pysim-surface-low rounded-xl px-4 py-4 hover:bg-pysim-surface transition"
                 >
                   <div className="flex items-center gap-4">
-                    {item.preview_image && (
-                      <img src={item.preview_image} alt="" className="w-12 h-12 rounded-lg object-cover border border-gray-200 flex-shrink-0" />
+                    {(item.preview_image || item.asset_url) && (
+                      <img src={assetUrl(item.preview_image || item.asset_url)} alt="" className="w-12 h-12 rounded-lg object-cover border border-pysim-outline-variant/50 flex-shrink-0" />
                     )}
                     <div>
                       <div className="flex items-center gap-2">
-                        <p className="font-semibold text-gray-800">{item.name}</p>
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${item.is_active ? "bg-green-100 text-green-600" : "bg-gray-200 text-gray-400"}`}>
+                        <p className="font-semibold text-pysim-on-surface">{item.name}</p>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${item.is_active ? "bg-green-100 text-green-600" : "bg-pysim-surface-container text-pysim-outline"}`}>
                           {item.is_active ? "เปิด" : "ปิด"}
                         </span>
                       </div>
                       <div className="flex items-center gap-2 mt-1">
-                        <span className="text-sm text-gray-500">฿{item.price}</span>
+                        <span className="text-sm text-pysim-on-surface-variant">{item.price} เหรียญ</span>
                         {isEffect && (
                           <>
-                            <span className="text-gray-300">•</span>
+                            <span className="text-pysim-outline">•</span>
                             <div className="flex gap-1 items-center">
                               {parseEffects(item.effects).slice(0, 5).map((e, i) => (
-                                <span key={i} className="inline-flex items-center justify-center w-6 h-6 bg-white border border-gray-200 rounded-md text-xs">
-                                  {e.visual?.startsWith("http") ? "🖼" : e.visual}
+                                <span key={i} className="inline-flex items-center justify-center w-6 h-6 bg-white border border-pysim-outline-variant/50 rounded-md text-xs">
+                                  {isImage(e.visual) ? <img src={assetUrl(e.visual)} alt="" className="h-5 w-5 object-contain" /> : e.visual}
                                 </span>
                               ))}
                               {parseEffects(item.effects).length === 0 && (
-                                <span className="text-xs text-gray-400">ไม่มีเอฟเฟกต์</span>
+                                <span className="text-xs text-pysim-outline">ไม่มีเอฟเฟกต์</span>
                               )}
                             </div>
                           </>
@@ -416,15 +442,9 @@ export default function ThemePage() {
                   <div className="flex gap-2 flex-shrink-0">
                     <button
                       onClick={() => handleEdit(item)}
-                      className="flex items-center gap-1.5 px-4 py-2 bg-blue-50 text-blue-500 rounded-lg text-sm font-semibold hover:bg-blue-100 transition"
+                      className="flex items-center gap-1.5 px-4 py-2 bg-pysim-primary-fixed/30 text-pysim-primary rounded-lg text-sm font-semibold hover:bg-pysim-primary-fixed/60 transition"
                     >
                       <Pencil size={13} /> Edit
-                    </button>
-                    <button
-                      onClick={() => handleDelete(item.item_id)}
-                      className="flex items-center gap-1.5 px-4 py-2 bg-red-50 text-red-500 rounded-lg text-sm font-semibold hover:bg-red-100 transition"
-                    >
-                      <Trash2 size={13} /> Delete
                     </button>
                   </div>
                 </div>
@@ -439,7 +459,7 @@ export default function ThemePage() {
       {showEffectModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
-            <div className="bg-gradient-to-r from-cyan-500 to-blue-500 px-6 py-5">
+            <div className="bg-gradient-to-r from-pysim-primary to-pysim-primary-container px-6 py-5">
               <h2 className="text-lg font-bold text-white">
                 {currentEffectIndex !== null ? "แก้ไขเอฟเฟกต์" : "เพิ่มเอฟเฟกต์ใหม่"}
               </h2>
@@ -447,10 +467,10 @@ export default function ThemePage() {
 
             <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
               <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Trigger</label>
+                <label className="text-xs font-bold uppercase tracking-widest text-pysim-outline">Trigger</label>
                 <div className="relative">
                   <select
-                    className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm appearance-none focus:outline-none focus:border-cyan-400 transition pr-10"
+                    className="w-full border-2 border-pysim-outline-variant/50 rounded-xl px-4 py-3 text-sm appearance-none focus:outline-none focus:border-pysim-primary transition pr-10"
                     value={effectData.trigger}
                     onChange={(e) => setEffectData({ ...effectData, trigger: e.target.value })}
                   >
@@ -458,23 +478,23 @@ export default function ThemePage() {
                       <option key={t.value} value={t.value}>{t.label}</option>
                     ))}
                   </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-pysim-outline pointer-events-none" />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Visual — Emoji หรือ URL รูป</label>
+                <label className="text-xs font-bold uppercase tracking-widest text-pysim-outline">Visual — Emoji หรือ URL รูป</label>
                 <div className="flex gap-3 items-center">
                   {/* preview */}
-                  <div className="w-14 h-14 border-2 border-gray-200 rounded-xl bg-gray-50 flex items-center justify-center text-2xl flex-shrink-0">
-                    {effectData.visual?.startsWith("http")
-                      ? <img src={effectData.visual} alt="" className="w-9 h-9 object-contain" />
+                  <div className="w-14 h-14 border-2 border-pysim-outline-variant/50 rounded-xl bg-pysim-surface flex items-center justify-center text-2xl flex-shrink-0">
+                    {isImage(effectData.visual)
+                      ? <img src={assetUrl(effectData.visual)} alt="" className="w-9 h-9 object-contain" />
                       : effectData.visual
                     }
                   </div>
                   <div className="flex-1 space-y-2">
                     <input
-                      className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-400 transition"
+                      className="w-full border-2 border-pysim-outline-variant/50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-pysim-primary transition"
                       placeholder="💖 หรือ https://...png"
                       value={effectData.visual}
                       onChange={(e) => setEffectData({ ...effectData, visual: e.target.value })}
@@ -488,34 +508,34 @@ export default function ThemePage() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Color</label>
+                <label className="text-xs font-bold uppercase tracking-widest text-pysim-outline">Color</label>
                 <div className="flex items-center gap-3">
                   <input
                     type="color"
-                    className="w-12 h-10 border-2 border-gray-200 rounded-lg p-0.5 cursor-pointer"
+                    className="w-12 h-10 border-2 border-pysim-outline-variant/50 rounded-lg p-0.5 cursor-pointer"
                     value={effectData.color}
                     onChange={(e) => setEffectData({ ...effectData, color: e.target.value })}
                   />
-                  <div className="w-8 h-8 rounded-lg border-2 border-gray-200" style={{ background: effectData.color }} />
-                  <span className="text-xs text-gray-400 font-mono">{effectData.color}</span>
+                  <div className="w-8 h-8 rounded-lg border-2 border-pysim-outline-variant/50" style={{ background: effectData.color }} />
+                  <span className="text-xs text-pysim-outline font-mono">{effectData.color}</span>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-widest text-gray-400">ขนาด (px)</label>
+                  <label className="text-xs font-bold uppercase tracking-widest text-pysim-outline">ขนาด (px)</label>
                   <input
                     type="number"
-                    className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-400 transition"
+                    className="w-full border-2 border-pysim-outline-variant/50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-pysim-primary transition"
                     value={effectData.size}
                     onChange={(e) => setEffectData({ ...effectData, size: Number(e.target.value) })}
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-widest text-gray-400">Duration (ms)</label>
+                  <label className="text-xs font-bold uppercase tracking-widest text-pysim-outline">Duration (ms)</label>
                   <input
                     type="number"
-                    className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-400 transition"
+                    className="w-full border-2 border-pysim-outline-variant/50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-pysim-primary transition"
                     value={effectData.duration}
                     onChange={(e) => setEffectData({ ...effectData, duration: Number(e.target.value) })}
                   />
@@ -526,13 +546,13 @@ export default function ThemePage() {
             <div className="flex gap-3 p-6 pt-0">
               <button
                 onClick={handleSaveEffect}
-                className="flex-1 py-3 rounded-xl font-bold text-white text-sm bg-gradient-to-r from-cyan-500 to-blue-500 hover:opacity-90 transition"
+                className="flex-1 py-3 rounded-xl font-bold text-white text-sm bg-gradient-to-r from-pysim-primary to-pysim-primary-container hover:opacity-90 transition"
               >
                 บันทึก
               </button>
               <button
                 onClick={() => setShowEffectModal(false)}
-                className="flex-1 py-3 rounded-xl text-gray-500 text-sm bg-gray-100 hover:bg-gray-200 transition"
+                className="flex-1 py-3 rounded-xl text-pysim-on-surface-variant text-sm bg-pysim-surface-low hover:bg-pysim-surface-container transition"
               >
                 ยกเลิก
               </button>
