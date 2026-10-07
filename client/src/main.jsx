@@ -4,6 +4,9 @@ import App from './App.jsx';
 import { ThemeProvider } from './contexts/ThemeContext';
 import './index.css';
 import './i18n';
+import { installAuthTransport } from './auth/session';
+
+installAuthTransport();
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

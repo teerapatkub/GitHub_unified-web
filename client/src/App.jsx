@@ -9,6 +9,8 @@ import { NavBar } from './components/ui/tubelight-navbar';
 import MouseEffectLayer from './components/MouseEffectLayer';
 import ModeEntryHeader from './components/ModeEntryHeader';
 import useModeTransition from './hooks/useModeTransition';
+import { currentPlayer, signOut, isRecovery } from './auth/session';
+import { getSupabaseClient } from './supabaseClient.js';
 
 
 // --- Friend's Learning Pages ---
@@ -49,7 +51,7 @@ export default function App() {
     const savedVolume = localStorage.getItem('musicVolume') || 50;
     if (audioRef.current) {
       audioRef.current.volume = savedVolume / 100;
-      audioRef.current.play().catch(e => console.log("รอ User คลิกหน้าเว็บก่อนเล่นเพลง"));
+      audioRef.current.play().catch(() => console.log("รอ User คลิกหน้าเว็บก่อนเล่นเพลง"));
     }
   }, []);
 
@@ -70,35 +72,66 @@ export default function App() {
 // ######################################################################
 // ### APP CONTENT (Inside Router)
 // ######################################################################
+function SupabaseConnectionTest() {
+  const [result, setResult] = useState({ loading: true, error: '', data: null });
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    let active = true;
+    async function checkConnection() {
+      try {
+        const supabase = getSupabaseClient();
+        const { data, error } = await supabase
+          .from('arcade_items')
+          .select('item_id,item_code,name_th,name_en,price,icon,type')
+          .order('item_id')
+          .limit(20)
+          .abortSignal(controller.signal);
+        if (error) throw new Error('Supabase query failed. Check network access, API key, table grants, and SELECT policies.');
+        if (active) setResult({ loading: false, error: '', data });
+      } catch (error) {
+        if (active) setResult({ loading: false, error: error.message, data: null });
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+    checkConnection();
+    return () => {
+      active = false;
+      clearTimeout(timeout);
+      controller.abort();
+    };
+  }, []);
+
+  return (
+    <section className="mx-auto w-full max-w-3xl p-6 text-white" aria-label="Supabase connection test">
+      <h1 className="mb-4 text-2xl font-bold">Supabase connection test</h1>
+      <p>Read-only query: arcade_items (up to 20 public shop items).</p>
+      {result.loading && <p role="status">Connecting to Supabase…</p>}
+      {result.error && <p role="alert" className="mt-4 text-red-300">{result.error}</p>}
+      {result.data !== null && (
+        <>
+          <p role="status" className="mt-4">Connected. Returned {result.data.length} rows.</p>
+          {result.data.length === 0 && <p>No visible rows. The table may be empty or row-level security may hide its rows.</p>}
+          <pre className="mt-4 max-w-full overflow-auto rounded bg-black/30 p-4">{JSON.stringify(result.data, null, 2)}</pre>
+        </>
+      )}
+    </section>
+  );
+}
+
+
 function AppContent() {
   const navigate = useNavigate();
   const location = useLocation();
   useModeTransition(location.pathname);
 
-  // === Auth State ===
-  // Seeded synchronously from localStorage on the very first render rather
-  // than starting at null and waiting for the hydration effect below. Starting
-  // at null meant a hard load of any protected deep link rendered its route
-  // guard as unauthenticated for one render, redirecting to /login before the
-  // effect could restore the saved session — the URL had already changed, so
-  // the player ended up on /learn instead of the page they asked for. Reading
-  // the same key the effect reads keeps the two in agreement; the effect still
-  // runs afterwards to handle an injected user, guest defaults, and profile
-  // refresh.
-  const [user, setUser] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem('user') || 'null');
-      if (saved?.user_id && !saved?.isGuest) {
-        return { ...saved, isGuest: false, level: Number(saved.level || 1) };
-      }
-      return saved;
-    } catch {
-      return null;
-    }
-  });
+  // Cached cosmetics are presentation only; access starts closed until /auth/me verifies it.
+  const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
+  const [authError, setAuthError] = useState('');
   const isAuthenticated = Boolean(user && !user.isGuest);
-
 
   const syncUserToState = useCallback((nextUser) => {
     if (!nextUser) return;
@@ -114,10 +147,6 @@ function AppContent() {
     if (!currentUser || currentUser.isGuest) return;
     const uid = currentUser.user_id || currentUser.id;
     if (!uid) return;
-
-    if (injectedUser && typeof injectedUser === 'object' && injectedUser.xp != null) {
-      syncUserToState({ ...currentUser, ...injectedUser, isGuest: false });
-    }
 
     try {
       const response = await fetch(`${API_BASE}/api/user/profile/${uid}`);
@@ -167,73 +196,36 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    const searchParams = new URLSearchParams(location.search);
-    const userParam = searchParams.get('user');
-    const persistAuthenticatedUser = (incomingUser) => {
-      const authenticatedUser = {
-        ...incomingUser,
-        isGuest: false,
-        level: Number(incomingUser?.level ?? 1),
-      };
-      syncUserToState(authenticatedUser);
-      return authenticatedUser;
-    };
-
-    if (userParam) {
+    let cancelled = false;
+    let sequence = 0;
+    const restore = async () => {
+      const request = ++sequence;
       try {
-        let parsedUser = null;
-
-        try {
-          parsedUser = JSON.parse(userParam);
-        } catch {
-          parsedUser = JSON.parse(decodeURIComponent(userParam));
-        }
-
-        if (parsedUser?.user_id || parsedUser?.username) {
-          persistAuthenticatedUser(parsedUser);
-          setAuthReady(true);
-          navigate(location.pathname, { replace: true });
-          return;
-        }
-      } catch {
-        // fall through to stored user / guest fallback
+        const player = await currentPlayer();
+        if (cancelled || request !== sequence) return;
+        setAuthError('');
+        if (player) syncUserToState(player);
+        else { setUser(null); localStorage.removeItem('user'); }
+      } catch (error) {
+        if (!cancelled && request === sequence) { setUser(null); setAuthError(error.message); }
+      } finally {
+        if (!cancelled && request === sequence) setAuthReady(true);
       }
-    }
-
-    const savedUser = JSON.parse(localStorage.getItem('user') || 'null');
-    const defaultGuest = {
-      user_id: `guest_${Math.random().toString(36).substr(2, 9)}`,
-      username: 'Guest User',
-      role: 'guest',
-      level: 1,
-      isGuest: true
     };
-
-    if (savedUser?.user_id && !savedUser?.isGuest) {
-      syncUserToState({
-        ...savedUser,
-        isGuest: false,
-        level: Number(savedUser.level ?? 1),
-      });
-      setAuthReady(true);
-      return;
-    }
-
-    if (!savedUser || (savedUser.isGuest && savedUser.level !== defaultGuest.level)) {
-      syncUserToState(defaultGuest);
-      setAuthReady(true);
-      if (savedUser) window.location.reload();
-    } else {
-      syncUserToState(savedUser);
-      setAuthReady(true);
-    }
-  }, [location.pathname, location.search, navigate, syncUserToState]);
+    restore();
+    window.addEventListener('pyarena:session-changed', restore);
+    return () => { cancelled = true; window.removeEventListener('pyarena:session-changed', restore); };
+  }, [syncUserToState]);
 
   useEffect(() => {
     const onUserUpdated = (event) => {
       if (event.detail?.user) {
-        setUser(event.detail.user);
-        localStorage.setItem('user', JSON.stringify(event.detail.user));
+        setUser(current => {
+          if (!current || Number(event.detail.user.user_id) !== Number(current.user_id)) return current;
+          const next = { ...event.detail.user, user_id: current.user_id, role: current.role, username: current.username, isGuest: false };
+          localStorage.setItem('user', JSON.stringify(next));
+          return next;
+        });
       }
     };
     window.addEventListener('pysim:user-cosmetic-equipped', onUserUpdated);
@@ -303,16 +295,22 @@ function AppContent() {
   }, [getPresenceInfo, location.pathname, user?.isGuest, user?.user_id]);
 
   // === Login Success ===
-  const handleLoginSuccess = (userData) => {
-    const authenticatedUser = { ...userData, isGuest: false };
-    syncUserToState(authenticatedUser);
-    navigate(authenticatedUser.role === 'admin' ? '/admin/dashboard' : '/learn');
+  const handleLoginSuccess = async () => {
+    try {
+      const player = await currentPlayer();
+      if (!player) throw new Error('กรุณาเข้าสู่ระบบอีกครั้ง');
+      syncUserToState(player);
+      setAuthError('');
+      if (player.level > 0 || player.role === 'admin') navigate(player.role === 'admin' ? '/admin/dashboard' : '/learn');
+    } catch (error) { setAuthError(error.message); }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('user');
-    setUser(null);
-    navigate('/login', { replace: true });
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      setUser(null);
+      navigate('/login', { replace: true });
+    } catch (error) { setAuthError(error.message); }
   };
 
   // === Lesson Navigation (Bridge for friend's onNavigate) ===
@@ -366,12 +364,14 @@ function AppContent() {
   const requireStudent = (element) => {
     if (!authReady) return null;
     if (!isAuthenticated) return <Navigate to="/login" replace />;
+    if (user.level === 0 && user.role !== 'admin') return <Navigate to="/login" replace />;
     if (isAdminUser) return <Navigate to="/admin/dashboard" replace />;
     return element;
   };
   const requireAdmin = (element) => {
     if (!authReady) return null;
     if (!isAuthenticated) return <Navigate to="/login" replace />;
+    if (user.level === 0 && user.role !== 'admin') return <Navigate to="/login" replace />;
     if (!isAdminUser) return <Navigate to="/learn" replace />;
     return element;
   };
@@ -381,12 +381,14 @@ function AppContent() {
   const requireGameModeRank = (element) => {
     if (!authReady) return null;
     if (!isAuthenticated) return <Navigate to="/login" replace />;
+    if (user.level === 0 && user.role !== 'admin') return <Navigate to="/login" replace />;
     if (!canEnterGameModes(user)) return <GameModeLocked user={user} />;
     return element;
   };
 
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-transparent text-slate-800 font-sans transition-colors duration-300 relative">
+      {authError && <div role="alert" className="relative z-50 bg-rose-50 p-4 text-center text-sm text-rose-700">{authError} <button className="underline" onClick={() => window.location.reload()}>ลองใหม่</button></div>}
       <MouseEffectLayer user={user} />
       <TheInfiniteGrid>
         {!hideNavbar && !isSimulationMode && (
@@ -419,12 +421,13 @@ function AppContent() {
                 element={
                   !authReady
                     ? null
-                    : isAuthenticated
+                    : isAuthenticated && user.level > 0 && !isRecovery()
                     ? <Navigate to={isAdminUser ? "/admin/dashboard" : "/learn"} replace />
-                    : <FriendLogin onLoginSuccess={handleLoginSuccess} />
+                    : <FriendLogin onLoginSuccess={handleLoginSuccess} sessionUser={user} />
                 }
               />
 
+              <Route path="/supabase-test" element={<SupabaseConnectionTest />} />
               {/* Friend's Learning Pages */}
               <Route path="/learn" element={
                 requireStudent(<div data-mode-transition-content><LearningPage onNavigate={handleNavigate} user={user} /></div>)

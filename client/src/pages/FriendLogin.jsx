@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { Eye, EyeOff, Check, X, AlertCircle, Code, Hexagon, Mail, KeyRound, ArrowLeft } from "lucide-react";
 import { Typewriter } from "../components/ui/typewriter-text";
 import { API_BASE } from '../config/api.js';
+import { getSupabaseClient } from '../supabaseClient';
+import { authRequest, acceptEmailSession, currentPlayer, initializeAuth, isRecovery, acceptGoogleSession, signOut } from '../auth/session';
 
 const isValidGoogleClientId = (clientId) => /^[\w.-]+\.apps\.googleusercontent\.com$/.test(clientId);
 
@@ -27,7 +29,7 @@ const getPasswordStrength = (password) => {
 // ======================================================
 // MAIN COMPONENT
 // ======================================================
-export default function LoginPage({ onLoginSuccess }) {
+export default function LoginPage({ onLoginSuccess, sessionUser }) {
   const [step, setStep] = useState("login");
   const [surveySteps, setSurveySteps] = useState([]);
   const [surveyStep, setSurveyStep] = useState(0);
@@ -47,7 +49,8 @@ export default function LoginPage({ onLoginSuccess }) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [email, setEmail] = useState("");
   const [resetEmail, setResetEmail] = useState("");
-  const [resetToken, setResetToken] = useState("");
+  const [confirmationEmail, setConfirmationEmail] = useState("");
+  const [needsConfirmation, setNeedsConfirmation] = useState(false);
   const [resetEmailHint, setResetEmailHint] = useState("");
   const [isRegister, setIsRegister] = useState(false);
   const [loggedInUser, setLoggedInUser] = useState(null);
@@ -74,28 +77,31 @@ export default function LoginPage({ onLoginSuccess }) {
   }, [step]);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get("reset");
-    if (!token) return;
+    if (sessionUser?.level === 0 && !loggedInUser && !isRecovery()) {
+      setLoggedInUser(sessionUser);
+      setStep('survey');
+    }
+  }, [sessionUser, loggedInUser]);
 
-    setResetToken(token);
-    setStep("resetPassword");
-    setError("");
-    setSuccess("");
+  useEffect(() => {
+    const hash = new URLSearchParams(window.location.hash.slice(1));
+    if (hash.has('error')) {
+      setError('ลิงก์ยืนยันหมดอายุหรือใช้ไปแล้ว กรุณาขออีเมลใหม่');
+      window.history.replaceState({}, '', '/login');
+    }
+    if (!isRecovery()) return;
+    let active = true;
+    setStep('resetPassword');
     setTokenChecking(true);
-
-    fetch(`${API_BASE}/api/password/reset/${encodeURIComponent(token)}`)
-      .then(async (res) => {
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.message || "ลิงก์เปลี่ยนรหัสผ่านไม่ถูกต้องหรือหมดอายุแล้ว");
-        setResetTokenValid(true);
-        setResetEmailHint(data.email || "");
-      })
-      .catch((err) => {
-        setResetTokenValid(false);
-        setError(err.message || "ลิงก์เปลี่ยนรหัสผ่านไม่ถูกต้องหรือหมดอายุแล้ว");
-      })
-      .finally(() => setTokenChecking(false));
+    initializeAuth().then(async () => {
+      const { data } = await getSupabaseClient().auth.getSession();
+      if (!active) return;
+      setResetTokenValid(Boolean(data.session));
+      setResetEmailHint(data.session?.user?.email || '');
+      if (!data.session) setError('ลิงก์เปลี่ยนรหัสผ่านไม่ถูกต้องหรือหมดอายุแล้ว กรุณาขอใหม่');
+    }).catch(() => { if (active) setError('เปิดลิงก์ไม่ได้ กรุณาขออีเมลใหม่'); })
+      .finally(() => { if (active) setTokenChecking(false); });
+    return () => { active = false; };
   }, []);
 
   // ======================================================
@@ -120,59 +126,26 @@ export default function LoginPage({ onLoginSuccess }) {
     }
 
     setLoading(true);
-    const endpoint = isRegister ? "/api/register" : "/api/login";
     try {
-      const loginAfterRegister = async () => {
-        const loginRes = await fetch(`${API_BASE}/api/login`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password }),
-        });
-        const loginData = await loginRes.json();
-        if (!loginRes.ok) {
-          throw new Error(loginData.message || loginData.error || "เข้าสู่ระบบหลังสมัครไม่สำเร็จ");
-        }
-        return loginData;
-      };
-
-      const res = await fetch(`${API_BASE}${endpoint}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-          isRegister ? { username, password, email } : { username, password }
-        ),
-      });
-      const data = await res.json().catch(() => ({}));
-
-      if (isRegister) {
-        let loginData;
-        let successMessage = data.message || "สมัครสมาชิกสำเร็จ";
-        if (!res.ok) {
-          if (res.status < 500) {
-            throw new Error(data.message || "ไม่สามารถสมัครสมาชิกได้");
-          }
-          try {
-            loginData = await loginAfterRegister();
-            successMessage = "สมัครสมาชิกสำเร็จ";
-          } catch {
-            throw new Error(data.message || "ไม่สามารถสมัครสมาชิกได้");
-          }
-        } else {
-          loginData = await loginAfterRegister();
-        }
-        setSuccess(successMessage);
-        setLoggedInUser(loginData);
-        await new Promise((resolve) => setTimeout(resolve, 700));
-        setStep("survey"); // ← แสดง Survey ทันทีหลังสมัคร
-      } else {
-        if (!res.ok) throw new Error(data.message || "ไม่สามารถดำเนินการได้");
-        // Login ปกติ
-        setLoggedInUser(data);
-        if (data.level === 0) setStep("survey");
-        else onLoginSuccess(data);
+      const data = await authRequest(isRegister ? 'sign-up' : 'sign-in',
+        isRegister ? { username, email, password } : { identifier: username, password });
+      if (data.confirmationRequired) {
+        setNeedsConfirmation(true);
+        setConfirmationEmail(email || (username.includes('@') ? username : ''));
+        setSuccess(data.message);
+        setPassword('');
+        setIsRegister(false);
+        return;
       }
+      await acceptEmailSession(data.session);
+      const player = await currentPlayer();
+      if (!player) throw new Error('ตรวจสอบบัญชีไม่ได้ กรุณาลองใหม่');
+      setLoggedInUser(player);
+      if (player.level === 0) setStep('survey');
+      else await onLoginSuccess(player);
     } catch (err) {
-      setError(err.message || "เกิดข้อผิดพลาด");
+      if (err.code === 'EMAIL_DELIVERY') { setNeedsConfirmation(true); setConfirmationEmail(email || (username.includes('@') ? username : '')); }
+      setError(err.code === 'EMAIL_REQUIRED' ? "บัญชีนี้ยังไม่มีอีเมลที่ใช้งานได้ กรุณาติดต่อผู้ดูแล" : err.message || "เกิดข้อผิดพลาด");
     } finally {
       setLoading(false);
     }
@@ -187,7 +160,7 @@ export default function LoginPage({ onLoginSuccess }) {
     setConfirmPassword("");
     setShowPasswordRules(false);
 
-    if (window.location.search.includes("reset=")) {
+    if (window.location.search.includes("auth=") || window.location.search.includes("reset=")) {
       window.history.replaceState({}, "", window.location.pathname);
     }
   };
@@ -204,17 +177,8 @@ export default function LoginPage({ onLoginSuccess }) {
 
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/password/forgot`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: resetEmail }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.message || "ส่งอีเมลไม่สำเร็จ");
-      setSuccess(data.message || "ส่งลิงก์เปลี่ยนรหัสผ่านแล้ว");
-      if (data.debugResetUrl) {
-        setSuccess(`${data.message} (โหมดทดสอบ: ${data.debugResetUrl})`);
-      }
+      const data = await authRequest('forgot-password', { email: resetEmail });
+      setSuccess(data.message);
     } catch (err) {
       setError(err.message || "ส่งอีเมลไม่สำเร็จ");
     } finally {
@@ -239,14 +203,10 @@ export default function LoginPage({ onLoginSuccess }) {
 
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/password/reset`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: resetToken, password }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.message || "เปลี่ยนรหัสผ่านไม่สำเร็จ");
-      setSuccess(data.message || "เปลี่ยนรหัสผ่านสำเร็จ");
+      const { error: resetError } = await getSupabaseClient().auth.updateUser({ password });
+      if (resetError) throw new Error('เปลี่ยนรหัสผ่านไม่ได้ ลิงก์อาจหมดอายุหรือรหัสผ่านไม่ผ่านเงื่อนไข');
+      await signOut();
+      setSuccess('เปลี่ยนรหัสผ่านสำเร็จ สามารถเข้าสู่ระบบด้วยรหัสผ่านใหม่ได้');
       setResetTokenValid(false);
       setPassword("");
       setConfirmPassword("");
@@ -359,6 +319,7 @@ export default function LoginPage({ onLoginSuccess }) {
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.message);
+            await acceptGoogleSession();
             setLoggedInUser(data);
             if (data.level === 0) setStep("survey");
             else onLoginSuccess(data);
@@ -948,6 +909,19 @@ export default function LoginPage({ onLoginSuccess }) {
             <div className="flex-1 h-[1px] bg-gradient-to-r from-transparent via-pysim-outline-variant to-transparent"></div>
           </div>
 
+          {needsConfirmation && (
+            <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm">
+              <p>ตรวจอีเมลยืนยันก่อนเข้าสู่ระบบ หากไม่พบให้ตรวจสแปมหรือขอส่งใหม่</p>
+              <input type="email" aria-label="อีเมลสำหรับส่งยืนยันอีกครั้ง" placeholder="อีเมลสำหรับส่งยืนยันอีกครั้ง" value={confirmationEmail} onChange={event => setConfirmationEmail(event.target.value)} className="mt-3 w-full rounded-lg border p-2" />
+              <button type="button" disabled={loading || !confirmationEmail} className="mt-2 font-bold text-blue-700 disabled:opacity-50" onClick={async () => {
+                setLoading(true); setError('');
+                try { const result = await authRequest('resend', { email: confirmationEmail }); setSuccess(result.message); }
+                catch (err) { setError(err.message); }
+                finally { setLoading(false); }
+              }}>ส่งอีเมลยืนยันอีกครั้ง</button>
+            </div>
+          )}
+
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             {isRegister && (
@@ -965,10 +939,10 @@ export default function LoginPage({ onLoginSuccess }) {
             )}
 
             <div>
-              <label className="block text-xs font-semibold text-pysim-primary mb-1.5 uppercase tracking-wider ml-1">ชื่อผู้ใช้</label>
+              <label className="block text-xs font-semibold text-pysim-primary mb-1.5 uppercase tracking-wider ml-1">{isRegister ? 'ชื่อผู้ใช้' : 'อีเมลหรือชื่อผู้ใช้'}</label>
               <input
                 type="text"
-                placeholder="Username"
+                placeholder={isRegister ? "Username" : "อีเมลหรือชื่อผู้ใช้"}
                 className="w-full p-3.5 bg-pysim-surface-low/50 border border-pysim-outline-variant/30 rounded-2xl outline-none focus:ring-2 focus:ring-pysim-primary/30 focus:border-pysim-primary text-pysim-on-surface transition-all placeholder:text-pysim-outline"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}

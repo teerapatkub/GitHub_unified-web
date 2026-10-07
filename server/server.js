@@ -24,8 +24,56 @@ const { gradeSubmission, screenUnverifiedSubmission } = require('./problemGrader
 const { evaluateLesson, POST_PASS_RATIO } = require('./lessonProgress');
 
 const app = express();
-app.use(cors());
+app.use(cors({ origin: (origin, callback) => {
+  const allowed = String(process.env.AUTH_ALLOWED_ORIGINS || 'http://localhost:5174,http://127.0.0.1:5174').split(',').map(value => value.trim());
+  if (process.env.CLIENT_URL) allowed.push(new URL(process.env.CLIENT_URL).origin);
+  callback(null, !origin || allowed.includes(origin));
+}, credentials: true }));
 app.use(express.json());
+const { createClient } = require('@supabase/supabase-js');
+let supabase;
+let supabaseConfigurationError;
+try {
+  const url = process.env.SUPABASE_URL?.trim();
+  const key = process.env.SUPABASE_SECRET_KEY?.trim();
+  if (!url || !key || !key.startsWith('sb_secret_')) throw new Error();
+  const parsed = new URL(url);
+  if (!['https:', 'http:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error();
+  supabase = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+} catch {
+  supabaseConfigurationError = 'Check SUPABASE_URL and SUPABASE_SECRET_KEY in server/.env, then restart the server.';
+  console.warn(supabaseConfigurationError);
+}
+
+// Only public shop metadata already served by /api/arcade/items.
+// Never accept arbitrary tables or columns when using a privileged client.
+async function testSupabase(req, res) {
+  res.set('Cache-Control', 'no-store');
+  if (!supabase) {
+    return res.status(503).json({ connected: false, error: supabaseConfigurationError });
+  }
+  const healthOnly = req.path === '/api/health';
+  try {
+    const { data, error } = await supabase
+      .from('arcade_items')
+      .select('item_id,item_code,name_th,name_en,price,icon,type', { head: healthOnly })
+      .order('item_id')
+      .limit(healthOnly ? 1 : 20)
+      .abortSignal(AbortSignal.timeout(10000));
+    if (error) throw new Error('Query failed');
+    return res.json(healthOnly ? { connected: true } : data);
+  } catch {
+    return res.status(502).json({
+      connected: false,
+      error: 'Supabase query failed. Check network access, server credentials, and arcade_items Data API access.',
+    });
+  }
+}
+app.get('/api/health', testSupabase);
+app.get('/api/your-table', testSupabase);
+
 const db = require('./db');
 const { createThemeRouter } = require('./themeRoutes');
 const { issueAdminToken } = require('./adminAccess');
@@ -36,6 +84,8 @@ const { createLessonContentRouter } = require('./lessonContentRoutes');
 app.use('/api', createLessonContentRouter(db));
 const { createStudentProgressRouter } = require('./studentProgressRoutes');
 app.use('/api/admin/student-progress', createStudentProgressRouter(db));
+const { installAuth } = require('./auth');
+const playerAuth = installAuth(app, db, supabase);
 
 const GOOGLE_CLIENT_ID = String(process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || '').trim();
 const isValidGoogleClientId = (clientId) => /^[\w.-]+\.apps\.googleusercontent\.com$/.test(clientId);
@@ -2710,11 +2760,13 @@ app.post('/api/auth/google', async (req, res) => {
         if (!emailVerified) return res.status(400).json({ message: 'บัญชี Google นี้ยังไม่ได้ยืนยันอีเมล' });
 
         // ตรวจสอบว่ามี user ในระบบแล้วหรือยัง
-        const [existing] = await db.execute('SELECT * FROM users WHERE email = ?', [email]);
+        const [existing] = await db.execute('SELECT * FROM users WHERE lower(trim(email)) = ? LIMIT 2', [email.toLowerCase()]);
+        if (existing.length > 1) return res.status(409).json({ message: 'อีเมลซ้ำกับหลายบัญชี กรุณาติดต่อผู้ดูแล' });
 
         if (existing.length > 0) {
             // Login ถ้ามี user อยู่แล้ว
             const user = existing[0];
+            if (!playerAuth.accountEnabled(user)) return res.status(403).json({ message: 'บัญชีนี้ไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแล' });
             // Remember the Google picture, and show it only if the account has not
             // already chosen a picture of its own - a returning user who uploaded
             // one should keep it. Google sign-in is blocked externally right now
@@ -2732,6 +2784,7 @@ app.post('/api/auth/google', async (req, res) => {
                     user.avatar_source = AVATAR_SOURCE.GOOGLE;
                 }
             }
+            await playerAuth.issueGoogleSession(res, user.user_id);
             res.json({
                 user_id: user.user_id,
                 admin_token: issueAdminToken(user),
@@ -2766,6 +2819,7 @@ app.post('/api/auth/google', async (req, res) => {
                 [result.insertId, 'google-oauth']
             );
 
+            await playerAuth.issueGoogleSession(res, result.insertId);
             res.json({
                 user_id: result.insertId,
                 username,
