@@ -1,0 +1,164 @@
+// Room polling and membership responses contain public gameplay state only.
+function publicParticipants(rows) {
+  const fields = ['id', 'room_id', 'match_id', 'user_name', 'is_host', 'score', 'cash',
+    'is_eliminated', 'joined_at', 'last_seen', 'has_submitted', 'coins_awarded'];
+  return rows.map(row => Object.fromEntries(fields.filter(key => key in row).map(key => [key, row[key]])));
+}
+
+function installArcadeRoomReads(app, db) {
+  // 4. Get specific room state & participants. Polled every ~2s by every
+  // connected client for the whole lobby+match lifetime, so it also doubles as
+  // the presence heartbeat consumed by the stale-connection sweep below.
+  app.get('/api/arcade/rooms/:id', async (req, res) => {
+    try {
+      const roomId = req.params.id;
+      const userName = req.player.username;
+      if (userName) {
+        await db.query(
+          `UPDATE arcade_participants SET last_seen = CURRENT_TIMESTAMP WHERE room_id = ? AND user_name = ?`,
+          [roomId, userName]
+        );
+      }
+      const [rooms] = await db.query(`SELECT * FROM arcade_rooms WHERE room_id = ?`, [roomId]);
+      if (!rooms || rooms.length === 0) {
+        return res.status(404).json({ error: 'ไม่พบห้องแข่งขัน' });
+      }
+      const [participants] = await db.query(
+        `SELECT * FROM arcade_participants WHERE room_id = ? ORDER BY joined_at ASC`,
+        [roomId]
+      );
+      const { password: _pwd, ...roomSafe } = rooms[0];
+      res.json({ success: true, room: roomSafe, participants: publicParticipants(participants) });
+    } catch (err) {
+      console.error('❌ GET /api/arcade/rooms/:id error:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Read another player's code during a match - the spectator view.
+  //
+  // The permission rule is the whole point: only a viewer who has already
+  // submitted this round, or who is out of the match, may look. Anyone still able
+  // to edit their own answer would simply be copying, so they are refused even
+  // when the player they want to watch has finished. A viewer may always read
+  // their own row back, which is what makes this double as reconnect recovery.
+  //
+  // Bots have no code. They are answered honestly rather than with an empty
+  // editor that reads like a player who has written nothing.
+  app.get('/api/arcade/rooms/:id/code/:user_name', async (req, res) => {
+    try {
+      const roomId = req.params.id;
+      const target = req.params.user_name;
+      const viewer = req.player.username;
+      if (!viewer) return res.status(400).json({ error: 'ต้องระบุผู้ขอดู' });
+
+      const [rows] = await db.query(
+        `SELECT user_name, draft_code, submitted_code, has_submitted, is_eliminated, draft_updated_at
+         FROM arcade_participants WHERE room_id = ? AND user_name IN (?, ?)`,
+        [roomId, viewer, target]
+      );
+      const viewerRow = rows.find((r) => r.user_name === viewer);
+      const targetRow = rows.find((r) => r.user_name === target);
+      if (!viewerRow) return res.status(404).json({ error: 'ไม่พบผู้ขอดูในห้องนี้' });
+      if (!targetRow) return res.status(404).json({ error: 'ไม่พบผู้เล่นคนนี้ในห้อง' });
+
+      const lookingAtSelf = viewer === target;
+      const mayWatch = lookingAtSelf
+        || Number(viewerRow.has_submitted) === 1
+        || Number(viewerRow.is_eliminated) === 1;
+      if (!mayWatch) {
+        return res.status(403).json({ error: 'ดูโค้ดของผู้เล่นคนอื่นได้หลังจากส่งคำตอบแล้วเท่านั้น' });
+      }
+
+      if (String(target).startsWith('Bot_')) {
+        return res.json({ user_name: target, is_bot: true, code: null, has_submitted: Number(targetRow.has_submitted) === 1 });
+      }
+
+      const submitted = Number(targetRow.has_submitted) === 1;
+      res.json({
+        user_name: target,
+        is_bot: false,
+        has_submitted: submitted,
+        code: (submitted ? targetRow.submitted_code : targetRow.draft_code) || '',
+        updated_at: targetRow.draft_updated_at,
+      });
+    } catch (err) {
+      console.error('❌ GET /api/arcade/rooms/:id/code/:user_name error:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/arcade/players/:user_name/history', async (req, res) => {
+    try {
+      const userName = req.player.username;
+      if (req.params.user_name !== userName) return res.status(403).json({ error: 'ดูประวัติโค้ดได้เฉพาะบัญชีของคุณ' });
+      const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 10));
+
+      const [rows] = await db.query(
+        `SELECT match_id, room_id, room_code, room_name, difficulty, round_duration_mode, round_num, code,
+            pass_count, total_count, quality_score, time_used_seconds, round_score, match_ended_at
+        FROM arcade_round_history
+        WHERE user_name = ? AND match_ended_at IS NOT NULL
+        ORDER BY match_id DESC, round_num ASC`,
+        [userName]
+      );
+
+      // Group flat rows into matches, preserving the newest-first ordering
+      // the query already established.
+      const byMatch = new Map();
+      for (const row of rows || []) {
+        if (!byMatch.has(row.match_id)) {
+          byMatch.set(row.match_id, {
+            match_id: row.match_id,
+            room_id: row.room_id,
+            room_code: row.room_code,
+            room_name: row.room_name,
+            // What the match was actually played at. Needed to judge a
+            // result at all: "2 of 4 rounds finished" means something
+            // different in a 30-second room than a 60-second one.
+            difficulty: row.difficulty,
+            round_duration_mode: row.round_duration_mode,
+            ended_at: row.match_ended_at,
+            total_score: 0,
+            rounds: []
+          });
+        }
+        const match = byMatch.get(row.match_id);
+        match.total_score += row.round_score || 0;
+        match.rounds.push({
+          round_num: row.round_num, code: row.code,
+          pass_count: row.pass_count, total_count: row.total_count,
+          quality_score: row.quality_score, time_used_seconds: row.time_used_seconds,
+          round_score: row.round_score
+        });
+      }
+
+      res.json({ success: true, matches: Array.from(byMatch.values()).slice(0, limit) });
+    } catch (err) {
+      console.error('❌ GET /api/arcade/players/:user_name/history error:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/arcade/rooms/:id/round-history', async (req, res) => {
+    try {
+      const roomId = req.params.id;
+      const userName = req.player.username;
+      if (!userName) return res.status(400).json({ error: 'ต้องระบุชื่อผู้เล่น' });
+
+      const [rows] = await db.query(
+        `SELECT round_num, code, pass_count, total_count, quality_score, time_used_seconds, round_score
+        FROM arcade_round_history
+        WHERE room_id = ? AND user_name = ?
+         AND match_id = COALESCE(?, (SELECT current_match_id FROM arcade_rooms WHERE room_id = ?))
+        ORDER BY round_num ASC`,
+        [roomId, userName, req.query.match_id || null, roomId]
+      );
+      res.json({ success: true, history: rows || [] });
+    } catch (err) {
+      console.error('❌ GET /api/arcade/rooms/:id/round-history error:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+}
+module.exports = { installArcadeRoomReads, publicParticipants };

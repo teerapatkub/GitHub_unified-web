@@ -5774,6 +5774,13 @@ app.post(shopPath('/equip'), async (req, res) => {
     }
 });
 
+// Do not serve Arcade against a partially migrated schema.
+app.use('/api/arcade', async (req, res, next) => {
+  await db.ready;
+  if (!db.arcadeReady) return res.status(503).json({ error: 'Arcade is unavailable until its database migration succeeds.' });
+  next();
+});
+
 app.get('/api/arcade/items', async (req, res) => {
     try {
         const [dbItems] = await db.query(`SELECT item_id, item_code as id, name_th as nameTH, name_en as nameEN, desc_th as descTH, desc_en as descEN, price, icon, type FROM arcade_items ORDER BY item_id ASC`);
@@ -6058,61 +6065,6 @@ function synthesizeBotRoundScore(totalCount, roundDuration, difficulty) {
 // round is not a challenge, it is a guaranteed zero for everyone. A Quick Mode
 // room therefore draws from a genuinely smaller pool than a standard one,
 // which is the intent rather than a side effect.
-async function drawArcadeRoundTasks(room) {
-    const pickFrom = room.difficulty && room.difficulty !== 'default'
-        ? [room.difficulty]
-        : ['easy', 'medium'];
-    const finaleDifficulty = arcadeConfig.finalePoolByDifficulty[room.difficulty || 'default']
-        || arcadeConfig.finalePoolByDifficulty.default;
-
-    const [pool] = await db.query(
-        `SELECT task_id, work_chars FROM arcade_tasks WHERE difficulty IN (${pickFrom.map(() => '?').join(',')})`,
-        pickFrom
-    );
-    const [finalePool] = await db.query(
-        `SELECT task_id, work_chars FROM arcade_tasks WHERE difficulty = ?`,
-        [finaleDifficulty]
-    );
-
-    // Every round in a mode is the same length, so one budget covers the draw.
-    // autoSubmitLeadSeconds comes off the top because the client submits for
-    // the player that far before the deadline - those seconds were never
-    // typing time.
-    const roundSeconds = arcadePhaseDurations(room).ROUND_1;
-    const budget = Math.max(0, roundSeconds - arcadeConfig.autoSubmitLeadSeconds)
-        * arcadeConfig.beginnerCharsPerMinute / 60;
-
-    const shuffle = (arr) => {
-        const a = [...arr];
-        for (let i = a.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [a[i], a[j]] = [a[j], a[i]];
-        }
-        return a;
-    };
-
-    // Prefer problems that fit the clock, but never fail the draw over it. If
-    // too few fit - a very short mode, or rows seeded before work_chars existed
-    // and still NULL - fall back to the shortest available. Returning null here
-    // would silently drop the match back onto the three fixed built-in tasks.
-    const fitted = (rows, needed) => {
-        const list = (rows || []).map(r => ({ id: r.task_id, work: r.work_chars ?? Infinity }));
-        const inBudget = shuffle(list.filter(r => r.work <= budget)).map(r => r.id);
-        if (inBudget.length >= needed) return inBudget;
-        const rest = list.filter(r => r.work > budget)
-            .sort((a, b) => a.work - b.work)
-            .map(r => r.id);
-        return [...inBudget, ...rest];
-    };
-
-    const early = fitted(pool, 3).slice(0, 3);
-    // Round 4 must not repeat anything Rounds 1-3 already used, which is
-    // possible whenever the finale pool is the same one Rounds 1-3 drew from.
-    const finale = fitted(finalePool, 1).filter(id => !early.includes(id))[0];
-
-    if (early.length < 3 || finale === undefined) return null;
-    return [...early, finale];
-}
 
 // Phase 8.3 — fold one finished match into every real player's career totals.
 // Called exactly once per match, at the moment finalizeArcadePhase() moves the
@@ -6123,7 +6075,7 @@ async function drawArcadeRoundTasks(room) {
 // RESULT screen ranks on, so "wins" here always agrees with the winner the
 // players actually saw. Never allowed to throw: a stats-bookkeeping problem
 // must not stop a match from ending.
-async function recordArcadePlayerStats(roomId) {
+async function recordArcadePlayerStats(roomId, matchId) {
     try {
         // Step 5 — mark this match's history rows as belonging to a FINISHED
         // match. The history list only shows completed matches, so an
@@ -6131,9 +6083,10 @@ async function recordArcadePlayerStats(roomId) {
         // review screen. Done here because this runs exactly once per match,
         // at the moment the room reaches RESULT.
         await db.query(
-            `UPDATE arcade_round_history SET match_ended_at = CURRENT_TIMESTAMP WHERE room_id = ? AND match_ended_at IS NULL`,
-            [roomId]
+            `UPDATE arcade_round_history SET match_ended_at = CURRENT_TIMESTAMP WHERE match_id = ? AND match_ended_at IS NULL`,
+            [matchId]
         );
+        await db.query('UPDATE arcade_matches SET ended_at = CURRENT_TIMESTAMP WHERE match_id = ? AND ended_at IS NULL', [matchId]);
         const [participants] = await db.query(
             `SELECT user_name, score, cash FROM arcade_participants WHERE room_id = ?`,
             [roomId]
@@ -6310,11 +6263,11 @@ async function gradeArcadeRoundSubmissions({ room, roundNum, participants, round
         try {
             await db.query(
                 `INSERT INTO arcade_round_history
-                    (room_id, room_code, room_name, difficulty, round_duration_mode, user_name, round_num,
+                    (match_id, room_id, room_code, room_name, difficulty, round_duration_mode, user_name, round_num,
                      code, pass_count, total_count, quality_score, time_used_seconds, round_score)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                 ON CONFLICT (room_id, user_name, round_num) DO NOTHING`,
-                [room.room_id, room.room_code, room.room_name,
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 ON CONFLICT (match_id, user_name, round_num) DO NOTHING`,
+                [room.current_match_id, room.room_id, room.room_code, room.room_name,
                  room.difficulty || 'default', room.round_duration_mode || 'standard',
                  p.user_name, roundNum, g.code.slice(0, 20000),
                  g.passCount, g.totalCount, g.quality, g.timeUsed, g.roundScore]
@@ -6449,7 +6402,7 @@ async function finalizeArcadePhase(room) {
                 `UPDATE arcade_rooms SET phase = 'RESULT', phase_deadline = NULL, current_round = ?, last_round_summary = ? WHERE room_id = ?`,
                 [roundNum, JSON.stringify(summary), roomId]
             );
-            await recordArcadePlayerStats(roomId);
+            await recordArcadePlayerStats(roomId, room.current_match_id);
         } else {
             const nextDeadline = new Date(Date.now() + arcadePhaseDurations(room)[`SUMMARY_${roundNum}`] * 1000);
             await db.query(
@@ -6483,6 +6436,7 @@ async function finalizeArcadePhase(room) {
 // for multiple missed ticks, e.g. server hiccup, catches up one tick at a
 // time on subsequent runs rather than skipping phases).
 async function tickArcadeMatches() {
+    if (!db.arcadeReady) return;
     const [dueRooms] = await db.query(
         `SELECT * FROM arcade_rooms WHERE status = 'PLAYING' AND phase NOT IN ('LOBBY', 'RESULT') AND phase_deadline IS NOT NULL AND phase_deadline <= CURRENT_TIMESTAMP`
     );
@@ -6719,7 +6673,7 @@ app.post('/api/arcade/rooms/join', async (req, res) => {
         res.json({
             success: true,
             room: roomSafe,
-            participants: updatedParticipants
+            participants: publicParticipants(updatedParticipants)
         });
     } catch (err) {
         try { await connection.rollback(); } catch { /* connection already closed */ }
@@ -6729,34 +6683,8 @@ app.post('/api/arcade/rooms/join', async (req, res) => {
     }
 });
 
-// 4. Get specific room state & participants. Polled every ~2s by every
-// connected client for the whole lobby+match lifetime, so it also doubles as
-// the presence heartbeat consumed by the stale-connection sweep below.
-app.get('/api/arcade/rooms/:id', async (req, res) => {
-    try {
-        const roomId = req.params.id;
-        const userName = req.query.user_name;
-        if (userName) {
-            await db.query(
-                `UPDATE arcade_participants SET last_seen = CURRENT_TIMESTAMP WHERE room_id = ? AND user_name = ?`,
-                [roomId, userName]
-            );
-        }
-        const [rooms] = await db.query(`SELECT * FROM arcade_rooms WHERE room_id = ?`, [roomId]);
-        if (!rooms || rooms.length === 0) {
-            return res.status(404).json({ error: 'ไม่พบห้องแข่งขัน' });
-        }
-        const [participants] = await db.query(
-            `SELECT * FROM arcade_participants WHERE room_id = ? ORDER BY joined_at ASC`,
-            [roomId]
-        );
-        const { password: _pwd, ...roomSafe } = rooms[0];
-        res.json({ success: true, room: roomSafe, participants });
-    } catch (err) {
-        console.error('❌ GET /api/arcade/rooms/:id error:', err.message);
-        res.status(500).json({ error: err.message });
-    }
-});
+const { installArcadeRoomReads, publicParticipants } = require('./arcade/room-api');
+installArcadeRoomReads(app, db);
 
 // 5. Host updates room settings
 app.post('/api/arcade/rooms/:id/settings', async (req, res) => {
@@ -6873,46 +6801,15 @@ app.post('/api/arcade/rooms/:id/add-bot', async (req, res) => {
             [roomId]
         );
 
-        res.json({ success: true, bot_name: chosenBotName, participants: updatedParticipants });
+        res.json({ success: true, bot_name: chosenBotName, participants: publicParticipants(updatedParticipants) });
     } catch (err) {
         console.error('❌ POST /api/arcade/rooms/:id/add-bot error:', err.message);
         res.status(500).json({ error: err.message });
     }
 });
 
-// 8. Host starts room match
-app.post('/api/arcade/rooms/:id/start', async (req, res) => {
-    try {
-        const roomId = req.params.id;
-        const { host_name } = req.body;
-
-        const [rooms] = await db.query(`SELECT * FROM arcade_rooms WHERE room_id = ?`, [roomId]);
-        if (!rooms || rooms.length === 0) return res.status(404).json({ error: 'ไม่พบห้อง' });
-        if (rooms[0].host_name !== host_name) return res.status(403).json({ error: 'สิทธิ์เฉพาะหัวห้องเท่านั้น' });
-
-        const [participants] = await db.query(`SELECT id FROM arcade_participants WHERE room_id = ?`, [roomId]);
-        if (!participants || participants.length < 2) {
-            return res.status(400).json({ error: 'ต้องมีผู้เล่นในห้องอย่างน้อย 2 คนจึงจะเริ่มการแข่งขันได้' });
-        }
-
-        const deadline = new Date(Date.now() + arcadePhaseDurations(rooms[0]).ROUND_1 * 1000);
-        // Draw this match's problems before anyone can see a round.
-        const drawnTasks = await drawArcadeRoundTasks(rooms[0]);
-        await db.query(
-            `UPDATE arcade_rooms SET status = 'PLAYING', phase = 'ROUND_1', phase_deadline = ?, current_round = 1, last_round_summary = NULL, round_task_ids = ? WHERE room_id = ?`,
-            [deadline, drawnTasks ? JSON.stringify(drawnTasks) : null, roomId]
-        );
-        await db.query(
-            `UPDATE arcade_participants SET score = 0, cash = 0, is_eliminated = 0, has_submitted = 0, pending_round_score = NULL, submitted_code = NULL, submitted_at = NULL, score_multiplier_active = 0, draft_code = NULL, draft_updated_at = NULL WHERE room_id = ?`,
-            [roomId]
-        );
-
-        res.json({ success: true, message: 'เริ่มการแข่งขันแล้ว!' });
-    } catch (err) {
-        console.error('❌ POST /api/arcade/rooms/:id/start error:', err.message);
-        res.status(500).json({ error: err.message });
-    }
-});
+const { installArcadeMatchStart } = require('./arcade/match-api');
+installArcadeMatchStart(app, db);
 
 // 8b. A real player reports their own already-judged round result (passCount/
 // readability/timeBonus folded into one score, computed client-side via
@@ -7016,59 +6913,6 @@ app.post('/api/arcade/rooms/:id/code-draft', async (req, res) => {
     }
 });
 
-// Read another player's code during a match - the spectator view.
-//
-// The permission rule is the whole point: only a viewer who has already
-// submitted this round, or who is out of the match, may look. Anyone still able
-// to edit their own answer would simply be copying, so they are refused even
-// when the player they want to watch has finished. A viewer may always read
-// their own row back, which is what makes this double as reconnect recovery.
-//
-// Bots have no code. They are answered honestly rather than with an empty
-// editor that reads like a player who has written nothing.
-app.get('/api/arcade/rooms/:id/code/:user_name', async (req, res) => {
-    try {
-        const roomId = req.params.id;
-        const target = req.params.user_name;
-        const viewer = req.query.viewer;
-        if (!viewer) return res.status(400).json({ error: 'ต้องระบุผู้ขอดู' });
-
-        const [rows] = await db.query(
-            `SELECT user_name, draft_code, submitted_code, has_submitted, is_eliminated, draft_updated_at
-               FROM arcade_participants WHERE room_id = ? AND user_name IN (?, ?)`,
-            [roomId, viewer, target]
-        );
-        const viewerRow = rows.find((r) => r.user_name === viewer);
-        const targetRow = rows.find((r) => r.user_name === target);
-        if (!viewerRow) return res.status(404).json({ error: 'ไม่พบผู้ขอดูในห้องนี้' });
-        if (!targetRow) return res.status(404).json({ error: 'ไม่พบผู้เล่นคนนี้ในห้อง' });
-
-        const lookingAtSelf = viewer === target;
-        const mayWatch = lookingAtSelf
-            || Number(viewerRow.has_submitted) === 1
-            || Number(viewerRow.is_eliminated) === 1;
-        if (!mayWatch) {
-            return res.status(403).json({ error: 'ดูโค้ดของผู้เล่นคนอื่นได้หลังจากส่งคำตอบแล้วเท่านั้น' });
-        }
-
-        if (String(target).startsWith('Bot_')) {
-            return res.json({ user_name: target, is_bot: true, code: null, has_submitted: Number(targetRow.has_submitted) === 1 });
-        }
-
-        const submitted = Number(targetRow.has_submitted) === 1;
-        res.json({
-            user_name: target,
-            is_bot: false,
-            has_submitted: submitted,
-            code: (submitted ? targetRow.submitted_code : targetRow.draft_code) || '',
-            updated_at: targetRow.draft_updated_at,
-        });
-    } catch (err) {
-        console.error('❌ GET /api/arcade/rooms/:id/code/:user_name error:', err.message);
-        res.status(500).json({ error: err.message });
-    }
-});
-
 // Shop buy/sell/reroll all reduce to "add or subtract some amount of cash,
 // authoritatively" — before this endpoint existed, ArcadeBattleRoyale.jsx's
 // buyItem()/sellItem()/rollShop() only ever called local setPlayerState(),
@@ -7120,55 +6964,6 @@ app.post('/api/arcade/rooms/:id/shop-cash-delta', async (req, res) => {
 // submitted. Scoped to one player for the same reason the in-match version is:
 // handing out everyone's solutions would turn this into an answer key.
 // Only finished matches appear (match_ended_at IS NOT NULL).
-app.get('/api/arcade/players/:user_name/history', async (req, res) => {
-    try {
-        const userName = req.params.user_name;
-        const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 10));
-
-        const [rows] = await db.query(
-            `SELECT room_id, room_code, room_name, difficulty, round_duration_mode, round_num, code,
-                    pass_count, total_count, quality_score, time_used_seconds, round_score, match_ended_at
-             FROM arcade_round_history
-             WHERE user_name = ? AND match_ended_at IS NOT NULL
-             ORDER BY room_id DESC, round_num ASC`,
-            [userName]
-        );
-
-        // Group flat rows into matches, preserving the newest-first ordering
-        // the query already established.
-        const byRoom = new Map();
-        for (const row of rows || []) {
-            if (!byRoom.has(row.room_id)) {
-                byRoom.set(row.room_id, {
-                    room_id: row.room_id,
-                    room_code: row.room_code,
-                    room_name: row.room_name,
-                    // What the match was actually played at. Needed to judge a
-                    // result at all: "2 of 4 rounds finished" means something
-                    // different in a 30-second room than a 60-second one.
-                    difficulty: row.difficulty,
-                    round_duration_mode: row.round_duration_mode,
-                    ended_at: row.match_ended_at,
-                    total_score: 0,
-                    rounds: []
-                });
-            }
-            const match = byRoom.get(row.room_id);
-            match.total_score += row.round_score || 0;
-            match.rounds.push({
-                round_num: row.round_num, code: row.code,
-                pass_count: row.pass_count, total_count: row.total_count,
-                quality_score: row.quality_score, time_used_seconds: row.time_used_seconds,
-                round_score: row.round_score
-            });
-        }
-
-        res.json({ success: true, matches: Array.from(byRoom.values()).slice(0, limit) });
-    } catch (err) {
-        console.error('❌ GET /api/arcade/players/:user_name/history error:', err.message);
-        res.status(500).json({ error: err.message });
-    }
-});
 
 // Phase 8.2 — room chat and emoji reactions.
 //
@@ -7271,25 +7066,6 @@ app.get('/api/arcade/rooms/:id/chat', async (req, res) => {
 // "review your code" panel on the RESULT screen. Scoped to one player on
 // purpose: a match is a competition, and handing everyone else's solutions to
 // every player at the end would turn the RESULT screen into an answer key.
-app.get('/api/arcade/rooms/:id/round-history', async (req, res) => {
-    try {
-        const roomId = req.params.id;
-        const userName = req.query.user_name;
-        if (!userName) return res.status(400).json({ error: 'ต้องระบุชื่อผู้เล่น' });
-
-        const [rows] = await db.query(
-            `SELECT round_num, code, pass_count, total_count, quality_score, time_used_seconds, round_score
-             FROM arcade_round_history
-             WHERE room_id = ? AND user_name = ?
-             ORDER BY round_num ASC`,
-            [roomId, userName]
-        );
-        res.json({ success: true, history: rows || [] });
-    } catch (err) {
-        console.error('❌ GET /api/arcade/rooms/:id/round-history error:', err.message);
-        res.status(500).json({ error: err.message });
-    }
-});
 
 // Phase 8.3 — a player's Arcade career totals for the lobby stats card.
 // Returns a zeroed record rather than 404 for someone who has never finished
@@ -7351,30 +7127,6 @@ app.post('/api/arcade/rooms/:id/leave', async (req, res) => {
 });
 
 // 10. Post-match finish choice (REMAIN vs LEAVE)
-app.post('/api/arcade/rooms/:id/finish-choice', async (req, res) => {
-    try {
-        const roomId = req.params.id;
-        const { user_name, choice } = req.body; // 'REMAIN' or 'LEAVE'
-
-        if (choice === 'LEAVE') {
-            await db.query(`DELETE FROM arcade_participants WHERE room_id = ? AND user_name = ?`, [roomId, user_name]);
-        } else if (choice === 'REMAIN') {
-            await db.query(
-                `UPDATE arcade_participants SET score = 0, cash = 0, is_eliminated = 0, has_submitted = 0, pending_round_score = NULL, submitted_code = NULL, submitted_at = NULL, score_multiplier_active = 0, draft_code = NULL, draft_updated_at = NULL WHERE room_id = ? AND user_name = ?`,
-                [roomId, user_name]
-            );
-            await db.query(
-                `UPDATE arcade_rooms SET status = 'WAITING', current_round = 0, phase = 'LOBBY', phase_deadline = NULL, last_round_summary = NULL WHERE room_id = ?`,
-                [roomId]
-            );
-        }
-
-        res.json({ success: true, choice });
-    } catch (err) {
-        console.error('❌ POST /api/arcade/rooms/:id/finish-choice error:', err.message);
-        res.status(500).json({ error: err.message });
-    }
-});
 
 // 11. Attack another real participant (or a bot — bots are real
 // arcade_participants rows too) — targeted or AOE debuffs go into the
@@ -7413,15 +7165,15 @@ app.post('/api/arcade/rooms/:id/attack', async (req, res) => {
             // Also queue a delivery row so the victim's own client (polling /effects)
             // deducts the same amount from their locally-held cash state.
             await db.query(
-                `INSERT INTO arcade_effects (room_id, attacker_name, target_name, effect_type, item_name, amount) VALUES (?, ?, ?, ?, ?, ?)`,
-                [roomId, attacker_name, target_name, effect_type, item_name || effect_type, stolen]
+                `INSERT INTO arcade_effects (match_id, room_id, attacker_name, target_name, effect_type, item_name, amount) VALUES ((SELECT current_match_id FROM arcade_rooms WHERE room_id = ?), ?, ?, ?, ?, ?, ?)`,
+                [roomId, roomId, attacker_name, target_name, effect_type, item_name || effect_type, stolen]
             );
             return res.json({ success: true, stolen });
         }
 
         await db.query(
-            `INSERT INTO arcade_effects (room_id, attacker_name, target_name, effect_type, item_name) VALUES (?, ?, ?, ?, ?)`,
-            [roomId, attacker_name, target_name, effect_type, item_name || effect_type]
+            `INSERT INTO arcade_effects (match_id, room_id, attacker_name, target_name, effect_type, item_name) VALUES ((SELECT current_match_id FROM arcade_rooms WHERE room_id = ?), ?, ?, ?, ?, ?)`,
+            [roomId, roomId, attacker_name, target_name, effect_type, item_name || effect_type]
         );
 
         res.json({ success: true });
@@ -7446,8 +7198,9 @@ app.get('/api/arcade/rooms/:id/effects', async (req, res) => {
         const [pending] = await db.query(
             `SELECT id, attacker_name, target_name, effect_type, item_name, amount, created_at
              FROM arcade_effects WHERE room_id = ? AND target_name = ? AND delivered = 0
+               AND match_id = (SELECT current_match_id FROM arcade_rooms WHERE room_id = ?)
              ORDER BY created_at ASC`,
-            [roomId, userName]
+            [roomId, userName, roomId]
         );
 
         if (pending && pending.length > 0) {
@@ -7558,7 +7311,7 @@ async function sweepArcadeRoundHistory() {
             `DELETE FROM arcade_round_history
              WHERE id IN (
                  SELECT id FROM (
-                     SELECT id, DENSE_RANK() OVER (PARTITION BY user_name ORDER BY room_id DESC) AS match_rank
+                     SELECT id, DENSE_RANK() OVER (PARTITION BY user_name ORDER BY match_id DESC) AS match_rank
                      FROM arcade_round_history
                  ) ranked
                  WHERE match_rank > ?

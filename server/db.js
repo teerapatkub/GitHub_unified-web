@@ -790,6 +790,26 @@ db.ready = (async () => {
         await db.query(`ALTER TABLE arcade_tasks ADD COLUMN IF NOT EXISTS hint_en TEXT;`);
         }
 
+        // Create the legacy shape before applying its incremental migrations.
+        // Round settlement records human submissions here. The migrations below
+        // detach history from the room lifetime and assign a distinct match ID.
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS arcade_round_history (
+                id SERIAL PRIMARY KEY,
+                room_id INTEGER NOT NULL REFERENCES arcade_rooms(room_id) ON DELETE CASCADE,
+                user_name VARCHAR(50) NOT NULL,
+                round_num INTEGER NOT NULL,
+                code TEXT,
+                pass_count INTEGER DEFAULT 0,
+                total_count INTEGER DEFAULT 0,
+                quality_score INTEGER DEFAULT 0,
+                time_used_seconds INTEGER DEFAULT 0,
+                round_score INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (room_id, user_name, round_num)
+            );
+        `);
+
         // Phase 8.3 / Step 5 — round history must outlive its room.
         //
         // It was originally created with ON DELETE CASCADE to arcade_rooms,
@@ -860,29 +880,8 @@ db.ready = (async () => {
             CREATE INDEX IF NOT EXISTS idx_arcade_chat_room_id ON arcade_chat_messages (room_id, id);
         `);
 
-        // Phase 8.3 — per-round record of what a real player actually submitted,
-        // written by POST /rooms/:id/submit-round. Powers the "review your code"
-        // panel on the RESULT screen. Match-scoped review data, so it cascades
-        // away with its room exactly like arcade_participants/arcade_effects do
-        // (the durable cross-match numbers live in arcade_player_stats below).
-        // Bots never write here — they have no code to review, and their round
-        // score is synthesized server-side rather than submitted.
-        await db.query(`
-            CREATE TABLE IF NOT EXISTS arcade_round_history (
-                id SERIAL PRIMARY KEY,
-                room_id INTEGER NOT NULL REFERENCES arcade_rooms(room_id) ON DELETE CASCADE,
-                user_name VARCHAR(50) NOT NULL,
-                round_num INTEGER NOT NULL,
-                code TEXT,
-                pass_count INTEGER DEFAULT 0,
-                total_count INTEGER DEFAULT 0,
-                quality_score INTEGER DEFAULT 0,
-                time_used_seconds INTEGER DEFAULT 0,
-                round_score INTEGER DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE (room_id, user_name, round_num)
-            );
-        `);
+        await require('./arcade/migrate-matches').migrateArcadeMatches(db);
+        db.arcadeReady = true;
 
         // Phase 8.3 — durable per-player Arcade career totals, updated once per
         // match when finalizeArcadePhase() moves a room to RESULT. Deliberately

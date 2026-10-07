@@ -9,7 +9,7 @@ import RoundHistoryPanel from './RoundHistoryPanel.jsx';
 // where they get at it. Collapsed by default: the lobby's job is to get you
 // into a game, not to bury the room list under a wall of past results.
 export default function PastMatchesPanel({ matches, t }) {
-  const [openRoom, setOpenRoom] = useState(null);
+  const [openMatch, setOpenMatch] = useState(null);
 
   if (!matches || matches.length === 0) return null;
 
@@ -33,11 +33,11 @@ export default function PastMatchesPanel({ matches, t }) {
       </div>
 
       {matches.map((m) => {
-        const isOpen = openRoom === m.room_id;
+        const isOpen = openMatch === m.match_id;
         return (
-          <div key={m.room_id} className="border-b border-slate-100 last:border-0">
+          <div key={m.match_id} className="border-b border-slate-100 last:border-0">
             <button
-              onClick={() => setOpenRoom(isOpen ? null : m.room_id)}
+              onClick={() => setOpenMatch(isOpen ? null : m.match_id)}
               className="w-full flex items-center justify-between gap-4 px-6 py-3 hover:bg-slate-50 transition-colors text-left"
             >
               <div className="min-w-0">

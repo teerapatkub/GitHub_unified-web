@@ -208,7 +208,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
   // career card). Takes primitives rather than the currentRoom object so its
   // effects don't re-subscribe on every room-state poll.
   const { roundHistory, playerStats, pastMatches } = useProgression({
-    playerName: playerState.name, roomId, phase, API_BASE
+    playerName: playerState.name, roomId, matchId: currentRoom?.current_match_id, phase, API_BASE
   });
 
   // Phase 8.2 — chat/reactions. Same primitive-only inputs as useProgression

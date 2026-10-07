@@ -11,7 +11,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { PHASES } from '../constants.js';
 
-export default function useProgression({ playerName, roomId, phase, API_BASE }) {
+export default function useProgression({ playerName, roomId, matchId, phase, API_BASE }) {
   const [roundHistory, setRoundHistory] = useState([]);
   const [playerStats, setPlayerStats] = useState(null);
   const [pastMatches, setPastMatches] = useState([]);
@@ -62,12 +62,12 @@ export default function useProgression({ playerName, roomId, phase, API_BASE }) 
   // Round history for the match that just ended. Fetched once on entering
   // RESULT; the rows are already final by then, so there's nothing to poll.
   useEffect(() => {
-    if (phase !== PHASES.RESULT || !roomId || !playerName) return;
+    if (phase !== PHASES.RESULT || !roomId || !matchId || !playerName) return;
     let cancelled = false;
     (async () => {
       try {
         const res = await fetch(
-          `${API_BASE}/api/arcade/rooms/${roomId}/round-history?user_name=${encodeURIComponent(playerName)}`
+          `${API_BASE}/api/arcade/rooms/${roomId}/round-history?user_name=${encodeURIComponent(playerName)}&match_id=${matchId}`
         );
         const data = await res.json();
         if (!cancelled && data.success) setRoundHistory(data.history || []);
@@ -76,7 +76,7 @@ export default function useProgression({ playerName, roomId, phase, API_BASE }) 
       }
     })();
     return () => { cancelled = true; };
-  }, [phase, roomId, playerName, API_BASE]);
+  }, [phase, roomId, matchId, playerName, API_BASE]);
 
   return { roundHistory, playerStats, pastMatches, fetchPlayerStats };
 }
