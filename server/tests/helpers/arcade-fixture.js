@@ -1,3 +1,4 @@
+const { installArcadeSubmissions } = require('../../arcade/submission-api');
 const { migrateArcadeMatches } = require('../../arcade/migrate-matches');
 const { Pool } = require('pg');
 const crypto = require('node:crypto');
@@ -7,7 +8,7 @@ const { installArcadeMatchStart } = require('../../arcade/match-api');
 const { installArcadeRoomReads } = require('../../arcade/room-api');
 
 // Never load server/.env. Tests require an explicit disposable PostgreSQL target.
-async function arcadeFixture(t, { beforeMigration } = {}) {
+async function arcadeFixture(t, { beforeMigration, beforeShopMigration } = {}) {
   if (!process.env.TEST_DATABASE_URL) throw new Error('Set TEST_DATABASE_URL to a disposable PostgreSQL database (not the application database).');
   const schema = `arcade_test_${crypto.randomBytes(8).toString('hex')}`;
   const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL, options: `-c search_path=${schema}` });
@@ -26,18 +27,26 @@ async function arcadeFixture(t, { beforeMigration } = {}) {
   };
   const db = { ...wrap(pool), getConnection: async () => wrap(await pool.connect()) };
   await pool.query(`
-    CREATE TABLE users (user_id serial PRIMARY KEY, username text UNIQUE, role text DEFAULT 'user', level integer DEFAULT 10, is_deleted integer DEFAULT 0, is_banned integer DEFAULT 0, ban_until timestamptz);
+    CREATE TABLE users (user_id serial PRIMARY KEY, username text UNIQUE, role text DEFAULT 'user', level integer DEFAULT 10, virtual_currency integer DEFAULT 0, is_deleted integer DEFAULT 0, is_banned integer DEFAULT 0, ban_until timestamptz);
     CREATE TABLE arcade_rooms (room_id serial PRIMARY KEY, room_code varchar(10), room_name varchar(100), host_name varchar(50), password text, max_players integer DEFAULT 5, status text DEFAULT 'WAITING', phase text DEFAULT 'LOBBY', phase_deadline timestamp, current_round integer DEFAULT 0, last_round_summary jsonb, round_task_ids jsonb, difficulty text DEFAULT 'default', round_duration_mode text DEFAULT 'standard', created_at timestamp DEFAULT now());
     CREATE TABLE arcade_participants (id serial PRIMARY KEY, room_id integer REFERENCES arcade_rooms(room_id) ON DELETE CASCADE, user_name varchar(50), is_host integer DEFAULT 0, has_submitted integer DEFAULT 0, is_eliminated integer DEFAULT 0, draft_code text, submitted_code text, draft_updated_at timestamp, submitted_at timestamp, last_seen timestamp DEFAULT now(), joined_at timestamp DEFAULT now(), score integer DEFAULT 0, cash integer DEFAULT 0, coins_awarded integer DEFAULT 0, pending_round_score integer, score_multiplier_active integer DEFAULT 0, UNIQUE(room_id,user_name));
     CREATE TABLE arcade_round_history (id serial PRIMARY KEY, room_id integer NOT NULL, room_code varchar(10), room_name varchar(100), user_name varchar(50), round_num integer, code text, pass_count integer DEFAULT 0, total_count integer DEFAULT 0, quality_score integer DEFAULT 0, time_used_seconds integer DEFAULT 0, round_score integer DEFAULT 0, difficulty text, round_duration_mode text, match_ended_at timestamp, created_at timestamp DEFAULT now(), UNIQUE(room_id,user_name,round_num));
     CREATE TABLE arcade_effects (id serial PRIMARY KEY, room_id integer REFERENCES arcade_rooms(room_id) ON DELETE CASCADE);
     CREATE TABLE arcade_tasks (task_id serial PRIMARY KEY, work_chars integer, difficulty text);
+    CREATE TABLE arcade_player_stats (user_name varchar(50) PRIMARY KEY, matches_played integer DEFAULT 0, wins integer DEFAULT 0, best_rank integer, total_score integer DEFAULT 0, total_cash_earned integer DEFAULT 0, updated_at timestamp DEFAULT now());
     INSERT INTO users (username) VALUES ('alice'), ('bob'), ('outsider');
     INSERT INTO arcade_rooms (room_code,room_name,host_name) VALUES ('ARC-TEST','Test room','alice');
     INSERT INTO arcade_participants (room_id,user_name,is_host,draft_code) VALUES (1,'alice',1,'alice draft'),(1,'bob',0,'bob secret');
   `);
   if (beforeMigration) await beforeMigration(db);
   await migrateArcadeMatches(db);
+  await require('../../arcade/migrate-rewards').migrateArcadeRewards(db);
+  if (beforeShopMigration) await beforeShopMigration(db);
+  await require('../../arcade/migrate-shop').migrateArcadeShop(db);
+  await require('../../arcade/migrate-self-effects').migrateArcadeSelfEffects(db);
+  await require('../../arcade/migrate-attacks').migrateArcadeAttacks(db);
+  await require('../../arcade/migrate-bots').migrateArcadeBots(db);
+  await require('../../arcade/migrate-drafts').migrateArcadeDrafts(db);
   const app = express();
   app.use(express.json());
   const auth = installAuth(app, db, null, {});
@@ -48,6 +57,9 @@ async function arcadeFixture(t, { beforeMigration } = {}) {
     await db.query('INSERT INTO player_google_sessions (token_hash,user_id,expires_at) VALUES (?,?,?)', [crypto.createHash('sha256').update(token).digest('hex'), index + 1, new Date(Date.now() + 3600000)]);
     cookies[name] = `pyarena_google_session=${token}`;
   }
+  require('../../arcade/bot-api').installArcadeBots(app, db);
+  installArcadeSubmissions(app, db);
+  require('../../arcade/shop-api').installArcadeShop(app, db);
   installArcadeRoomReads(app, db);
   installArcadeMatchStart(app, db);
   const server = app.listen(0, '127.0.0.1');

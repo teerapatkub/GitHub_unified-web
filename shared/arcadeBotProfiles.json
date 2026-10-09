@@ -1,0 +1,76 @@
+[
+  {
+    "id": "bot_pyninja",
+    "name": "Bot_PyNinja",
+    "personality": "SPEED",
+    "avatar": "⚡",
+    "typingSpeedMs": 1200,
+    "accuracy": 0.95,
+    "attackChance": 0.2,
+    "favoriteItems": [
+      "scoreMultiplier",
+      "inkFog"
+    ],
+    "description": "สายสปีด พิมพ์โค้ดเร็วมาก มุ่งเน้นเก็บคะแนนนำก่อนใคร"
+  },
+  {
+    "id": "bot_bughunter",
+    "name": "Bot_BugHunter",
+    "personality": "SABOTEUR",
+    "avatar": "💣",
+    "typingSpeedMs": 2200,
+    "accuracy": 0.85,
+    "attackChance": 0.8,
+    "favoriteItems": [
+      "timeFreeze",
+      "inkFog",
+      "mirrorMode",
+      "screenShake"
+    ],
+    "description": "สายก่อกวน ชอบซื้อไอเทมหมึกบังตา แช่แข็ง กลับหัวโค้ด ยิงใส่ผู้เล่น"
+  },
+  {
+    "id": "bot_nullpointer",
+    "name": "Bot_NullPointer",
+    "personality": "REVENGE",
+    "avatar": "🎯",
+    "typingSpeedMs": 1800,
+    "accuracy": 0.9,
+    "attackChance": 0.4,
+    "favoriteItems": [
+      "blackout",
+      "screenDimmer",
+      "timeFreeze"
+    ],
+    "description": "สายแก้แค้น จะจดจำและยิงไอเทมสวนคืนใส่คนที่เคยโจมตีมันเท่านั้น"
+  },
+  {
+    "id": "bot_codemaster",
+    "name": "Bot_CodeMaster",
+    "personality": "BALANCED",
+    "avatar": "👑",
+    "typingSpeedMs": 1500,
+    "accuracy": 0.98,
+    "attackChance": 0.5,
+    "favoriteItems": [
+      "shield",
+      "scoreMultiplier",
+      "timeFreeze"
+    ],
+    "description": "สายโปร บาลานซ์การพิมพ์โค้ด การกางเกราะป้องกัน และการยิงก่อกวน"
+  },
+  {
+    "id": "bot_syntaxpro",
+    "name": "Bot_SyntaxPro",
+    "personality": "SPEED",
+    "avatar": "🚀",
+    "typingSpeedMs": 1300,
+    "accuracy": 0.92,
+    "attackChance": 0.3,
+    "favoriteItems": [
+      "scoreMultiplier",
+      "shield"
+    ],
+    "description": "สายปั๊มคะแนน ซื้อ Score Booster และตั้งรับกางเกราะ"
+  }
+]

@@ -1,3 +1,4 @@
+import useRoundDraft from './hooks/useRoundDraft.js';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -17,8 +18,7 @@ import {
   ShoppingBag,
   Coins
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { botManager } from './bot/botManager.js';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import useRoomLifecycle from './hooks/useRoomLifecycle.js';
 import useRoundJudging from './hooks/useRoundJudging.js';
 import useShopEconomy from './hooks/useShopEconomy.js';
@@ -135,7 +135,6 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
   // Which SHOP_* phase this client has already rolled a personal shop
   // offering for — shop contents are per-player and never synced, so this
   // just stops re-rolling every 2s poll while still inside the same shop.
-  const lastShopRolledPhaseRef = useRef(null);
   const editorRef = useRef(null);
 
   // Monotonic counter instead of Date.now() — several notifications can
@@ -178,31 +177,31 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
   // player really does move rooms.
   const roomId = currentRoom?.room_id ?? null;
 
-  // Each concern's logic now lives in its own hook (client/src/pages/Arcade/hooks/*.js)
-  // — called in dependency order: combat first (round-judging needs its
-  // checkEffectActive for the scoreMultiplier check), round-judging next
-  // (room-lifecycle needs its getRound4Task for the resume-match effect),
-  // then shop, then room-lifecycle last.
-  // The hint for the problem currently on screen, held in a ref because
-  // useCombat() is constructed here — above the point where the round's task is
-  // resolved — and because a hint changing must not re-create the combat
-  // handlers. useCombat reads it only at the moment the aiHelper item is used.
-  const activeRoundHintRef = useRef('');
+  // Shop state restores inventory and self effects before combat renders them.
+  // Round judging supplies the task resolvers used by room lifecycle.
+  const {
+    shopState, rollShop, canBuyItem, buyItem, sellItem, consumeItem, retryShopCommand, shopRetryNeeded, retryShopSync, shopSyncError
+  } = useShopEconomy({ playerState, setPlayerState, setOpponents, currentRoom, notify, t, API_BASE });
+
 
   const {
-    targetingItem, setTargetingItem, checkEffectActive, dispatchBotAttackOnPlayer,
+    targetingItem, setTargetingItem, checkEffectActive,
     initiateItemUse, handleTargetClick, handleEditorKeyDown, handleCodeChange
   } = useCombat({ playerState, setPlayerState, opponents, setOpponents, currentRoom,
-    phase, notify, t, API_BASE, activeRoundHintRef });
+    phase, notify, t, API_BASE, consumeItem });
 
   const {
     getRound4Task, getPoolTask, submitMyRound, runCodeTests, handleManualSubmit,
     isGrading, consoleOutput, tasksReady
-  } = useRoundJudging({ playerState, setPlayerState, currentRoom, notify, t, lang, checkEffectActive, API_BASE });
+  } = useRoundJudging({ playerState, setPlayerState, currentRoom, notify, t, lang, API_BASE });
 
-  const {
-    shopState, rollShop, canBuyItem, buyItem, sellItem
-  } = useShopEconomy({ playerState, setPlayerState, currentRoom, notify, t, API_BASE });
+
+  const draftRound = Number(currentRoom?.phase?.split('_')[1]);
+  const draftStarter = draftRound === 4 ? getRound4Task()?.initialCode
+    : (getPoolTask(draftRound) || TASKS[currentRoom?.phase])?.initialCode;
+  const { draftReady, draftStatus, retryDraft } = useRoundDraft({
+    playerState, setPlayerState, currentRoom, starterCode: draftStarter ?? '', tasksReady, API_BASE
+  });
 
   // Phase 8.3 — read-only progression views (RESULT-screen code review + lobby
   // career card). Takes primitives rather than the currentRoom object so its
@@ -229,7 +228,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
     handleLeaveRoom, handleFinishChoice, handleConfirmForfeitExit
   } = useRoomLifecycle({
     playerState, setPlayerState, notify, t, navigate, API_BASE,
-    phase, setPhase, appliedPhaseRef, lastShopRolledPhaseRef, phaseDeadlineRef,
+    phase, setPhase, appliedPhaseRef, phaseDeadlineRef,
     setTimeLeft, setRoundSummary, getRound4Task, getPoolTask, tasksReady, setShowExitConfirm,
     currentRoom, setCurrentRoom, roomParticipants, setRoomParticipants
   });
@@ -259,7 +258,6 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
   // so the next mount won't try to restore a room that's gone.
   const handleRoomVanished = useCallback(() => {
     appliedPhaseRef.current = PHASES.LOBBY;
-    lastShopRolledPhaseRef.current = null;
     phaseDeadlineRef.current = 0;
     failedPollsRef.current = 0;
     setConnectionLost(false);
@@ -287,22 +285,6 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
     notify(t('roomClosedByServer'), "error");
   }, [notify, t, setPhase]);
 
-  // Latest task resolvers for the room-state poller below. The poller's own
-  // dependency array deliberately stays small (see its comment), which means
-  // anything it closes over is captured on mount — and on mount `dbTasks` is
-  // still empty and `currentRoom` is null. Calling getPoolTask/getRound4Task
-  // through that stale closure therefore always fell back to the built-in
-  // tasks: a room with a chosen difficulty showed the pool task's title while
-  // handing the player the OLD task's starting code (seen live: title
-  // "Anagram Checker" with `def fib(n):` in the editor), and Round 4 silently
-  // always used ROUND_4_FALLBACK_TASK instead of the DB's hard task. Reading
-  // through a ref gives the poller the current resolvers without widening its
-  // deps and re-subscribing it on every render.
-  const taskResolverRef = useRef({});
-  useEffect(() => {
-    taskResolverRef.current = { getPoolTask, getRound4Task, rollShop };
-  });
-
   // Fetch specific room status if joined. This is now the ONLY place that
   // ever moves `phase` forward — the server (tickArcadeMatches) is the sole
   // authority on what phase a room is in, so every client (host included)
@@ -312,9 +294,15 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
   // client-driven handlePhaseTransition() had.
   useEffect(() => {
     if (!roomId) return;
+    let stopped = false;
+    let polling = false;
     const fetchRoomState = async () => {
+      if (polling || stopped) return;
+      polling = true;
+      const startedAt = performance.now();
       try {
-        const res = await fetch(`${API_BASE}/api/arcade/rooms/${roomId}?user_name=${encodeURIComponent(playerState.name)}`);
+        const res = await fetch(`${API_BASE}/api/arcade/rooms/${roomId}?user_name=${encodeURIComponent(playerState.name)}`, { signal: AbortSignal.timeout(8000) });
+        if (stopped) return;
 
         // The room can legitimately disappear underneath a connected client:
         // the host leaves and empties it, or the server's stale-connection
@@ -327,7 +315,8 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
         }
 
         const data = await res.json();
-        if (!data.success) return;
+        if (stopped) return;
+        if (!res.ok || !data.success) throw new Error('Room state unavailable');
 
         // A poll that got through means the connection is healthy again.
         failedPollsRef.current = 0;
@@ -336,11 +325,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
         setCurrentRoom(data.room);
         setRoomParticipants(data.participants || []);
 
-        // Mirror DB-authoritative score/cash/eliminated onto every opponent —
-        // real or bot, both are real arcade_participants rows now — while
-        // keeping client-local cosmetic fields (progress, isDebuffed) intact
-        // instead of clobbering them every 2s (those come from botManager's
-        // own tick, not the DB).
+        // Scores, money and bot progress are shared server state.
         const others = (data.participants || []).filter(p => p.user_name !== playerState.name);
         setOpponents(prevOpponents => others.map(p => {
           const prev = prevOpponents.find(o => o.name === p.user_name);
@@ -350,8 +335,10 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
             cash: p.cash || 0,
             eliminated: p.is_eliminated === 1,
             hasSubmitted: p.has_submitted === 1,
-            isBot: p.user_name.startsWith('Bot_'),
-            progress: prev?.progress || 0,
+            isBot: p.participant_kind === 'bot',
+            progress: p.bot_progress || 0,
+            serverDebuffed: prev?.serverDebuffed || false,
+            serverEffects: prev?.serverEffects || [],
             isDebuffed: prev?.isDebuffed || false
           };
         }));
@@ -365,7 +352,9 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
             ...prev,
             score: myRow.score || 0,
             cash: myRow.cash || 0,
-            eliminated: myRow.is_eliminated === 1
+            eliminated: myRow.is_eliminated === 1,
+            hasSubmittedThisRound: myRow.has_submitted === 1
+              || (prev.codeScope === `${data.room.room_id}:${data.room.current_match_id}:${data.room.phase}:${prev.name}` && prev.hasSubmittedThisRound)
           }));
         }
 
@@ -375,7 +364,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
         // within a phase was invisible to this client until the next phase —
         // it kept counting down against a deadline it captured once.
         if (data.room.phase_deadline) {
-          phaseDeadlineRef.current = parseUtcTimestamp(data.room.phase_deadline);
+          phaseDeadlineRef.current = Date.now() + Math.max(0, parseUtcTimestamp(data.room.phase_deadline) - data.serverNow - (performance.now() - startedAt));
         }
 
         const serverPhase = data.room.phase || PHASES.LOBBY;
@@ -388,25 +377,20 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
         setTimeLeft(Math.max(0, Math.ceil((phaseDeadlineRef.current - Date.now()) / 1000)));
 
         if (serverPhase === PHASES.ROUND_1) {
-          botManager.resetAllBots();
+
           setOpponents(prev => prev.map(o => ({ ...o, progress: 0 })));
-          setPlayerState(prev => ({ ...prev, code: (taskResolverRef.current.getPoolTask(1, data.room) || TASKS.ROUND_1).initialCode, hint: "", hasSubmittedThisRound: false, inventory: [], activeEffects: [] }));
           notify("🎮 เริ่มการแข่งขัน!", "success");
         } else if (serverPhase === PHASES.ROUND_2) {
-          botManager.resetRoundProgress();
+
           setOpponents(prev => prev.map(o => ({ ...o, progress: 0 })));
-          setPlayerState(prev => ({ ...prev, code: (taskResolverRef.current.getPoolTask(2, data.room) || TASKS.ROUND_2).initialCode, hint: "", hasSubmittedThisRound: false }));
           notify(t('round2Start'), "warning");
         } else if (serverPhase === PHASES.ROUND_3) {
-          botManager.resetRoundProgress();
+
           setOpponents(prev => prev.map(o => ({ ...o, progress: 0 })));
-          setPlayerState(prev => ({ ...prev, code: (taskResolverRef.current.getPoolTask(3, data.room) || TASKS.ROUND_3).initialCode, hint: "", hasSubmittedThisRound: false }));
           notify(t('round3Start'), "warning");
         } else if (serverPhase === PHASES.ROUND_4) {
-          botManager.resetRoundProgress();
+
           setOpponents(prev => prev.map(o => ({ ...o, progress: 0 })));
-          const round4Task = taskResolverRef.current.getRound4Task(data.room);
-          setPlayerState(prev => ({ ...prev, code: round4Task.initialCode, hint: "", hasSubmittedThisRound: false }));
           notify(t('finalRound'), "warning");
         } else if (serverPhase === PHASES.SUMMARY_1 || serverPhase === PHASES.SUMMARY_2 || serverPhase === PHASES.SUMMARY_3) {
           // The server has no notion of "which client is viewing this" —
@@ -415,11 +399,6 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
           // RoundSummaryView to highlight/badge "(You)") is stamped on here.
           const summary = data.room.last_round_summary;
           setRoundSummary(summary ? { ...summary, entries: summary.entries.map(e => ({ ...e, isPlayer: e.name === playerState.name })) } : null);
-        } else if (serverPhase === PHASES.SHOP_1 || serverPhase === PHASES.SHOP_2 || serverPhase === PHASES.SHOP_3) {
-          if (lastShopRolledPhaseRef.current !== serverPhase) {
-            lastShopRolledPhaseRef.current = serverPhase;
-            taskResolverRef.current.rollShop(true);
-          }
         } else if (serverPhase === PHASES.RESULT) {
           notify(t('matchFinished'), "info");
         }
@@ -429,12 +408,13 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
         // is still running without them, which is worth telling them about.
         // The banner is purely informational — polling keeps retrying, and a
         // single successful poll clears it again.
+        if (stopped) return;
         failedPollsRef.current += 1;
         if (failedPollsRef.current >= CONNECTION_LOST_AFTER_FAILED_POLLS) {
           setConnectionLost(true);
         }
         console.error("Error updating room state:", err);
-      }
+      } finally { polling = false; }
     };
 
     fetchRoomState();
@@ -451,30 +431,21 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
     document.addEventListener('visibilitychange', onVisibilityChange);
 
     return () => {
+      stopped = true;
       clearInterval(roomInterval);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [roomId, playerState.name, notify, t, API_BASE, handleRoomVanished]);
 
-  // Latest-value mirror for the match tick below. The tick needs the current
-  // playerState/opponents/roomParticipants plus a few callbacks, but naming
-  // those in the tick effect's own dependency array is what broke it: the tick
-  // calls botManager.update(), which writes new playerState/opponents objects,
-  // so the effect re-subscribed on its own output — measured at ~164 re-runs
-  // per second. Every re-subscribe ran the cleanup, cancelling the pending 1s
-  // timeout before it could ever fire, which is why the phase countdown sat
-  // frozen on screen and the timeLeft===0 auto-submit safety net never ran (a
-  // player who didn't manually click submit silently scored 0 for the round).
-  // Reading through a ref keeps the tick on a real once-a-second interval.
+  // Read current state without restarting the once-a-second countdown.
   const tickRef = useRef({});
   useEffect(() => {
     tickRef.current = {
-      playerState, opponents, roomParticipants,
-      notify, dispatchBotAttackOnPlayer, submitMyRound
+      playerState, submitMyRound, draftReady
     };
   });
 
-  // Sync Timer and cosmetic Bot AI ticking. The server (tickArcadeMatches)
+  // Sync the countdown and automatic submission. The server (tickArcadeMatches)
   // is what actually advances the match once time runs out — this effect no
   // longer transitions phase itself. Once timeLeft hits 0, all it does is
   // make sure THIS player's own round result has been submitted (in case
@@ -484,23 +455,13 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
     if (phase === PHASES.LOBBY || phase === PHASES.RESULT) return;
 
     const tick = () => {
-      const {
-        playerState: ps, opponents: ops, roomParticipants: rp,
-        notify: notifyNow, dispatchBotAttackOnPlayer: attackNow, submitMyRound: submitNow
-      } = tickRef.current;
+      const { playerState: ps, submitMyRound: submitNow, draftReady: ready } = tickRef.current;
 
       // Recomputed from the absolute deadline every tick rather than
       // decrementing, so a throttled background tab self-corrects to the true
       // remaining time instead of drifting.
       const remaining = Math.max(0, Math.ceil((phaseDeadlineRef.current - Date.now()) / 1000));
       setTimeLeft(remaining);
-
-      if (remaining > 0) {
-        // Sync and update active bot AI instances (cosmetic only now — see
-        // botManager.js — real score/cash/elimination come from the server).
-        botManager.syncBots(rp, ps.name);
-        botManager.update(phase, ps, ops, setPlayerState, setOpponents, notifyNow, attackNow);
-      }
 
       // Safety net for a player who never pressed submit. Fires with
       // AUTO_SUBMIT_LEAD_SECONDS to spare rather than at 0 because
@@ -511,11 +472,11 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
       // seconds of Pyodide and AI work in the browser; that is the server's job
       // now, so the margin is only for the network.
       // Re-entry once a second across the lead window is harmless:
-      // submitMyRound() sets hasSubmittedThisRound up front and also guards on
-      // its own in-flight ref, so only the first call does any work.
+      // submitMyRound() guards in-flight requests and retries the same answer
+      // until the server confirms it. Stop retrying once the deadline expires.
       if (
         String(phase).startsWith('ROUND_') &&
-        remaining <= AUTO_SUBMIT_LEAD_SECONDS &&
+        ready && remaining > 0 && remaining <= AUTO_SUBMIT_LEAD_SECONDS &&
         !ps.hasSubmittedThisRound &&
         !ps.eliminated
       ) {
@@ -527,48 +488,6 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
     timerRef.current = setInterval(tick, 1000);
     return () => clearInterval(timerRef.current);
   }, [phase, setPlayerState, setOpponents]);
-
-  // Keeps the server's copy of this player's unfinished work roughly current
-  // while a round is open. It is what makes the spectator view possible at all
-  // (the server used to see a player's code for the first time when they
-  // pressed submit) and it doubles as crash recovery.
-  //
-  // Every 4 seconds rather than on every keystroke, and only when the text has
-  // actually changed since the last send: this is a nice-to-have running
-  // underneath a live match, and it must never become the reason a round feels
-  // slow. Stops the moment the answer is in - after that the draft would only
-  // disagree with what was submitted.
-  const lastDraftSentRef = useRef(null);
-  useEffect(() => {
-    if (!roomId || !String(phase).startsWith('ROUND_')) return;
-    lastDraftSentRef.current = null;
-
-    const send = async () => {
-      // Read through the tick mirror, never from a captured playerState: the
-      // code changes on every keystroke, so naming it as a dependency would
-      // tear this interval down and rebuild it on every character typed - and
-      // a 4s interval that restarts every 200ms never fires at all.
-      const ps = tickRef.current.playerState;
-      if (!ps || ps.hasSubmittedThisRound || ps.eliminated) return;
-      const code = ps.code || '';
-      if (code === lastDraftSentRef.current) return;
-      lastDraftSentRef.current = code;
-      try {
-        await fetch(`${API_BASE}/api/arcade/rooms/${roomId}/code-draft`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_name: ps.name, code })
-        });
-      } catch {
-        // A dropped draft is not worth telling the player about; the next
-        // tick resends, and the answer itself goes through submit-round.
-        lastDraftSentRef.current = null;
-      }
-    };
-
-    const interval = setInterval(send, 4000);
-    return () => clearInterval(interval);
-  }, [roomId, phase, API_BASE]);
 
   // Whoever the player is watching, refreshed on the same 2s beat as the rest
   // of the room so a watched editor keeps up with the person typing in it.
@@ -635,15 +554,15 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
   })();
   const isModeEntry = phase === PHASES.LOBBY && !currentRoom;
 
-  // Publish this round's hint for the aiHelper item. Sourced from the same
-  // shaped task as the title, the description and the starter code, so the item
-  // can never describe a different problem than the one being played. Written
-  // in an effect rather than during render — a ref write during render is a
-  // side effect, and React may render a component without committing it.
-  const activeRoundHint = activeRoundTask.hint || '';
+  // The server owns hint entitlement; the current localized task supplies its text.
+  const activeRoundHint = activeRoundTask.hint || t('aiHint');
+  const hintUnlocked = playerState.activeEffects.some(effect => effect.type === 'aiHelper' && effect.expiresAt > Date.now());
   useEffect(() => {
-    activeRoundHintRef.current = activeRoundHint;
-  }, [activeRoundHint]);
+    setPlayerState(prev => {
+      const hint = hintUnlocked ? activeRoundHint : '';
+      return prev.hint === hint ? prev : { ...prev, hint };
+    });
+  }, [activeRoundHint, hintUnlocked]);
 
   return (
     <div className={`${isModeEntry ? 'mode-entry mode-entry--arcade ' : ''}h-dvh w-full overflow-hidden flex flex-col bg-pysim-surface relative font-sans select-none antialiased`}>
@@ -672,6 +591,16 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
         </button>
         {playerState.eliminated && <span className="text-xs font-bold text-rose-600">{t('spectatorMode')}</span>}
       </ModeEntryHeader>
+
+      {shopRetryNeeded && (
+        <div role="status" className="shrink-0 bg-amber-50 text-amber-900 p-3 text-center text-sm">
+          <span>{t('shopRequestFailed')} </span>
+          <button type="button" disabled={shopState.busy} onClick={retryShopCommand} className="font-bold underline disabled:opacity-50">
+            {t('shopRetryAction')}
+          </button>
+        </div>
+      )}
+
 
       {/* 2. BODY CONTENT */}
       <div data-mode-transition-content className="flex-1 relative overflow-hidden">
@@ -838,6 +767,9 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
         {/* --- BATTLE ROYALE GAMEPLAY VIEW --- */}
         {!playerState.eliminated && (phase === PHASES.ROUND_1 || phase === PHASES.ROUND_2 || phase === PHASES.ROUND_3 || phase === PHASES.ROUND_4) && (
           <BattleRoyaleGameplayView
+            draftReady={draftReady && shopState.ready}
+            draftStatus={!shopState.ready ? (shopSyncError ? 'restoreError' : 'restoring') : draftStatus}
+            retryDraft={() => { retryDraft(); retryShopSync(); }}
             phase={phase}
             PHASES={PHASES}
             t={t}
@@ -873,18 +805,20 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
         {phase === PHASES.RESULT && (
           <div className="h-full w-full overflow-y-auto">
             <div className="min-h-full p-8 max-w-3xl mx-auto flex flex-col items-center justify-center text-center space-y-8">
-            <motion.div
+            <Motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               className="space-y-2"
             >
               <h1 className="text-4xl font-black text-slate-800 tracking-tight">{t('matchOver')}</h1>
               <p className="text-sm text-slate-400 font-bold uppercase tracking-wider">{t('finalPlacementsSubtitle')}</p>
-            </motion.div>
+            </Motion.div>
 
             {/* Winner Trophy Box */}
             {(() => {
-              const allPlayers = [
+              const allPlayers = currentRoom?.final_standings?.length
+                ? currentRoom.final_standings.map(p => ({ ...p, isPlayer: p.name === playerState.name }))
+                : [
                 { name: playerState.name, score: playerState.score, isPlayer: true, eliminated: playerState.eliminated },
                 ...opponents.map(b => ({ name: b.name, score: b.score, isPlayer: false, eliminated: b.eliminated }))
               ].sort((a, b) => b.score - a.score);

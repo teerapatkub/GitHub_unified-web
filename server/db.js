@@ -881,7 +881,6 @@ db.ready = (async () => {
         `);
 
         await require('./arcade/migrate-matches').migrateArcadeMatches(db);
-        db.arcadeReady = true;
 
         // Phase 8.3 — durable per-player Arcade career totals, updated once per
         // match when finalizeArcadePhase() moves a room to RESULT. Deliberately
@@ -900,6 +899,14 @@ db.ready = (async () => {
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         `);
+
+        await require('./arcade/migrate-rewards').migrateArcadeRewards(db);
+        await require('./arcade/migrate-shop').migrateArcadeShop(db);
+        await require('./arcade/migrate-self-effects').migrateArcadeSelfEffects(db);
+        await require('./arcade/migrate-attacks').migrateArcadeAttacks(db);
+        await require('./arcade/migrate-bots').migrateArcadeBots(db);
+        await require('./arcade/migrate-drafts').migrateArcadeDrafts(db);
+        db.arcadeReady = true;
 
         // Problem bank. Upserted from server/arcadeTaskSeed.js on every boot,
         // matched on title_en.

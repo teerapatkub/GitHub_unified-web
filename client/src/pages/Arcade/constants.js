@@ -200,21 +200,8 @@ export const AUTO_SUBMIT_LEAD_SECONDS = arcadeConfig.autoSubmitLeadSeconds;
 // comment beside autoSubmitWarnSeconds in shared/arcadeConfig.json.
 export const AUTO_SUBMIT_WARN_SECONDS = arcadeConfig.autoSubmitWarnSeconds;
 
-// Visual/gameplay debuff duration per effect id, shared by AOE dispatch and by
-// the incoming-effects poll (the server only carries the effect id — the actual
-// duration is applied client-side by whoever receives it).
-export const EFFECT_DURATIONS = {
-  inkFog: 15000,
-  timeFreeze: 5000,
-  blackout: 8000,
-  screenShake: 8000,
-  capsLockLock: 10000,
-  mirrorMode: 12000,
-  screenDimmer: 15000,
-  backspaceLock: 10000,
-  keyScrambler: 10000,
-  typoGenerator: 10000,
-};
+// Server and client share the same catalog; expiry is assigned by the server.
+export const EFFECT_DURATIONS = arcadeConfig.effectDurations;
 export const DEFAULT_EFFECT_DURATION = 10000;
 
 // Which difficulty Round 4 draws from, keyed by the room's own difficulty.

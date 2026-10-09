@@ -11,13 +11,13 @@
 // `currentRoom` too; owning it here would create a circular hook dependency
 // (this hook also needs `getRound4Task` from useRoundJudging).
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { PHASES, TASKS } from '../constants.js';
+import { PHASES } from '../constants.js';
 import { parseUtcTimestamp } from '../constants.js';
 
 export default function useRoomLifecycle({
   playerState, setPlayerState, notify, t, navigate, API_BASE,
-  phase, setPhase, appliedPhaseRef, lastShopRolledPhaseRef, phaseDeadlineRef,
-  setTimeLeft, setRoundSummary, getRound4Task, getPoolTask, tasksReady, setShowExitConfirm,
+  phase, setPhase, appliedPhaseRef, phaseDeadlineRef,
+  setTimeLeft, setRoundSummary, tasksReady, setShowExitConfirm,
   currentRoom, setCurrentRoom, setRoomParticipants
 }) {
   const [rooms, setRooms] = useState([]);
@@ -38,6 +38,7 @@ export default function useRoomLifecycle({
   // dropping back to an empty lobby.
   const activeRoomStorageKey = (userName) => `arcade_active_room_${userName}`;
   const restoreAttemptedRef = useRef(false);
+  const [restoreRetry, setRestoreRetry] = useState(0);
 
   // Keep localStorage in sync with whatever room this player is currently
   // in — written whenever they end up in one (create/join/restore all funnel
@@ -77,13 +78,21 @@ export default function useRoomLifecycle({
     if (restoreAttemptedRef.current || currentRoom || !playerState.name || !tasksReady) return;
     restoreAttemptedRef.current = true;
     const key = activeRoomStorageKey(playerState.name);
-    const saved = JSON.parse(localStorage.getItem(key) || 'null');
+    let saved;
+    try { saved = JSON.parse(localStorage.getItem(key) || 'null'); } catch { localStorage.removeItem(key); return; }
     if (!saved?.room_id) return;
+    let stopped = false;
+    let completed = false;
+    let retryTimer;
 
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/arcade/rooms/${saved.room_id}?user_name=${encodeURIComponent(playerState.name)}`);
+        const startedAt = performance.now();
+        const res = await fetch(`${API_BASE}/api/arcade/rooms/${saved.room_id}?user_name=${encodeURIComponent(playerState.name)}`, { signal: AbortSignal.timeout(8000) });
+        if (stopped) return;
+        if (!res.ok && res.status !== 404) throw new Error('Room recovery failed');
         const data = await res.json();
+        if (stopped) return;
         const myRow = (data.participants || []).find(p => p.user_name === playerState.name);
         if (data.success && myRow) {
           setCurrentRoom(data.room);
@@ -99,50 +108,38 @@ export default function useRoomLifecycle({
           // on its very next tick.
           const serverPhase = data.room.phase || PHASES.LOBBY;
           appliedPhaseRef.current = serverPhase;
-          lastShopRolledPhaseRef.current = serverPhase.startsWith('SHOP_') ? serverPhase : null;
           setPhase(serverPhase);
           if (data.room.phase_deadline) {
-            phaseDeadlineRef.current = parseUtcTimestamp(data.room.phase_deadline);
+            phaseDeadlineRef.current = Date.now() + Math.max(0, parseUtcTimestamp(data.room.phase_deadline) - data.serverNow - (performance.now() - startedAt));
             setTimeLeft(Math.max(0, Math.ceil((phaseDeadlineRef.current - Date.now()) / 1000)));
           }
           if (serverPhase === PHASES.SUMMARY_1 || serverPhase === PHASES.SUMMARY_2 || serverPhase === PHASES.SUMMARY_3) {
             const summary = data.room.last_round_summary;
             setRoundSummary(summary ? { ...summary, entries: summary.entries.map(e => ({ ...e, isPlayer: e.name === playerState.name })) } : null);
           }
-          // Resuming into a live round has to restore the problem the match
-          // actually drew, not the fixed built-in task. `data.room` is passed
-          // explicitly because `currentRoom` state has not been set from this
-          // payload yet at this point in the effect — the same ordering trap
-          // documented on getPoolTask() in useRoundJudging.js.
-          const roundNum = String(serverPhase).startsWith('ROUND_')
-            ? parseInt(String(serverPhase).split('_')[1], 10) : 0;
-          let roundCode;
-          if (roundNum === 4) {
-            roundCode = getRound4Task(data.room)?.initialCode;
-          } else if (roundNum) {
-            roundCode = getPoolTask(roundNum, data.room)?.initialCode
-              ?? TASKS[`ROUND_${roundNum}`]?.initialCode;
-          }
           setPlayerState(prev => ({
             ...prev,
             score: myRow.score || 0,
             cash: myRow.cash || 0,
             eliminated: myRow.is_eliminated === 1,
-            hasSubmittedThisRound: myRow.has_submitted === 1,
-            code: roundCode !== undefined ? roundCode : prev.code
+            hasSubmittedThisRound: myRow.has_submitted === 1
           }));
 
+          completed = true;
           notify(t('resumedActiveMatch'), "info");
         } else {
+          completed = true;
           localStorage.removeItem(key);
         }
       } catch {
-        // Network hiccup on the very first load — leave the saved room
-        // alone so a plain page refresh a moment later can still try again,
-        // rather than deleting a possibly-still-valid session on one blip.
+        if (!stopped) retryTimer = setTimeout(() => {
+          restoreAttemptedRef.current = false;
+          setRestoreRetry(value => value + 1);
+        }, 2000);
       }
     })();
-  }, [playerState.name, notify, t, tasksReady]);
+    return () => { stopped = true; clearTimeout(retryTimer); if (!completed) restoreAttemptedRef.current = false; };
+  }, [playerState.name, notify, t, tasksReady, restoreRetry, API_BASE, currentRoom, appliedPhaseRef, phaseDeadlineRef, setCurrentRoom, setPhase, setPlayerState, setRoomParticipants, setRoundSummary, setTimeLeft]);
 
   // Fetch Public Rooms list
   const fetchRooms = useCallback(async () => {
@@ -360,7 +357,6 @@ export default function useRoomLifecycle({
     // Navigation can unmount the hook before its storage-sync effect runs.
     localStorage.removeItem(activeRoomStorageKey(playerState.name));
     appliedPhaseRef.current = PHASES.LOBBY;
-    lastShopRolledPhaseRef.current = null;
     setCurrentRoom(null);
     setRoomParticipants([]);
     setPhase(PHASES.LOBBY);
@@ -382,7 +378,6 @@ export default function useRoomLifecycle({
     }
 
     appliedPhaseRef.current = PHASES.LOBBY;
-    lastShopRolledPhaseRef.current = null;
 
     if (choice === 'LEAVE') {
       setCurrentRoom(null);

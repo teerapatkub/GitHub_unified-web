@@ -93,15 +93,15 @@ export default function RoomLobbyView({
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {roomParticipants.map((p, idx) => (
-            <div key={p.id || idx} className={`p-6 rounded-3xl border flex flex-col justify-between space-y-4 relative ${p.is_host ? 'bg-amber-50/50 border-amber-300' : p.user_name.startsWith('Bot_') ? 'bg-rose-50/30 border-rose-200' : 'bg-slate-50 border-slate-200'}`}>
+            <div key={p.id || idx} className={`p-6 rounded-3xl border flex flex-col justify-between space-y-4 relative ${p.is_host ? 'bg-amber-50/50 border-amber-300' : p.participant_kind === 'bot' ? 'bg-rose-50/30 border-rose-200' : 'bg-slate-50 border-slate-200'}`}>
               <div className="flex items-center space-x-3">
-                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-black text-sm ${p.is_host ? 'bg-amber-500 text-white' : p.user_name.startsWith('Bot_') ? 'bg-rose-500 text-white' : 'bg-slate-200 text-slate-700'}`}>
-                  {p.is_host ? '👑' : p.user_name.startsWith('Bot_') ? '🤖' : idx + 1}
+                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-black text-sm ${p.is_host ? 'bg-amber-500 text-white' : p.participant_kind === 'bot' ? 'bg-rose-500 text-white' : 'bg-slate-200 text-slate-700'}`}>
+                  {p.is_host ? '👑' : p.participant_kind === 'bot' ? '🤖' : idx + 1}
                 </div>
                 <div>
                   <span className="font-black text-xs text-slate-800">{p.user_name} {p.user_name === playerState.name ? t('youSuffix') : ""}</span>
                   <span className="block text-[9px] font-bold text-slate-400 uppercase mt-0.5">
-                    {p.is_host ? t('hostRoleLabel') : p.user_name.startsWith('Bot_') ? t('botOpponentLabel') : t('playerRoleLabel')}
+                    {p.is_host ? t('hostRoleLabel') : p.participant_kind === 'bot' ? t('botOpponentLabel') : t('playerRoleLabel')}
                   </span>
                 </div>
               </div>
@@ -109,7 +109,7 @@ export default function RoomLobbyView({
               {/* Host actions on other players */}
               {playerState.name === currentRoom.host_name && p.user_name !== playerState.name && (
                 <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200/60">
-                  {!p.user_name.startsWith('Bot_') && (
+                  {p.participant_kind === 'human' && (
                     <button
                       onClick={() => handleTransferHost(p.user_name)}
                       className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-800 text-[10px] font-bold rounded-lg transition-all"

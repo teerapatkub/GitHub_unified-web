@@ -57,12 +57,23 @@ class BotManager {
   // server endpoint a real player's own attacks use, since the human's cash
   // is now DB-authoritative (synced back on every room-state poll) — a bot
   // mutating it only client-side would just get overwritten on the next poll.
-  update(phase, playerState, opponents, setPlayerState, setOpponents, notify, dispatchBotAttackOnPlayer) {
+  update(phase, playerState, opponents, setPlayerState, setOpponents, notify, dispatchBotAttackOnPlayer, releaseShield) {
     if (this.botMap.size === 0) return;
 
     for (const opp of opponents) {
       const bot = this.botMap.get(opp.name);
       if (bot && opp.eliminated) bot.eliminated = true;
+      if (bot) {
+        // Human attacks are already resolved by the server. Mirror their
+        // expiry into simulation without applying an attack or shield again.
+        bot.activeEffects = [...bot.activeEffects.filter(effect => !effect.serverOwned),
+          ...(opp.serverEffects || []).filter(effect => effect.expiresAt > Date.now())];
+        const newest = opp.serverEffects?.at(-1);
+        if (newest && bot.lastServerAttackInstanceId !== newest.instance_id) {
+          bot.revengeTarget = newest.attacker;
+          bot.lastServerAttackInstanceId = newest.instance_id;
+        }
+      }
     }
 
     const allOpponentsArray = Array.from(this.botMap.values());
@@ -84,15 +95,11 @@ class BotManager {
 
         // Scenario A: affects the Human Player
         if (targetName === playerState.name) {
-          const hasPlayerShield = playerState.activeEffects.some(e => e.type === 'shield' && e.expiresAt > Date.now());
+          const playerShield = playerState.activeEffects.find(e => e.type === 'shield' && e.expiresAt > Date.now());
 
-          if (hasPlayerShield) {
+          if (playerShield && releaseShield?.(playerShield)) {
             // Player's Shield blocks the incoming item entirely — including
             // economic ones like cashSteal/taxCollection, not just debuffs.
-            setPlayerState(prev => ({
-              ...prev,
-              activeEffects: prev.activeEffects.filter(e => e.type !== 'shield')
-            }));
             notify(`🛡️ เกราะของคุณป้องกันการโจมตีจาก ${attackerName} ด้วยไอเทม ${item.name || item.type}!`, "success");
             return;
           }
@@ -165,7 +172,7 @@ class BotManager {
           return {
             ...opp,
             progress: botInstance.progress,
-            isDebuffed: botInstance.isDebuffed()
+            isDebuffed: Boolean(opp.serverDebuffed) || botInstance.isDebuffed()
           };
         }
         return opp;

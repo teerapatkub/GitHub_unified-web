@@ -22,12 +22,11 @@ const { gradeSubmission, screenUnverifiedSubmission } = require('./problemGrader
 // The single definition of how far through a lesson a learner is - see the
 // header of server/lessonProgress.js for why it had to become one.
 const { evaluateLesson, POST_PASS_RATIO } = require('./lessonProgress');
+const { authOrigins } = require('./auth/origins');
 
 const app = express();
 app.use(cors({ origin: (origin, callback) => {
-  const allowed = String(process.env.AUTH_ALLOWED_ORIGINS || 'http://localhost:5174,http://127.0.0.1:5174').split(',').map(value => value.trim());
-  if (process.env.CLIENT_URL) allowed.push(new URL(process.env.CLIENT_URL).origin);
-  callback(null, !origin || allowed.includes(origin));
+  callback(null, !origin || authOrigins(process.env).has(origin));
 }, credentials: true }));
 app.use(express.json());
 const { createClient } = require('@supabase/supabase-js');
@@ -5978,73 +5977,6 @@ async function judgeCodeQuality(code) {
     }
 }
 
-// Server-authoritative match clock — mirrors client/src/pages/Arcade/ArcadeBattleRoyale.jsx's
-// PHASES/ROUND_TIMES/RANK_CASH_REWARDS exactly (keep both in sync by hand when
-// either changes). tickArcadeMatches() below is the ONLY thing that advances a
-// room's phase now — every connected browser just polls GET /rooms/:id and
-// mirrors whatever phase/phase_deadline it finds, so the match keeps moving
-// even if the host who started it disconnects mid-round.
-const ARCADE_PHASE_SEQUENCE = [
-    'ROUND_1', 'SUMMARY_1', 'SHOP_1',
-    'ROUND_2', 'SUMMARY_2', 'SHOP_2',
-    'ROUND_3', 'SUMMARY_3', 'SHOP_3',
-    'ROUND_4'
-];
-const ARCADE_PHASE_DURATIONS = arcadeConfig.phaseDurations;
-const ARCADE_QUICK_PHASE_DURATIONS = arcadeConfig.quickModePhaseDurations;
-
-// Phase 8.4 — a room's phase lengths come from its own `round_duration_mode`,
-// not from a module-level constant. Every timing decision (start, and each
-// finalize step) goes through this, so a Quick Mode room and a standard room
-// can run side by side with the right pacing each. Falls back to standard for
-// any unrecognised/legacy value, including rooms created before the column
-// existed.
-function arcadePhaseDurations(room) {
-    return room?.round_duration_mode === 'quick' ? ARCADE_QUICK_PHASE_DURATIONS : ARCADE_PHASE_DURATIONS;
-}
-// How many of the lowest cumulative scorers get cut after each round finishes
-// (Round 1 is a free look — nobody's cut until Round 2, matching the client's
-// existing 5→5→3→2→1 pattern).
-const ARCADE_ELIMINATE_COUNT = { 1: 0, 2: 2, 3: 1, 4: 1 };
-const ARCADE_RANK_CASH_REWARDS = [500, 400, 300, 200, 100];
-// Real test-case counts per round's fixed task (client's TASK_TEST_CASES) —
-// only used to scale a bot's synthetic round score onto the same range a
-// human's real passCount could reach. Round 4 pulls its count live from
-// arcade_tasks (DB hard pool) since that task isn't fixed.
-const ARCADE_ROUND_CASE_COUNTS = arcadeConfig.roundCaseCounts;
-
-// A bot has no real code to judge, so its round score is synthesized on the
-// same equal-weight scale used for real players (see submitMyRound()
-// client-side): testScore + qualityScore + timeScore, each 0-100, summed to
-// a 0-300 round score — ported here so it's computed once, authoritatively,
-// instead of separately (and inconsistently) per browser.
-//
-// Two things about this must stay in lockstep with the client's own formula:
-//
-//   1. timeScore is EARNED BY CORRECTNESS - it is scaled by the fraction of
-//      test cases passed. Awarding it flat meant finishing instantly with
-//      nothing written scored close to 100 on time, while fighting to a real
-//      3-of-5 finish scored ~17: the rules paid better for giving up than for
-//      trying. Beginners felt that hardest, being the players most likely to
-//      have nothing to submit.
-//   2. How strong a bot is now follows the room's own difficulty. One fixed
-//      band for every room meant picking an easy room got you easier problems
-//      against exactly the same opposition, so it was not actually easier to
-//      survive. arcadeConfig's `medium` band reproduces the old fixed numbers
-//      exactly, so any change in behaviour is attributable to the room.
-function synthesizeBotRoundScore(totalCount, roundDuration, difficulty) {
-    const skill = arcadeConfig.botSkillByDifficulty[difficulty]
-        || arcadeConfig.botSkillByDifficulty.default;
-    const band = Math.min(1, Math.max(0, skill.passMin + Math.random() * skill.passSpread));
-    const passCount = totalCount === 0 ? 0 : Math.min(totalCount, Math.max(0, Math.round(totalCount * band)));
-    const passRatio = totalCount === 0 ? 0 : passCount / totalCount;
-    const testScore = passRatio * 100;
-    const qualityScore = skill.qualityMin + Math.floor(Math.random() * skill.qualitySpread);
-    const timeUsed = Math.floor(Math.random() * roundDuration);
-    const timeScore = passRatio * ((roundDuration - timeUsed) / roundDuration) * 100;
-    return Math.round(testScore + qualityScore + timeScore);
-}
-
 // Every match now draws its own problems instead of always serving the same
 // three built-in tasks in the same order. Drawn ONCE here, when the host starts
 // the match, and written to arcade_rooms.round_task_ids so the server (scaling
@@ -6066,383 +5998,26 @@ function synthesizeBotRoundScore(totalCount, roundDuration, difficulty) {
 // room therefore draws from a genuinely smaller pool than a standard one,
 // which is the intent rather than a side effect.
 
-// Phase 8.3 — fold one finished match into every real player's career totals.
-// Called exactly once per match, at the moment finalizeArcadePhase() moves the
-// room to RESULT, so it can't double-count: RESULT is terminal (the phase
-// sequence never leaves it, and tickArcadeMatches skips rooms already in it).
-// Bots are excluded — they have no career to track. Final standings are read
-// from the participants' cumulative `score`, which is the same number the
-// RESULT screen ranks on, so "wins" here always agrees with the winner the
-// players actually saw. Never allowed to throw: a stats-bookkeeping problem
-// must not stop a match from ending.
-async function recordArcadePlayerStats(roomId, matchId) {
-    try {
-        // Step 5 — mark this match's history rows as belonging to a FINISHED
-        // match. The history list only shows completed matches, so an
-        // abandoned room's half-played rounds don't clutter a player's
-        // review screen. Done here because this runs exactly once per match,
-        // at the moment the room reaches RESULT.
-        await db.query(
-            `UPDATE arcade_round_history SET match_ended_at = CURRENT_TIMESTAMP WHERE match_id = ? AND match_ended_at IS NULL`,
-            [matchId]
-        );
-        await db.query('UPDATE arcade_matches SET ended_at = CURRENT_TIMESTAMP WHERE match_id = ? AND ended_at IS NULL', [matchId]);
-        const [participants] = await db.query(
-            `SELECT user_name, score, cash FROM arcade_participants WHERE room_id = ?`,
-            [roomId]
-        );
-        const humans = (participants || []).filter(p => !p.user_name.startsWith('Bot_'));
-        if (humans.length === 0) return;
-
-        // Rank across everyone in the room (bots included) — placing 2nd in a
-        // 5-player room is a 2nd place regardless of how many were bots.
-        const standings = [...(participants || [])].sort((a, b) => (b.score || 0) - (a.score || 0));
-
-        for (const player of humans) {
-            const rank = standings.findIndex(p => p.user_name === player.user_name) + 1;
-            if (rank < 1) continue;
-            await db.query(
-                `INSERT INTO arcade_player_stats
-                    (user_name, matches_played, wins, best_rank, total_score, total_cash_earned, updated_at)
-                 VALUES (?, 1, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                 ON CONFLICT (user_name) DO UPDATE SET
-                    matches_played = arcade_player_stats.matches_played + 1,
-                    wins = arcade_player_stats.wins + EXCLUDED.wins,
-                    best_rank = LEAST(COALESCE(arcade_player_stats.best_rank, EXCLUDED.best_rank), EXCLUDED.best_rank),
-                    total_score = arcade_player_stats.total_score + EXCLUDED.total_score,
-                    total_cash_earned = arcade_player_stats.total_cash_earned + EXCLUDED.total_cash_earned,
-                    updated_at = CURRENT_TIMESTAMP`,
-                [player.user_name, rank === 1 ? 1 : 0, rank, player.score || 0, player.cash || 0]
-            );
-
-            await awardArcadeMatchCoins(roomId, player.user_name, rank);
-
-            // Playing and winning are both achievement metrics, and this is the
-            // one moment per match where either can change.
-            const [accounts] = await db.query(
-                'SELECT user_id FROM users WHERE username = ? LIMIT 1', [player.user_name]
-            );
-            if (accounts?.length) {
-                await evaluateAchievements(accounts[0].user_id, player.user_name);
-            }
-        }
-    } catch (err) {
-        console.error('⚠️ arcade_player_stats update failed (match still ended normally):', err.message);
-    }
+// Wallet and career totals already committed with RESULT. Achievement checks
+// remain a separate best-effort feature, using durable account receipts.
+async function evaluateArcadeAchievements(matchId) {
+  const [players] = await db.query('SELECT user_id, user_name FROM arcade_reward_receipts WHERE match_id = ? ORDER BY user_id', [matchId]);
+  for (const player of players) {
+    await evaluateAchievements(player.user_id, player.user_name);
+  }
 }
 
-// Pays a finished match out into users.virtual_currency — the single wallet the
-// lessons pay into and the shop spends from, so gold earned here buys the same
-// cosmetics. Goes through applyXpRewardToUser for exactly that reason: one code
-// path owns the wallet, whichever mode credits it.
-//
-// Survival Cash inside a match is a separate, per-match thing and is not carried
-// over; this is paid on final rank only.
-//
-// Never allowed to throw. A wallet problem for one player must not stop the other
-// players being paid, and must not stop the match ending.
-async function awardArcadeMatchCoins(roomId, userName, rank) {
-    try {
-        const byRank = arcadeConfig.coinRewardByRank || {};
-        const coins = Number(byRank[String(rank)] ?? arcadeConfig.coinRewardParticipation ?? 0);
-        if (!Number.isFinite(coins) || coins <= 0) return;
+const { settleDueArcadeRooms } = require('./arcade/match-ticker');
 
-        // Arcade identifies players by name; only a name that belongs to a real
-        // account has a wallet to pay into (guests and test rigs simply do not).
-        const [users] = await db.query('SELECT user_id FROM users WHERE username = ? LIMIT 1', [userName]);
-        if (!users || users.length === 0) return;
-
-        await applyXpRewardToUser(db, users[0].user_id, 0, coins);
-        // Recorded on the participant so the RESULT screen can state what was
-        // actually credited. Written after the wallet update, so a payout that
-        // failed never shows up as if it had happened.
-        await db.query(
-            'UPDATE arcade_participants SET coins_awarded = ? WHERE room_id = ? AND user_name = ?',
-            [coins, roomId, userName]
-        );
-        console.log(`🪙 arcade: paid ${coins} coins to ${userName} (rank ${rank})`);
-    } catch (err) {
-        console.error(`⚠️ arcade coin payout failed for ${userName} (match still ended normally):`, err.message);
-    }
-}
-
-// Finalizes whichever phase just expired for one room: ROUND_N scores/pays/
-// eliminates and moves to SUMMARY_N (or straight to RESULT after Round 4,
-// matching the client's existing behavior of skipping a summary screen post-
-// finale); SUMMARY_N opens the shop; SHOP_N starts the next round. Called
-// only from tickArcadeMatches() below, never from a client request, so there
-// is exactly one place in the whole system that decides a room's phase.
-// Grade everything a round's human players submitted, at the moment the round
-// closes.
-//
-// This is the whole point of ADR 0001: the browser sends code, and every number
-// that decides a match is worked out here. Correctness comes from running the
-// code against the round's real test cases through the one grader; quality from
-// the code-quality judge; and time from the server's own clock, by comparing
-// when the submission arrived against when the round started.
-//
-// The three legs are scored 0-100 each and summed, exactly as the browser used
-// to compute them, so scores stay on the same scale as synthesizeBotRoundScore()
-// and as every match already played.
-async function gradeArcadeRoundSubmissions({ room, roundNum, participants, roundDuration }) {
-    const graded = new Map();
-    const humans = (participants || []).filter(
-        (p) => !p.user_name.startsWith('Bot_') && p.has_submitted && typeof p.submitted_code === 'string'
-    );
-    if (humans.length === 0) return graded;
-
-    const drawn = Array.isArray(room.round_task_ids) ? room.round_task_ids : null;
-    const taskId = drawn ? drawn[roundNum - 1] : undefined;
-    let problem = null;
-    if (taskId !== undefined) {
-        const [rows] = await db.query(
-            `SELECT p.test_kind, p.test_cases, p.solution_code, p.starter_code
-               FROM problem_modes m JOIN problems p ON p.problem_id = m.problem_id
-              WHERE m.mode = 'arcade' AND m.entry_id = ?`,
-            [taskId]
-        );
-        problem = rows?.[0] || null;
-    }
-
-    // The round's timer is the source of truth for when it started: the server
-    // set phase_deadline itself when the round opened.
-    const deadlineMs = room.phase_deadline ? new Date(room.phase_deadline).getTime() : null;
-    const startedMs = deadlineMs ? deadlineMs - roundDuration * 1000 : null;
-
-    // In parallel: four players each cost one Python run and one judge call,
-    // and the tick loop is serial, so doing these one after another would hold
-    // the whole match up.
-    await Promise.all(humans.map(async (p) => {
-        const code = p.submitted_code || '';
-        let passCount = 0;
-        let totalCount = 0;
-
-        if (problem) {
-            try {
-                const verdict = await gradeSubmission({ problem, code });
-                passCount = verdict.passed;
-                totalCount = verdict.total;
-            } catch (err) {
-                console.error(`⚠️ Arcade grading failed for ${p.user_name}:`, describeError(err));
-            }
-        }
-
-        let quality = 0;
-        try {
-            const judged = await judgeCodeQuality(code.slice(0, 4000));
-            quality = Number(judged?.score || 0);
-        } catch (err) {
-            console.error(`⚠️ Arcade quality judge failed for ${p.user_name}:`, describeError(err));
-        }
-
-        const submittedMs = p.submitted_at ? new Date(p.submitted_at).getTime() : null;
-        const timeUsed = (startedMs && submittedMs)
-            ? Math.max(0, Math.min(roundDuration, Math.round((submittedMs - startedMs) / 1000)))
-            : roundDuration;
-
-        const passRatio = totalCount === 0 ? 0 : passCount / totalCount;
-        const testScore = passRatio * 100;
-        // Speed only counts for work that actually runs, the same rule the
-        // browser used: paying the time leg flat rewarded submitting an
-        // untouched starter the second the round opened.
-        const timeScore = passRatio * ((roundDuration - timeUsed) / roundDuration) * 100;
-        let roundScore = testScore + quality + timeScore;
-        if (Number(p.score_multiplier_active) === 1) roundScore *= 2;
-
-        graded.set(p.id, {
-            roundScore: Math.max(0, Math.min(arcadeConfig.maxSubmittableRoundScore, Math.round(roundScore))),
-            passCount, totalCount, quality: Math.round(quality), timeUsed, code,
-        });
-    }));
-
-    // The RESULT screen's review panel reads these. Written here rather than on
-    // submission because this is where the numbers finally exist. Never allowed
-    // to fail the round: a player's result matters more than its history row.
-    await Promise.all([...graded.entries()].map(async ([participantId, g]) => {
-        const p = humans.find((h) => h.id === participantId);
-        try {
-            await db.query(
-                `INSERT INTO arcade_round_history
-                    (match_id, room_id, room_code, room_name, difficulty, round_duration_mode, user_name, round_num,
-                     code, pass_count, total_count, quality_score, time_used_seconds, round_score)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                 ON CONFLICT (match_id, user_name, round_num) DO NOTHING`,
-                [room.current_match_id, room.room_id, room.room_code, room.room_name,
-                 room.difficulty || 'default', room.round_duration_mode || 'standard',
-                 p.user_name, roundNum, g.code.slice(0, 20000),
-                 g.passCount, g.totalCount, g.quality, g.timeUsed, g.roundScore]
-            );
-        } catch (historyErr) {
-            console.error('⚠️ arcade_round_history insert failed (round result still stands):', historyErr.message);
-        }
-    }));
-
-    return graded;
-}
-
-async function finalizeArcadePhase(room) {
-    const roomId = room.room_id;
-    const phase = room.phase;
-
-    if (phase.startsWith('ROUND_')) {
-        const roundNum = parseInt(phase.split('_')[1], 10);
-        const roundDuration = arcadePhaseDurations(room)[phase];
-        const eliminateCount = ARCADE_ELIMINATE_COUNT[roundNum] || 0;
-
-        // How many test cases this round's task actually has — only used to
-        // scale a bot's synthesized score onto the same range a human could
-        // reach, so it has to describe the task the humans were really given.
-        //
-        // Round 4 has always come from the DB's hard pool. Phase 8.4 adds the
-        // same situation to Rounds 1-3 for rooms that picked a difficulty:
-        // they draw from the DB pool too, so the fixed ARCADE_ROUND_CASE_COUNTS
-        // would be describing tasks nobody was asked to solve. The offset
-        // (roundNum - 1) with ORDER BY task_id must match the client's own
-        // pick in useRoundJudging.getRoundTask(), or bots would be scored
-        // against a different task than the players saw.
-        // How many test cases this round's task actually has — used to scale a
-        // bot's synthesized score onto the same range a human could reach, so
-        // it must describe the task the humans were really given.
-        //
-        // A match now draws its own problems at start (round_task_ids), so the
-        // count is looked up from that line-up. The fixed
-        // ARCADE_ROUND_CASE_COUNTS is only a fallback for legacy rooms started
-        // before the draw existed, or if the draw somehow failed.
-        let totalCount = ARCADE_ROUND_CASE_COUNTS[roundNum];
-        const drawn = Array.isArray(room.round_task_ids) ? room.round_task_ids : null;
-        if (drawn && drawn[roundNum - 1] !== undefined) {
-            const [drawnTask] = await db.query(
-                `SELECT test_cases FROM arcade_tasks WHERE task_id = ?`,
-                [drawn[roundNum - 1]]
-            );
-            const cases = drawnTask?.[0]?.test_cases;
-            if (Array.isArray(cases)) totalCount = cases.length;
-        } else if (roundNum === 4) {
-            // Legacy rooms only (started before round_task_ids existed). This
-            // has to read the same pool the client's own Round 4 fallback
-            // picks from, which now follows the room's difficulty rather than
-            // always being `hard` - otherwise bots would be scaled against a
-            // different problem than the humans were shown.
-            const finaleDifficulty = arcadeConfig.finalePoolByDifficulty[room.difficulty || 'default']
-                || arcadeConfig.finalePoolByDifficulty.default;
-            const [finaleTasks] = await db.query(
-                `SELECT test_cases FROM arcade_tasks WHERE difficulty = ? ORDER BY task_id ASC LIMIT 1`,
-                [finaleDifficulty]
-            );
-            const cases = finaleTasks?.[0]?.test_cases;
-            totalCount = Array.isArray(cases) ? cases.length : 2;
-        }
-
-        const [participants] = await db.query(`SELECT * FROM arcade_participants WHERE room_id = ?`, [roomId]);
-        const alive = (participants || []).filter(p => !p.is_eliminated);
-
-        // Elimination counts are tuned for a full 5-player bracket
-        // (5→5→3→2→1) but rooms are allowed as small as 2 players — clamp so
-        // a round can never cut everyone left standing (always leave at
-        // least 1 survivor to be the match's eventual winner).
-        const safeEliminateCount = Math.min(eliminateCount, Math.max(0, alive.length - 1));
-
-        // Grade the humans now, from what they submitted. Until ADR 0001 this
-        // read pending_round_score - a number the browser had computed and sent.
-        const graded = await gradeArcadeRoundSubmissions({
-            room, roundNum, participants: alive, roundDuration,
-        });
-
-        const roundResults = alive.map(p => {
-            const isBot = p.user_name.startsWith('Bot_');
-            const roundScore = isBot
-                ? synthesizeBotRoundScore(totalCount, roundDuration, room.difficulty)
-                : (graded.get(p.id)?.roundScore || 0);
-            return { participant: p, roundScore };
-        });
-
-        // Rank this round's performance only (not cumulative) to pay out coins.
-        roundResults.sort((a, b) => b.roundScore - a.roundScore);
-        for (let i = 0; i < roundResults.length; i++) {
-            const cashGain = ARCADE_RANK_CASH_REWARDS[i] || 0;
-            const { participant, roundScore } = roundResults[i];
-            await db.query(
-                `UPDATE arcade_participants SET score = score + ?, cash = cash + ?, has_submitted = 0, pending_round_score = NULL, submitted_code = NULL, submitted_at = NULL, score_multiplier_active = 0, draft_code = NULL, draft_updated_at = NULL WHERE id = ?`,
-                [roundScore, cashGain, participant.id]
-            );
-        }
-
-        // Cumulative-score elimination — recompute standings from the fresh
-        // totals just written above so a round's own score counts toward
-        // whether its owner survives it.
-        const eliminatedNames = new Set();
-        if (safeEliminateCount > 0) {
-            const cumulative = roundResults.map(({ participant, roundScore }) => ({
-                user_name: participant.user_name,
-                newScore: participant.score + roundScore
-            }));
-            cumulative.sort((a, b) => a.newScore - b.newScore);
-            for (const p of cumulative.slice(0, safeEliminateCount)) {
-                eliminatedNames.add(p.user_name);
-                await db.query(`UPDATE arcade_participants SET is_eliminated = 1 WHERE room_id = ? AND user_name = ?`, [roomId, p.user_name]);
-            }
-        }
-
-        const summary = {
-            roundNum,
-            entries: roundResults.map(({ participant, roundScore }, i) => ({
-                name: participant.user_name,
-                rank: i + 1,
-                cashGain: ARCADE_RANK_CASH_REWARDS[i] || 0,
-                eliminated: eliminatedNames.has(participant.user_name)
-            }))
-        };
-
-        // A small room (as few as 2 players) can reach a sole survivor
-        // before Round 4 — finish the match right there instead of dragging
-        // everyone through empty rounds nobody else can be cut from.
-        const remainingAlive = alive.length - eliminatedNames.size;
-        if (roundNum === 4 || remainingAlive <= 1) {
-            await db.query(
-                `UPDATE arcade_rooms SET phase = 'RESULT', phase_deadline = NULL, current_round = ?, last_round_summary = ? WHERE room_id = ?`,
-                [roundNum, JSON.stringify(summary), roomId]
-            );
-            await recordArcadePlayerStats(roomId, room.current_match_id);
-        } else {
-            const nextDeadline = new Date(Date.now() + arcadePhaseDurations(room)[`SUMMARY_${roundNum}`] * 1000);
-            await db.query(
-                `UPDATE arcade_rooms SET phase = ?, phase_deadline = ?, current_round = ?, last_round_summary = ? WHERE room_id = ?`,
-                [`SUMMARY_${roundNum}`, nextDeadline, roundNum, JSON.stringify(summary), roomId]
-            );
-        }
-        return;
-    }
-
-    if (phase.startsWith('SUMMARY_')) {
-        const roundNum = phase.split('_')[1];
-        const nextPhase = `SHOP_${roundNum}`;
-        const nextDeadline = new Date(Date.now() + arcadePhaseDurations(room)[nextPhase] * 1000);
-        await db.query(`UPDATE arcade_rooms SET phase = ?, phase_deadline = ? WHERE room_id = ?`, [nextPhase, nextDeadline, roomId]);
-        return;
-    }
-
-    if (phase.startsWith('SHOP_')) {
-        const roundNum = parseInt(phase.split('_')[1], 10);
-        const nextPhase = `ROUND_${roundNum + 1}`;
-        const nextDeadline = new Date(Date.now() + arcadePhaseDurations(room)[nextPhase] * 1000);
-        await db.query(`UPDATE arcade_rooms SET phase = ?, phase_deadline = ? WHERE room_id = ?`, [nextPhase, nextDeadline, roomId]);
-        return;
-    }
-}
-
-// Drives every in-progress room's clock. Runs every 1s, picks up any room
-// whose phase_deadline has passed, and finalizes exactly that one phase step
-// (finalizeArcadePhase only ever advances ONE phase per call — a room stuck
-// for multiple missed ticks, e.g. server hiccup, catches up one tick at a
-// time on subsequent runs rather than skipping phases).
+// Each due room advances one phase. A room-specific failure remains eligible
+// for retry, while other rooms continue; connection-wide failures still reach
+// the scheduler's backoff handler.
 async function tickArcadeMatches() {
-    if (!db.arcadeReady) return;
-    const [dueRooms] = await db.query(
-        `SELECT * FROM arcade_rooms WHERE status = 'PLAYING' AND phase NOT IN ('LOBBY', 'RESULT') AND phase_deadline IS NOT NULL AND phase_deadline <= CURRENT_TIMESTAMP`
-    );
-    for (const room of dueRooms || []) {
-        await finalizeArcadePhase(room);
-    }
+  if (!db.arcadeReady) return;
+  const failures = await settleDueArcadeRooms({ db, judgeCodeQuality, afterMatchSettled: evaluateArcadeAchievements });
+  for (const { roomId, error } of failures) {
+    console.error('Arcade phase settlement failed for room ' + roomId + ':', describeError(error));
+  }
 }
 
 // Turns anything thrown into a line worth reading. An Error with an empty
@@ -6480,7 +6055,8 @@ function describeError(err) {
 //    finalizeArcadePhase() when the next one started - and both would read the
 //    same overdue room out of the SELECT above and finalize it twice, paying
 //    out its score and cash twice. Re-arming only after the previous tick has
-//    settled makes that impossible by construction.
+//    settled avoids redundant local work; the settlement transaction also
+//    prevents duplicate round results across server processes.
 const ARCADE_TICK_INTERVAL_MS = arcadeConfig.tickIntervalMs;
 const ARCADE_TICK_MAX_BACKOFF_MS = arcadeConfig.tickMaxBackoffMs;
 let arcadeTickFailures = 0;
@@ -6524,6 +6100,8 @@ let arcadeTickTimer = setTimeout(runArcadeTick, ARCADE_TICK_INTERVAL_MS);
 if (arcadeTickTimer.unref) arcadeTickTimer.unref();
 
 // 1. Get joinable public rooms (status = 'WAITING')
+require('./arcade/bot-api').installArcadeBots(app, db);
+
 app.get('/api/arcade/rooms', async (req, res) => {
     try {
         const [rooms] = await db.query(
@@ -6655,6 +6233,11 @@ app.post('/api/arcade/rooms/join', async (req, res) => {
 
         // Add player if not already in room
         const alreadyIn = participants.find(p => p.user_name === cleanUserName);
+        if (alreadyIn?.participant_kind === 'bot') {
+            await connection.rollback();
+            connection.release();
+            return res.status(409).json({ error: 'This name belongs to a bot in this room. Ask the host to remove it first.' });
+        }
         if (!alreadyIn) {
             await connection.query(
                 `INSERT INTO arcade_participants (room_id, user_name, is_host) VALUES (?, ?, 0)`,
@@ -6721,7 +6304,8 @@ app.post('/api/arcade/rooms/:id/transfer-host', async (req, res) => {
         const [rooms] = await db.query(`SELECT * FROM arcade_rooms WHERE room_id = ?`, [roomId]);
         if (!rooms || rooms.length === 0) return res.status(404).json({ error: 'ไม่พบห้อง' });
         if (rooms[0].host_name !== current_host) return res.status(403).json({ error: 'สิทธิ์เฉพาะหัวห้องเท่านั้น' });
-        if (target_user_name.startsWith('Bot_')) return res.status(400).json({ error: 'ไม่สามารถโอนตำแหน่งหัวห้องให้บอทได้' });
+        const [[target]] = await db.query("SELECT participant_kind FROM arcade_participants WHERE room_id = ? AND user_name = ?", [roomId, target_user_name]);
+        if (!target || target.participant_kind !== 'human') return res.status(400).json({ error: 'ไม่สามารถโอนตำแหน่งหัวห้องให้บอทได้' });
 
         await db.query(`UPDATE arcade_rooms SET host_name = ? WHERE room_id = ?`, [target_user_name, roomId]);
         await db.query(`UPDATE arcade_participants SET is_host = 0 WHERE room_id = ?`, [roomId]);
@@ -6753,212 +6337,12 @@ app.post('/api/arcade/rooms/:id/kick', async (req, res) => {
     }
 });
 
-// 7.5 Host adds random bot player
-app.post('/api/arcade/rooms/:id/add-bot', async (req, res) => {
-    try {
-        const roomId = req.params.id;
-        const { host_name } = req.body;
-
-        const [rooms] = await db.query(`SELECT * FROM arcade_rooms WHERE room_id = ?`, [roomId]);
-        if (!rooms || rooms.length === 0) return res.status(404).json({ error: 'ไม่พบห้อง' });
-        if (rooms[0].host_name !== host_name) return res.status(403).json({ error: 'สิทธิ์เฉพาะหัวห้องเท่านั้นในการเพิ่มบอท' });
-        // A bot added mid-match would join with score/cash both 0 while
-        // everyone else already has a full match's worth of cumulative
-        // score, guaranteeing it gets cut on the very next elimination
-        // regardless of that round's own performance — and nothing would
-        // stop a host from doing this repeatedly through an entire match.
-        // `join` (the real-player equivalent) already refuses this same way;
-        // add-bot never had the matching guard.
-        if (rooms[0].status !== 'WAITING') {
-            return res.status(400).json({ error: 'ไม่สามารถเพิ่มบอทระหว่างการแข่งขันได้' });
-        }
-
-        const [participants] = await db.query(`SELECT * FROM arcade_participants WHERE room_id = ?`, [roomId]);
-        if (participants.length >= rooms[0].max_players) {
-            return res.status(400).json({ error: 'ห้องแข่งขันมีผู้เล่นเต็มจำนวนแล้ว' });
-        }
-
-        const botNamesPool = [
-            "Bot_PyNinja", "Bot_SyntaxPro", "Bot_CyberCoder", "Bot_NullPointer",
-            "Bot_AlgorithmX", "Bot_LogicCraft", "Bot_BugHunter", "Bot_CodeMaster",
-            "Bot_StackOverflow", "Bot_Pythonic"
-        ];
-
-        const existingNames = new Set(participants.map(p => p.user_name));
-        const availableBots = botNamesPool.filter(name => !existingNames.has(name));
-
-        const chosenBotName = availableBots.length > 0 
-            ? availableBots[Math.floor(Math.random() * availableBots.length)]
-            : `Bot_Player_${Math.floor(Math.random() * 900) + 100}`;
-
-        await db.query(
-            `INSERT INTO arcade_participants (room_id, user_name, is_host) VALUES (?, ?, 0)`,
-            [roomId, chosenBotName]
-        );
-
-        const [updatedParticipants] = await db.query(
-            `SELECT * FROM arcade_participants WHERE room_id = ? ORDER BY joined_at ASC`,
-            [roomId]
-        );
-
-        res.json({ success: true, bot_name: chosenBotName, participants: publicParticipants(updatedParticipants) });
-    } catch (err) {
-        console.error('❌ POST /api/arcade/rooms/:id/add-bot error:', err.message);
-        res.status(500).json({ error: err.message });
-    }
-});
-
 const { installArcadeMatchStart } = require('./arcade/match-api');
 installArcadeMatchStart(app, db);
 
-// 8b. A real player reports their own already-judged round result (passCount/
-// readability/timeBonus folded into one score, computed client-side via
-// Pyodide exactly as before — the server has no Python runtime to re-check
-// it, the same trust boundary Person 1's learning-system exercises already
-// rely on). tickArcadeMatches()/finalizeArcadePhase() is the only thing that
-// ever turns a round's result into real score/cash. (pending_round_score is
-// no longer written: the score is computed at finalize from submitted_code.)
-app.post('/api/arcade/rooms/:id/submit-round', async (req, res) => {
-    try {
-        const roomId = req.params.id;
-        // Phase 8.3: the client now also reports the breakdown behind
-        // round_score (and the code itself) so the RESULT screen can show the
-        // player what they actually wrote each round. All optional — an older
-        // client that only sends round_score still works exactly as before,
-        // it just records a history row with zeroed detail.
-        // Only the code, and a flag for an item effect the server cannot see.
-        // round_score/pass_count/total_count/quality_score/time_used_seconds
-        // used to arrive here fully computed by the browser; they are no longer
-        // read at all, because a value the server cannot recompute is a value a
-        // player can choose. finalizeArcadePhase() works all of them out when
-        // the round closes. See docs/adr/0001-server-owns-the-verdict.md.
-        const { user_name, code, score_multiplier_active } = req.body;
-        if (!user_name || typeof code !== 'string') {
-            return res.status(400).json({ error: 'ข้อมูลการส่งคำตอบไม่ถูกต้อง' });
-        }
+require('./arcade/submission-api').installArcadeSubmissions(app, db);
 
-        const [rooms] = await db.query(`SELECT * FROM arcade_rooms WHERE room_id = ?`, [roomId]);
-        if (!rooms || rooms.length === 0) return res.status(404).json({ error: 'ไม่พบห้อง' });
-        if (rooms[0].status !== 'PLAYING' || !String(rooms[0].phase).startsWith('ROUND_')) {
-            return res.status(400).json({ error: 'ไม่อยู่ในช่วงเวลาที่ส่งคำตอบได้' });
-        }
-
-        const [participants] = await db.query(
-            `SELECT * FROM arcade_participants WHERE room_id = ? AND user_name = ?`,
-            [roomId, user_name]
-        );
-        const participant = participants?.[0];
-        if (!participant) return res.status(404).json({ error: 'ไม่พบผู้เล่นในห้องนี้' });
-        if (participant.is_eliminated) return res.status(400).json({ error: 'คุณตกรอบไปแล้ว' });
-        if (participant.has_submitted) {
-            return res.json({ success: true, message: 'ส่งคำตอบไปแล้วสำหรับรอบนี้' });
-        }
-
-        // The submission is stored, not scored. finalizeArcadePhase() grades it
-        // when the round's timer runs out: it runs the code against the round's
-        // real test cases, asks the code-quality judge, and takes the time from
-        // the server's own clock. Nothing a player sends can raise their score.
-        //
-        // What the player has to do in time is SEND. Grading happens later, so
-        // a slow network cannot cost anyone a round.
-        const multiplierActive = score_multiplier_active ? 1 : 0;
-        await db.query(
-            `UPDATE arcade_participants
-                SET submitted_code = ?, submitted_at = CURRENT_TIMESTAMP,
-                    has_submitted = 1, score_multiplier_active = ?
-              WHERE id = ?`,
-            [String(code).slice(0, 20000), multiplierActive, participant.id]
-        );
-
-        res.json({ success: true });
-    } catch (err) {
-        console.error('❌ POST /api/arcade/rooms/:id/submit-round error:', err.message);
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// The player's current draft, resent every few seconds while a round is open.
-// Accepted only during a coding round, and only from a player who has not
-// already submitted - once an answer is in, the draft stops moving so the
-// spectator view keeps showing what was actually sent rather than whatever the
-// editor still happens to contain.
-//
-// Deliberately not part of submit-round: what gets graded is submitted_code and
-// nothing else. A draft can never become an answer by itself.
-app.post('/api/arcade/rooms/:id/code-draft', async (req, res) => {
-    try {
-        const roomId = req.params.id;
-        const { user_name, code } = req.body;
-        if (!user_name || typeof code !== 'string') {
-            return res.status(400).json({ error: 'ข้อมูลไม่ถูกต้อง' });
-        }
-
-        const [rooms] = await db.query(`SELECT status, phase FROM arcade_rooms WHERE room_id = ?`, [roomId]);
-        if (!rooms || rooms.length === 0) return res.status(404).json({ error: 'ไม่พบห้อง' });
-        if (rooms[0].status !== 'PLAYING' || !String(rooms[0].phase).startsWith('ROUND_')) {
-            return res.json({ success: true, ignored: true });
-        }
-
-        await db.query(
-            `UPDATE arcade_participants
-                SET draft_code = ?, draft_updated_at = CURRENT_TIMESTAMP
-              WHERE room_id = ? AND user_name = ? AND has_submitted = 0 AND is_eliminated = 0`,
-            [String(code).slice(0, 20000), roomId, user_name]
-        );
-
-        res.json({ success: true });
-    } catch (err) {
-        console.error('❌ POST /api/arcade/rooms/:id/code-draft error:', err.message);
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// Shop buy/sell/reroll all reduce to "add or subtract some amount of cash,
-// authoritatively" — before this endpoint existed, ArcadeBattleRoyale.jsx's
-// buyItem()/sellItem()/rollShop() only ever called local setPlayerState(),
-// so the room-state poller's unconditional `cash: myRow.cash` merge (see
-// that file's fetchRoomState, which mirrors DB-authoritative cash every 2s)
-// silently reverted every purchase within ~2 seconds — items stayed in the
-// player's local inventory, but the DB never actually charged for them, so
-// every item was effectively free. This mirrors the same
-// read-current-cash-then-write pattern the /attack endpoint's
-// cashSteal/taxCollection branch already uses. Only usable during a SHOP_
-// phase, matching Phase 4's "purchase only during shop phase" rule (which
-// was previously enforced only by which screen the client happened to be
-// showing, not by the server).
-app.post('/api/arcade/rooms/:id/shop-cash-delta', async (req, res) => {
-    try {
-        const roomId = req.params.id;
-        const { user_name, delta } = req.body;
-        if (!user_name || !Number.isFinite(delta)) {
-            return res.status(400).json({ error: 'ข้อมูลไม่ถูกต้อง' });
-        }
-
-        const [rooms] = await db.query(`SELECT * FROM arcade_rooms WHERE room_id = ?`, [roomId]);
-        if (!rooms || rooms.length === 0) return res.status(404).json({ error: 'ไม่พบห้อง' });
-        if (!String(rooms[0].phase).startsWith('SHOP_')) {
-            return res.status(400).json({ error: 'ทำได้เฉพาะช่วงร้านค้าเท่านั้น' });
-        }
-
-        const [participants] = await db.query(
-            `SELECT * FROM arcade_participants WHERE room_id = ? AND user_name = ?`,
-            [roomId, user_name]
-        );
-        const participant = participants?.[0];
-        if (!participant) return res.status(404).json({ error: 'ไม่พบผู้เล่นในห้องนี้' });
-
-        const newCash = participant.cash + Math.round(delta);
-        if (newCash < 0) {
-            return res.status(400).json({ error: 'เงินไม่พอ' });
-        }
-
-        await db.query(`UPDATE arcade_participants SET cash = ? WHERE id = ?`, [newCash, participant.id]);
-        res.json({ success: true, cash: newCash });
-    } catch (err) {
-        console.error('❌ POST /api/arcade/rooms/:id/shop-cash-delta error:', err.message);
-        res.status(500).json({ error: err.message });
-    }
-});
+require('./arcade/shop-api').installArcadeShop(app, db);
 
 // Step 5 — a player's own past matches, newest first, with every round they
 // submitted. Scoped to one player for the same reason the in-match version is:
@@ -7067,28 +6451,6 @@ app.get('/api/arcade/rooms/:id/chat', async (req, res) => {
 // purpose: a match is a competition, and handing everyone else's solutions to
 // every player at the end would turn the RESULT screen into an answer key.
 
-// Phase 8.3 — a player's Arcade career totals for the lobby stats card.
-// Returns a zeroed record rather than 404 for someone who has never finished
-// a match, so the client can render the card unconditionally.
-app.get('/api/arcade/players/:user_name/stats', async (req, res) => {
-    try {
-        const userName = req.params.user_name;
-        const [rows] = await db.query(
-            `SELECT user_name, matches_played, wins, best_rank, total_score, total_cash_earned
-             FROM arcade_player_stats WHERE user_name = ?`,
-            [userName]
-        );
-        const stats = rows?.[0] || {
-            user_name: userName, matches_played: 0, wins: 0,
-            best_rank: null, total_score: 0, total_cash_earned: 0
-        };
-        res.json({ success: true, stats });
-    } catch (err) {
-        console.error('❌ GET /api/arcade/players/:user_name/stats error:', err.message);
-        res.status(500).json({ error: err.message });
-    }
-});
-
 // Removes a participant and reassigns host / deletes an empty room. Shared
 // by the explicit "leave" action below and the stale-connection sweep, so
 // a disconnected player is cleaned up exactly the same way as one who
@@ -7096,7 +6458,7 @@ app.get('/api/arcade/players/:user_name/stats', async (req, res) => {
 async function leaveRoom(roomId, userName) {
     await db.query(`DELETE FROM arcade_participants WHERE room_id = ? AND user_name = ?`, [roomId, userName]);
 
-    const [remaining] = await db.query(`SELECT * FROM arcade_participants WHERE room_id = ? ORDER BY joined_at ASC`, [roomId]);
+    const [remaining] = await db.query(`SELECT * FROM arcade_participants WHERE room_id = ? AND participant_kind = 'human' ORDER BY joined_at ASC, id ASC`, [roomId]);
 
     if (!remaining || remaining.length === 0) {
         await db.query(`DELETE FROM arcade_rooms WHERE room_id = ?`, [roomId]);
@@ -7128,93 +6490,7 @@ app.post('/api/arcade/rooms/:id/leave', async (req, res) => {
 
 // 10. Post-match finish choice (REMAIN vs LEAVE)
 
-// 11. Attack another real participant (or a bot — bots are real
-// arcade_participants rows too) — targeted or AOE debuffs go into the
-// arcade_effects delivery queue; cashSteal/taxCollection are settled
-// immediately since they're a direct cash transfer, not a visual debuff.
-app.post('/api/arcade/rooms/:id/attack', async (req, res) => {
-    try {
-        const roomId = req.params.id;
-        const { attacker_name, target_name, effect_type, item_name } = req.body;
-        if (!attacker_name || !target_name || !effect_type) {
-            return res.status(400).json({ error: 'ข้อมูลการโจมตีไม่ครบถ้วน' });
-        }
-        if (attacker_name === target_name) {
-            return res.status(400).json({ error: 'ไม่สามารถโจมตีตัวเองได้' });
-        }
-
-        const [participants] = await db.query(
-            `SELECT * FROM arcade_participants WHERE room_id = ? AND user_name IN (?, ?)`,
-            [roomId, attacker_name, target_name]
-        );
-        const attacker = participants.find(p => p.user_name === attacker_name);
-        const target = participants.find(p => p.user_name === target_name);
-        if (!attacker || !target) {
-            return res.status(404).json({ error: 'ไม่พบผู้เล่นในห้องนี้' });
-        }
-        if (target.is_eliminated) {
-            return res.status(400).json({ error: 'เป้าหมายถูกคัดออกไปแล้ว' });
-        }
-
-        if (effect_type === 'cashSteal' || effect_type === 'taxCollection') {
-            const stolen = effect_type === 'taxCollection'
-                ? Math.floor(target.cash * arcadeConfig.cashSteal.taxPercent)
-                : Math.min(arcadeConfig.cashSteal.flatAmount, target.cash);
-            await db.query(`UPDATE arcade_participants SET cash = cash - ? WHERE room_id = ? AND user_name = ?`, [stolen, roomId, target_name]);
-            await db.query(`UPDATE arcade_participants SET cash = cash + ? WHERE room_id = ? AND user_name = ?`, [stolen, roomId, attacker_name]);
-            // Also queue a delivery row so the victim's own client (polling /effects)
-            // deducts the same amount from their locally-held cash state.
-            await db.query(
-                `INSERT INTO arcade_effects (match_id, room_id, attacker_name, target_name, effect_type, item_name, amount) VALUES ((SELECT current_match_id FROM arcade_rooms WHERE room_id = ?), ?, ?, ?, ?, ?, ?)`,
-                [roomId, roomId, attacker_name, target_name, effect_type, item_name || effect_type, stolen]
-            );
-            return res.json({ success: true, stolen });
-        }
-
-        await db.query(
-            `INSERT INTO arcade_effects (match_id, room_id, attacker_name, target_name, effect_type, item_name) VALUES ((SELECT current_match_id FROM arcade_rooms WHERE room_id = ?), ?, ?, ?, ?, ?)`,
-            [roomId, roomId, attacker_name, target_name, effect_type, item_name || effect_type]
-        );
-
-        res.json({ success: true });
-    } catch (err) {
-        console.error('❌ POST /api/arcade/rooms/:id/attack error:', err.message);
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// 12. Poll for incoming sabotage effects — atomically claims and marks delivered
-// so each row is applied by the target exactly once.
-app.get('/api/arcade/rooms/:id/effects', async (req, res) => {
-    try {
-        const roomId = req.params.id;
-        const userName = req.query.user_name;
-        if (!userName) return res.status(400).json({ error: 'กรุณาระบุ user_name' });
-
-        // db.js's query() only returns real row arrays for SELECT — an UPDATE ...
-        // RETURNING collapses to a { rowCount, insertId, ... } summary object, not
-        // the actual rows — so the pending rows have to be read first and marked
-        // delivered as a second query.
-        const [pending] = await db.query(
-            `SELECT id, attacker_name, target_name, effect_type, item_name, amount, created_at
-             FROM arcade_effects WHERE room_id = ? AND target_name = ? AND delivered = 0
-               AND match_id = (SELECT current_match_id FROM arcade_rooms WHERE room_id = ?)
-             ORDER BY created_at ASC`,
-            [roomId, userName, roomId]
-        );
-
-        if (pending && pending.length > 0) {
-            const ids = pending.map(p => p.id);
-            const placeholders = ids.map(() => '?').join(',');
-            await db.query(`UPDATE arcade_effects SET delivered = 1 WHERE id IN (${placeholders})`, ids);
-        }
-
-        res.json({ success: true, effects: pending || [] });
-    } catch (err) {
-        console.error('❌ GET /api/arcade/rooms/:id/effects error:', err.message);
-        res.status(500).json({ error: err.message });
-    }
-});
+// Item attacks and effect snapshots are handled atomically by arcade/shop-api.js.
 
 // The old POST /rooms/:id/judge-round is gone. It existed so the browser could
 // fetch a quality score and fold it into a round score it computed itself;
@@ -7227,9 +6503,8 @@ app.get('/api/arcade/rooms/:id/effects', async (req, res) => {
 // or crashes never calls /leave, so their row would otherwise sit in the
 // room forever. GET /api/arcade/rooms/:id doubles as a ~2s heartbeat (see
 // above), so anyone who hasn't been seen in staleParticipantSeconds is
-// treated as disconnected. Bots are excluded by name pattern — they're
-// simulated client-side and never poll on their own behalf, so they'd
-// otherwise always look stale. Runs every 20s.
+// treated as disconnected. Explicit bot rows need no browser heartbeat.
+// Runs every 20s.
 //
 // The window used to be a hardcoded 45s, which was below what a browser
 // actually guarantees: Chrome throttles timers in a backgrounded tab to
@@ -7238,11 +6513,12 @@ app.get('/api/arcade/rooms/:id/effects', async (req, res) => {
 // live on 2026-08-17 — a match was deleted mid-round this way). The value now
 // comes from shared/arcadeConfig.json so client and server agree on it.
 async function sweepStaleArcadeParticipants() {
+    if (!db.arcadeReady) return;
     try {
         const [stale] = await db.query(
             `SELECT room_id, user_name FROM arcade_participants
              WHERE last_seen < CURRENT_TIMESTAMP - (? || ' seconds')::interval
-               AND user_name NOT LIKE 'Bot\\_%'`,
+               AND participant_kind = 'human'`,
             [arcadeConfig.staleParticipantSeconds]
         );
         for (const row of stale || []) {
@@ -7255,7 +6531,7 @@ async function sweepStaleArcadeParticipants() {
         const [botOnlyRooms] = await db.query(`
             SELECT room_id FROM arcade_participants
             GROUP BY room_id
-            HAVING COUNT(*) FILTER (WHERE user_name NOT LIKE 'Bot\\_%') = 0
+            HAVING COUNT(*) FILTER (WHERE participant_kind = 'human') = 0
         `);
         for (const row of botOnlyRooms || []) {
             await db.query(`DELETE FROM arcade_rooms WHERE room_id = ?`, [row.room_id]);

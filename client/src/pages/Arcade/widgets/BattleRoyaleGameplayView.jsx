@@ -34,6 +34,9 @@ function PanelToggle({ open, label, onToggle }) {
 
 export default function BattleRoyaleGameplayView({
   phase,
+  draftReady,
+  draftStatus,
+  retryDraft,
   PHASES,
   t,
   challengeTitle,
@@ -69,7 +72,7 @@ export default function BattleRoyaleGameplayView({
   // deliberately still usable - sending an answer early is meant to buy time to
   // play the sabotage game, not to end the round for that player.
   const spectating = Boolean(playerState.hasSubmittedThisRound) && !playerState.eliminated;
-  const editorLocked = spectating
+  const editorLocked = !draftReady || playerState.eliminated || spectating
     || checkEffectActive('timeFreeze')
     || checkEffectActive('blackout');
 
@@ -249,11 +252,11 @@ export default function BattleRoyaleGameplayView({
           ${checkEffectActive('screenShake') ? 'animate-bounce' : ''}
         `}>
 
-          {/* Active Debuffs Warn Panel */}
+          {/* Self buffs and incoming debuffs use the same effect list. */}
           {playerState.activeEffects.length > 0 && (
-            <div className="bg-red-600 text-white py-2 px-4 text-center font-black text-xs animate-pulse tracking-wider flex items-center justify-center gap-2 z-20 shrink-0">
+            <div className={`${playerState.activeEffects.some(e => !['shield', 'scoreMultiplier', 'aiHelper'].includes(e.type)) ? 'bg-red-600' : 'bg-indigo-600'} text-white py-2 px-4 text-center font-black text-xs tracking-wider flex items-center justify-center gap-2 z-20 shrink-0`}>
               <AlertTriangle className="h-3.5 w-3.5 animate-spin" />
-              <span>SYSTEM FAILURE: DEBUFF ACTIVE ({
+              <span>{t('activeEffects')} ({
                 playerState.activeEffects.map(e => {
                   const itm = SHOP_ITEMS.find(s => s.id === e.type);
                   return t(itm ? itm.nameKey : e.type);
@@ -295,6 +298,17 @@ export default function BattleRoyaleGameplayView({
                 </span>
               )}
             </div>
+
+            {!watchedPlayer && (
+              <div role="status" aria-live="polite" className={`flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-xs border-b ${['error', 'restoreError', 'conflict'].includes(draftStatus) ? 'bg-amber-50 text-amber-800' : 'bg-slate-50 text-slate-500'}`}>
+                <span>{t(`draft_${draftStatus}`)}</span>
+                {['error', 'restoreError', 'conflict'].includes(draftStatus) && (
+                  <button type="button" onClick={retryDraft} className="font-bold underline">
+                    {t(draftStatus === 'conflict' ? 'draftReload' : 'draftRetry')}
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Someone else's editor. Read-only by construction: this is a
                 <pre>, not a Monaco instance, so there is nothing here that
@@ -426,7 +440,7 @@ export default function BattleRoyaleGameplayView({
 
           <button
             onClick={handleManualSubmit}
-            disabled={isGrading || spectating}
+            disabled={!draftReady || isGrading || spectating || playerState.eliminated}
             className="px-8 py-2.5 bg-rose-600 hover:bg-rose-500 active:scale-[0.98] text-white rounded-xl text-xs font-black transition-all shadow-md shadow-rose-500/10 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
           >
             {isGrading ? t('judgingCode') : spectating ? t('submittedBadge') : t('submitCode')}
@@ -583,7 +597,7 @@ export default function BattleRoyaleGameplayView({
               <button
                 key={idx}
                 onClick={() => initiateItemUse(item)}
-                disabled={playerState.eliminated || targetingItem || phase === PHASES.ROUND_1}
+                disabled={!draftReady || playerState.hasSubmittedThisRound || playerState.eliminated || targetingItem || phase === PHASES.ROUND_1}
                 className={`px-4 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 transition-all shadow-sm border
                   ${targetingItem === item ? 'bg-rose-600 text-white border-rose-600 animate-pulse' : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'}
                   disabled:opacity-40 hover:scale-105 active:scale-95

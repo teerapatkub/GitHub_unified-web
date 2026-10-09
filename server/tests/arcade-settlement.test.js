@@ -1,0 +1,143 @@
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const { arcadeFixture } = require('./helpers/arcade-fixture');
+const { createArcadePhaseFinalizer } = require('../arcade/phase-finalizer');
+
+test('concurrent workers and a repeated stale tick settle a round only once', async t => {
+  const { db, call } = await arcadeFixture(t);
+  await call('/api/arcade/rooms/1/start', { body: {} });
+  await db.query("UPDATE arcade_rooms SET phase_deadline = CURRENT_TIMESTAMP - INTERVAL '1 second'");
+  const room = (await call('/api/arcade/rooms/1')).body.room;
+  const workers = [1, 2].map(() => createArcadePhaseFinalizer({ db }));
+  await Promise.all(workers.map(finalize => finalize(room)));
+  await workers[0](room);
+  const state = (await call('/api/arcade/rooms/1')).body;
+  assert.equal(state.room.phase, 'SUMMARY_1');
+  assert.deepEqual(state.participants.map(p => p.cash).sort((a, b) => b - a), [500, 400]);
+  assert.equal(state.room.last_round_summary.entries.length, 2);
+});
+
+test('a database failure leaves answers and round results intact for a complete retry', async t => {
+  const { db, call } = await arcadeFixture(t);
+  const matchId = (await call('/api/arcade/rooms/1/start', { body: {} })).body.match_id;
+  await call('/api/arcade/rooms/1/submit-round', { body: { match_id: matchId, round_num: 1, code: "print('answer')" } });
+  await db.query("UPDATE arcade_rooms SET phase_deadline = CURRENT_TIMESTAMP - INTERVAL '1 second'");
+  const room = (await call('/api/arcade/rooms/1')).body.room;
+  // The optional remote quality service is a system boundary. Correctness still uses the real grader.
+  const finalize = createArcadePhaseFinalizer({ db, judgeCodeQuality: async () => ({ score: 0 }) });
+  await db.query(`CREATE FUNCTION reject_history() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'history unavailable'; END $$`);
+  await db.query('CREATE TRIGGER fail_history BEFORE INSERT ON arcade_round_history FOR EACH ROW EXECUTE FUNCTION reject_history()');
+  await assert.rejects(finalize(room), /history unavailable/);
+  const state = (await call('/api/arcade/rooms/1')).body;
+  assert.equal(state.room.phase, 'ROUND_1');
+  assert.ok(state.participants.every(p => p.score === 0 && p.cash === 0));
+  assert.equal(state.participants.find(p => p.user_name === 'alice').has_submitted, 1);
+  assert.equal((await call('/api/arcade/rooms/1/code/alice')).body.code, "print('answer')");
+  await db.query('DROP TRIGGER fail_history ON arcade_round_history');
+  await finalize(room);
+  const history = (await call('/api/arcade/rooms/1/round-history')).body.history;
+  assert.equal(history.length, 1);
+  assert.equal(history[0].code, "print('answer')");
+  assert.equal((await call('/api/arcade/rooms/1')).body.room.phase, 'SUMMARY_1');
+});
+
+test('a grading service exception preserves the submitted answer instead of settling a zero score', async t => {
+  const { db, call } = await arcadeFixture(t);
+  const matchId = (await call('/api/arcade/rooms/1/start', { body: {} })).body.match_id;
+  await call('/api/arcade/rooms/1/submit-round', { body: { match_id: matchId, round_num: 1, code: 'print(7)' } });
+  await db.query("UPDATE arcade_rooms SET phase_deadline = CURRENT_TIMESTAMP - INTERVAL '1 second'");
+  const room = (await call('/api/arcade/rooms/1')).body.room;
+  const finalize = createArcadePhaseFinalizer({ db, judgeCodeQuality: async () => { throw new Error('grader unavailable'); } });
+  await assert.rejects(finalize(room), /grader unavailable/);
+  const state = (await call('/api/arcade/rooms/1')).body;
+  assert.equal(state.room.phase, 'ROUND_1');
+  assert.ok(state.participants.every(p => p.score === 0 && p.cash === 0));
+  assert.equal(state.participants.find(p => p.user_name === 'alice').has_submitted, 1);
+  assert.deepEqual((await call('/api/arcade/rooms/1/round-history')).body.history, []);
+});
+
+test('score, cash, elimination, history and final phase commit together after a failed final write', async t => {
+  const { db, call } = await arcadeFixture(t);
+  const matchId = (await call('/api/arcade/rooms/1/start', { body: {} })).body.match_id;
+  await db.query(`CREATE TABLE problems (problem_id integer PRIMARY KEY, test_kind text, test_cases jsonb, solution_code text, starter_code text)`);
+  await db.query(`CREATE TABLE problem_modes (problem_id integer, mode text, entry_id integer)`);
+  await db.query(`INSERT INTO problems VALUES (1, 'stdio', '[{"input":"","expected":"7"}]', 'print(7)', '')`);
+  await db.query("INSERT INTO problem_modes VALUES (1, 'arcade', 1)");
+  await db.query('ALTER TABLE arcade_tasks ADD COLUMN test_cases jsonb');
+  await db.query(`INSERT INTO arcade_tasks (task_id, test_cases) VALUES (1, '[{"input":"","expected":"7"}]')`);
+  await db.query("UPDATE arcade_rooms SET phase = 'ROUND_2', round_task_ids = '[1,1,1,1]'");
+  await db.query("UPDATE arcade_participants SET score = 500 WHERE user_name = 'alice'");
+  assert.equal((await call('/api/arcade/rooms/1/submit-round', { body: { match_id: matchId, round_num: 2, code: 'print(7)' } })).status, 200);
+  await db.query("UPDATE arcade_rooms SET phase_deadline = CURRENT_TIMESTAMP - INTERVAL '1 second'");
+  const room = (await call('/api/arcade/rooms/1')).body.room;
+  await db.query(`CREATE FUNCTION reject_result() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.phase = 'RESULT' THEN RAISE EXCEPTION 'phase write failed'; END IF; RETURN NEW; END $$`);
+  await db.query('CREATE TRIGGER fail_result BEFORE UPDATE ON arcade_rooms FOR EACH ROW EXECUTE FUNCTION reject_result()');
+  const finalize = createArcadePhaseFinalizer({ db, judgeCodeQuality: async () => ({ score: 0 }) });
+  await assert.rejects(finalize(room), /phase write failed/);
+  const before = (await call('/api/arcade/rooms/1')).body;
+  assert.equal(before.room.phase, 'ROUND_2');
+  assert.equal(before.participants.find(p => p.user_name === 'alice').score, 500);
+  assert.ok(before.participants.every(p => p.cash === 0 && p.is_eliminated === 0));
+  assert.equal(before.participants.find(p => p.user_name === 'alice').has_submitted, 1);
+  assert.deepEqual((await call('/api/arcade/rooms/1/round-history')).body.history, []);
+  await db.query('DROP TRIGGER fail_result ON arcade_rooms');
+  assert.deepEqual(await finalize(room), { finished: true, roomId: 1, matchId });
+  assert.equal(await finalize(room), undefined);
+  const after = (await call('/api/arcade/rooms/1')).body;
+  assert.equal(after.room.phase, 'RESULT');
+  assert.equal(after.room.phase_deadline, null);
+  assert.equal(after.room.current_round, 2);
+  assert.deepEqual(after.participants.map(p => [p.user_name, p.score, p.cash, p.is_eliminated]), [['alice', 600, 500, 0], ['bob', 0, 400, 1]]);
+  assert.deepEqual(after.room.last_round_summary.entries.map(e => [e.name, e.eliminated]), [['alice', false], ['bob', true]]);
+  const history = (await call('/api/arcade/rooms/1/round-history')).body.history;
+  assert.equal(history.length, 1);
+  assert.equal(history[0].pass_count, 1);
+  assert.equal(history[0].round_score, 100);
+});
+
+test('workers ignore future deadlines, stale phases and snapshots from a previous match', async t => {
+  const { db, call } = await arcadeFixture(t);
+  await call('/api/arcade/rooms/1/start', { body: {} });
+  const first = (await call('/api/arcade/rooms/1')).body.room;
+  const finalize = createArcadePhaseFinalizer({ db });
+  await finalize(first);
+  assert.equal((await call('/api/arcade/rooms/1')).body.room.phase, 'ROUND_1');
+  await db.query("UPDATE arcade_rooms SET phase_deadline = CURRENT_TIMESTAMP - INTERVAL '1 second'");
+  await finalize(first);
+  const summary = (await call('/api/arcade/rooms/1')).body.room;
+  await db.query("UPDATE arcade_rooms SET phase_deadline = CURRENT_TIMESTAMP - INTERVAL '1 second'");
+  await finalize(first);
+  assert.equal((await call('/api/arcade/rooms/1')).body.room.phase, 'SUMMARY_1');
+  await Promise.all([finalize(summary), finalize(summary)]);
+  const shop = (await call('/api/arcade/rooms/1')).body.room;
+  assert.equal(shop.phase, 'SHOP_1');
+  await db.query("UPDATE arcade_rooms SET phase_deadline = CURRENT_TIMESTAMP - INTERVAL '1 second'");
+  await Promise.all([finalize(shop), finalize(shop)]);
+  assert.equal((await call('/api/arcade/rooms/1')).body.room.phase, 'ROUND_2');
+  await db.query("UPDATE arcade_rooms SET phase = 'RESULT'");
+  await call('/api/arcade/rooms/1/finish-choice', { body: { choice: 'REMAIN' } });
+  await call('/api/arcade/rooms/1/start', { body: {} });
+  await db.query("UPDATE arcade_rooms SET phase_deadline = CURRENT_TIMESTAMP - INTERVAL '1 second'");
+  await finalize(first);
+  const next = (await call('/api/arcade/rooms/1')).body;
+  assert.notEqual(next.room.current_match_id, first.current_match_id);
+  assert.equal(next.room.phase, 'ROUND_1');
+  assert.ok(next.participants.every(p => p.cash === 0 && p.score === 0));
+});
+
+test('a persistently failing room does not stop another due room from advancing', async t => {
+  const { settleDueArcadeRooms } = require('../arcade/match-ticker');
+  const { db, call } = await arcadeFixture(t);
+  await call('/api/arcade/rooms/1/start', { body: {} });
+  await db.query("INSERT INTO arcade_rooms (room_code, host_name) VALUES ('SECOND', 'alice')");
+  await db.query("INSERT INTO arcade_participants (room_id,user_name,is_host) VALUES (2,'alice',1),(2,'bob',0)");
+  assert.equal((await call('/api/arcade/rooms/2/start', { body: {} })).status, 200);
+  await db.query("UPDATE arcade_rooms SET phase_deadline = CURRENT_TIMESTAMP - INTERVAL '1 second'");
+  await db.query(`CREATE FUNCTION reject_first_room() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.room_id = 1 THEN RAISE EXCEPTION 'room one unavailable'; END IF; RETURN NEW; END $$`);
+  await db.query('CREATE TRIGGER fail_first_room BEFORE UPDATE ON arcade_rooms FOR EACH ROW EXECUTE FUNCTION reject_first_room()');
+  await settleDueArcadeRooms({ db });
+  assert.equal((await call('/api/arcade/rooms/1')).body.room.phase, 'ROUND_1');
+  const second = (await call('/api/arcade/rooms/2')).body;
+  assert.equal(second.room.phase, 'SUMMARY_1');
+  assert.deepEqual(second.participants.map(p => p.cash).sort((a, b) => b - a), [500, 400]);
+});

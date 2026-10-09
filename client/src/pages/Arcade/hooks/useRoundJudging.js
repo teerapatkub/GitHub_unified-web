@@ -14,21 +14,27 @@ import { PHASES, TASKS, TASK_TEST_CASES, ROUND_4_FALLBACK_TASK,
 // and the time leg of the score. Both are the server's business now, so the
 // hook no longer takes them.
 
-export default function useRoundJudging({ playerState, setPlayerState, currentRoom, notify, t, lang, checkEffectActive, API_BASE }) {
+export default function useRoundJudging({ playerState, setPlayerState, currentRoom, notify, t, lang, API_BASE }) {
   // PostgreSQL Tasks State (Bilingual TH/EN)
   const [dbTasks, setDbTasks] = useState({ easy: [], medium: [], hard: [] });
   const [isGrading, setIsGrading] = useState(false);
   const [consoleOutput, setConsoleOutput] = useState("");
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/arcade/tasks`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) {
-          setDbTasks({ easy: data.easy || [], medium: data.medium || [], hard: data.hard || [] });
-        }
-      })
-      .catch(err => console.error("Error fetching tasks from DB:", err));
+    let stopped = false;
+    let retryTimer;
+    const load = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/arcade/tasks`, { signal: AbortSignal.timeout(8000) });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error('Tasks unavailable');
+        if (!stopped) setDbTasks({ easy: data.easy || [], medium: data.medium || [], hard: data.hard || [] });
+      } catch {
+        if (!stopped) retryTimer = setTimeout(load, 2000);
+      }
+    };
+    void load();
+    return () => { stopped = true; clearTimeout(retryTimer); };
   }, [API_BASE]);
 
   // Every match draws its own four problems at start; the ids live on the room
@@ -129,59 +135,54 @@ export default function useRoundJudging({ playerState, setPlayerState, currentRo
     setPyOnOutput((lines) => { pyOutputRef.current = lines; });
   }, [setPyOnOutput]);
 
-  // Guards submitMyRound() against being kicked off twice concurrently — the
-  // timer effect in the main component can re-run (its deps include
-  // roomParticipants, which gets a new array reference on every 2s
-  // room-state poll) while timeLeft is still 0 and the previous
-  // submitMyRound() call's own async work (Pyodide run + quality-judge
-  // fetch) hasn't resolved yet.
-  const submittingRoundRef = useRef(false);
-  // Sends MY code to the server and stops there.
-  //
-  // Everything that decides the round - how many tests passed, the code-quality
-  // score, how long it took - is worked out by the server when the round closes
-  // (finalizeArcadePhase in server/server.js). The browser used to compute all
-  // three and send a finished number, which meant anyone able to edit a request
-  // could win every match without writing Python. See
-  // docs/adr/0001-server-owns-the-verdict.md.
-  //
-  // Only the score-multiplier flag still comes from here, because item effects
-  // live in the browser and nowhere else. It can only double a score the server
-  // computed itself.
-  //
-  // What has to happen before the timer runs out is the SEND. Grading happens
-  // afterwards, so a slow connection can no longer cost a player their round.
+  const submissionScope = `${currentRoom?.room_id}:${currentRoom?.current_match_id}:${currentRoom?.phase}`;
+  const scopeRef = useRef(submissionScope);
+  scopeRef.current = submissionScope;
+  const submittingRoundRef = useRef(null);
+  const pendingAnswerRef = useRef(null);
+  useEffect(() => {
+    setIsGrading(false);
+  }, [submissionScope]);
+
+  // Keep an uncertain request unchanged for retries: the first accepted answer
+  // wins even if its HTTP response was lost. Only acknowledge a confirmed save.
   const submitMyRound = async () => {
-    if (submittingRoundRef.current || playerState.hasSubmittedThisRound || playerState.eliminated) return;
-    submittingRoundRef.current = true;
-    setPlayerState(prev => ({ ...prev, hasSubmittedThisRound: true }));
+    if (!currentRoom || !/^ROUND_[1-4]$/.test(currentRoom.phase)
+      || playerState.codeScope !== `${submissionScope}:${playerState.name}`
+      || submittingRoundRef.current === submissionScope
+      || playerState.hasSubmittedThisRound || playerState.eliminated) return;
+    const scope = submissionScope;
+    if (pendingAnswerRef.current?.scope !== scope) {
+      pendingAnswerRef.current = { scope, body: {
+        match_id: currentRoom.current_match_id,
+        round_num: Number(currentRoom.phase.split('_')[1]),
+        code: playerState.code
+      } };
+    }
+    const body = pendingAnswerRef.current.body;
+    submittingRoundRef.current = scope;
     setIsGrading(true);
-    notify(t('judgingCode'), "info");
     try {
-      const isMultiplierActive = checkEffectActive('scoreMultiplier');
-      setPlayerState(prev => ({
-        ...prev,
-        activeEffects: prev.activeEffects.filter(e => e.type !== 'scoreMultiplier')
-      }));
-
-      if (currentRoom) {
-        await fetch(`${API_BASE}/api/arcade/rooms/${currentRoom.room_id}/submit-round`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            user_name: playerState.name,
-            code: playerState.code,
-            score_multiplier_active: isMultiplierActive
-          })
-        });
+      const response = await fetch(`${API_BASE}/api/arcade/rooms/${currentRoom.room_id}/submit-round`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body), signal: AbortSignal.timeout(8000)
+      });
+      const result = await response.json();
+      if ([400, 403, 409].includes(response.status) && pendingAnswerRef.current?.scope === scope) {
+        pendingAnswerRef.current = null;
       }
-
-      notify(t('submittedWaitingForResult'), "success");
-    } catch (err) {
-      console.error('submitMyRound error:', err);
+      if (!response.ok || !result.success) throw new Error(result.error || (lang === 'en' ? 'Could not save your answer. Please retry.' : 'บันทึกคำตอบไม่สำเร็จ กรุณาลองอีกครั้ง'));
+      if (scopeRef.current !== scope) return;
+      setPlayerState(prev => ({ ...prev, code: body.code, hasSubmittedThisRound: true }));
+      notify(t('submittedWaitingForResult'), 'success');
+    } catch (error) {
+      if (scopeRef.current === scope) {
+        notify(error.message || (lang === 'en' ? 'Could not save your answer. Please retry.' : 'บันทึกคำตอบไม่สำเร็จ กรุณาลองอีกครั้ง'), 'error');
+      }
     } finally {
-      setIsGrading(false);
-      submittingRoundRef.current = false;
+      if (scopeRef.current === scope) setIsGrading(false);
+      if (submittingRoundRef.current === scope) submittingRoundRef.current = null;
     }
   };
 

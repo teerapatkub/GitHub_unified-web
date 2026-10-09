@@ -1,11 +1,32 @@
 // Room polling and membership responses contain public gameplay state only.
 function publicParticipants(rows) {
   const fields = ['id', 'room_id', 'match_id', 'user_name', 'is_host', 'score', 'cash',
-    'is_eliminated', 'joined_at', 'last_seen', 'has_submitted', 'coins_awarded'];
-  return rows.map(row => Object.fromEntries(fields.filter(key => key in row).map(key => [key, row[key]])));
+    'participant_kind', 'bot_profile', 'is_eliminated', 'joined_at', 'last_seen', 'has_submitted', 'coins_awarded'];
+  return rows.map(row => ({ ...Object.fromEntries(fields.filter(key => key in row).map(key => [key, row[key]])),
+    ...(row.participant_kind === 'bot' ? { bot_progress: row.bot_state?.progress || 0 } : {}) }));
 }
 
 function installArcadeRoomReads(app, db) {
+  // New players receive a zeroed career record for the lobby stats card.
+  app.get('/api/arcade/players/:user_name/stats', async (req, res) => {
+    try {
+      const userName = req.params.user_name;
+      const [rows] = await db.query(
+        `SELECT user_name, matches_played, wins, best_rank, total_score, total_cash_earned
+         FROM arcade_player_stats WHERE user_name = ?`,
+        [userName]
+      );
+      const stats = rows?.[0] || {
+        user_name: userName, matches_played: 0, wins: 0,
+        best_rank: null, total_score: 0, total_cash_earned: 0
+      };
+      res.json({ success: true, stats });
+    } catch (err) {
+      console.error('❌ GET /api/arcade/players/:user_name/stats error:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // 4. Get specific room state & participants. Polled every ~2s by every
   // connected client for the whole lobby+match lifetime, so it also doubles as
   // the presence heartbeat consumed by the stale-connection sweep below.
@@ -15,11 +36,12 @@ function installArcadeRoomReads(app, db) {
       const userName = req.player.username;
       if (userName) {
         await db.query(
-          `UPDATE arcade_participants SET last_seen = CURRENT_TIMESTAMP WHERE room_id = ? AND user_name = ?`,
+          `UPDATE arcade_participants SET last_seen = CURRENT_TIMESTAMP WHERE room_id = ? AND user_name = ? AND participant_kind = 'human'`,
           [roomId, userName]
         );
       }
-      const [rooms] = await db.query(`SELECT * FROM arcade_rooms WHERE room_id = ?`, [roomId]);
+      const [rooms] = await db.query(`SELECT r.*, m.final_standings, clock_timestamp() AS server_now FROM arcade_rooms r
+        LEFT JOIN arcade_matches m ON m.match_id = r.current_match_id WHERE r.room_id = ?`, [roomId]);
       if (!rooms || rooms.length === 0) {
         return res.status(404).json({ error: 'ไม่พบห้องแข่งขัน' });
       }
@@ -27,8 +49,8 @@ function installArcadeRoomReads(app, db) {
         `SELECT * FROM arcade_participants WHERE room_id = ? ORDER BY joined_at ASC`,
         [roomId]
       );
-      const { password: _pwd, ...roomSafe } = rooms[0];
-      res.json({ success: true, room: roomSafe, participants: publicParticipants(participants) });
+      const { password: _pwd, server_now: serverNow, ...roomSafe } = rooms[0];
+      res.json({ success: true, room: roomSafe, serverNow: new Date(serverNow).getTime(), participants: publicParticipants(participants) });
     } catch (err) {
       console.error('❌ GET /api/arcade/rooms/:id error:', err.message);
       res.status(500).json({ error: err.message });
@@ -53,13 +75,15 @@ function installArcadeRoomReads(app, db) {
       if (!viewer) return res.status(400).json({ error: 'ต้องระบุผู้ขอดู' });
 
       const [rows] = await db.query(
-        `SELECT user_name, draft_code, submitted_code, has_submitted, is_eliminated, draft_updated_at
-         FROM arcade_participants WHERE room_id = ? AND user_name IN (?, ?)`,
+        `SELECT p.participant_kind, p.user_name, p.draft_code, p.submitted_code, p.has_submitted,
+           p.is_eliminated, p.draft_updated_at, p.draft_revision, r.current_match_id AS match_id, r.phase
+         FROM arcade_participants p JOIN arcade_rooms r ON r.room_id = p.room_id
+         WHERE p.room_id = ? AND p.user_name IN (?, ?)`,
         [roomId, viewer, target]
       );
       const viewerRow = rows.find((r) => r.user_name === viewer);
       const targetRow = rows.find((r) => r.user_name === target);
-      if (!viewerRow) return res.status(404).json({ error: 'ไม่พบผู้ขอดูในห้องนี้' });
+      if (!viewerRow || viewerRow.participant_kind !== 'human') return res.status(404).json({ error: 'ไม่พบผู้ขอดูในห้องนี้' });
       if (!targetRow) return res.status(404).json({ error: 'ไม่พบผู้เล่นคนนี้ในห้อง' });
 
       const lookingAtSelf = viewer === target;
@@ -70,7 +94,7 @@ function installArcadeRoomReads(app, db) {
         return res.status(403).json({ error: 'ดูโค้ดของผู้เล่นคนอื่นได้หลังจากส่งคำตอบแล้วเท่านั้น' });
       }
 
-      if (String(target).startsWith('Bot_')) {
+      if (targetRow.participant_kind === 'bot') {
         return res.json({ user_name: target, is_bot: true, code: null, has_submitted: Number(targetRow.has_submitted) === 1 });
       }
 
@@ -78,6 +102,11 @@ function installArcadeRoomReads(app, db) {
       res.json({
         user_name: target,
         is_bot: false,
+        match_id: targetRow.match_id,
+        phase: targetRow.phase,
+        has_saved_code: submitted ? targetRow.submitted_code !== null : targetRow.draft_code !== null,
+        draft_revision: targetRow.draft_revision,
+        is_eliminated: Boolean(targetRow.is_eliminated),
         has_submitted: submitted,
         code: (submitted ? targetRow.submitted_code : targetRow.draft_code) || '',
         updated_at: targetRow.draft_updated_at,

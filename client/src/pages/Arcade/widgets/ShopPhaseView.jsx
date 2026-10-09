@@ -27,6 +27,7 @@ export default function ShopPhaseView({
           </p>
           <button
             onClick={() => rollShop()}
+            disabled={shopState.busy || !shopState.ready || playerState.eliminated}
             className="bg-white hover:bg-amber-50 border border-amber-300 text-amber-600 px-6 py-2.5 rounded-2xl font-black text-xs uppercase flex items-center gap-2 transition-all hover:scale-102 active:scale-98 shadow-sm"
           >
             <RotateCcw className="h-4 w-4" />
@@ -61,6 +62,7 @@ export default function ShopPhaseView({
                 <span className="text-xs font-black text-slate-700">{t(item.nameKey)}</span>
                 <button
                   onClick={() => sellItem(idx)}
+                  disabled={shopState.busy || !shopState.ready || playerState.eliminated}
                   className="text-[10px] font-black uppercase bg-amber-100 hover:bg-amber-200 text-amber-700 px-3 py-1.5 rounded-xl transition-all hover:scale-105 active:scale-95"
                 >
                   {t('sell')} 🪙 {Math.floor(item.price * 0.5)}

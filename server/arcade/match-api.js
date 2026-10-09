@@ -70,8 +70,8 @@ function installArcadeMatchStart(app, db) {
         return res.status(status).json({ error });
       };
       if (!room) return await reject(404, 'ไม่พบห้อง');
-      const [participants] = await connection.query('SELECT user_name FROM arcade_participants WHERE room_id = ?', [room.room_id]);
-      if (room.host_name !== req.player.username || !participants.some(p => p.user_name === req.player.username)) {
+      const [participants] = await connection.query('SELECT user_name, participant_kind FROM arcade_participants WHERE room_id = ?', [room.room_id]);
+      if (room.host_name !== req.player.username || !participants.some(p => p.user_name === req.player.username && p.participant_kind === 'human')) {
         return await reject(403, 'สิทธิ์เฉพาะหัวห้องเท่านั้น');
       }
       if (room.status !== 'WAITING' || room.phase !== 'LOBBY') {
@@ -95,7 +95,7 @@ function installArcadeMatchStart(app, db) {
       await connection.query(
         `UPDATE arcade_participants SET match_id = ?, score = 0, cash = 0, coins_awarded = 0, is_eliminated = 0,
          has_submitted = 0, pending_round_score = NULL, submitted_code = NULL, submitted_at = NULL,
-         score_multiplier_active = 0, draft_code = NULL, draft_updated_at = NULL WHERE room_id = ?`,
+         score_multiplier_active = 0, draft_code = NULL, draft_updated_at = NULL, bot_state = '{}' WHERE room_id = ?`,
         [matchId, room.room_id]
       );
       await connection.query('DELETE FROM arcade_effects WHERE room_id = ?', [room.room_id]);
@@ -118,7 +118,7 @@ function installArcadeMatchStart(app, db) {
       connection = await db.getConnection();
       await connection.beginTransaction();
       const [[room]] = await connection.query('SELECT * FROM arcade_rooms WHERE room_id = ? FOR UPDATE', [req.params.id]);
-      const [members] = await connection.query('SELECT id FROM arcade_participants WHERE room_id = ? AND user_name = ?', [req.params.id, req.player.username]);
+      const [members] = await connection.query("SELECT id FROM arcade_participants WHERE room_id = ? AND user_name = ? AND participant_kind = 'human'", [req.params.id, req.player.username]);
       if (!room || !members.length) {
         await connection.rollback();
         return res.status(403).json({ error: 'เฉพาะผู้เล่นในห้องเท่านั้น' });

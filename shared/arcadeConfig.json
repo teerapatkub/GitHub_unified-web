@@ -105,6 +105,18 @@
   "tickMaxBackoffMs": 30000,
   "_staleParticipantSecondsComment": "How long a real player can go without a heartbeat poll before the server treats them as disconnected. GET /rooms/:id is the heartbeat and normally runs every 2s, but browsers throttle timers in backgrounded tabs down to roughly one wake per minute, so a player who merely switches tabs mid-match must not look disconnected. This has to stay comfortably above that once-a-minute floor.",
   "staleParticipantSeconds": 150,
+  "effectDurations": {
+    "inkFog": 15000,
+    "timeFreeze": 5000,
+    "blackout": 8000,
+    "screenShake": 8000,
+    "capsLockLock": 10000,
+    "mirrorMode": 12000,
+    "screenDimmer": 15000,
+    "backspaceLock": 10000,
+    "keyScrambler": 10000,
+    "typoGenerator": 10000
+  },
   "shopItems": [
     {
       "id": "inkFog",
