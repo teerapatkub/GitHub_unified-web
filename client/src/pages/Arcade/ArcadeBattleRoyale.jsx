@@ -240,7 +240,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
       setShowExitConfirm(true);
       return;
     }
-    if (currentRoom) await handleLeaveRoom();
+    if (currentRoom && !(await handleLeaveRoom())) return;
     action();
   };
 
@@ -816,13 +816,13 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
 
             {/* Winner Trophy Box */}
             {(() => {
-              const allPlayers = currentRoom?.final_standings?.length
-                ? currentRoom.final_standings.map(p => ({ ...p, isPlayer: p.name === playerState.name }))
-                : [
-                { name: playerState.name, score: playerState.score, isPlayer: true, eliminated: playerState.eliminated },
-                ...opponents.map(b => ({ name: b.name, score: b.score, isPlayer: false, eliminated: b.eliminated }))
-              ].sort((a, b) => b.score - a.score);
+              // Settlement saves the authoritative ordering and scores before
+              // RESULT is published. Rendering that snapshot avoids deriving
+              // a different winner or rank from client-side participant state.
+              const allPlayers = (currentRoom?.final_standings || [])
+                .map(p => ({ ...p, isPlayer: p.name === playerState.name }));
               const winner = allPlayers[0];
+              if (!winner) return null;
 
               return (
                 <>
@@ -840,10 +840,10 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
 
                   {/* Placement List */}
                   <div className="w-full bg-white rounded-3xl overflow-hidden shadow-sm border border-slate-200">
-                    {allPlayers.map((p, idx) => (
-                      <div key={idx} className={`flex justify-between items-center p-5 border-b border-slate-100 last:border-0 ${p.isPlayer ? 'bg-rose-50/50 font-black' : 'hover:bg-slate-50'}`}>
+                    {allPlayers.map((p) => (
+                      <div key={p.name} className={`flex justify-between items-center p-5 border-b border-slate-100 last:border-0 ${p.isPlayer ? 'bg-rose-50/50 font-black' : 'hover:bg-slate-50'}`}>
                         <div className="flex items-center gap-4">
-                          <span className={`w-8 text-center text-xs font-black ${idx === 0 ? 'text-amber-500' : 'text-slate-400'}`}>#{idx + 1}</span>
+                          <span className={`w-8 text-center text-xs font-black ${p.rank === 1 ? 'text-amber-500' : 'text-slate-400'}`}>#{p.rank}</span>
                           <span className={`text-xs ${p.eliminated ? 'text-slate-400 line-through font-normal' : 'text-slate-700'}`}>
                             {p.name} {p.isPlayer ? t('youSuffix') : ""}
                           </span>

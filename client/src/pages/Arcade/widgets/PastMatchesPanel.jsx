@@ -37,8 +37,10 @@ export default function PastMatchesPanel({ matches, t }) {
         return (
           <div key={m.match_id} className="border-b border-slate-100 last:border-0">
             <button
+              type="button"
+              aria-expanded={isOpen}
               onClick={() => setOpenMatch(isOpen ? null : m.match_id)}
-              className="w-full flex items-center justify-between gap-4 px-6 py-3 hover:bg-slate-50 transition-colors text-left"
+              className="w-full flex flex-col items-stretch gap-3 px-4 py-4 hover:bg-slate-50 transition-colors text-left sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-6"
             >
               <div className="min-w-0">
                 <div className="text-xs font-black text-slate-700 truncate">
@@ -48,10 +50,21 @@ export default function PastMatchesPanel({ matches, t }) {
                   {m.room_code} · {formatEnded(m.ended_at)} · {m.rounds.length} {t('roundsUnit')}
                 </div>
               </div>
-              <div className="flex items-center gap-3 shrink-0">
-                <span className="text-emerald-600 font-mono text-xs font-black">
-                  {m.total_score} {t('ptsUnit')}
-                </span>
+              <div className="flex items-center gap-2 shrink-0 border-t border-slate-100 pt-3 sm:border-0 sm:pt-0">
+                <div className="grid flex-1 grid-cols-3 gap-2 sm:flex">
+                  <span className="rounded-xl bg-slate-100 px-2 py-1 text-center text-[10px] font-bold text-slate-600">
+                    {t('matchTotalLabel')}<br />
+                    <b className="text-xs text-emerald-700">{m.total_score} {t('ptsUnit')}</b>
+                  </span>
+                  <span className="rounded-xl bg-slate-100 px-2 py-1 text-center text-[10px] font-bold text-slate-600">
+                    {t('finalRankHistoryLabel')}<br />
+                    <b className="text-xs text-slate-800">#{m.final_rank ?? '-'}</b>
+                  </span>
+                  <span className="rounded-xl bg-amber-50 px-2 py-1 text-center text-[10px] font-bold text-amber-700">
+                    {t('rewardHistoryLabel')}<br />
+                    <b className="text-xs">+{m.coins_awarded ?? 0} 🪙</b>
+                  </span>
+                </div>
                 <span className={`text-slate-300 text-[10px] transition-transform ${isOpen ? 'rotate-180' : ''}`}>▼</span>
               </div>
             </button>

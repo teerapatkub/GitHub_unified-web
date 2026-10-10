@@ -124,11 +124,14 @@ function installArcadeRoomReads(app, db) {
       const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 10));
 
       const [rows] = await db.query(
-        `SELECT match_id, room_id, room_code, room_name, difficulty, round_duration_mode, round_num, code,
-            pass_count, total_count, quality_score, time_used_seconds, round_score, match_ended_at
-        FROM arcade_round_history
-        WHERE user_name = ? AND match_ended_at IS NOT NULL
-        ORDER BY match_id DESC, round_num ASC`,
+        `SELECT h.match_id, h.room_id, h.room_code, h.room_name, h.difficulty, h.round_duration_mode,
+            h.round_num, h.code, h.pass_count, h.total_count, h.quality_score, h.time_used_seconds,
+            h.score_multiplier, h.round_score, h.match_ended_at,
+            rr.final_rank, COALESCE(rr.coins, 0) AS coins_awarded
+        FROM arcade_round_history h
+        LEFT JOIN arcade_reward_receipts rr ON rr.match_id = h.match_id AND rr.user_name = h.user_name
+        WHERE h.user_name = ? AND h.match_ended_at IS NOT NULL
+        ORDER BY h.match_id DESC, h.round_num ASC`,
         [userName]
       );
 
@@ -148,6 +151,8 @@ function installArcadeRoomReads(app, db) {
             difficulty: row.difficulty,
             round_duration_mode: row.round_duration_mode,
             ended_at: row.match_ended_at,
+            final_rank: row.final_rank,
+            coins_awarded: row.coins_awarded,
             total_score: 0,
             rounds: []
           });
@@ -158,6 +163,7 @@ function installArcadeRoomReads(app, db) {
           round_num: row.round_num, code: row.code,
           pass_count: row.pass_count, total_count: row.total_count,
           quality_score: row.quality_score, time_used_seconds: row.time_used_seconds,
+          score_multiplier: row.score_multiplier,
           round_score: row.round_score
         });
       }
@@ -176,7 +182,8 @@ function installArcadeRoomReads(app, db) {
       if (!userName) return res.status(400).json({ error: 'ต้องระบุชื่อผู้เล่น' });
 
       const [rows] = await db.query(
-        `SELECT round_num, code, pass_count, total_count, quality_score, time_used_seconds, round_score
+        `SELECT round_num, code, pass_count, total_count, quality_score, time_used_seconds,
+          score_multiplier, round_score
         FROM arcade_round_history
         WHERE room_id = ? AND user_name = ?
          AND match_id = COALESCE(?, (SELECT current_match_id FROM arcade_rooms WHERE room_id = ?))

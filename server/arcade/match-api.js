@@ -109,47 +109,5 @@ function installArcadeMatchStart(app, db) {
       if (connection) connection.release();
     }
   });
-  // Protect the start invariant: a finish action must not reopen a live match.
-  app.post('/api/arcade/rooms/:id/finish-choice', async (req, res) => {
-    let connection;
-    try {
-      const { choice } = req.body;
-      if (!['LEAVE', 'REMAIN'].includes(choice)) return res.status(400).json({ error: 'Invalid finish choice' });
-      connection = await db.getConnection();
-      await connection.beginTransaction();
-      const [[room]] = await connection.query('SELECT * FROM arcade_rooms WHERE room_id = ? FOR UPDATE', [req.params.id]);
-      const [members] = await connection.query("SELECT id FROM arcade_participants WHERE room_id = ? AND user_name = ? AND participant_kind = 'human'", [req.params.id, req.player.username]);
-      if (!room || !members.length) {
-        await connection.rollback();
-        return res.status(403).json({ error: 'เฉพาะผู้เล่นในห้องเท่านั้น' });
-      }
-      const alreadyReopened = room.status === 'WAITING' && room.phase === 'LOBBY' && room.current_match_id;
-      if (room.phase !== 'RESULT' && !alreadyReopened) {
-        await connection.rollback();
-        return res.status(409).json({ error: 'การแข่งขันยังไม่จบ' });
-      }
-      if (choice === 'LEAVE') {
-        await connection.query('DELETE FROM arcade_participants WHERE id = ?', [members[0].id]);
-      } else {
-        await connection.query(
-          `UPDATE arcade_participants SET score = 0, cash = 0, is_eliminated = 0, has_submitted = 0,
-           pending_round_score = NULL, submitted_code = NULL, submitted_at = NULL, score_multiplier_active = 0,
-           draft_code = NULL, draft_updated_at = NULL WHERE id = ?`, [members[0].id]
-        );
-        await connection.query(
-          `UPDATE arcade_rooms SET status = 'WAITING', current_round = 0, phase = 'LOBBY', phase_deadline = NULL,
-           last_round_summary = NULL WHERE room_id = ?`, [room.room_id]
-        );
-      }
-      await connection.commit();
-      res.json({ success: true, choice });
-    } catch (error) {
-      if (connection) await connection.rollback();
-      console.error('Arcade match action failed:', error.message);
-      res.status(500).json({ error: 'ดำเนินการไม่สำเร็จ กรุณาลองอีกครั้ง' });
-    } finally {
-      if (connection) connection.release();
-    }
-  });
 }
 module.exports = { installArcadeMatchStart };

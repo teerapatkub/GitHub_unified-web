@@ -151,7 +151,14 @@ test('AOE rollback restores every shield, target effect, inventory and command r
   await db.query('DROP TRIGGER fail_attack ON arcade_shop_states');
   assert.equal((await attack({ target_name: undefined })).status, 200);
   assert.deepEqual((await read('bob')).body.selfEffects, []);
-  assert.equal((await read('outsider')).body.attackEffects.length, 1);
+  // The five-second visual window may elapse across hosted-database HTTP
+  // round trips. Inspect the committed state so this rollback test measures
+  // atomic persistence rather than network speed.
+  const [[outsiderState]] = await db.query(
+    "SELECT attack_effects FROM arcade_shop_states WHERE match_id = ? AND user_name = 'outsider'",
+    [matchId]
+  );
+  assert.equal(outsiderState.attack_effects.length, 1);
 });
 
 test('cash transfer rollback preserves both wallets and duplicate attacks cannot overdraw a target', async t => {
@@ -215,13 +222,21 @@ test('all visual attack items use the established durations and server-chosen ef
     keyScrambler: 10000, typoGenerator: 10000 };
   for (const [id, duration] of Object.entries(durations)) {
     await t.test(id, async inner => {
-      const { attack, read } = await attackFixture(inner, id);
+      const { attack, read, db, matchId } = await attackFixture(inner, id);
+      const startedAt = Date.now();
       const result = await attack({ target_name: ['timeFreeze', 'blackout'].includes(id) ? undefined : 'bob',
         effect_type: 'cashSteal', duration: 9999999, amount: 9999999 });
+      const finishedAt = Date.now();
       assert.equal(result.status, 200);
-      const effect = (await read('bob')).body.attackEffects[0];
+      // The effect remains in persisted state after it expires. Read that source
+      // directly so hosted-database latency cannot shorten a five-second visual
+      // effect before the assertion runs.
+      const [[state]] = await db.query(`SELECT attack_effects FROM arcade_shop_states
+        WHERE match_id = ? AND user_name = 'bob'`, [matchId]);
+      const effect = state.attack_effects[0];
       assert.equal(effect.type, id);
-      assert.equal(effect.expiresAt - result.body.serverNow, duration);
+      assert.ok(effect.expiresAt >= startedAt + duration);
+      assert.ok(effect.expiresAt <= finishedAt + duration);
       assert.equal((await read('bob')).body.cash, 5000);
     });
   }

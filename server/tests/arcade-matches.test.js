@@ -53,11 +53,13 @@ test('first migration refuses an active legacy match instead of changing its sch
   await assert.rejects(arcadeFixture(t, { beforeMigration: db => db.query("UPDATE arcade_rooms SET status = 'PLAYING', phase = 'ROUND_1'") }), /active Arcade matches/);
 });
 
-test('remain cannot reset a live match or let a nonmember reset a finished room', async t => {
+test('remain only reopens a settled match for a human member', async t => {
   const { call, db } = await arcadeFixture(t);
   await call('/api/arcade/rooms/1/start', { body: {} });
   assert.equal((await call('/api/arcade/rooms/1/finish-choice', { body: { user_name: 'alice', choice: 'REMAIN' } })).status, 409);
   await db.query("UPDATE arcade_rooms SET phase = 'RESULT'");
+  assert.equal((await call('/api/arcade/rooms/1/finish-choice', { body: { choice: 'REMAIN' } })).status, 409);
+  await db.query('UPDATE arcade_matches SET ended_at = CURRENT_TIMESTAMP WHERE match_id = (SELECT current_match_id FROM arcade_rooms WHERE room_id = 1)');
   assert.equal((await call('/api/arcade/rooms/1/finish-choice', { user: 'outsider', body: { choice: 'REMAIN' } })).status, 403);
   assert.equal((await call('/api/arcade/rooms/1/finish-choice', { body: { choice: 'REMAIN' } })).status, 200);
   assert.equal((await call('/api/arcade/rooms/1/start', { body: {} })).status, 200);

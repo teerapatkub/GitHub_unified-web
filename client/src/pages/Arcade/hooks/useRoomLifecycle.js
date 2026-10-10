@@ -287,7 +287,7 @@ export default function useRoomLifecycle({
       const res = await fetch(`${API_BASE}/api/arcade/rooms/${currentRoom.room_id}/transfer-host`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ current_host: playerState.name, target_user_name: targetUser })
+        body: JSON.stringify({ target_user_name: targetUser })
       });
       const data = await res.json();
       if (data.success) {
@@ -307,7 +307,7 @@ export default function useRoomLifecycle({
       const res = await fetch(`${API_BASE}/api/arcade/rooms/${currentRoom.room_id}/kick`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ host_name: playerState.name, target_user_name: targetUser })
+        body: JSON.stringify({ target_user_name: targetUser })
       });
       const data = await res.json();
       if (data.success) {
@@ -345,13 +345,20 @@ export default function useRoomLifecycle({
   const handleLeaveRoom = async () => {
     if (currentRoom) {
       try {
-        await fetch(`${API_BASE}/api/arcade/rooms/${currentRoom.room_id}/leave`, {
+        const res = await fetch(`${API_BASE}/api/arcade/rooms/${currentRoom.room_id}/leave`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_name: playerState.name })
+          body: JSON.stringify({})
         });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          notify(data.error || "ไม่สามารถออกจากห้องได้", "error");
+          return false;
+        }
       } catch (err) {
         console.error("Error leaving room:", err);
+        notify("การเชื่อมต่อขัดข้อง กรุณาลองออกจากห้องอีกครั้ง", "error");
+        return false;
       }
     }
     // Navigation can unmount the hook before its storage-sync effect runs.
@@ -361,19 +368,27 @@ export default function useRoomLifecycle({
     setRoomParticipants([]);
     setPhase(PHASES.LOBBY);
     fetchRooms();
+    return true;
   };
 
   // Finish Match Choice (LEAVE vs REMAIN)
   const handleFinishChoice = async (choice) => {
     if (currentRoom) {
       try {
-        await fetch(`${API_BASE}/api/arcade/rooms/${currentRoom.room_id}/finish-choice`, {
+        const res = await fetch(`${API_BASE}/api/arcade/rooms/${currentRoom.room_id}/finish-choice`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_name: playerState.name, choice })
+          body: JSON.stringify({ choice })
         });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          notify(data.error || "ไม่สามารถดำเนินการหลังจบเกมได้", "error");
+          return false;
+        }
       } catch (err) {
         console.error("Error handling finish choice:", err);
+        notify("การเชื่อมต่อขัดข้อง กรุณาลองอีกครั้ง", "error");
+        return false;
       }
     }
 
@@ -401,6 +416,7 @@ export default function useRoomLifecycle({
       }));
       setPhase(PHASES.LOBBY);
     }
+    return true;
   };
 
   // Guard against accidentally losing an in-progress match: once any active
@@ -434,8 +450,7 @@ export default function useRoomLifecycle({
 
   const handleConfirmForfeitExit = async (afterExit = () => navigate('/learn')) => {
     setShowExitConfirm(false);
-    await handleLeaveRoom();
-    afterExit();
+    if (await handleLeaveRoom()) afterExit();
   };
 
   return {

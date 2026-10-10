@@ -867,6 +867,7 @@ export default function LoginPage({ onLoginSuccess, sessionUser }) {
             </div>
             
             <Typewriter
+              key={isRegister ? "register-heading" : "login-heading"}
               text={isRegister ? "สร้างบัญชีใหม่" : "เข้าสู่ระบบ"}
               speed={50}
               className="text-2xl font-bold text-pysim-on-surface"
@@ -905,7 +906,7 @@ export default function LoginPage({ onLoginSuccess, sessionUser }) {
           {/* Divider */}
           <div className="flex items-center gap-4 relative">
             <div className="flex-1 h-[1px] bg-gradient-to-r from-transparent via-pysim-outline-variant to-transparent"></div>
-            <span className="text-xs font-semibold text-pysim-outline uppercase tracking-widest bg-white/50 px-2 rounded-full backdrop-blur-sm">หรือเขัาสู่ระบบด้วยอีเมล</span>
+            <span className="text-xs font-semibold text-pysim-outline uppercase tracking-widest bg-white/50 px-2 rounded-full backdrop-blur-sm">หรือเข้าสู่ระบบด้วยอีเมล</span>
             <div className="flex-1 h-[1px] bg-gradient-to-r from-transparent via-pysim-outline-variant to-transparent"></div>
           </div>
 

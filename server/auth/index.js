@@ -4,13 +4,13 @@ const crypto = require('node:crypto');
 const bcrypt = require('bcryptjs');
 const { createClient } = require('@supabase/supabase-js');
 const { normalizeEmail, validEmail, hashToken, accountEnabled, strongPassword, actorMatches } = require('./policy');
+const { authOrigins } = require('./origins');
 const COOKIE = 'pyarena_google_session';
 const SESSION_DAYS = 7;
 const message = (res, status, text, code) => res.status(status).json({ message: text, code });
 
 function installAuth(app, db, admin, env = process.env, options = {}) {
-  const origins = new Set(String(env.AUTH_ALLOWED_ORIGINS || 'http://localhost:5174,http://127.0.0.1:5174').split(',').map(v => v.trim()).filter(Boolean));
-  if (env.CLIENT_URL) origins.add(new URL(env.CLIENT_URL).origin);
+  const origins = authOrigins(env);
   const publicKey = env.SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_PUBLISHABLE_KEY;
   const publicClient = () => {
     if (options.createPublicClient) return options.createPublicClient();

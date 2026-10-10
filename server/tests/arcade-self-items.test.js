@@ -69,11 +69,13 @@ test('round buffs expire without refresh extending them and cannot multiply a la
 
 test('hint entitlement persists but expires at the original round deadline', async t => {
   const { read, use, db } = await selfItemFixture(t, 'aiHelper');
-  await db.query("UPDATE arcade_rooms SET phase_deadline = clock_timestamp() + INTERVAL '1 second'");
+  // Leave enough time for two HTTP round trips against hosted PostgreSQL;
+  // a one-second window made this expiry assertion depend on network latency.
+  await db.query("UPDATE arcade_rooms SET phase_deadline = clock_timestamp() + INTERVAL '5 seconds'");
   const used = await use();
   assert.equal(used.body.selfEffects[0].type, 'aiHelper');
   assert.deepEqual((await read()).body.selfEffects, used.body.selfEffects);
-  await db.query('SELECT pg_sleep(1.1)');
+  await db.query('SELECT pg_sleep(5.1)');
   assert.deepEqual((await read()).body.selfEffects, []);
   assert.deepEqual((await use()).body.selfEffects, []);
 });

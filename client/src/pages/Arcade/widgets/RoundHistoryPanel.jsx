@@ -25,21 +25,25 @@ export default function RoundHistoryPanel({ history, t }) {
         return (
           <div key={row.round_num} className="border-b border-slate-100 last:border-0">
             <button
+              type="button"
+              aria-expanded={isOpen}
               onClick={() => setOpenRound(isOpen ? null : row.round_num)}
-              className="w-full flex items-center justify-between gap-4 px-6 py-4 hover:bg-slate-50 transition-colors"
+              className="w-full flex flex-col items-stretch gap-3 px-4 py-4 text-left hover:bg-slate-50 transition-colors sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-6"
             >
-              <div className="flex items-center gap-4 min-w-0">
-                <span className="shrink-0 w-16 text-xs font-black text-slate-400 uppercase tracking-wide">
+              <div className="min-w-0">
+                <span className="text-xs font-black text-slate-500 uppercase tracking-wide">
                   {t('roundLabelShort')} {row.round_num}
                 </span>
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono text-slate-500 min-w-0">
-                  <span>✅ {row.pass_count}/{row.total_count}</span>
-                  <span>📖 {row.quality_score}/100</span>
-                  <span>⏱ {row.time_used_seconds}s</span>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-3 text-[11px] text-slate-500 sm:flex sm:flex-wrap sm:gap-x-4">
+                  <span><b className="text-slate-700">{t('testsResultLabel')}:</b> {row.pass_count}/{row.total_count}</span>
+                  <span><b className="text-slate-700">{t('qualityScoreLabel')}:</b> {row.quality_score}/100</span>
+                  <span><b className="text-slate-700">{t('timeUsedLabel')}:</b> {row.time_used_seconds} {t('secondsShort')}</span>
+                  <span><b className="text-slate-700">{t('multiplierLabel')}:</b> ×{row.score_multiplier ?? 1}</span>
                 </div>
               </div>
-              <div className="flex items-center gap-3 shrink-0">
-                <span className="text-emerald-600 font-mono text-xs font-black">
+              <div className="flex items-center justify-between gap-3 shrink-0 border-t border-slate-100 pt-3 sm:justify-end sm:border-0 sm:pt-0">
+                <span className="text-emerald-700 text-xs font-black">
+                  {t('roundTotalLabel')}: {' '}
                   {row.round_score} {t('ptsUnit')}
                 </span>
                 <span className={`text-slate-300 text-[10px] transition-transform ${isOpen ? 'rotate-180' : ''}`}>▼</span>
@@ -47,7 +51,7 @@ export default function RoundHistoryPanel({ history, t }) {
             </button>
 
             {isOpen && (
-              <div className="px-6 pb-5">
+              <div className="px-4 pb-5 sm:px-6">
                 <pre className="bg-slate-900 text-emerald-400 text-[11px] font-mono p-4 rounded-2xl overflow-x-auto whitespace-pre">
                   {row.code || t('noCodeRecorded')}
                 </pre>

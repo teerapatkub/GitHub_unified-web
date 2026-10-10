@@ -6295,47 +6295,8 @@ app.post('/api/arcade/rooms/:id/settings', async (req, res) => {
     }
 });
 
-// 6. Host transfers host role
-app.post('/api/arcade/rooms/:id/transfer-host', async (req, res) => {
-    try {
-        const roomId = req.params.id;
-        const { current_host, target_user_name } = req.body;
-
-        const [rooms] = await db.query(`SELECT * FROM arcade_rooms WHERE room_id = ?`, [roomId]);
-        if (!rooms || rooms.length === 0) return res.status(404).json({ error: 'ไม่พบห้อง' });
-        if (rooms[0].host_name !== current_host) return res.status(403).json({ error: 'สิทธิ์เฉพาะหัวห้องเท่านั้น' });
-        const [[target]] = await db.query("SELECT participant_kind FROM arcade_participants WHERE room_id = ? AND user_name = ?", [roomId, target_user_name]);
-        if (!target || target.participant_kind !== 'human') return res.status(400).json({ error: 'ไม่สามารถโอนตำแหน่งหัวห้องให้บอทได้' });
-
-        await db.query(`UPDATE arcade_rooms SET host_name = ? WHERE room_id = ?`, [target_user_name, roomId]);
-        await db.query(`UPDATE arcade_participants SET is_host = 0 WHERE room_id = ?`, [roomId]);
-        await db.query(`UPDATE arcade_participants SET is_host = 1 WHERE room_id = ? AND user_name = ?`, [roomId, target_user_name]);
-
-        res.json({ success: true, message: `โอนตำแหน่งหัวห้องให้คุณ ${target_user_name} เรียบร้อยแล้ว` });
-    } catch (err) {
-        console.error('❌ POST /api/arcade/rooms/:id/transfer-host error:', err.message);
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// 7. Host kicks player
-app.post('/api/arcade/rooms/:id/kick', async (req, res) => {
-    try {
-        const roomId = req.params.id;
-        const { host_name, target_user_name } = req.body;
-
-        const [rooms] = await db.query(`SELECT * FROM arcade_rooms WHERE room_id = ?`, [roomId]);
-        if (!rooms || rooms.length === 0) return res.status(404).json({ error: 'ไม่พบห้อง' });
-        if (rooms[0].host_name !== host_name) return res.status(403).json({ error: 'สิทธิ์เฉพาะหัวห้องเท่านั้น' });
-
-        await db.query(`DELETE FROM arcade_participants WHERE room_id = ? AND user_name = ?`, [roomId, target_user_name]);
-
-        res.json({ success: true, message: `เตะผู้เล่น ${target_user_name} ออกจากห้องแล้ว` });
-    } catch (err) {
-        console.error('❌ POST /api/arcade/rooms/:id/kick error:', err.message);
-        res.status(500).json({ error: err.message });
-    }
-});
+const { installArcadeRoomMembership, leaveArcadeRoom } = require('./arcade/room-membership');
+installArcadeRoomMembership(app, db);
 
 const { installArcadeMatchStart } = require('./arcade/match-api');
 installArcadeMatchStart(app, db);
@@ -6451,45 +6412,6 @@ app.get('/api/arcade/rooms/:id/chat', async (req, res) => {
 // purpose: a match is a competition, and handing everyone else's solutions to
 // every player at the end would turn the RESULT screen into an answer key.
 
-// Removes a participant and reassigns host / deletes an empty room. Shared
-// by the explicit "leave" action below and the stale-connection sweep, so
-// a disconnected player is cleaned up exactly the same way as one who
-// clicked Leave.
-async function leaveRoom(roomId, userName) {
-    await db.query(`DELETE FROM arcade_participants WHERE room_id = ? AND user_name = ?`, [roomId, userName]);
-
-    const [remaining] = await db.query(`SELECT * FROM arcade_participants WHERE room_id = ? AND participant_kind = 'human' ORDER BY joined_at ASC, id ASC`, [roomId]);
-
-    if (!remaining || remaining.length === 0) {
-        await db.query(`DELETE FROM arcade_rooms WHERE room_id = ?`, [roomId]);
-        return;
-    }
-
-    const [rooms] = await db.query(`SELECT host_name FROM arcade_rooms WHERE room_id = ?`, [roomId]);
-    if (rooms?.[0]?.host_name === userName) {
-        const nextHost = remaining[0].user_name;
-        await db.query(`UPDATE arcade_rooms SET host_name = ? WHERE room_id = ?`, [nextHost, roomId]);
-        await db.query(`UPDATE arcade_participants SET is_host = 1 WHERE room_id = ? AND user_name = ?`, [roomId, nextHost]);
-    }
-}
-
-// 9. Leave room
-app.post('/api/arcade/rooms/:id/leave', async (req, res) => {
-    try {
-        const roomId = req.params.id;
-        const { user_name } = req.body;
-
-        await leaveRoom(roomId, user_name);
-
-        res.json({ success: true, message: 'ออกจากห้องเรียบร้อยแล้ว' });
-    } catch (err) {
-        console.error('❌ POST /api/arcade/rooms/:id/leave error:', err.message);
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// 10. Post-match finish choice (REMAIN vs LEAVE)
-
 // Item attacks and effect snapshots are handled atomically by arcade/shop-api.js.
 
 // The old POST /rooms/:id/judge-round is gone. It existed so the browser could
@@ -6522,7 +6444,7 @@ async function sweepStaleArcadeParticipants() {
             [arcadeConfig.staleParticipantSeconds]
         );
         for (const row of stale || []) {
-            await leaveRoom(row.room_id, row.user_name);
+            await leaveArcadeRoom(db, row.room_id, row.user_name);
         }
 
         // A room where every remaining participant is a bot has no human left

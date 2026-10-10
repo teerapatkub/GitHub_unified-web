@@ -1,4 +1,4 @@
-import { motion, AnimatePresence } from "framer-motion";
+import { motion as Motion, AnimatePresence } from "framer-motion";
 import {
   ChevronDown,
   Lock,
@@ -12,8 +12,6 @@ import { useTranslation } from "react-i18next";
 import { API_BASE } from '../config/api.js';
 import WebTutorialModal from "../components/WebTutorialModal";
 import { getWebTutorial } from "../data/webTutorials";
-
-const Motion = motion;
 
 const getLevelProgress = (xp = 0) => {
   const numericXp = Number(xp || 0);
@@ -41,6 +39,8 @@ export default function LearningPage({ onNavigate, user }) {
   const [showTutorial, setShowTutorial] = useState(false);
   const { t } = useTranslation();
   const learningTutorial = getWebTutorial("learning-overview");
+  const userId = user?.user_id;
+  const userLevel = user?.level;
 
   const resolveText = (key, fallback) => {
     const translated = t(key);
@@ -72,7 +72,7 @@ export default function LearningPage({ onNavigate, user }) {
   };
 
   useEffect(() => {
-    if (!user?.user_id) return;
+    if (!userId) return;
     let controller;
     const fetchData = async (initial = false) => {
       controller?.abort();
@@ -81,7 +81,8 @@ export default function LearningPage({ onNavigate, user }) {
       try {
         if (initial) setLoading(true);
         const res = await axios.get(`${API_BASE}/api/course-content`, {
-          params: { user_id: user.user_id, user_level: user.level }, signal,
+          params: { user_id: userId, user_level: userLevel },
+          signal,
         });
         // Module IDs, not titles, identify curriculum entries. Keep every lesson
         // added by an admin, including modules with the same display title.
@@ -101,7 +102,7 @@ export default function LearningPage({ onNavigate, user }) {
       window.removeEventListener('focus', refresh);
       document.removeEventListener('visibilitychange', refresh);
     };
-  }, [user?.user_id, user?.level]);
+  }, [userId, userLevel]);
 
   const continueLearning = () => {
     const nextLesson = modules

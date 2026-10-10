@@ -906,6 +906,7 @@ db.ready = (async () => {
         await require('./arcade/migrate-attacks').migrateArcadeAttacks(db);
         await require('./arcade/migrate-bots').migrateArcadeBots(db);
         await require('./arcade/migrate-drafts').migrateArcadeDrafts(db);
+        await require('./arcade/migrate-score-breakdown').migrateArcadeScoreBreakdown(db);
         db.arcadeReady = true;
 
         // Problem bank. Upserted from server/arcadeTaskSeed.js on every boot,

@@ -5,7 +5,7 @@ const bcrypt = require('bcryptjs');
 const { installAuth } = require('../auth');
 const { actorMatches, accountEnabled, normalizeEmail } = require('../auth/policy');
 
-async function fixture(t, { mapped = true, confirmed = true, role = 'user', mailFails = false } = {}) {
+async function fixture(t, { mapped = true, confirmed = true, role = 'user', mailFails = false, env } = {}) {
   const user = { user_id: 42, username: 'learner', email: 'learner@example.com', role, level: 10, xp: 3400, virtual_currency: 500, password_hash: await bcrypt.hash('OldPass1!', 4) };
   const state = { binding: mapped ? { user_id: 42, auth_user_id: 'auth-42', email: user.email } : null, created: [], cookies: new Map(), mails: 0 };
   const execute = async (sql, args = []) => {
@@ -34,7 +34,7 @@ async function fixture(t, { mapped = true, confirmed = true, role = 'user', mail
     signInWithPassword: async input => input.password === 'NewPass1!' ? { data: { session: { access_token: 'valid', refresh_token: 'refresh' } } } : { error: { code: 'invalid_credentials' } },
   } };
   const app = express(); app.use(express.json());
-  const auth = installAuth(app, db, admin, { AUTH_ALLOWED_ORIGINS: 'http://localhost:5174' }, { createPublicClient: () => publicClient });
+  const auth = installAuth(app, db, admin, env || { AUTH_ALLOWED_ORIGINS: 'http://localhost:5174' }, { createPublicClient: () => publicClient });
   app.post('/api/shop/buy', (req, res) => res.json({ user_id: req.player.user_id }));
   app.post('/api/profile/:id/avatar', (req, res) => res.json({ ok: true }));
   app.get('/api/admin/users', (req, res) => res.json([]));
@@ -109,6 +109,12 @@ test('Google session cookie is httpOnly and logout revokes it', async t => {
 test('cross-origin credential requests are rejected', async t => {
   const { call } = await fixture(t);
   assert.equal((await call('/api/auth/sign-in', {}, { Origin: 'https://attacker.example' })).status, 403);
+});
+test('same-origin deployment accepts its own backend origin when the allowlist is blank', async t => {
+  const { call } = await fixture(t, { env: { AUTH_ALLOWED_ORIGINS: '', PORT: '3001' } });
+  const response = await call('/api/auth/sign-up', {}, { Origin: 'http://localhost:3001' });
+  assert.equal(response.status, 400);
+  assert.equal((await call('/api/auth/sign-up', {}, { Origin: 'https://attacker.example' })).status, 403);
 });
 test('actor policy distinguishes actor from target and rejects spoofing', () => {
   const user = { user_id: 42, username: 'learner' };

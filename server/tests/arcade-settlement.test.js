@@ -63,7 +63,7 @@ test('score, cash, elimination, history and final phase commit together after a 
   await db.query(`CREATE TABLE problem_modes (problem_id integer, mode text, entry_id integer)`);
   await db.query(`INSERT INTO problems VALUES (1, 'stdio', '[{"input":"","expected":"7"}]', 'print(7)', '')`);
   await db.query("INSERT INTO problem_modes VALUES (1, 'arcade', 1)");
-  await db.query('ALTER TABLE arcade_tasks ADD COLUMN test_cases jsonb');
+  await db.query('ALTER TABLE arcade_tasks ADD COLUMN IF NOT EXISTS test_cases jsonb');
   await db.query(`INSERT INTO arcade_tasks (task_id, test_cases) VALUES (1, '[{"input":"","expected":"7"}]')`);
   await db.query("UPDATE arcade_rooms SET phase = 'ROUND_2', round_task_ids = '[1,1,1,1]'");
   await db.query("UPDATE arcade_participants SET score = 500 WHERE user_name = 'alice'");
@@ -115,6 +115,7 @@ test('workers ignore future deadlines, stale phases and snapshots from a previou
   await Promise.all([finalize(shop), finalize(shop)]);
   assert.equal((await call('/api/arcade/rooms/1')).body.room.phase, 'ROUND_2');
   await db.query("UPDATE arcade_rooms SET phase = 'RESULT'");
+  await db.query('UPDATE arcade_matches SET ended_at = CURRENT_TIMESTAMP WHERE match_id = (SELECT current_match_id FROM arcade_rooms WHERE room_id = 1)');
   await call('/api/arcade/rooms/1/finish-choice', { body: { choice: 'REMAIN' } });
   await call('/api/arcade/rooms/1/start', { body: {} });
   await db.query("UPDATE arcade_rooms SET phase_deadline = CURRENT_TIMESTAMP - INTERVAL '1 second'");

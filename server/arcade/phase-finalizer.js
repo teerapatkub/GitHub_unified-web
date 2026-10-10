@@ -81,12 +81,6 @@ function createArcadePhaseFinalizer({ db, judgeCodeQuality, random = Math.random
       problem = rows?.[0] || null;
     }
 
-    // The round's timer is the source of truth for when it started: the server
-    // set phase_deadline itself when the round opened.
-    const phaseClock = await readPhaseClock(db, room.room_id);
-    const deadlineMs = phaseClock?.deadlineMs ?? null;
-    const startedMs = deadlineMs ? deadlineMs - roundDuration * 1000 : null;
-
     // In parallel: four players each cost one Python run and one judge call,
     // and the tick loop is serial, so doing these one after another would hold
     // the whole match up.
@@ -106,9 +100,12 @@ function createArcadePhaseFinalizer({ db, judgeCodeQuality, random = Math.random
       const judged = await judgeCodeQuality(code.slice(0, 4000));
       const quality = Number(judged?.score || 0);
 
-      const submittedMs = p.submitted_at ? new Date(p.submitted_at).getTime() : null;
-      const timeUsed = (startedMs && submittedMs)
-        ? Math.max(0, Math.min(roundDuration, Math.round((submittedMs - startedMs) / 1000)))
+      // PostgreSQL TIMESTAMP values have no zone. Comparing two of them in
+      // the database avoids interpreting submitted_at in the Node host's
+      // timezone while the deadline clock is UTC-derived.
+      const elapsedSeconds = Number(p.submitted_elapsed_seconds);
+      const timeUsed = Number.isFinite(elapsedSeconds)
+        ? Math.max(0, Math.min(roundDuration, Math.round(elapsedSeconds)))
         : roundDuration;
 
       const passRatio = totalCount === 0 ? 0 : passCount / totalCount;
@@ -117,12 +114,12 @@ function createArcadePhaseFinalizer({ db, judgeCodeQuality, random = Math.random
       // browser used: paying the time leg flat rewarded submitting an
       // untouched starter the second the round opened.
       const timeScore = passRatio * ((roundDuration - timeUsed) / roundDuration) * 100;
-      let roundScore = testScore + quality + timeScore;
-      if (Number(p.score_multiplier_active) === 1) roundScore *= 2;
+      const scoreMultiplier = Number(p.score_multiplier_active) === 1 ? 2 : 1;
+      let roundScore = (testScore + quality + timeScore) * scoreMultiplier;
 
       graded.set(p.id, {
         roundScore: Math.max(0, Math.min(arcadeConfig.maxSubmittableRoundScore, Math.round(roundScore))),
-        passCount, totalCount, quality: Math.round(quality), timeUsed, code,
+        passCount, totalCount, quality: Math.round(quality), timeUsed, scoreMultiplier, code,
       });
     }));
 
@@ -133,12 +130,12 @@ function createArcadePhaseFinalizer({ db, judgeCodeQuality, random = Math.random
       await db.query(
         `INSERT INTO arcade_round_history
           (match_id, room_id, room_code, room_name, difficulty, round_duration_mode, user_name, round_num,
-           code, pass_count, total_count, quality_score, time_used_seconds, round_score)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           code, pass_count, total_count, quality_score, time_used_seconds, score_multiplier, round_score)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [room.current_match_id, room.room_id, room.room_code, room.room_name,
           room.difficulty || 'default', room.round_duration_mode || 'standard',
           p.user_name, roundNum, g.code.slice(0, 20000),
-          g.passCount, g.totalCount, g.quality, g.timeUsed, g.roundScore]
+          g.passCount, g.totalCount, g.quality, g.timeUsed, g.scoreMultiplier, g.roundScore]
       );
     }
 
@@ -182,7 +179,15 @@ function createArcadePhaseFinalizer({ db, judgeCodeQuality, random = Math.random
 
       // Wait for an answer transaction accepted before the deadline to commit
       // before taking the grading snapshot. New writes after expiry are rejected.
-      const [participants] = await db.query(`SELECT * FROM arcade_participants WHERE room_id = ? AND match_id = ? ORDER BY id FOR UPDATE`, [roomId, room.current_match_id]);
+      const [participants] = await db.query(
+        `SELECT p.*,
+          EXTRACT(EPOCH FROM (p.submitted_at - (r.phase_deadline - (? || ' seconds')::interval))) AS submitted_elapsed_seconds
+         FROM arcade_participants p
+         JOIN arcade_rooms r ON r.room_id = p.room_id
+         WHERE p.room_id = ? AND p.match_id = ?
+         ORDER BY p.id FOR UPDATE OF p`,
+        [roundDuration, roomId, room.current_match_id]
+      );
       const alive = (participants || []).filter(p => !p.is_eliminated);
 
       // Elimination counts are tuned for a full 5-player bracket

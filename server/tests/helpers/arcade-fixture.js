@@ -27,12 +27,12 @@ async function arcadeFixture(t, { beforeMigration, beforeShopMigration } = {}) {
   };
   const db = { ...wrap(pool), getConnection: async () => wrap(await pool.connect()) };
   await pool.query(`
-    CREATE TABLE users (user_id serial PRIMARY KEY, username text UNIQUE, role text DEFAULT 'user', level integer DEFAULT 10, virtual_currency integer DEFAULT 0, is_deleted integer DEFAULT 0, is_banned integer DEFAULT 0, ban_until timestamptz);
-    CREATE TABLE arcade_rooms (room_id serial PRIMARY KEY, room_code varchar(10), room_name varchar(100), host_name varchar(50), password text, max_players integer DEFAULT 5, status text DEFAULT 'WAITING', phase text DEFAULT 'LOBBY', phase_deadline timestamp, current_round integer DEFAULT 0, last_round_summary jsonb, round_task_ids jsonb, difficulty text DEFAULT 'default', round_duration_mode text DEFAULT 'standard', created_at timestamp DEFAULT now());
+    CREATE TABLE users (user_id serial PRIMARY KEY, username text UNIQUE, email text, role text DEFAULT 'user', level integer DEFAULT 10, virtual_currency integer DEFAULT 0, is_deleted integer DEFAULT 0, is_banned integer DEFAULT 0, ban_until timestamptz);
+    CREATE TABLE arcade_rooms (room_id serial PRIMARY KEY, room_code varchar(10), room_name varchar(100), host_name varchar(50), password text, max_players integer DEFAULT 5, status text DEFAULT 'WAITING', phase text DEFAULT 'LOBBY', phase_deadline timestamp, current_round integer DEFAULT 0, last_round_summary jsonb, round_task_ids jsonb, difficulty text DEFAULT 'default', round_duration_mode text DEFAULT 'standard', created_at timestamp DEFAULT now(), updated_at timestamp DEFAULT now());
     CREATE TABLE arcade_participants (id serial PRIMARY KEY, room_id integer REFERENCES arcade_rooms(room_id) ON DELETE CASCADE, user_name varchar(50), is_host integer DEFAULT 0, has_submitted integer DEFAULT 0, is_eliminated integer DEFAULT 0, draft_code text, submitted_code text, draft_updated_at timestamp, submitted_at timestamp, last_seen timestamp DEFAULT now(), joined_at timestamp DEFAULT now(), score integer DEFAULT 0, cash integer DEFAULT 0, coins_awarded integer DEFAULT 0, pending_round_score integer, score_multiplier_active integer DEFAULT 0, UNIQUE(room_id,user_name));
     CREATE TABLE arcade_round_history (id serial PRIMARY KEY, room_id integer NOT NULL, room_code varchar(10), room_name varchar(100), user_name varchar(50), round_num integer, code text, pass_count integer DEFAULT 0, total_count integer DEFAULT 0, quality_score integer DEFAULT 0, time_used_seconds integer DEFAULT 0, round_score integer DEFAULT 0, difficulty text, round_duration_mode text, match_ended_at timestamp, created_at timestamp DEFAULT now(), UNIQUE(room_id,user_name,round_num));
     CREATE TABLE arcade_effects (id serial PRIMARY KEY, room_id integer REFERENCES arcade_rooms(room_id) ON DELETE CASCADE);
-    CREATE TABLE arcade_tasks (task_id serial PRIMARY KEY, work_chars integer, difficulty text);
+    CREATE TABLE arcade_tasks (task_id serial PRIMARY KEY, work_chars integer, difficulty text, test_cases jsonb);
     CREATE TABLE arcade_player_stats (user_name varchar(50) PRIMARY KEY, matches_played integer DEFAULT 0, wins integer DEFAULT 0, best_rank integer, total_score integer DEFAULT 0, total_cash_earned integer DEFAULT 0, updated_at timestamp DEFAULT now());
     INSERT INTO users (username) VALUES ('alice'), ('bob'), ('outsider');
     INSERT INTO arcade_rooms (room_code,room_name,host_name) VALUES ('ARC-TEST','Test room','alice');
@@ -47,32 +47,62 @@ async function arcadeFixture(t, { beforeMigration, beforeShopMigration } = {}) {
   await require('../../arcade/migrate-attacks').migrateArcadeAttacks(db);
   await require('../../arcade/migrate-bots').migrateArcadeBots(db);
   await require('../../arcade/migrate-drafts').migrateArcadeDrafts(db);
+  await require('../../arcade/migrate-score-breakdown').migrateArcadeScoreBreakdown(db);
+  const authSubjects = new Map();
+  const authAdmin = { auth: {
+    getUser: async token => {
+      const user = authSubjects.get(token);
+      return user
+        ? { data: { user }, error: null }
+        : { data: { user: null }, error: new Error('invalid token') };
+    }
+  } };
   const app = express();
   app.use(express.json());
-  const auth = installAuth(app, db, null, {});
+  // Exercise the production Supabase bearer branch of installAuth. The
+  // external token verifier is the only boundary stub; identity lookup,
+  // confirmation, account status, actor checks and route middleware are real.
+  const auth = installAuth(app, db, authAdmin, { AUTH_ALLOWED_ORIGINS: 'http://127.0.0.1' });
   await auth.ready;
-  const cookies = {};
-  for (const [index, name] of ['alice', 'bob', 'outsider'].entries()) {
-    const token = crypto.randomBytes(32).toString('hex');
-    await db.query('INSERT INTO player_google_sessions (token_hash,user_id,expires_at) VALUES (?,?,?)', [crypto.createHash('sha256').update(token).digest('hex'), index + 1, new Date(Date.now() + 3600000)]);
-    cookies[name] = `pyarena_google_session=${token}`;
-  }
+  const authTokens = {};
+  const bindAuth = async name => {
+    const [[user]] = await db.query('SELECT user_id FROM users WHERE username = ?', [name]);
+    if (!user) throw new Error(`Unknown fixture user: ${name}`);
+    const authId = crypto.randomUUID();
+    const email = `${name.toLowerCase().replace(/[^a-z0-9._-]/g, '-')}.${user.user_id}@example.test`;
+    const token = `arcade-test-${crypto.randomBytes(24).toString('hex')}`;
+    await db.query('UPDATE users SET email = ? WHERE user_id = ?', [email, user.user_id]);
+    await db.query(
+      'INSERT INTO player_auth_identities (user_id,auth_user_id,email) VALUES (?,?,?)',
+      [user.user_id, authId, email]
+    );
+    authSubjects.set(token, { id: authId, email, email_confirmed_at: '2026-01-01T00:00:00.000Z' });
+    authTokens[name] = token;
+  };
+  const addUsers = async names => {
+    for (const name of names) {
+      await db.query('INSERT INTO users (username,level) VALUES (?,10)', [name]);
+      await bindAuth(name);
+    }
+  };
+  for (const name of ['alice', 'bob', 'outsider']) await bindAuth(name);
   require('../../arcade/bot-api').installArcadeBots(app, db);
   installArcadeSubmissions(app, db);
   require('../../arcade/shop-api').installArcadeShop(app, db);
   installArcadeRoomReads(app, db);
+  require('../../arcade/room-membership').installArcadeRoomMembership(app, db);
   installArcadeMatchStart(app, db);
   const server = app.listen(0, '127.0.0.1');
   await new Promise(resolve => server.once('listening', resolve));
   t.after(() => new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }));
   const base = `http://127.0.0.1:${server.address().port}`;
   const call = async (url, { user = 'alice', body } = {}) => {
-    const response = await fetch(base + url, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', 'X-PyArena-Request': '1', ...(user ? { Cookie: cookies[user] } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    const response = await fetch(base + url, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', 'X-PyArena-Request': '1', ...(user ? { Authorization: `Bearer ${authTokens[user]}` } : {}) }, body: body ? JSON.stringify(body) : undefined });
     const raw = await response.text();
     let bodyValue;
     try { bodyValue = JSON.parse(raw); } catch { bodyValue = raw; }
     return { status: response.status, body: bodyValue };
   };
-  return { db, pool, app, base, cookies, call };
+  return { db, pool, app, base, authTokens, addUsers, call };
 }
 module.exports = { arcadeFixture };
