@@ -115,6 +115,41 @@ test('does not flag documentation placeholders or educational email examples', (
   assert.deepEqual(findings, []);
 });
 
+test('does not treat short semantic token constants in bundled code as credentials', () => {
+  const findings = findSensitiveContent(
+    'client/dist/assets/index.js',
+    'NUMBER_TOKEN="number";COLOR_TOKEN="color";VAR_TOKEN="var";VAR_FUNCTION_TOKEN="var(";',
+  );
+
+  assert.deepEqual(findings, []);
+});
+
+test('rejects short authentication tokens in source code', () => {
+  const shortToken = ['AUTH', '_TOKEN="abc123";'].join('');
+  const findings = findSensitiveContent(
+    'server/config.js',
+    shortToken,
+  );
+
+  assert.deepEqual(
+    findings.map(({ type, line }) => ({ type, line })),
+    [{ type: 'credential-assignment', line: 1 }],
+  );
+});
+
+test('checks every credential assignment on a minified source line', () => {
+  const mixedAssignments = [
+    'NUMBER_TOKEN="number";',
+    ['AUTH', '_TOKEN="abc123"'].join(''),
+  ].join('');
+  const findings = findSensitiveContent('client/dist/assets/index.js', mixedAssignments);
+
+  assert.deepEqual(
+    findings.map(({ type, line }) => ({ type, line })),
+    [{ type: 'credential-assignment', line: 1 }],
+  );
+});
+
 test('keeps Git and Docker backup exclusions aligned with the scanner policy', () => {
   assert.equal(
     requiredBackupIgnorePatterns.every((pattern) => pattern.startsWith('**/')),

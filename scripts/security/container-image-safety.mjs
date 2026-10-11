@@ -83,10 +83,12 @@ function inspectImageEnvironment(image) {
   return findSensitiveContent('image-config.env', environment.join('\n'));
 }
 
-export function inspectApplicationDirectory(root) {
+export function inspectApplicationDirectory(root, pathPrefix = '') {
   const findings = [];
   for (const path of listFiles(root)) {
-    const imagePath = relative(root, path).replaceAll('\\', '/');
+    const relativePath = relative(root, path).replaceAll('\\', '/');
+    const normalizedPrefix = pathPrefix.replaceAll('\\', '/').replace(/^\/+|\/+$/g, '');
+    const imagePath = [normalizedPrefix, relativePath].filter(Boolean).join('/');
     const approvedHash = approvedRuntimeAssetHashes.get(imagePath);
     if (approvedHash && isApprovedRuntimeAsset(imagePath, hashFile(path))) continue;
 

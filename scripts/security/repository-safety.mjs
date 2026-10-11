@@ -33,9 +33,15 @@ const sensitivePatterns = [
   { type: 'private-key', pattern: /-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----/g },
 ];
 
-const secretAssignment = /\b([A-Z][A-Z0-9_]*(?:PASSWORD|PASS|SECRET|TOKEN|API_KEY|PRIVATE_KEY))\s*[:=]\s*["']?([^\s,"'#]+)/;
+const secretAssignment = /\b([A-Z][A-Z0-9_]*(?:PASSWORD|PASS|SECRET|TOKEN|API_KEY|PRIVATE_KEY))\s*[:=]\s*["']?([^\s,"'#]+)/g;
 const accountDataSql = /^\s*(?:INSERT\s+INTO|COPY)\s+(?:["`]?\w+["`]?\.)?["`]?(?:users?|players?|player_accounts?|user_accounts?|admins?)["`]?(?:\s|\()/i;
 const databaseUrl = /\b(?:postgres(?:ql)?|mysql):\/\/[^:\s/]+:([^@\s/]+)@/i;
+const harmlessCodeTokens = new Map([
+  ['COLOR_TOKEN', 'color'],
+  ['NUMBER_TOKEN', 'number'],
+  ['VAR_FUNCTION_TOKEN', 'var('],
+  ['VAR_TOKEN', 'var'],
+]);
 
 function isPlaceholderSecret(value) {
   const normalized = value.trim().replace(/^['"]|['"]$/g, '').toLowerCase();
@@ -59,6 +65,13 @@ function isPlaceholderSecret(value) {
     || normalized === 'true'
     || normalized === 'false'
     || normalized === '...';
+}
+
+function isHarmlessCodeToken(path, name, value) {
+  const codeExtensions = new Set(['.cjs', '.js', '.jsx', '.mjs', '.ts', '.tsx']);
+  const normalized = value.trim().replace(/^['"]|['"]$/g, '');
+  return codeExtensions.has(extensionOf(path))
+    && harmlessCodeTokens.get(name) === normalized;
 }
 
 function normalizePath(path) {
@@ -125,9 +138,11 @@ export function findSensitiveContent(path, text) {
       findings.push({ path: normalizePath(path), type: 'account-data', line: index + 1 });
     }
 
-    const assignment = line.match(secretAssignment);
-    if (assignment && !isPlaceholderSecret(assignment[2])) {
-      findings.push({ path: normalizePath(path), type: 'credential-assignment', line: index + 1 });
+    for (const assignment of line.matchAll(secretAssignment)) {
+      if (!isPlaceholderSecret(assignment[2])
+        && !isHarmlessCodeToken(path, assignment[1], assignment[2])) {
+        findings.push({ path: normalizePath(path), type: 'credential-assignment', line: index + 1 });
+      }
     }
 
     const databaseUrlMatch = line.match(databaseUrl);
