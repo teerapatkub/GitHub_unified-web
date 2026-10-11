@@ -9,7 +9,7 @@
 ## สิ่งที่แก้ไข
 
 ### ใหม่: `server/.env`
-เพิ่ม `NVIDIA_CODE_JUDGE_API_KEY=nvapi-...` (key ที่ผู้ใช้ให้มา) — คนละตัวกับ `NVIDIA_GLM_API_KEY` ที่มีอยู่แล้วสำหรับ AI helper/job generator ของ Person 1/2 (ไม่แตะของเดิม)
+เพิ่มตัวแปร `NVIDIA_CODE_JUDGE_API_KEY` ใน environment สำหรับตัวตรวจโค้ด โดยไม่บันทึกค่าคีย์ลง repository และแยกจาก `NVIDIA_GLM_API_KEY` ของ AI helper/job generator
 
 ### `server/package.json`
 เพิ่ม dependency `openai` (^7.4.0) ผ่าน `npm install openai`

@@ -15,8 +15,11 @@
 | `update_mini_game_thai_copy.js` · `reset_mini_game_print_only_lesson1.js` · `fix_mini_game_intro_expected_any.js` | แก้ข้อความและเทสเคสของมินิเกมย้อนหลัง |
 | `inspect_mini_game_schema.js` | เครื่องมือดูโครงสร้างตารางตอนสำรวจ |
 | `update_contract_solutions.js` | แก้เฉลยของโจทย์งานรับจ้าง |
-| `migrate_mysql_dump_to_postgres.js` · `import_fullproject_dump.ps1` · `fullproject_mysql_dump.sql` · `mysql_fullproject_upgrade.sql` · `missing_from_fullprojectpython_27_6_69.sql` | ย้ายฐานข้อมูลจาก MySQL มา PostgreSQL ตอนรวมโปรเจคกับ Person 1 |
-| `after_friend_db_import_keep_our_shop_theme.sql` | กู้ธีมร้านค้าของเราคืนหลัง import ฐานข้อมูลของเพื่อน |
+| `migrate_mysql_dump_to_postgres.js` · `import_fullproject_dump.ps1` · `mysql_fullproject_upgrade.sql` · `missing_from_fullprojectpython_27_6_69.sql` | ย้ายฐานข้อมูลจาก MySQL มา PostgreSQL ตอนรวมโปรเจคกับ Person 1 โดย dump ที่ใช้เป็น input ต้องเก็บไว้นอก repository |
+
+ไฟล์ dump และสคริปต์กู้ข้อมูลที่มีแถวบัญชีหรือค่าแฮชรหัสผ่านถูกนำออกตามเหตุการณ์
+ความปลอดภัยวันที่ 2026-10-11 หากต้องย้ายข้อมูลใหม่ ให้สร้างสำเนาที่ลบข้อมูลส่วนบุคคลแล้ว
+หรือส่ง path ของไฟล์ภายนอกให้เครื่องมือ import ห้ามนำ dump กลับมาไว้ใน repository
 
 **การแก้ schema วันนี้ต้องทำใน `server/db.js` หรือ `server/problemsSchema.js` เท่านั้น**
 ห้ามรันไฟล์ในโฟลเดอร์นี้ใส่ฐานข้อมูลที่ใช้งานอยู่

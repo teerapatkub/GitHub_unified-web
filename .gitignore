@@ -5,6 +5,7 @@ node_modules/
 
 # Production Build
 /client/dist/
+/.security-work/
 
 # Local Environment Variables
 .env
@@ -26,23 +27,25 @@ lerna-debug.log*
 Thumbs.db
 
 # Backup Archives
-*.zip
-*.tar.gz
+**/*.zip
+**/*.tar.gz
 
 # Everything superseded but not yet thrown away: Person 2's handover copy, old
 # repo archives, prototypes, and database dumps with real user rows. See
 # _archive/README.md for what each one is and whether it can be deleted.
 /_archive/
 
-# Database dumps. Binary pg_dump output holds real user rows (emails, password
-# hashes); schema belongs in server/db.js and server/problemsSchema.js, which
-# rebuild it on boot.
-*.dump
-
-# The same thing in plain SQL. pysim_database_backup_*.sql was found staged for
-# commit on 2026-08-25 carrying real email addresses and bcrypt password hashes;
-# a dump is a backup, never a repository artefact.
-pysim_database_backup_*.sql
+# Database backups and dumps can contain real user rows, email addresses, and
+# password hashes. Versioned schema/migration/seed SQL remains allowed; backup
+# artefacts stay outside the repository regardless of directory depth.
+**/*.dump
+**/*.bak
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+**/*.sql.gz
+**/*backup*.sql
+**/*dump*.sql
 
 # Local agent configuration and downloaded skills. skills-lock.json IS tracked -
 # it is the manifest, these are the downloaded contents (package-lock vs node_modules).

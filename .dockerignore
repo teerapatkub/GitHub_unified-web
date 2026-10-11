@@ -10,15 +10,26 @@ docs
 specs
 skills-lock.json
 
-# Database backups taken from a live system: real accounts, real email
-# addresses, real password hashes. Anchored to the repo root so that
-# server/schema.sql and server/seed-content.sql - which the image NEEDS to
-# install itself and contain no personal data - are not caught by it.
-/*.sql
+# Database backups taken from a live system may contain real accounts, email
+# addresses, and password hashes. Keep versioned schema/migration/seed SQL, but
+# reject backup artefacts at every directory depth.
+**/*.dump
+**/*.bak
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+**/*.sql.gz
+**/*.zip
+**/*.tar.gz
+**/*backup*.sql
+**/*dump*.sql
+
+# One-off migration tools are development records and are never runtime input.
+server/scripts/archive
+scripts
 
 **/.env
 **/.env.*
-!**/.env.example
 
 # Uploaded files belong on a mounted volume, not baked into the image.
 server/uploads
