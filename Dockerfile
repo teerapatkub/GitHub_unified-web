@@ -81,6 +81,12 @@ ENV NODE_ENV=production
 ENV PORT=3001
 EXPOSE 3001
 
+# Readiness includes the PostgreSQL connection and the required migration
+# version. A process can be alive while its database is unavailable, so the
+# deploy platform should route traffic only after this endpoint succeeds.
+HEALTHCHECK --interval=10s --timeout=5s --start-period=120s --retries=6 \
+    CMD node -e "fetch('http://127.0.0.1:3001/api/health/ready').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
 # No CMD indirection: the API server is the process, and PID 1 should be the
 # thing whose exit means the container is done.
 CMD ["node", "server.js"]

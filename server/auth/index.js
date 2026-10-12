@@ -8,6 +8,18 @@ const { authOrigins } = require('./origins');
 const COOKIE = 'pyarena_google_session';
 const SESSION_DAYS = 7;
 const message = (res, status, text, code) => res.status(status).json({ message: text, code });
+const authSchemaSql = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
+
+const ensureAuthSchema = async (db) => {
+  for (const statement of authSchemaSql.split(';').map((sql) => sql.trim()).filter(Boolean)) {
+    await db.execute(statement);
+  }
+  const [roles] = await db.execute("SELECT rolname FROM pg_roles WHERE rolname IN ('anon', 'authenticated')");
+  for (const role of roles) {
+    // Names come from a fixed allowlist, not request input.
+    await db.execute(`REVOKE ALL ON player_auth_identities, player_google_sessions FROM "${role.rolname}"`);
+  }
+};
 
 function installAuth(app, db, admin, env = process.env, options = {}) {
   const origins = authOrigins(env);
@@ -17,15 +29,13 @@ function installAuth(app, db, admin, env = process.env, options = {}) {
     if (!env.SUPABASE_URL || !publicKey || !admin) throw new Error('AUTH_CONFIG');
     return createClient(env.SUPABASE_URL, publicKey, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
   };
-  const ready = (async () => {
-    for (const statement of fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8').split(';').map(s => s.trim()).filter(Boolean)) {
-      await db.execute(statement);
-    }
-    const [roles] = await db.execute("SELECT rolname FROM pg_roles WHERE rolname IN ('anon', 'authenticated')");
-    for (const role of roles) {
-      // Names come from a fixed allowlist, not request input.
-      await db.execute(`REVOKE ALL ON player_auth_identities, player_google_sessions FROM "${role.rolname}"`);
-    }
+  const ready = options.initializeSchema === false ? Promise.resolve() : (async () => {
+    // The auth tables reference users, which is created by the core database
+    // bootstrap. Waiting here also keeps login requests from observing a
+    // partially initialized pool during server startup.
+    const databaseReady = db.ready;
+    if (databaseReady) await databaseReady;
+    await ensureAuthSchema(db);
   })();
   // A failed schema check keeps authentication closed, without an unhandled rejection.
   ready.catch(() => console.error('Auth schema unavailable; authentication requests will return 503.'));
@@ -235,4 +245,4 @@ function installAuth(app, db, admin, env = process.env, options = {}) {
   app.get('/api/auth/me', (req, res) => { res.set('Cache-Control', 'no-store'); res.json(safeUser(req.player)); });
   return { issueGoogleSession, accountEnabled, ready, origins };
 }
-module.exports = { installAuth };
+module.exports = { authSchemaSql, ensureAuthSchema, installAuth };

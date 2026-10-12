@@ -1,5 +1,7 @@
 // server.js
-require('dotenv').config({ path: require('path').join(__dirname, '.env'), override: true });
+// Runtime environment variables supplied by the deploy platform take
+// precedence. The local file only fills values that were not provided.
+require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
@@ -23,8 +25,17 @@ const { gradeSubmission, screenUnverifiedSubmission } = require('./problemGrader
 // header of server/lessonProgress.js for why it had to become one.
 const { evaluateLesson, POST_PASS_RATIO } = require('./lessonProgress');
 const { authOrigins } = require('./auth/origins');
+const {
+  createStartupState,
+  installHealthRoutes,
+  installStartupGate,
+  startApplication,
+} = require('./runtime/startup');
+const { createSupabaseAuthCheck } = require('./runtime/readiness');
 
 const app = express();
+const startupState = createStartupState();
+installStartupGate(app, startupState);
 app.use(cors({ origin: (origin, callback) => {
   callback(null, !origin || authOrigins(process.env).has(origin));
 }, credentials: true }));
@@ -53,16 +64,15 @@ async function testSupabase(req, res) {
   if (!supabase) {
     return res.status(503).json({ connected: false, error: supabaseConfigurationError });
   }
-  const healthOnly = req.path === '/api/health';
   try {
     const { data, error } = await supabase
       .from('arcade_items')
-      .select('item_id,item_code,name_th,name_en,price,icon,type', { head: healthOnly })
+      .select('item_id,item_code,name_th,name_en,price,icon,type')
       .order('item_id')
-      .limit(healthOnly ? 1 : 20)
+      .limit(20)
       .abortSignal(AbortSignal.timeout(10000));
     if (error) throw new Error('Query failed');
-    return res.json(healthOnly ? { connected: true } : data);
+    return res.json(data);
   } catch {
     return res.status(502).json({
       connected: false,
@@ -70,7 +80,6 @@ async function testSupabase(req, res) {
     });
   }
 }
-app.get('/api/health', testSupabase);
 app.get('/api/your-table', testSupabase);
 
 const db = require('./db');
@@ -83,8 +92,10 @@ const { createLessonContentRouter } = require('./lessonContentRoutes');
 app.use('/api', createLessonContentRouter(db));
 const { createStudentProgressRouter } = require('./studentProgressRoutes');
 app.use('/api/admin/student-progress', createStudentProgressRouter(db));
-const { installAuth } = require('./auth');
-const playerAuth = installAuth(app, db, supabase);
+const { authSchemaSql, ensureAuthSchema, installAuth } = require('./auth');
+// Production schema setup belongs to the versioned application migration.
+// Standalone module tests keep installAuth's default auto-initialization.
+const playerAuth = installAuth(app, db, supabase, process.env, { initializeSchema: false });
 
 const GOOGLE_CLIENT_ID = String(process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || '').trim();
 const isValidGoogleClientId = (clientId) => /^[\w.-]+\.apps\.googleusercontent\.com$/.test(clientId);
@@ -657,7 +668,6 @@ const ensureUserPresenceSchema = async () => {
 };
 
 const ensureLessonQuizAttemptSchema = async () => {
-    try {
         await db.execute(`
             CREATE TABLE IF NOT EXISTS lesson_quiz_attempts (
                 attempt_id int(11) NOT NULL AUTO_INCREMENT,
@@ -704,9 +714,6 @@ const ensureLessonQuizAttemptSchema = async () => {
             CREATE INDEX IF NOT EXISTS idx_lesson_quiz_attempt_user
             ON lesson_quiz_attempts (user_id)
         `);
-    } catch (error) {
-        console.error('⚠️ Failed to ensure lesson quiz attempt schema:', error.message);
-    }
 };
 
 const _miniGameModuleCache = new Map();
@@ -2969,7 +2976,6 @@ const ensurePostgresSequenceDefault = async ({ tableName, columnName, sequenceNa
 };
 
 const ensureLearningAiTaskSchema = async () => {
-    try {
         await db.execute(`
             CREATE TABLE IF NOT EXISTS learning_ai_tasks (
                 task_id int(11) NOT NULL AUTO_INCREMENT,
@@ -3006,13 +3012,9 @@ const ensureLearningAiTaskSchema = async () => {
             CREATE INDEX IF NOT EXISTS idx_learning_ai_tasks_user_mode_status
             ON learning_ai_tasks (user_id, mode, status)
         `);
-    } catch (error) {
-        console.error('⚠️ Failed to ensure learning AI task schema:', error.message);
-    }
 };
 
 const ensureCompetitiveArenaSchema = async () => {
-    try {
         await db.execute(`
             CREATE TABLE IF NOT EXISTS multiplayer_challenges (
                 challenge_id int(11) NOT NULL AUTO_INCREMENT,
@@ -3111,13 +3113,9 @@ const ensureCompetitiveArenaSchema = async () => {
             columnName: 'mail_id',
             sequenceName: 'user_mailbox_mail_id_seq',
         });
-    } catch (error) {
-        console.error('⚠️ Failed to ensure competitive arena schema:', error.message);
-    }
 };
 
 const ensureLearningProgressSchema = async () => {
-    try {
         // ==========================================
         // 1. สร้างตาราง mini_game_exercises
         //    ใช้ lesson_id อ้างอิงตาราง lessons โดยตรง
@@ -3382,9 +3380,6 @@ const ensureLearningProgressSchema = async () => {
 
         return;
 
-    } catch (error) {
-        console.error('⚠️ Failed to ensure learning progress schema and seed data:', error.message);
-    }
 };
 
 const CLIENT_URL = String(process.env.CLIENT_URL || 'http://localhost:5173').replace(/\/$/, '');
@@ -5214,7 +5209,6 @@ app.post('/api/mailbox/:mailId/claim', async (req, res) => {
 
 
 const ensurePasswordResetSchema = async () => {
-    try {
         await db.execute(`
             CREATE TABLE IF NOT EXISTS password_reset_tokens (
                 id int(11) NOT NULL AUTO_INCREMENT,
@@ -5227,9 +5221,6 @@ const ensurePasswordResetSchema = async () => {
                 UNIQUE KEY uq_password_reset_token_hash (token_hash)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         `);
-    } catch (error) {
-        console.error('Failed to ensure password reset schema:', error.message);
-    }
 };
 
 // --- end of merged Person 2 section ----------------------------------------
@@ -6096,8 +6087,7 @@ async function runArcadeTick() {
     }
 }
 
-let arcadeTickTimer = setTimeout(runArcadeTick, ARCADE_TICK_INTERVAL_MS);
-if (arcadeTickTimer.unref) arcadeTickTimer.unref();
+let arcadeTickTimer;
 
 // 1. Get joinable public rooms (status = 'WAITING')
 require('./arcade/bot-api').installArcadeBots(app, db);
@@ -6492,8 +6482,7 @@ async function runArcadeSweep() {
     }
 }
 
-const arcadeSweepTimer = setTimeout(runArcadeSweep, ARCADE_SWEEP_INTERVAL_MS);
-if (arcadeSweepTimer.unref) arcadeSweepTimer.unref();
+let arcadeSweepTimer;
 
 // Step 5 — round history is no longer bounded by its room's lifetime (the
 // cascading FK was dropped so players can review past matches), so it needs an
@@ -6520,9 +6509,25 @@ async function sweepArcadeRoundHistory() {
         console.error('❌ Arcade round-history retention sweep error:', err.message);
     }
 }
-// Hourly: this trims history, not live match state, so it has no reason to run
-// on the same cadence as the presence sweep above.
-setInterval(sweepArcadeRoundHistory, 60 * 60 * 1000);
+let arcadeHistoryTimer;
+let backgroundJobsStarted = false;
+
+// Database workers must not race the migration transaction. Start them only
+// after the startup gate has proved the schema is complete.
+const startBackgroundJobs = () => {
+    if (backgroundJobsStarted) return;
+    backgroundJobsStarted = true;
+
+    arcadeTickTimer = setTimeout(runArcadeTick, ARCADE_TICK_INTERVAL_MS);
+    arcadeSweepTimer = setTimeout(runArcadeSweep, ARCADE_SWEEP_INTERVAL_MS);
+    // Hourly: this trims history, not live match state, so it has no reason to
+    // run on the same cadence as the presence sweep above.
+    arcadeHistoryTimer = setInterval(sweepArcadeRoundHistory, 60 * 60 * 1000);
+
+    for (const timer of [arcadeTickTimer, arcadeSweepTimer, arcadeHistoryTimer]) {
+        if (timer.unref) timer.unref();
+    }
+};
 
 // ==========================================
 // 8. Start Server & Simulation Engine
@@ -7573,21 +7578,17 @@ app.post('/api/upload', (req, res) => {
 // depending on which endpoint a user hit first; here they are part of starting
 // up, alongside db.js's own initialisation, so the database is complete before
 // the first request arrives.
+const applicationMigrationSteps = [
+    ensureCompetitiveArenaSchema,
+    ensureLearningProgressSchema,
+    ensureLearningAiTaskSchema,
+    ensureLessonQuizAttemptSchema,
+    ensurePasswordResetSchema,
+];
+
 const ensureMergedSchemas = async () => {
-    for (const [label, ensure] of [
-        ['competitive arena', ensureCompetitiveArenaSchema],
-        ['learning progress', ensureLearningProgressSchema],
-        ['learning AI tasks', ensureLearningAiTaskSchema],
-        ['lesson quiz attempts', ensureLessonQuizAttemptSchema],
-        ['password reset', ensurePasswordResetSchema],
-    ]) {
-        try {
-            await ensure();
-        } catch (error) {
-            // Never fatal: a missing optional table should not stop the server
-            // from serving everything else.
-            console.error(`\u26a0\ufe0f Failed to ensure ${label} schema:`, describeError(error));
-        }
+    for (const step of applicationMigrationSteps) {
+        await step();
     }
 };
 
@@ -7621,6 +7622,63 @@ const recomputeGradabilityAfterInstall = () => {
         if (code === 0) console.log('✅ ปรับสถานะการตรวจอัตโนมัติของคลังโจทย์เรียบร้อย\n' + tail.trim());
         else console.warn(`⚠️ ตรวจความสามารถในการตรวจโจทย์จบด้วยรหัส ${code} — โจทย์บางข้ออาจถูกข้ามการตรวจ`);
     });
+};
+
+const { getMigrationStatus, runMigrations } = require('./migrations');
+const { createApplicationSchemaMigration } = require('./migrations/definitions');
+
+const applicationMigrations = [
+    ...db.coreMigrations,
+    createApplicationSchemaMigration(
+        async () => {
+            await ensureAuthSchema(db);
+            await ensureMergedSchemas();
+            await db.lockDownPublicSchema();
+        },
+        [
+            ensureMergedSchemas,
+            ...applicationMigrationSteps,
+            ensureColumnIfMissing,
+            ensurePostgresSequenceDefault,
+            ensureAuthSchema,
+            db.lockDownPublicSchema,
+            authSchemaSql,
+        ].map((fn) => fn.toString()).join('\n-- migration input --\n'),
+    ),
+];
+
+const supabasePublishableKey = String(
+    process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || '',
+).trim();
+const checkSupabaseAuth = createSupabaseAuthCheck({
+    url: process.env.SUPABASE_URL,
+    secretKey: process.env.SUPABASE_SECRET_KEY,
+    publishableKey: supabasePublishableKey,
+});
+
+const checkReadiness = async () => {
+    await checkSupabaseAuth();
+    await db.healthcheck();
+    const status = await getMigrationStatus(db, applicationMigrations);
+    if (!status.ready) {
+        if (status.incompatibleVersions?.length) {
+            throw new Error(`Database contains migration versions unknown to this server: ${status.incompatibleVersions.join(', ')}`);
+        }
+        throw new Error(`Pending database migrations: ${status.pendingVersions.join(', ')}`);
+    }
+    return status;
+};
+
+installHealthRoutes(app, { checkReadiness, state: startupState });
+
+const prepareApplication = async ({ checkAuth = checkSupabaseAuth } = {}) => {
+    await checkAuth();
+    await db.ready;
+    await playerAuth.ready;
+    const status = await runMigrations(db, applicationMigrations);
+    if (!status.ready) throw new Error('Database migrations are incomplete');
+    startBackgroundJobs();
+    recomputeGradabilityAfterInstall();
 };
 
 // Serve the built front end from the API server itself.
@@ -7666,18 +7724,23 @@ if (fs.existsSync(path.join(clientDist, 'index.html'))) {
     console.log('\u2139\uFE0F  ไม่พบไฟล์หน้าเว็บที่ build แล้ว — โหมดพัฒนาใช้ Vite เสิร์ฟที่ :5174 แทน');
 }
 
-app.listen(PORT, async () => {
-    console.log(`Server running on port ${PORT}`);
-    // db.js creates and seeds its own tables on import. On an established
-    // database both that and ensureMergedSchemas() below are no-ops and the
-    // order never mattered; on an empty one they raced, and whichever lost
-    // aborted the rest of its own setup with "already exists".
-    await db.ready;
-    await ensureMergedSchemas();
-    // The tables ensureMergedSchemas() just created are as sensitive as the
-    // rest, and on a hosted database they are published by default. See
-    // lockDownPublicSchema() in db.js.
-    await db.lockDownPublicSchema();
-    recomputeGradabilityAfterInstall();
-    console.log('\u2705 ตารางของ Competitive Arena, Dashboard และการรีเซ็ตรหัสผ่าน พร้อมใช้งานแล้ว');
-});
+if (require.main === module) {
+    startApplication({ app, port: PORT, prepare: prepareApplication, state: startupState })
+        .then(() => {
+            console.log(`Server running on port ${PORT}`);
+            console.log('\u2705 Database migrations completed; the application is ready');
+        })
+        .catch((error) => {
+            console.error('\u274c Server startup failed; application traffic was never enabled:', describeError(error));
+            db.close()
+                .catch(() => {})
+                .finally(() => { process.exitCode = 1; });
+        });
+}
+
+module.exports = {
+    app,
+    applicationMigrations,
+    checkReadiness,
+    prepareApplication,
+};

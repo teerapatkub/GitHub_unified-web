@@ -9,6 +9,8 @@ docker compose up --build
 ```
 
 เปิด http://localhost:3001 — ครั้งแรกจะสร้างตารางและใส่เนื้อหาบทเรียนให้เองทั้งหมด
+เซิร์ฟเวอร์จะเปิดพอร์ตสำหรับ liveness ระหว่างเตรียมระบบ แต่จะตอบ `503` ต่อ traffic อื่น
+จนกว่า PostgreSQL, Supabase Auth configuration และ migration ทุกเวอร์ชันสำเร็จ
 
 ---
 
@@ -26,8 +28,9 @@ matplotlib, pytest ซึ่งได้มาจากการอ่านเ�
 
 ## ตอนบูตครั้งแรกระบบทำอะไรให้บ้าง
 
-ทั้งหมดนี้ทำงานเฉพาะเมื่อฐานข้อมูล **ยังไม่มีตาราง `users`** เท่านั้น
-ระบบที่ติดตั้งไปแล้วจะไม่ถูกแตะเลย
+โครงสร้างตั้งต้นและการเปลี่ยน schema ถูกบันทึกใน `app_schema_migrations` ตามลำดับเวอร์ชัน
+ฐานข้อมูลใหม่จะติดตั้ง schema กับ seed ภายใน transaction เดียว ถ้าขั้นใดล้มเหลวจะ rollback
+และเริ่มซ้ำได้ ส่วนฐานข้อมูลเดิมจะรันเฉพาะ migration ที่ยังไม่มีในตารางนี้
 
 | ขั้น | ไฟล์ | ได้อะไร |
 |---|---|---|
@@ -35,6 +38,16 @@ matplotlib, pytest ซึ่งได้มาจากการอ่านเ�
 | 2 | `server/seed-content.sql` | บทเรียน 24 บท สไลด์ 220 หน้า คำถาม 190 ข้อ คลังโจทย์ 192 ข้อ ร้านค้า ความสำเร็จ |
 | 3 | `db.js` | ตารางที่ db.js ดูแลเอง (arcade_*, การ seed โจทย์ Arcade) |
 | 4 | เบื้องหลัง | คำนวณใหม่ว่าโจทย์ข้อไหน **ตรวจอัตโนมัติได้บนเครื่องนี้** |
+
+ตรวจสถานะ process และฐานข้อมูลแยกกันได้ดังนี้:
+
+- `GET /api/health/live` ตอบเมื่อ process ยังทำงาน โดยไม่เรียก dependency
+- `GET /api/health/ready` ตรวจ PostgreSQL และ migration version ที่โค้ดต้องการ
+- `GET /api/health` เป็น alias ของ readiness สำหรับระบบเดิม
+
+หาก migration ล้มเหลว process จะปิด HTTP listener และจบด้วย exit code ที่ไม่สำเร็จ
+ระหว่างเริ่มระบบมีเพียง health endpoint ที่เข้าถึงได้ จึงไม่สามารถรับ application traffic
+ด้วย schema ที่ติดตั้งไม่ครบได้
 
 **ไม่มีบัญชีผู้ใช้ติดมาแม้แต่รายการเดียว** — `seed-content.sql` มีเฉพาะเนื้อหาที่เป็นตัวสินค้า
 ไม่มี `users`, ไม่มีคำตอบที่เคยส่ง, ไม่มีอีเมล ไม่มีรหัสผ่าน
@@ -65,6 +78,10 @@ docker compose exec app node scripts/mark-auto-gradable.js --apply
 | ตัวแปร | ต้องตั้งไหม | ทำอะไร |
 |---|---|---|
 | `PGHOST` `PGPORT` `PGUSER` `PGPASSWORD` `PGDATABASE` | compose ตั้งให้แล้ว | ฐานข้อมูล |
+| `DATABASE_URL` | **ใช่เมื่อใช้ Supabase/managed PostgreSQL** | connection string ฝั่ง server ใช้แทนตัวแปร `PG*` |
+| `SUPABASE_URL` | **ใช่** | Project URL จาก Supabase Dashboard → Project Settings → Data API |
+| `SUPABASE_SECRET_KEY` | **ใช่** | Secret key ฝั่ง server จาก Project Settings → API Keys ห้ามใส่ใน client หรือ image |
+| `SUPABASE_PUBLISHABLE_KEY` | **ใช่** | Publishable key จาก Project Settings → API Keys ใช้สร้าง client สำหรับ Email Auth |
 | `PORT` | ไม่ | พอร์ตที่ API ฟัง (ค่าเริ่มต้น 3001) |
 | `PUBLIC_BASE_URL` | **ใช่ ถ้ามีโดเมนจริง** | ที่อยู่จากภายนอก ใช้กับลิงก์ยืนยันอีเมลที่ต้องเปิดจากเมลทีหลัง จึงเป็น URL แบบเต็มไม่ได้ |
 | `UPLOADS_DIR` | compose ตั้งให้แล้ว | ที่เก็บไฟล์อัปโหลด ต้องอยู่บน volume |
@@ -130,11 +147,13 @@ publishable key ของโปรเจค (ซึ่งอยู่ในห�
 
 ### ขั้นตอนย้าย
 
-1. สร้างโปรเจคใน Supabase แล้วคัดลอก connection string (พอร์ต 6543)
-2. ใส่ `DATABASE_URL` ลงใน `server/.env`
-3. บูตแอปหนึ่งครั้ง — ถ้าฐานข้อมูลยังว่าง `bootstrapEmptyDatabase()` จะติดตั้ง
+1. สร้างโปรเจคใน Supabase แล้วคัดลอก connection string (พอร์ต 6543), Project URL,
+   secret key และ publishable key
+2. ใส่ `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY` และ
+   `SUPABASE_PUBLISHABLE_KEY` ลงใน `server/.env` หรือ secret/runtime environment ของโฮสต์
+3. บูตแอปหนึ่งครั้ง — ถ้าฐานข้อมูลยังว่าง migration แรกจะติดตั้ง
    `server/schema.sql` แล้วตามด้วย `server/seed-content.sql` (บทเรียน โจทย์ ของในร้านค้า
-   ความสำเร็จ — ไม่มีข้อมูลผู้ใช้) จากนั้นเปิด RLS ให้ทุกตารางอัตโนมัติ
+   ความสำเร็จ — ไม่มีข้อมูลผู้ใช้) ใน transaction เดียว จากนั้นเปิด RLS ให้ทุกตารางอัตโนมัติ
 4. ดูในล็อกว่ามีบรรทัด `🔒 ปิดการเข้าถึงจาก Data API ให้ N ตาราง` และไม่มี ⚠️ ตามมา
 5. ถ้าต้องการย้ายข้อมูลผู้ใช้เดิมด้วย ให้ `pg_dump` เฉพาะตารางที่ต้องการแล้ว restore เอง
    — สคริปต์ `scripts/dump-schema.js` **จงใจไม่ดัมป์ข้อมูลผู้ใช้** เพื่อไม่ให้อีเมลจริง
@@ -167,16 +186,19 @@ git pull
 docker compose up -d --build
 ```
 
-ฐานข้อมูลไม่ถูกแตะ (`bootstrapEmptyDatabase` ทำงานเฉพาะตอนไม่มีตาราง `users`)
+ฐานข้อมูลจะใช้เฉพาะ migration เวอร์ชันที่ยังไม่เคยสำเร็จ
 ไฟล์อัปโหลดไม่ถูกแตะ (อยู่บน volume) ส่วนการเปลี่ยนแปลง schema ใหม่ๆ
-ยังทำผ่าน `db.js` ตามกฎเดิมใน `CLAUDE.md`
+ต้องเพิ่ม migration เวอร์ชันใหม่ ห้ามแก้ migration ที่ถูกบันทึกแล้ว
 
 ---
 
 ## เวลาเปลี่ยน schema หรือเนื้อหาบทเรียน
 
-`schema.sql` และ `seed-content.sql` เป็น **ไฟล์ที่ถูกสร้างขึ้น ห้ามแก้ด้วยมือ**
-สร้างใหม่จากฐานข้อมูลที่ใช้งานอยู่ด้วย:
+`schema.sql` และ `seed-content.sql` เป็น baseline ของ migration แรกและถือว่าใช้งานแล้ว
+จึง **ห้ามแก้หรือสร้างทับหลังเปิดระบบนี้** การเปลี่ยน schema หรือข้อมูลตั้งต้นครั้งถัดไป
+ต้องเพิ่ม migration เวอร์ชันใหม่ใน `server/migrations/` เท่านั้น
+
+สคริปต์ด้านล่างใช้สร้าง baseline สำหรับโครงการใหม่หรือ major version ใหม่ในไฟล์แยก:
 
 ```bash
 cd server && node scripts/dump-schema.js
@@ -184,6 +206,20 @@ cd server && node scripts/dump-schema.js
 
 (ต้องมี Docker เพราะสคริปต์เรียก `pg_dump` ผ่าน image ของ postgres
 จะได้ไม่ต้องติดตั้ง client tools บนเครื่อง)
+
+หลังเตรียม migration เวอร์ชันใหม่ ให้ทดสอบด้วย:
+
+```bash
+cd server
+npm run test:migrations
+
+# ต้องชี้ไปฐาน PostgreSQL ที่ทิ้งได้และชื่อฐานขึ้นต้นด้วย pyarena_ พร้อมคำว่า test
+$env:TEST_DATABASE_URL='postgresql://postgres:password@localhost:5432/pyarena_d03_test'
+npm run test:migrations:postgres
+```
+
+การแก้ชื่อหรือ checksum ของ migration ที่ถูกใช้แล้วทำให้ readiness ล้มเหลวโดยตั้งใจ
+ให้สร้างเวอร์ชันใหม่แทนเพื่อรักษาประวัติที่ตรวจสอบได้
 
 ---
 

@@ -27,7 +27,10 @@
 require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 
 const fs = require('fs');
+const { AsyncLocalStorage } = require('node:async_hooks');
 const { Pool, types } = require('pg');
+const { runMigrations } = require('./migrations');
+const { createCoreSchemaMigration } = require('./migrations/definitions');
 
 // pg returns int8 and numeric as STRINGS, because they can exceed the range a
 // JS number represents exactly. The previous layer converted them to numbers,
@@ -144,6 +147,8 @@ const formatDbError = (error) => {
 
 let pool = null;
 let poolInitPromise = null;
+const transactionContext = new AsyncLocalStorage();
+let savepointCounter = 0;
 
 const ensurePool = async () => {
     if (pool) return pool;
@@ -388,6 +393,9 @@ async function runOn(client, sql, params) {
 
 const db = {
     async query(sql, params = []) {
+        const transactionClient = transactionContext.getStore();
+        if (transactionClient) return runOn(transactionClient, sql, params);
+
         const attempt = async () => {
             const activePool = await ensurePool();
             return runOn(activePool, sql, params);
@@ -415,13 +423,59 @@ const db = {
     // lesson text, and rewriting those would corrupt the content on its way in.
     // Only for whole SQL files that carry no parameters of their own.
     async raw(sql) {
+        const transactionClient = transactionContext.getStore();
+        if (transactionClient) return transactionClient.query(sql);
         const activePool = await ensurePool();
         return activePool.query(sql);
+    },
+
+    async transaction(work) {
+        if (transactionContext.getStore()) return work();
+
+        const activePool = await ensurePool();
+        const client = await activePool.connect();
+        try {
+            await client.query('BEGIN');
+            const result = await transactionContext.run(client, work);
+            await client.query('COMMIT');
+            return result;
+        } catch (error) {
+            try { await client.query('ROLLBACK'); } catch { /* preserve the original failure */ }
+            throw error;
+        } finally {
+            client.release();
+        }
     },
 
     // A transaction has to stay on ONE client, so this checks one out of the
     // pool and hands back the mysql2 connection interface over it.
     async getConnection() {
+        const transactionClient = transactionContext.getStore();
+        if (transactionClient) {
+            const savepoint = `nested_${++savepointCounter}`;
+            let started = false;
+            return {
+                query: (sql, params = []) => runOn(transactionClient, sql, params),
+                execute: (sql, params = []) => runOn(transactionClient, sql, params),
+                async beginTransaction() {
+                    await transactionClient.query(`SAVEPOINT ${savepoint}`);
+                    started = true;
+                },
+                async commit() {
+                    if (!started) return;
+                    await transactionClient.query(`RELEASE SAVEPOINT ${savepoint}`);
+                    started = false;
+                },
+                async rollback() {
+                    if (!started) return;
+                    await transactionClient.query(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+                    await transactionClient.query(`RELEASE SAVEPOINT ${savepoint}`);
+                    started = false;
+                },
+                release() {},
+            };
+        }
+
         const activePool = await ensurePool();
         const client = await activePool.connect();
         let released = false;
@@ -481,18 +535,19 @@ const bootstrapEmptyDatabase = async () => {
     const seedPath = require('path').join(__dirname, 'seed-content.sql');
 
     if (!fsp.existsSync(schemaPath)) {
-        console.warn('⚠️ ฐานข้อมูลว่างเปล่าและไม่พบ schema.sql — ระบบจะทำงานไม่ได้ '
-            + 'ให้รัน `node scripts/dump-schema.js` จากเครื่องที่มีฐานข้อมูลใช้งานอยู่');
-        return;
+        throw new Error(
+            'ฐานข้อมูลว่างเปล่าและไม่พบ schema.sql — ให้รัน `node scripts/dump-schema.js` จากฐานข้อมูลต้นทาง',
+        );
+    }
+    if (!fsp.existsSync(seedPath)) {
+        throw new Error('ฐานข้อมูลว่างเปล่าและไม่พบ seed-content.sql');
     }
 
     console.log('📦 ฐานข้อมูลว่างเปล่า — กำลังสร้างโครงสร้างตารางจาก schema.sql');
     await db.raw(fsp.readFileSync(schemaPath, 'utf8'));
 
-    if (fsp.existsSync(seedPath)) {
-        console.log('📦 กำลังใส่เนื้อหาบทเรียนและคลังโจทย์จาก seed-content.sql');
-        await db.raw(fsp.readFileSync(seedPath, 'utf8'));
-    }
+    console.log('📦 กำลังใส่เนื้อหาบทเรียนและคลังโจทย์จาก seed-content.sql');
+    await db.raw(fsp.readFileSync(seedPath, 'utf8'));
 
     // Read by server.js, which recomputes which problems can be graded once the
     // app is up. Only meaningful on the boot that did the install.
@@ -567,8 +622,7 @@ const lockDownPublicSchema = async () => {
 // and a collision on a fresh one: both raced to create the same relations and
 // one of them lost with "already exists", abandoning the rest of the
 // initialisation. server.js awaits db.ready before doing its own now.
-db.ready = (async () => {
-    try {
+const initializeCoreSchema = async () => {
         const [rows] = await db.query('SELECT current_database() AS database, current_user AS user, version() AS version');
         console.log(`เชื่อมต่อ PostgreSQL สำเร็จ: ${rows[0].database} (${rows[0].user})`);
 
@@ -1495,8 +1549,20 @@ db.ready = (async () => {
             `UPDATE achievements SET is_active = 0 WHERE achievement_id NOT IN (${ACHIEVEMENTS.map(() => '?').join(', ')})`,
             ACHIEVEMENTS.map(a => a.id)
         );
-        await db.query(`ALTER TABLE achievements ADD CONSTRAINT achievements_code_key UNIQUE (code);`)
-            .catch(() => { /* already present */ });
+        await db.raw(`
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'achievements_code_key'
+                      AND conrelid = 'public.achievements'::regclass
+                ) THEN
+                    ALTER TABLE achievements
+                    ADD CONSTRAINT achievements_code_key UNIQUE (code);
+                END IF;
+            END
+            $$
+        `);
 
         console.log(`✅ ความสำเร็จ: ${ACHIEVEMENTS.length} รายการพร้อมเงื่อนไขที่ตรวจได้อัตโนมัติ`);
 
@@ -1626,11 +1692,56 @@ db.ready = (async () => {
         // off. server.js calls it again after its own schema step, for the same
         // reason - it is idempotent and skips tables that already have RLS on.
         await lockDownPublicSchema();
-    } catch (err) {
-        console.error('เชื่อมต่อ PostgreSQL ล้มเหลว:', err.message);
-    }
-})();
+};
+
+const coreMigrationFunctions = [
+    require('./arcade/migrate-matches').migrateArcadeMatches,
+    require('./arcade/migrate-rewards').migrateArcadeRewards,
+    require('./arcade/migrate-shop').migrateArcadeShop,
+    require('./arcade/migrate-self-effects').migrateArcadeSelfEffects,
+    require('./arcade/migrate-attacks').migrateArcadeAttacks,
+    require('./arcade/migrate-bots').migrateArcadeBots,
+    require('./arcade/migrate-drafts').migrateArcadeDrafts,
+    require('./arcade/migrate-score-breakdown').migrateArcadeScoreBreakdown,
+];
+const problemMigrationInputs = require('./problemsSchema');
+const { ARCADE_TASKS: arcadeTaskSeed } = require('./arcadeTaskSeed');
+
+const coreMigrations = [
+    createCoreSchemaMigration(
+        initializeCoreSchema,
+        [
+            initializeCoreSchema.toString(),
+            bootstrapEmptyDatabase.toString(),
+            lockDownPublicSchema.toString(),
+            normalizeSql.toString(),
+            fs.readFileSync(require('path').join(__dirname, 'schema.sql'), 'utf8'),
+            fs.readFileSync(require('path').join(__dirname, 'seed-content.sql'), 'utf8'),
+            ...coreMigrationFunctions.map((migration) => migration.toString()),
+            problemMigrationInputs.migrateProblems.toString(),
+            problemMigrationInputs.normalizeFunctionCases.toString(),
+            JSON.stringify({
+                modes: problemMigrationInputs.MODES,
+                childForeignKeys: problemMigrationInputs.CHILD_FKS,
+                views: problemMigrationInputs.VIEWS,
+                arcadeTaskSeed,
+            }),
+        ].join('\n-- migration input --\n'),
+    ),
+];
+
+let readyPromise;
+db.initialize = () => {
+    // The application migration follows the core migration and therefore
+    // appears newer on every subsequent boot. Only the complete application
+    // readiness check rejects versions unknown to that binary.
+    if (!readyPromise) readyPromise = runMigrations(db, coreMigrations, { allowNewer: true });
+    return readyPromise;
+};
+Object.defineProperty(db, 'ready', { get: () => db.initialize() });
 
 db.lockDownPublicSchema = lockDownPublicSchema;
+db.coreMigrations = coreMigrations;
+db.close = closePool;
 
 module.exports = db;
