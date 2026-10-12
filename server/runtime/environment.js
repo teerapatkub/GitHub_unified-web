@@ -92,6 +92,13 @@ const validateRuntimeEnvironment = (env = process.env) => {
     requireValue(env, 'PUBLIC_BASE_URL'),
     'PUBLIC_BASE_URL',
   );
+  const clientUrl = parseHttpUrl(
+    requireValue(env, 'CLIENT_URL'),
+    'CLIENT_URL',
+  );
+  if (clientUrl.href !== publicBaseUrl.href) {
+    throw new Error('CLIENT_URL must exactly match PUBLIC_BASE_URL in production');
+  }
   const allowedOrigins = value(env, 'AUTH_ALLOWED_ORIGINS')
     .split(',')
     .map((origin) => origin.trim())
@@ -106,7 +113,11 @@ const validateRuntimeEnvironment = (env = process.env) => {
     throw new Error('UPLOADS_DIR must be an absolute path in production');
   }
 
-  return { publicBaseUrl: publicBaseUrl.href, uploadsDir };
+  return {
+    clientUrl: clientUrl.href,
+    publicBaseUrl: publicBaseUrl.href,
+    uploadsDir,
+  };
 };
 
 module.exports = {

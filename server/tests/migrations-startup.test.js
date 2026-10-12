@@ -251,6 +251,30 @@ test('startup closes its listener when preparation fails', async () => {
   assert.equal(state.failed, true);
 });
 
+test('startup validates configuration before binding a port', async () => {
+  let listened = false;
+  const app = {
+    listen() {
+      listened = true;
+      throw new Error('must not listen');
+    },
+  };
+  const state = createStartupState();
+
+  await assert.rejects(
+    startApplication({
+      app,
+      port: 3001,
+      validate: () => { throw new Error('invalid production environment'); },
+      prepare: async () => {},
+      state,
+    }),
+    /invalid production environment/,
+  );
+  assert.equal(listened, false);
+  assert.equal(state.ready, false);
+});
+
 test('only health traffic is served until preparation succeeds', async (t) => {
   const app = express();
   const state = createStartupState();

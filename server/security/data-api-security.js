@@ -1,5 +1,3 @@
-const DATA_API_ROLE_NAMES = Object.freeze(['anon', 'authenticated']);
-
 const quoteIdentifier = (identifier) => `"${String(identifier).replaceAll('"', '""')}"`;
 
 const revokeFrom = async (db, objectType, objectName, principal) => {

@@ -84,6 +84,7 @@ docker compose exec app node scripts/mark-auto-gradable.js --apply
 | `SUPABASE_PUBLISHABLE_KEY` | **ใช่** | Publishable key จาก Project Settings → API Keys ใช้สร้าง client สำหรับ Email Auth |
 | `PORT` | ไม่ | พอร์ตที่ API ฟัง (ค่าเริ่มต้น 3001) |
 | `PUBLIC_BASE_URL` | **ใช่** | URL เต็มที่ผู้ใช้เปิดจากภายนอก และต้องอยู่ใน `AUTH_ALLOWED_ORIGINS` |
+| `CLIENT_URL` | **ใช่** | URL ของหน้าเว็บ ต้องตรงกับ `PUBLIC_BASE_URL` ใน production; compose ตั้งให้จากค่าเดียวกัน |
 | `AUTH_ALLOWED_ORIGINS` | **ใช่** | รายการ origin ที่อนุญาต คั่นด้วย comma และต้องมี origin ของ `PUBLIC_BASE_URL` |
 | `UPLOADS_DIR` | compose ตั้งให้แล้ว | ที่เก็บไฟล์อัปโหลด ต้องอยู่บน volume |
 | `NVIDIA_API_KEY` `NVIDIA_AI_MODEL` | ไม่ | แชทบอท Lumi ถ้าไม่ตั้งจะใช้เนื้อหาสำรองในตัว |
@@ -99,8 +100,8 @@ docker compose exec app node scripts/mark-auto-gradable.js --apply
 
 ⚠️ `VITE_*` ทุกตัวถูกฝังลงในไฟล์ที่ผู้ใช้ดาวน์โหลด **ห้ามใส่ความลับ**
 
-ก่อน build ระบบจะปฏิเสธ key ที่ไม่ได้ขึ้นต้นด้วย `sb_publishable_` และก่อนเปิดรับ traffic
-server จะตรวจฐานข้อมูล, Supabase keys, public URL, CORS และตำแหน่ง uploads ทั้งหมด
+ก่อน build ระบบจะปฏิเสธ key ที่ไม่ได้ขึ้นต้นด้วย `sb_publishable_` และก่อน bind พอร์ต
+server จะตรวจฐานข้อมูล, Supabase keys, public/client URL, CORS และตำแหน่ง uploads ทั้งหมด
 ถ้าขาดหรือมี `SUPABASE_ACCESS_TOKEN` ปะปนใน runtime process จะหยุดทันที
 
 `SUPABASE_ACCESS_TOKEN` ใช้เฉพาะ Management API เท่านั้น ให้เก็บใน
@@ -110,7 +111,8 @@ server จะตรวจฐานข้อมูล, Supabase keys, public URL,
 จะอ่านเฉพาะ `server/.env` จึงไม่มี management token อยู่ใน runtime
 
 Production container รันด้วย user `node` ที่ไม่มีสิทธิ์ root และเขียนได้เฉพาะ
-`/data/uploads` ซึ่ง compose ผูกกับ volume `pysim-uploads`
+`/data/uploads` ซึ่ง compose ผูกกับ volume `pysim-uploads` service `uploads-init` จะปรับเจ้าของ
+ไฟล์เดิมใน volume เป็น UID/GID 1000 ก่อนเริ่ม app จึงอัปเกรดจาก image รุ่นที่เคยสร้างไฟล์ด้วย root ได้
 
 ### เข้าสู่ระบบด้วย Google — ตั้งที่เดียวพอ
 
@@ -161,6 +163,9 @@ DATABASE_URL=postgres://postgres:<password>@<host>:6543/postgres
 ยังใช้ endpoint ฝั่ง server ที่กำหนดไว้ได้ การเปิด Data API ในอนาคตต้องทำเป็น migration ใหม่
 พร้อม `GRANT`, RLS policy และการทดสอบ authorization ของ resource นั้น ห้ามปิด security migration
 ทั้งชุดด้วย environment flag
+
+ชุด acceptance `server/tests/data-api-http.test.js` ยิง anonymous GET/POST ผ่าน PostgREST จริง
+และต้องได้ 401/403/404 ทั้งการอ่านและเขียน นอกเหนือจากการตรวจ grant/RLS ด้วย SQL โดยตรง
 
 ### ขั้นตอนย้าย
 

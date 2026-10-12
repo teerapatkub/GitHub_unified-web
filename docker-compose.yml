@@ -1,6 +1,6 @@
 # The whole system, runnable with one command, on any machine with Docker.
 #
-#   docker compose up --build
+#   docker compose --env-file server/.env up --build
 #   → http://localhost:3001
 #
 # Deliberately not tied to a hosting provider. Whoever deploys this picks the
@@ -28,6 +28,14 @@ services:
       timeout: 5s
       retries: 20
 
+  uploads-init:
+    image: busybox:1.37.0
+    user: "0:0"
+    command: ["sh", "-c", "chown -R 1000:1000 /data/uploads"]
+    volumes:
+      - pysim-uploads:/data/uploads
+    restart: "no"
+
   app:
     build:
       context: .
@@ -44,6 +52,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      uploads-init:
+        condition: service_completed_successfully
     # Keys and mail credentials come from server/.env, which is not in the
     # image and not in git.
     #
@@ -66,6 +76,7 @@ services:
       # leave the process need it - the email verification link, which cannot
       # be relative because it is opened days later from a mail client.
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3001}
+      CLIENT_URL: ${PUBLIC_BASE_URL:-http://localhost:3001}
     ports:
       - "${PORT:-3001}:3001"
     volumes:

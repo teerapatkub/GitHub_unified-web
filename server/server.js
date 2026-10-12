@@ -3383,7 +3383,7 @@ const ensureLearningProgressSchema = async () => {
 
 };
 
-const CLIENT_URL = String(process.env.CLIENT_URL || 'http://localhost:5173').replace(/\/$/, '');
+const clientUrl = () => String(process.env.CLIENT_URL || publicBaseUrl()).trim().replace(/\/+$/, '');
 
 const sendAppEmail = async ({ to, subject, html }) => {
     if (!EMAIL_CONFIGURED) {
@@ -4213,7 +4213,7 @@ app.post('/api/password/forgot', async (req, res) => {
         const user = users[0];
         const resetToken = crypto.randomBytes(32).toString('hex');
         const tokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
-        const resetUrl = `${CLIENT_URL}/login?reset=${resetToken}`;
+        const resetUrl = `${clientUrl()}/login?reset=${resetToken}`;
 
         await db.execute(
             'UPDATE password_reset_tokens SET used_at = CURRENT_TIMESTAMP WHERE user_id = ? AND used_at IS NULL',
@@ -7627,8 +7627,8 @@ const recomputeGradabilityAfterInstall = () => {
 
 const { getMigrationStatus, runMigrations } = require('./migrations');
 const {
-    createApplicationSchemaMigration,
-    createDataApiSecurityMigration,
+  createApplicationSchemaMigration,
+  createDataApiSecurityMigration,
 } = require('./migrations/definitions');
 const { applyDataApiSecurity } = require('./security/data-api-security');
 
@@ -7650,19 +7650,19 @@ const applicationMigrations = [
             authSchemaSql,
         ].map((fn) => fn.toString()).join('\n-- migration input --\n'),
     ),
-    createDataApiSecurityMigration(
-        async () => {
-            const secured = await applyDataApiSecurity(db);
-            console.log(
-                `🔒 Data API ปิดโดยค่าเริ่มต้น: ${secured.tables} ตาราง, `
-                + `${secured.views} view, ${secured.sequences} sequence`,
-            );
-        },
-        fs.readFileSync(
-            require.resolve('./security/data-api-security'),
-            'utf8',
-        ),
+  createDataApiSecurityMigration(
+    async () => {
+      const secured = await applyDataApiSecurity(db);
+      console.log(
+        `🔒 Data API ปิดโดยค่าเริ่มต้น: ${secured.tables} ตาราง, `
+        + `${secured.views} view, ${secured.sequences} sequence`,
+      );
+    },
+    fs.readFileSync(
+      require.resolve('./security/data-api-security'),
+      'utf8',
     ),
+  ),
 ];
 
 const supabasePublishableKey = String(
@@ -7690,7 +7690,6 @@ const checkReadiness = async () => {
 installHealthRoutes(app, { checkReadiness, state: startupState });
 
 const prepareApplication = async ({ checkAuth = checkSupabaseAuth } = {}) => {
-    validateRuntimeEnvironment(process.env);
     await checkAuth();
     await db.ready;
     await playerAuth.ready;
@@ -7744,7 +7743,13 @@ if (fs.existsSync(path.join(clientDist, 'index.html'))) {
 }
 
 if (require.main === module) {
-    startApplication({ app, port: PORT, prepare: prepareApplication, state: startupState })
+    startApplication({
+      app,
+      port: PORT,
+      validate: () => validateRuntimeEnvironment(process.env),
+      prepare: prepareApplication,
+      state: startupState,
+    })
         .then(() => {
             console.log(`Server running on port ${PORT}`);
             console.log('\u2705 Database migrations completed; the application is ready');

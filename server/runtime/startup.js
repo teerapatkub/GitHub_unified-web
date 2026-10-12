@@ -61,7 +61,8 @@ const listen = (app, port, host) => new Promise((resolve, reject) => {
 
 const close = (server) => new Promise((resolve) => server.close(resolve));
 
-const startApplication = async ({ app, port, host, prepare, state }) => {
+const startApplication = async ({ app, port, host, validate = () => {}, prepare, state }) => {
+  validate();
   const server = await listen(app, port, host);
   try {
     await prepare();
