@@ -28,6 +28,19 @@ test('fresh PostgreSQL installs the complete application schema repeatably', asy
   `);
   assert.equal(beforeResult.rows[0].count, 0, 'the integration database must start empty');
 
+  await probe.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+        CREATE ROLE anon NOLOGIN;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+        CREATE ROLE authenticated NOLOGIN;
+      END IF;
+    END
+    $$
+  `);
+
   const db = require('../db');
   const { applicationMigrations } = require('../server');
   const { defineMigration, getMigrationStatus, runMigrations } = require('../migrations');
@@ -72,6 +85,92 @@ test('fresh PostgreSQL installs the complete application schema repeatably', asy
       'users',
     ],
   );
+
+  const unsecuredTables = await probe.query(`
+    SELECT c.relname
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relkind IN ('r', 'p')
+      AND NOT c.relrowsecurity
+    ORDER BY c.relname
+  `);
+  assert.deepEqual(unsecuredTables.rows, []);
+
+  const unsafeViews = await probe.query(`
+    SELECT c.relname
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relkind = 'v'
+      AND NOT COALESCE(c.reloptions, ARRAY[]::text[]) @> ARRAY['security_invoker=true']
+    ORDER BY c.relname
+  `);
+  assert.deepEqual(unsafeViews.rows, []);
+
+  const dataApiGrants = await probe.query(`
+    SELECT grantee, table_name, privilege_type
+    FROM information_schema.role_table_grants
+    WHERE table_schema = 'public'
+      AND grantee IN ('anon', 'authenticated', 'PUBLIC')
+    ORDER BY grantee, table_name, privilege_type
+  `);
+  assert.deepEqual(dataApiGrants.rows, []);
+
+  const dataApiRoutineGrants = await probe.query(`
+    SELECT grantee, routine_name, privilege_type
+    FROM information_schema.role_routine_grants
+    WHERE routine_schema = 'public'
+      AND grantee IN ('anon', 'authenticated', 'PUBLIC')
+    ORDER BY grantee, routine_name, privilege_type
+  `);
+  assert.deepEqual(dataApiRoutineGrants.rows, []);
+
+  const schemaAccess = await probe.query(`
+    SELECT has_schema_privilege('anon', 'public', 'USAGE') AS anon_usage,
+           has_schema_privilege('authenticated', 'public', 'USAGE') AS authenticated_usage
+  `);
+  assert.deepEqual(schemaAccess.rows[0], {
+    anon_usage: false,
+    authenticated_usage: false,
+  });
+
+  const assertRoleCannotReadUsers = async (role) => {
+    const client = await probe.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`SET LOCAL ROLE ${role}`);
+      await assert.rejects(
+        client.query('SELECT user_id, email, password_hash FROM public.users LIMIT 1'),
+        /permission denied/,
+      );
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  };
+  await assertRoleCannotReadUsers('anon');
+  await assertRoleCannotReadUsers('authenticated');
+
+  const assertRoleCannotWriteUsers = async (role) => {
+    const client = await probe.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`SET LOCAL ROLE ${role}`);
+      await assert.rejects(
+        client.query(`
+          INSERT INTO public.users (username, email, password_hash)
+          VALUES ('forbidden-user', 'forbidden@example.com', 'forbidden')
+        `),
+        /permission denied/,
+      );
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  };
+  await assertRoleCannotWriteUsers('anon');
+  await assertRoleCannotWriteUsers('authenticated');
 
   let concurrentCalls = 0;
   const concurrentMigration = defineMigration({

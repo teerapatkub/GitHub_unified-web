@@ -146,20 +146,21 @@ DATABASE_URL=postgres://postgres:<password>@<host>:6543/postgres
 พอร์ต **6543** คือ connection pooler ใช้อันนี้ (รองรับ IPv4 และทนการเปิด-ปิดคอนเนกชันบ่อย)
 ส่วนพอร์ต 5432 เป็นการต่อตรงซึ่งเป็น IPv6 อย่างเดียว โฮสต์หลายเจ้าต่อไม่ได้
 
-### ⚠️ Data API เปิดตาราง `users` ให้คนทั้งโลกอ่านโดยปริยาย
+### Data API ปิดโดยค่าเริ่มต้น
 
-Supabase เอา schema `public` ไปเปิดเป็น REST API และให้สิทธิ์บทบาท anonymous อ่านตารางในนั้น
-schema นี้มีตาราง `users` ที่เก็บอีเมลจริงและ bcrypt hash **ถ้าปล่อยไว้ ใครก็ตามที่มี
-publishable key ของโปรเจค (ซึ่งอยู่ในหน้าเว็บ) จะดึงตารางผู้ใช้ทั้งตารางผ่าน HTTPS ได้**
-และจะไม่มี request ไหนล้มเหลว ไม่มี log ที่ไหนผิดปกติเลย
+หน้าเว็บเรียก API ของ PyArena เท่านั้นและใช้ Supabase ฝั่ง browser เฉพาะ Auth จึงไม่มีตารางเกม
+ใดที่ต้องเปิดตรงผ่าน Data API migration `202610120003` กำหนดขอบเขตนี้ใน PostgreSQL โดยตรง:
 
-**แอปปิดให้เองตอนบูต** — เมื่อ host ไม่ใช่เครื่องนี้ `lockDownPublicSchema()` ใน `server/db.js`
-จะเปิด RLS ให้ทุกตารางใน `public` โดยไม่ผูก policy ไว้เลย ซึ่งเท่ากับปฏิเสธทุกบทบาทที่อยู่ใต้ RLS
-(คือบทบาทของ API) ส่วน **เจ้าของตารางไม่อยู่ใต้ RLS** แอปจึงทำงานเหมือนเดิมทุกอย่าง
-และด้วยเหตุผลเดียวกัน โค้ดจะแตะเฉพาะตารางที่บัญชีนี้เป็นเจ้าของ ตารางอื่นถูกข้ามพร้อมเตือนในล็อก
-แทนที่จะเสี่ยงล็อกแอปออกจากข้อมูลของตัวเอง
+- revoke สิทธิ์ schema, table, view, sequence และ function จาก `PUBLIC`, `anon`, `authenticated`
+- เปิด RLS ให้ทุก table ใน `public` โดยไม่มี policy สำหรับ Data API
+- ตั้งทุก ordinary view เป็น `security_invoker=true`
+- revoke default privileges ของ object ที่สร้างในอนาคต
+- หยุด migration ทันทีถ้าพบ object ที่ migration role ไม่ได้เป็นเจ้าของ
 
-ปิดพฤติกรรมนี้ได้ด้วย `SUPABASE_RLS_LOCKDOWN=off` ถ้าตั้งใจจะเปิด Data API จริงๆ
+บทบาทเจ้าของตารางที่ server ใช้ต่อ PostgreSQL โดยตรงยังทำงานตามเดิม และ `service_role`
+ยังใช้ endpoint ฝั่ง server ที่กำหนดไว้ได้ การเปิด Data API ในอนาคตต้องทำเป็น migration ใหม่
+พร้อม `GRANT`, RLS policy และการทดสอบ authorization ของ resource นั้น ห้ามปิด security migration
+ทั้งชุดด้วย environment flag
 
 ### ขั้นตอนย้าย
 
@@ -169,8 +170,8 @@ publishable key ของโปรเจค (ซึ่งอยู่ในห�
    `SUPABASE_PUBLISHABLE_KEY` ลงใน `server/.env` หรือ secret/runtime environment ของโฮสต์
 3. บูตแอปหนึ่งครั้ง — ถ้าฐานข้อมูลยังว่าง migration แรกจะติดตั้ง
    `server/schema.sql` แล้วตามด้วย `server/seed-content.sql` (บทเรียน โจทย์ ของในร้านค้า
-   ความสำเร็จ — ไม่มีข้อมูลผู้ใช้) ใน transaction เดียว จากนั้นเปิด RLS ให้ทุกตารางอัตโนมัติ
-4. ดูในล็อกว่ามีบรรทัด `🔒 ปิดการเข้าถึงจาก Data API ให้ N ตาราง` และไม่มี ⚠️ ตามมา
+   ความสำเร็จ — ไม่มีข้อมูลผู้ใช้) ใน transaction เดียว จากนั้น migration ความปลอดภัยจะจำกัด Data API
+4. ดูในล็อกว่ามีบรรทัด `🔒 Data API ปิดโดยค่าเริ่มต้น` และ migration จบครบทุกเวอร์ชัน
 5. ถ้าต้องการย้ายข้อมูลผู้ใช้เดิมด้วย ให้ `pg_dump` เฉพาะตารางที่ต้องการแล้ว restore เอง
    — สคริปต์ `scripts/dump-schema.js` **จงใจไม่ดัมป์ข้อมูลผู้ใช้** เพื่อไม่ให้อีเมลจริง
    กับ bcrypt hash หลุดเข้า git

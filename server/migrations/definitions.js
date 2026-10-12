@@ -2,6 +2,7 @@ const { defineMigration } = require('./index');
 const {
   APPLICATION_SCHEMA_VERSION,
   CORE_SCHEMA_VERSION,
+  DATA_API_SECURITY_VERSION,
 } = require('./versions');
 
 const signatureFor = (up, supplemental = '') => [
@@ -23,7 +24,15 @@ const createApplicationSchemaMigration = (up, signature) => defineMigration({
   up,
 });
 
+const createDataApiSecurityMigration = (up, signature) => defineMigration({
+  version: DATA_API_SECURITY_VERSION,
+  name: 'restrict_supabase_data_api',
+  signature: signatureFor(up, signature),
+  up,
+});
+
 module.exports = {
   createApplicationSchemaMigration,
   createCoreSchemaMigration,
+  createDataApiSecurityMigration,
 };

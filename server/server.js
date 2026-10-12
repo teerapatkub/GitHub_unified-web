@@ -7626,7 +7626,11 @@ const recomputeGradabilityAfterInstall = () => {
 };
 
 const { getMigrationStatus, runMigrations } = require('./migrations');
-const { createApplicationSchemaMigration } = require('./migrations/definitions');
+const {
+    createApplicationSchemaMigration,
+    createDataApiSecurityMigration,
+} = require('./migrations/definitions');
+const { applyDataApiSecurity } = require('./security/data-api-security');
 
 const applicationMigrations = [
     ...db.coreMigrations,
@@ -7645,6 +7649,19 @@ const applicationMigrations = [
             db.lockDownPublicSchema,
             authSchemaSql,
         ].map((fn) => fn.toString()).join('\n-- migration input --\n'),
+    ),
+    createDataApiSecurityMigration(
+        async () => {
+            const secured = await applyDataApiSecurity(db);
+            console.log(
+                `🔒 Data API ปิดโดยค่าเริ่มต้น: ${secured.tables} ตาราง, `
+                + `${secured.views} view, ${secured.sequences} sequence`,
+            );
+        },
+        fs.readFileSync(
+            require.resolve('./security/data-api-security'),
+            'utf8',
+        ),
     ),
 ];
 
