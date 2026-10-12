@@ -1,5 +1,5 @@
 const express = require('express');
-const { verifyAdminToken } = require('./adminAccess');
+const { requireAdminPrincipal } = require('./auth/admin-principal');
 
 const text = (value, max) => typeof value === 'string' && value.trim().length > 0 && value.length <= max;
 const positive = (value) => Number.isInteger(value) && value > 0 && value <= 2147483647;
@@ -8,15 +8,7 @@ const mediaUrl = (value) => typeof value === 'string' && value.length <= 255
 
 function createLessonAdminRouter(db) {
   const router = express.Router();
-  router.use(async (req, res, next) => {
-    const id = verifyAdminToken((req.get('Authorization') || '').replace(/^Bearer /, ''));
-    if (!id) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบแอดมินใหม่' });
-    try {
-      const [users] = await db.execute("SELECT user_id FROM users WHERE user_id = ? AND role = 'admin' AND COALESCE(is_deleted, 0) = 0 AND COALESCE(is_banned, 0) = 0", [id]);
-      if (!users.length) return res.status(403).json({ error: 'เฉพาะแอดมินเท่านั้นที่เพิ่มบทเรียนได้' });
-      next();
-    } catch (error) { next(error); }
-  });
+  router.use(requireAdminPrincipal);
 
   router.get('/', async (_req, res, next) => {
     try {

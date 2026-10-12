@@ -5,13 +5,6 @@ import { API_BASE, assetUrl } from '../../config/api.js';
 const UPLOAD_API = `${API_BASE}/api/upload`;
 const API = `${API_BASE}/api/themes`;
 
-const adminHeaders = () => {
-  try {
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    return user.admin_token ? { Authorization: `Bearer ${user.admin_token}` } : {};
-  } catch { return {}; }
-};
-
 async function readResponse(res) {
   const isJson = res.headers.get('content-type')?.includes('application/json');
   const data = isJson ? await res.json() : null;
@@ -140,7 +133,7 @@ export default function ThemePage() {
     const id = ++requestId.current;
     setLoading(true);
     try {
-      const res = await fetch(EP[activeTab].get, { headers: adminHeaders() });
+      const res = await fetch(EP[activeTab].get);
       const data = await readResponse(res);
       if (id === requestId.current) setItems((Array.isArray(data) ? data : []).map((t) => ({ ...t, is_active: t.is_active === true || Number(t.is_active) === 1, effects: parseEffects(t.effects) })));
     } catch (err) {
@@ -167,7 +160,7 @@ export default function ThemePage() {
       const method = editingItem ? "PUT" : "POST";
       const res    = await fetch(url, {
         method,
-        headers: { "Content-Type": "application/json", ...adminHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...formData, price: Number(formData.price) }),
       });
       await readResponse(res);

@@ -14,9 +14,7 @@ function useReport(path) {
   const [state, setState] = useState({ loading: true, data: null, error: '' });
   useEffect(() => {
     const controller = new AbortController();
-    let user;
-    try { user = JSON.parse(localStorage.getItem('user') || '{}'); } catch { user = {}; }
-    fetch(`${API_BASE}/api/admin/student-progress${path}`, { signal: controller.signal, headers: { Authorization: `Bearer ${user.admin_token || ''}` } })
+    fetch(`${API_BASE}/api/admin/student-progress${path}`, { signal: controller.signal })
       .then(async response => {
         const data = await response.json().catch(() => null);
         if (!response.ok || !data) throw new Error(data?.error || 'โหลดข้อมูลไม่สำเร็จ กรุณาตรวจสอบเซิร์ฟเวอร์');

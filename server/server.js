@@ -85,18 +85,17 @@ app.get('/api/your-table', testSupabase);
 
 const db = require('./db');
 const { createThemeRouter } = require('./themeRoutes');
-const { issueAdminToken } = require('./adminAccess');
-app.use('/api/themes', createThemeRouter(db));
 const { createLessonAdminRouter } = require('./lessonAdminRoutes');
-app.use('/api/admin/lessons', createLessonAdminRouter(db));
 const { createLessonContentRouter } = require('./lessonContentRoutes');
 app.use('/api', createLessonContentRouter(db));
 const { createStudentProgressRouter } = require('./studentProgressRoutes');
-app.use('/api/admin/student-progress', createStudentProgressRouter(db));
 const { authSchemaSql, ensureAuthSchema, installAuth } = require('./auth');
 // Production schema setup belongs to the versioned application migration.
 // Standalone module tests keep installAuth's default auto-initialization.
 const playerAuth = installAuth(app, db, supabase, process.env, { initializeSchema: false });
+app.use('/api/themes', createThemeRouter(db));
+app.use('/api/admin/lessons', createLessonAdminRouter(db));
+app.use('/api/admin/student-progress', createStudentProgressRouter(db));
 
 const GOOGLE_CLIENT_ID = String(process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || '').trim();
 const isValidGoogleClientId = (clientId) => /^[\w.-]+\.apps\.googleusercontent\.com$/.test(clientId);
@@ -2476,7 +2475,6 @@ app.post('/login', async (req, res) => {
             res.json({
                 success: true,
                 user_id: users[0].user_id,
-                admin_token: issueAdminToken(users[0]),
                 username: users[0].username,
                 email: users[0].email,
                 role: users[0].role || 'user',
@@ -2484,7 +2482,6 @@ app.post('/login', async (req, res) => {
                 xp: users[0].xp || 0,
                 user: { 
                     id: users[0].user_id, 
-                    admin_token: issueAdminToken(users[0]),
                     user_id: users[0].user_id, 
                     username: users[0].username,
                     role: users[0].role || 'user',
@@ -2714,7 +2711,6 @@ app.post('/api/login', async (req, res) => {
         if (!isMatch) return res.status(401).json({ message: 'Wrong password' });
         res.json({
             user_id: user.user_id,
-            admin_token: issueAdminToken(user),
             username: user.username,
             email: user.email,
             role: user.role || 'user',
@@ -2794,7 +2790,6 @@ app.post('/api/auth/google', async (req, res) => {
             await playerAuth.issueGoogleSession(res, user.user_id);
             res.json({
                 user_id: user.user_id,
-                admin_token: issueAdminToken(user),
                 username: user.username,
                 email: user.email,
                 role: user.role || 'user',

@@ -31,7 +31,7 @@ function currentUser() {
 async function request(path = '', body, signal) {
   const res = await fetch(`${API_BASE}/api/admin/lessons${path}`, {
     method: body ? 'POST' : 'GET', signal,
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${currentUser().admin_token || ''}` },
+    headers: { 'Content-Type': 'application/json' },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
   const data = await res.json().catch(() => null);

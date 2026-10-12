@@ -31,6 +31,12 @@ A separate backend on port 3301 with a disposable database was exercised through
 
 The A01–A13 implementation and automated release gate are complete. Deployment still requires a clean full regression run, production build, and the browser checklist in [`docs/arcade-a13-acceptance.md`](../../docs/arcade-a13-acceptance.md) against the release candidate.
 
+## Production Auth D07–D08
+
+Auth provisioning retries are exercised through authenticated HTTP after an ambiguous commit result. A durable player/Auth mapping prevents destructive compensation, while a confirmed rollback without a mapping removes the newly created Auth user. Repeating signup or legacy migration reuses the original identity instead of creating another account.
+
+Admin HTTP routes now authorize the principal produced by the shared Auth middleware. The same database role check applies to Supabase Email and Google sessions; production UI requests no longer depend on the retired browser-stored `admin_token`.
+
 ## Validation results
 
 - Server `npm test`: 79 passed (69 Arcade and 10 Auth).

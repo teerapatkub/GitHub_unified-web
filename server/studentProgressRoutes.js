@@ -1,5 +1,5 @@
 const express = require('express');
-const { verifyAdminToken } = require('./adminAccess');
+const { requireAdminPrincipal } = require('./auth/admin-principal');
 const { evaluateLesson, POST_PASS_RATIO } = require('./lessonProgress');
 
 const mean = values => values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : null;
@@ -71,16 +71,11 @@ function buildProgressReport(student, curriculum, attempts, exerciseRows, miniGa
 
 function createStudentProgressRouter(db) {
   const router = express.Router();
-  router.use(async (req, res, next) => {
+  router.use((req, res, next) => {
     res.set('Cache-Control', 'no-store');
-    const id = verifyAdminToken((req.get('Authorization') || '').replace(/^Bearer /, ''));
-    if (!id) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบแอดมินใหม่' });
-    try {
-      const [users] = await db.execute("SELECT user_id FROM users WHERE user_id = ? AND role = 'admin' AND COALESCE(is_deleted, 0) = 0 AND COALESCE(is_banned, 0) = 0", [id]);
-      if (!users.length) return res.status(403).json({ error: 'เฉพาะแอดมินเท่านั้นที่ดูรายงานผู้เรียนได้' });
-      next();
-    } catch (error) { next(error); }
+    next();
   });
+  router.use(requireAdminPrincipal);
   router.get('/', async (req, res, next) => {
     const search = String(req.query.q || '').trim().slice(0, 100);
     const page = Number(req.query.page || 1);

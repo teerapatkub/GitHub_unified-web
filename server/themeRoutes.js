@@ -1,5 +1,5 @@
 const express = require('express');
-const { verifyAdminToken } = require('./adminAccess');
+const { requireAdminPrincipal } = require('./auth/admin-principal');
 
 const categories = {
   '/': 'MOUSE_EFFECT',
@@ -42,18 +42,7 @@ function validateItem(body, type) {
 // Require a signed login token AND the current database role.
 function createThemeRouter(db) {
   const router = express.Router();
-  router.use(async (req, res, next) => {
-    const userId = verifyAdminToken((req.get('Authorization') || '').replace(/^Bearer /, ''));
-    if (!Number.isSafeInteger(userId) || userId <= 0) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบแอดมินใหม่' });
-    try {
-      const [users] = await db.execute(
-        "SELECT user_id FROM users WHERE user_id = ? AND role = 'admin' AND COALESCE(is_deleted, 0) = 0 AND COALESCE(is_banned, 0) = 0",
-        [userId]
-      );
-      if (!users.length) return res.status(403).json({ error: 'เฉพาะแอดมินเท่านั้นที่จัดการรายการได้' });
-      next();
-    } catch (error) { next(error); }
-  });
+  router.use(requireAdminPrincipal);
 
   // Register collection paths before /:id so /themes, /frames and /backgrounds
   // cannot accidentally be interpreted as an effect id.
