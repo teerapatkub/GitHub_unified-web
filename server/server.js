@@ -7623,9 +7623,14 @@ const recomputeGradabilityAfterInstall = () => {
 const { getMigrationStatus, runMigrations } = require('./migrations');
 const {
   createApplicationSchemaMigration,
+  createAuthProvisioningMigration,
   createDataApiSecurityMigration,
 } = require('./migrations/definitions');
 const { applyDataApiSecurity } = require('./security/data-api-security');
+const authProvisioningSchemaSql = fs.readFileSync(
+  path.join(__dirname, 'auth', 'provisioning-schema.sql'),
+  'utf8',
+);
 
 const applicationMigrations = [
     ...db.coreMigrations,
@@ -7657,6 +7662,18 @@ const applicationMigrations = [
       require.resolve('./security/data-api-security'),
       'utf8',
     ),
+  ),
+  createAuthProvisioningMigration(
+    async () => {
+      for (const statement of authProvisioningSchemaSql.split(';').map((sql) => sql.trim()).filter(Boolean)) {
+        await db.execute(statement);
+      }
+      const [roles] = await db.execute("SELECT rolname FROM pg_roles WHERE rolname IN ('anon', 'authenticated')");
+      for (const role of roles) {
+        await db.execute(`REVOKE ALL ON auth_provisioning_operations FROM "${role.rolname}"`);
+      }
+    },
+    authProvisioningSchemaSql,
   ),
 ];
 

@@ -43,16 +43,16 @@ async function fixture(t) {
   await new Promise(resolve => server.once('listening', resolve));
   t.after(() => new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }));
   const origin = `http://127.0.0.1:${server.address().port}`;
-  const get = token => fetch(`${origin}/api/themes`, {
+  const getThemes = token => fetch(`${origin}/api/themes`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
-  return { auth, get, origin };
+  return { auth, getThemes, origin };
 }
 
 test('Supabase admin principal can use admin commands without a legacy admin token', async t => {
-  const { get } = await fixture(t);
-  assert.equal((await get('admin-access')).status, 200);
-  assert.equal((await get('learner-access')).status, 403);
+  const { getThemes } = await fixture(t);
+  assert.equal((await getThemes('admin-access')).status, 200);
+  assert.equal((await getThemes('learner-access')).status, 403);
 });
 
 test('Google admin principal uses the same server-verified database role', async t => {

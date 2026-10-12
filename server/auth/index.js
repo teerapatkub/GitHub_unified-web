@@ -5,6 +5,7 @@ const bcrypt = require('bcryptjs');
 const { createClient } = require('@supabase/supabase-js');
 const { normalizeEmail, validEmail, hashToken, accountEnabled, strongPassword, actorMatches } = require('./policy');
 const { authOrigins } = require('./origins');
+const { createProvisioningService } = require('./provisioning');
 const COOKIE = 'pyarena_google_session';
 const SESSION_DAYS = 7;
 const message = (res, status, text, code) => res.status(status).json({ message: text, code });
@@ -29,6 +30,7 @@ function installAuth(app, db, admin, env = process.env, options = {}) {
     if (!env.SUPABASE_URL || !publicKey || !admin) throw new Error('AUTH_CONFIG');
     return createClient(env.SUPABASE_URL, publicKey, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
   };
+  const provisioning = createProvisioningService({ db, admin, publicClient });
   const ready = options.initializeSchema === false ? Promise.resolve() : (async () => {
     // The auth tables reference users, which is created by the core database
     // bootstrap. Waiting here also keeps login requests from observing a
@@ -69,30 +71,6 @@ function installAuth(app, db, admin, env = process.env, options = {}) {
     const { error } = await publicClient().auth.resend({ type: 'signup', email, options: { emailRedirectTo: redirect(req, 'confirm') } });
     if (error) throw new Error('EMAIL_DELIVERY');
   };
-  const deleteCreatedAuthUser = async authUserId => {
-    if (!authUserId) return;
-    const { error } = await admin.auth.admin.deleteUser(authUserId);
-    if (error) throw new Error('AUTH_CLEANUP');
-  };
-  const deleteCreatedAuthUserUnlessMapped = async authUserId => {
-    if (!authUserId) return;
-    let bindings;
-    try {
-      [bindings] = await db.execute(
-        'SELECT user_id FROM player_auth_identities WHERE auth_user_id = ?',
-        [authUserId],
-      );
-    } catch {
-      // If the commit result is ambiguous, preserve the Auth user for retry.
-      // Deleting here could destroy a user whose player mapping already committed.
-      throw new Error('AUTH_RECONCILE_REQUIRED');
-    }
-    if (!bindings.length) await deleteCreatedAuthUser(authUserId);
-  };
-  const acceptsProvisioningPassword = async (email, password) => {
-    const { data, error } = await publicClient().auth.signInWithPassword({ email, password });
-    return Boolean(data?.session) || error?.code === 'email_not_confirmed';
-  };
   const route = handler => async (req, res) => {
     res.set('Cache-Control', 'no-store');
     try { await ready; return await handler(req, res); }
@@ -121,8 +99,7 @@ function installAuth(app, db, admin, env = process.env, options = {}) {
     if (!admin) throw new Error('AUTH_CONFIG');
     if (limit('signup:' + hashToken(email), 5, 3600000)) return message(res, 429, 'กรุณารอก่อนขออีเมลอีกครั้ง');
     const connection = await db.getConnection();
-    let committed = false;
-    let createdAuthUserId = null;
+    const transaction = provisioning.transaction(connection);
     try {
       await connection.beginTransaction();
       // Serialize registrations for the same email even when letter case differs.
@@ -138,35 +115,36 @@ function installAuth(app, db, admin, env = process.env, options = {}) {
           && existingUser.username === username
           && normalizeEmail(existingUser.email) === email
           && normalizeEmail(binding.email) === email;
-        if (sameProvisioning && await acceptsProvisioningPassword(email, password)) {
-          await connection.rollback();
+        if (sameProvisioning && await provisioning.acceptsPassword(email, password)) {
+          await transaction.close();
+          await provisioning.completeIfPresent('signup', username, email, binding.auth_user_id);
           await resend(req, email);
           return res.status(200).json({
             confirmationRequired: true,
             message: 'บัญชีถูกสร้างแล้วและส่งอีเมลยืนยันให้อีกครั้ง ข้อมูลผู้เล่นเดิมยังอยู่ครบ',
           });
         }
-        await connection.rollback();
         return message(res, 409, 'ชื่อผู้ใช้หรืออีเมลนี้มีบัญชีแล้ว กรุณาเข้าสู่ระบบหรือลืมรหัสผ่าน');
       }
       // Confirmation is forced even if project auto-confirm was accidentally enabled.
-      const { data, error } = await admin.auth.admin.createUser({ email, password, email_confirm: false });
-      if (error || !data.user) { await connection.rollback(); return message(res, 409, 'สร้างบัญชีไม่ได้ หากเคยสมัครแล้วให้เข้าสู่ระบบหรือติดต่อผู้ดูแล'); }
-      createdAuthUserId = data.user.id;
+      const operation = await provisioning.createOrRecover({
+        kind: 'signup',
+        subject: username,
+        email,
+        password,
+        createInput: { email, password, email_confirm: false },
+      });
+      if (!operation) return message(res, 409, 'สร้างบัญชีไม่ได้ หากเคยสมัครแล้วให้เข้าสู่ระบบหรือติดต่อผู้ดูแล');
+      transaction.track(operation);
       const [created] = await connection.execute(
         `INSERT INTO users (username, email, password_hash, role, level, xp, virtual_currency)
          VALUES (?, ?, ?, 'user', 0, 0, 0)`, [username, email, await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10)]);
-      await connection.execute('INSERT INTO player_auth_identities (user_id, auth_user_id, email) VALUES (?, ?, ?)', [created.insertId, data.user.id, email]);
-      await connection.commit(); committed = true;
+      await connection.execute('INSERT INTO player_auth_identities (user_id, auth_user_id, email) VALUES (?, ?, ?)', [created.insertId, operation.authUserId, email]);
+      await transaction.commit();
       await resend(req, email);
       return res.status(201).json({ confirmationRequired: true, message: 'ส่งอีเมลยืนยันแล้ว กรุณาเปิดลิงก์ก่อนเข้าสู่ระบบ' });
     } finally {
-      try {
-        if (!committed) {
-          try { await connection.rollback(); }
-          finally { await deleteCreatedAuthUserUnlessMapped(createdAuthUserId); }
-        }
-      } finally { connection.release(); }
+      await transaction.close();
     }
   }));
 
@@ -183,8 +161,7 @@ function installAuth(app, db, admin, env = process.env, options = {}) {
       const email = normalizeEmail(req.body.migrationEmail || user.email);
       if (!validEmail(email)) return message(res, 409, 'ยืนยันรหัสผ่านเดิมแล้ว กรุณาระบุอีเมลที่รับข้อความได้เพื่อเชื่อมบัญชี', 'EMAIL_REQUIRED');
       const connection = await db.getConnection();
-      let committed = false;
-      let createdAuthUserId = null;
+      const transaction = provisioning.transaction(connection);
       try {
         await connection.beginTransaction();
         await connection.execute('SELECT user_id FROM users WHERE user_id = ? FOR UPDATE', [user.user_id]);
@@ -192,26 +169,28 @@ function installAuth(app, db, admin, env = process.env, options = {}) {
         if (!binding) {
           await connection.execute('SELECT pg_advisory_xact_lock(hashtext(?))', ['auth:' + email]);
           const [duplicates] = await connection.execute('SELECT user_id FROM users WHERE lower(trim(email)) = ? AND user_id != ?', [email, user.user_id]);
-          if (duplicates.length) { await connection.rollback(); return message(res, 409, 'อีเมลซ้ำกับบัญชีอื่น กรุณาติดต่อผู้ดูแลเพื่อเชื่อมบัญชีโดยไม่สูญเสียข้อมูล'); }
-          const { data, error } = await admin.auth.admin.createUser({ email, password_hash: user.password_hash, email_confirm: false });
-          if (error || !data.user) { await connection.rollback(); return message(res, 409, 'เชื่อมบัญชีไม่ได้ กรุณาติดต่อผู้ดูแล ไม่ต้องสมัครผู้เล่นใหม่'); }
-          createdAuthUserId = data.user.id;
-          await connection.execute('INSERT INTO player_auth_identities (user_id, auth_user_id, email) VALUES (?, ?, ?)', [user.user_id, data.user.id, email]);
+          if (duplicates.length) return message(res, 409, 'อีเมลซ้ำกับบัญชีอื่น กรุณาติดต่อผู้ดูแลเพื่อเชื่อมบัญชีโดยไม่สูญเสียข้อมูล');
+          const operation = await provisioning.createOrRecover({
+            kind: 'legacy_link',
+            subject: user.user_id,
+            email,
+            password,
+            createInput: { email, password_hash: user.password_hash, email_confirm: false },
+          });
+          if (!operation) return message(res, 409, 'เชื่อมบัญชีไม่ได้ กรุณาติดต่อผู้ดูแล ไม่ต้องสมัครผู้เล่นใหม่');
+          transaction.track(operation);
+          await connection.execute('INSERT INTO player_auth_identities (user_id, auth_user_id, email) VALUES (?, ?, ?)', [user.user_id, operation.authUserId, email]);
           await connection.execute('UPDATE users SET email = ? WHERE user_id = ?', [email, user.user_id]);
-          binding = { email, auth_user_id: data.user.id };
+          binding = { email, auth_user_id: operation.authUserId };
         }
-        await connection.commit(); committed = true;
+        await transaction.commit();
       } finally {
-        try {
-          if (!committed) {
-            try { await connection.rollback(); }
-            finally { await deleteCreatedAuthUserUnlessMapped(createdAuthUserId); }
-          }
-        } finally { connection.release(); }
+        await transaction.close();
       }
       await resend(req, binding.email);
       return res.json({ confirmationRequired: true, message: 'เชื่อมบัญชีเดิมแล้ว กรุณายืนยันอีเมลหนึ่งครั้ง ข้อมูลเกมและรหัสผ่านเดิมยังอยู่ครบ' });
     }
+    await provisioning.completeIfPresent('legacy_link', user.user_id, binding.email, binding.auth_user_id);
     const { data, error } = await publicClient().auth.signInWithPassword({ email: binding.email, password });
     if (error) {
       if (error.code === 'email_not_confirmed') return res.json({ confirmationRequired: true, message: 'กรุณายืนยันอีเมลก่อนเข้าสู่ระบบ หากไม่พบอีเมลสามารถขอส่งใหม่ได้' });

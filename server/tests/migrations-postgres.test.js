@@ -65,6 +65,7 @@ test('fresh PostgreSQL installs the complete application schema repeatably', asy
         'arcade_matches',
         'lesson_quiz_attempts',
         'password_reset_tokens',
+        'auth_provisioning_operations',
         'player_auth_identities',
         'player_google_sessions',
         'app_schema_migrations'
@@ -77,6 +78,7 @@ test('fresh PostgreSQL installs the complete application schema repeatably', asy
       'app_schema_migrations',
       'arcade_matches',
       'arcade_rooms',
+      'auth_provisioning_operations',
       'lesson_quiz_attempts',
       'lessons',
       'password_reset_tokens',

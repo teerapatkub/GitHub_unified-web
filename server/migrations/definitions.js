@@ -1,6 +1,7 @@
 const { defineMigration } = require('./index');
 const {
   APPLICATION_SCHEMA_VERSION,
+  AUTH_PROVISIONING_VERSION,
   CORE_SCHEMA_VERSION,
   DATA_API_SECURITY_VERSION,
 } = require('./versions');
@@ -31,8 +32,16 @@ const createDataApiSecurityMigration = (up, signature) => defineMigration({
   up,
 });
 
+const createAuthProvisioningMigration = (up, signature) => defineMigration({
+  version: AUTH_PROVISIONING_VERSION,
+  name: 'auth_provisioning_reconciliation',
+  signature: signatureFor(up, signature),
+  up,
+});
+
 module.exports = {
   createApplicationSchemaMigration,
+  createAuthProvisioningMigration,
   createCoreSchemaMigration,
   createDataApiSecurityMigration,
 };

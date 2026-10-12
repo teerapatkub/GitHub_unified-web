@@ -12,6 +12,10 @@ async function fixture(t, {
   mailFails = false,
   failSql = '',
   commitFailsAfterDurableWrite = false,
+  deleteFails = false,
+  failIdentityOnce = false,
+  failProvisioningUpdateOnce = false,
+  failCompensatedUpdateOnce = false,
   env,
 } = {}) {
   const user = { user_id: 42, username: 'learner', email: 'learner@example.com', role, level: 10, xp: 3400, virtual_currency: 500, password_hash: await bcrypt.hash('OldPass1!', 4) };
@@ -22,6 +26,13 @@ async function fixture(t, {
     deleted: [],
     cookies: new Map(),
     mails: 0,
+    provisioning: new Map(),
+    authUsers: new Map(mapped ? [[user.email, { id: 'auth-42', email: user.email }]] : []),
+    identityFailures: 0,
+    provisioningUpdateFailures: 0,
+    compensatedUpdateFailures: 0,
+    transactionOpen: false,
+    mailWhileTransactionOpen: false,
   };
   const execute = async (sql, args = []) => {
     if (/CREATE|ALTER|REVOKE|pg_roles|pg_advisory/.test(sql)) return [[]];
@@ -56,31 +67,91 @@ async function fixture(t, {
       return [{ insertId: 99 }];
     }
     if (sql.startsWith('INSERT INTO player_auth_identities')) {
-      if (failSql === 'identity') throw new Error('database write failed');
+      if (failSql === 'identity' || (failIdentityOnce && state.identityFailures++ === 0)) {
+        throw new Error('database write failed');
+      }
       state.binding = { user_id: args[0], auth_user_id: args[1], email: args[2] }; return [{}];
     }
     if (sql.startsWith('UPDATE users SET email')) { user.email = args[0]; return [{}]; }
     if (sql.startsWith('SELECT user_id FROM player_auth_identities')) return [[state.binding].filter(Boolean)];
+    if (sql.startsWith('INSERT INTO auth_provisioning_operations')) {
+      if (!state.provisioning.has(args[0])) {
+        state.provisioning.set(args[0], {
+          operation_key: args[0], kind: args[1], subject_hash: args[2],
+          auth_user_id: null, status: 'started', last_error: null,
+        });
+      }
+      return [{}];
+    }
+    if (sql.startsWith('SELECT * FROM auth_provisioning_operations')) {
+      return [[state.provisioning.get(args[0])].filter(Boolean)];
+    }
+    if (sql.startsWith('SELECT operation_key FROM auth_provisioning_operations')) {
+      const operation = state.provisioning.get(args[0]);
+      return [[operation && { operation_key: operation.operation_key }].filter(Boolean)];
+    }
+    if (sql.startsWith('UPDATE auth_provisioning_operations')) {
+      if (failProvisioningUpdateOnce && args[0] === 'auth_created'
+        && state.provisioningUpdateFailures++ === 0) {
+        throw new Error('connection lost while recording auth user');
+      }
+      if (failCompensatedUpdateOnce && args[0] === 'compensated'
+        && state.compensatedUpdateFailures++ === 0) {
+        throw new Error('connection lost after deleting auth user');
+      }
+      const operation = state.provisioning.get(args[3]);
+      if (operation) {
+        operation.status = args[0];
+        operation.auth_user_id = args[1] || operation.auth_user_id;
+        operation.last_error = args[2];
+      }
+      return [{}];
+    }
     throw new Error('Unmocked SQL: ' + sql);
   };
   const db = { execute, getConnection: async () => ({
     execute,
-    beginTransaction: async () => {},
+    beginTransaction: async () => { state.transactionOpen = true; },
     commit: async () => {
       if (commitFailsAfterDurableWrite) throw new Error('connection lost after commit');
+      state.transactionOpen = false;
     },
-    rollback: async () => {},
+    rollback: async () => { state.transactionOpen = false; },
     release() {},
   }) };
   const admin = { auth: {
     getUser: async token => token === 'valid' ? { data: { user: { id: 'auth-42', email_confirmed_at: confirmed ? '2026-01-01' : null } } } : { data: {}, error: new Error('invalid') },
     admin: {
-      createUser: async input => { state.created.push(input); return { data: { user: { id: 'auth-created' } } }; },
-      deleteUser: async id => { state.deleted.push(id); return { data: { user: null }, error: null }; },
+      createUser: async input => {
+        state.created.push(input);
+        if (state.authUsers.has(input.email)) return { data: {}, error: { code: 'email_exists' } };
+        const authUser = { id: 'auth-created', email: input.email };
+        state.authUsers.set(input.email, authUser);
+        return { data: { user: authUser } };
+      },
+      deleteUser: async id => {
+        state.deleted.push(id);
+        if (deleteFails) return { data: {}, error: new Error('delete failed') };
+        for (const [email, authUser] of state.authUsers) {
+          if (authUser.id === id) state.authUsers.delete(email);
+        }
+        return { data: { user: null }, error: null };
+      },
+      listUsers: async () => ({ data: { users: [...state.authUsers.values()] }, error: null }),
+      getUserById: async id => {
+        const authUser = [...state.authUsers.values()].find(candidate => candidate.id === id);
+        return authUser
+          ? { data: { user: authUser }, error: null }
+          : { data: {}, error: { code: 'user_not_found', status: 404 } };
+      },
     },
   } };
   const publicClient = { auth: {
-    resend: async () => { state.mails++; return { error: mailFails ? new Error('smtp password must not leak') : null }; },
+    resend: async () => {
+      state.mails++;
+      state.mailWhileTransactionOpen ||= state.transactionOpen;
+      return { error: mailFails ? new Error('smtp password must not leak') : null };
+    },
     resetPasswordForEmail: async () => ({ error: null }),
     signInWithPassword: async input => {
       if (input.email === 'new@example.com' && input.password === 'StrongPass1!') {
@@ -176,6 +247,7 @@ test('signup retry reuses the durable player mapping after the commit response i
   assert.equal(retry.status, 200);
   assert.equal(retry.body.confirmationRequired, true);
   assert.equal(state.created.length, 1);
+  assert.equal(state.mailWhileTransactionOpen, false);
 });
 test('legacy migration retry reuses the durable player mapping after the commit response is lost', async t => {
   const { call, state } = await fixture(t, {
@@ -206,6 +278,60 @@ test('ambiguous database reconciliation never deletes a newly created Auth user'
     identifier: 'learner', password: 'OldPass1!',
   })).status, 503);
   assert.deepEqual(state.deleted, []);
+});
+test('retry adopts a verified Supabase user when cleanup failed after a rolled-back link', async t => {
+  const { call, state } = await fixture(t, {
+    mapped: false,
+    failIdentityOnce: true,
+    deleteFails: true,
+  });
+
+  const credentials = { identifier: 'learner', password: 'OldPass1!' };
+  assert.equal((await call('/api/auth/sign-in', credentials)).status, 503);
+  assert.equal(state.provisioning.values().next().value.status, 'reconcile_required');
+
+  const retry = await call('/api/auth/sign-in', credentials);
+  assert.equal(retry.status, 200);
+  assert.equal(retry.body.confirmationRequired, true);
+  assert.equal(state.created.length, 1);
+  assert.equal(state.binding.auth_user_id, 'auth-created');
+  assert.equal(state.provisioning.values().next().value.status, 'committed');
+});
+test('retry finds and adopts an Auth user created before its ID could be recorded', async t => {
+  const { call, state } = await fixture(t, {
+    mapped: false,
+    failProvisioningUpdateOnce: true,
+  });
+  const signup = {
+    username: 'new-learner', email: 'new@example.com', password: 'StrongPass1!',
+  };
+
+  assert.equal((await call('/api/auth/sign-up', signup)).status, 503);
+  assert.equal(state.provisioning.values().next().value.auth_user_id, null);
+
+  const retry = await call('/api/auth/sign-up', signup);
+  assert.equal(retry.status, 201);
+  assert.equal(state.created.length, 2);
+  assert.equal(state.binding.auth_user_id, 'auth-created');
+  assert.equal(state.provisioning.values().next().value.status, 'committed');
+});
+test('retry recreates an Auth user deleted before compensated status could be recorded', async t => {
+  const { call, state } = await fixture(t, {
+    mapped: false,
+    failIdentityOnce: true,
+    failCompensatedUpdateOnce: true,
+  });
+  const credentials = { identifier: 'learner', password: 'OldPass1!' };
+
+  assert.equal((await call('/api/auth/sign-in', credentials)).status, 503);
+  assert.equal(state.authUsers.size, 0);
+  assert.equal(state.provisioning.values().next().value.status, 'reconcile_required');
+
+  const retry = await call('/api/auth/sign-in', credentials);
+  assert.equal(retry.status, 200);
+  assert.equal(state.created.length, 2);
+  assert.equal(state.binding.auth_user_id, 'auth-created');
+  assert.equal(state.provisioning.values().next().value.status, 'committed');
 });
 test('mapped accounts never fall back to old bcrypt password after a reset', async t => {
   const { call, state } = await fixture(t);
