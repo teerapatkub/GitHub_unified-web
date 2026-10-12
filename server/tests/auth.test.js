@@ -5,33 +5,96 @@ const bcrypt = require('bcryptjs');
 const { installAuth } = require('../auth');
 const { actorMatches, accountEnabled, normalizeEmail } = require('../auth/policy');
 
-async function fixture(t, { mapped = true, confirmed = true, role = 'user', mailFails = false, env } = {}) {
+async function fixture(t, {
+  mapped = true,
+  confirmed = true,
+  role = 'user',
+  mailFails = false,
+  failSql = '',
+  commitFailsAfterDurableWrite = false,
+  env,
+} = {}) {
   const user = { user_id: 42, username: 'learner', email: 'learner@example.com', role, level: 10, xp: 3400, virtual_currency: 500, password_hash: await bcrypt.hash('OldPass1!', 4) };
-  const state = { binding: mapped ? { user_id: 42, auth_user_id: 'auth-42', email: user.email } : null, created: [], cookies: new Map(), mails: 0 };
+  const state = {
+    binding: mapped ? { user_id: 42, auth_user_id: 'auth-42', email: user.email } : null,
+    signupUser: null,
+    created: [],
+    deleted: [],
+    cookies: new Map(),
+    mails: 0,
+  };
   const execute = async (sql, args = []) => {
     if (/CREATE|ALTER|REVOKE|pg_roles|pg_advisory/.test(sql)) return [[]];
     if (sql.includes('JOIN player_auth_identities')) return [[state.binding && args[0] === state.binding.auth_user_id ? user : null].filter(Boolean)];
     if (sql.includes('JOIN player_google_sessions')) return [[state.cookies.has(args[0]) ? user : null].filter(Boolean)];
     if (sql.startsWith('INSERT INTO player_google_sessions')) { state.cookies.set(args[0], user.user_id); return [{}]; }
     if (sql.startsWith('DELETE FROM player_google_sessions')) { if (args.length) state.cookies.delete(args[0]); return [{}]; }
-    if (sql.startsWith('SELECT * FROM player_auth_identities')) return [[state.binding].filter(Boolean)];
-    if (sql.startsWith('SELECT * FROM users WHERE username')) return [[args[0] === user.username || args[1] === user.email ? user : null].filter(Boolean)];
+    if (sql.startsWith('SELECT * FROM player_auth_identities')) {
+      return [[state.binding && Number(state.binding.user_id) === Number(args[0]) ? state.binding : null].filter(Boolean)];
+    }
+    if (sql.startsWith('SELECT user_id FROM player_auth_identities WHERE auth_user_id')) {
+      if (failSql === 'reconcile') throw new Error('database unavailable during reconcile');
+      return [[state.binding?.auth_user_id === args[0] ? { user_id: state.binding.user_id } : null].filter(Boolean)];
+    }
+    if (sql.startsWith('SELECT * FROM users WHERE username')) {
+      const found = [user, state.signupUser].find(row => row && (args[0] === row.username || args[1] === row.email));
+      return [[found].filter(Boolean)];
+    }
+    if (sql.startsWith('SELECT user_id, username, email FROM users WHERE username')) {
+      const found = [user, state.signupUser].find(row => row && (args[0] === row.username || args[1] === row.email));
+      return [[found].filter(Boolean)];
+    }
+    if (sql.startsWith('SELECT user_id FROM users WHERE username')) {
+      const found = [user, state.signupUser].find(row => row && (args[0] === row.username || args[1] === row.email));
+      return [[found && { user_id: found.user_id }].filter(Boolean)];
+    }
     if (sql.includes('AND user_id !=')) return [[]];
     if (sql.includes('FOR UPDATE')) return [[{ user_id: user.user_id }]];
-    if (sql.startsWith('INSERT INTO player_auth_identities')) { state.binding = { user_id: args[0], auth_user_id: args[1], email: args[2] }; return [{}]; }
+    if (sql.startsWith('INSERT INTO users')) {
+      if (failSql === 'users') throw new Error('database write failed');
+      state.signupUser = { ...user, user_id: 99, username: args[0], email: args[1] };
+      return [{ insertId: 99 }];
+    }
+    if (sql.startsWith('INSERT INTO player_auth_identities')) {
+      if (failSql === 'identity') throw new Error('database write failed');
+      state.binding = { user_id: args[0], auth_user_id: args[1], email: args[2] }; return [{}];
+    }
     if (sql.startsWith('UPDATE users SET email')) { user.email = args[0]; return [{}]; }
     if (sql.startsWith('SELECT user_id FROM player_auth_identities')) return [[state.binding].filter(Boolean)];
     throw new Error('Unmocked SQL: ' + sql);
   };
-  const db = { execute, getConnection: async () => ({ execute, beginTransaction: async () => {}, commit: async () => {}, rollback: async () => {}, release() {} }) };
+  const db = { execute, getConnection: async () => ({
+    execute,
+    beginTransaction: async () => {},
+    commit: async () => {
+      if (commitFailsAfterDurableWrite) throw new Error('connection lost after commit');
+    },
+    rollback: async () => {},
+    release() {},
+  }) };
   const admin = { auth: {
     getUser: async token => token === 'valid' ? { data: { user: { id: 'auth-42', email_confirmed_at: confirmed ? '2026-01-01' : null } } } : { data: {}, error: new Error('invalid') },
-    admin: { createUser: async input => { state.created.push(input); return { data: { user: { id: 'auth-42' } } }; } },
+    admin: {
+      createUser: async input => { state.created.push(input); return { data: { user: { id: 'auth-created' } } }; },
+      deleteUser: async id => { state.deleted.push(id); return { data: { user: null }, error: null }; },
+    },
   } };
   const publicClient = { auth: {
     resend: async () => { state.mails++; return { error: mailFails ? new Error('smtp password must not leak') : null }; },
     resetPasswordForEmail: async () => ({ error: null }),
-    signInWithPassword: async input => input.password === 'NewPass1!' ? { data: { session: { access_token: 'valid', refresh_token: 'refresh' } } } : { error: { code: 'invalid_credentials' } },
+    signInWithPassword: async input => {
+      if (input.email === 'new@example.com' && input.password === 'StrongPass1!') {
+        return { data: {}, error: { code: 'email_not_confirmed' } };
+      }
+      if (state.created.length > 0
+        && input.email === 'learner@example.com'
+        && input.password === 'OldPass1!') {
+        return { data: {}, error: { code: 'email_not_confirmed' } };
+      }
+      return input.password === 'NewPass1!'
+        ? { data: { session: { access_token: 'valid', refresh_token: 'refresh' } } }
+        : { error: { code: 'invalid_credentials' } };
+    },
   } };
   const app = express(); app.use(express.json());
   const auth = installAuth(app, db, admin, env || { AUTH_ALLOWED_ORIGINS: 'http://localhost:5174' }, { createPublicClient: () => publicClient });
@@ -80,6 +143,69 @@ test('legacy credentials migrate once, preserving bcrypt hash and player data un
   assert.equal(state.created.length, 1); assert.equal(state.created[0].email_confirm, false);
   assert.equal(state.created[0].password_hash, user.password_hash);
   assert.equal(state.binding.user_id, 42); assert.equal(user.xp, 3400); assert.equal(user.virtual_currency, 500);
+  assert.deepEqual(state.deleted, []);
+});
+test('failed player writes remove newly created Supabase identities', async t => {
+  await t.test('new signup', async t => {
+    const { call, state } = await fixture(t, { failSql: 'users' });
+    const result = await call('/api/auth/sign-up', {
+      username: 'new-learner', email: 'new@example.com', password: 'StrongPass1!',
+    });
+    assert.equal(result.status, 503);
+    assert.deepEqual(state.deleted, ['auth-created']);
+  });
+
+  await t.test('legacy migration', async t => {
+    const { call, state } = await fixture(t, { mapped: false, failSql: 'identity' });
+    const result = await call('/api/auth/sign-in', { identifier: 'learner', password: 'OldPass1!' });
+    assert.equal(result.status, 503);
+    assert.deepEqual(state.deleted, ['auth-created']);
+  });
+});
+test('signup retry reuses the durable player mapping after the commit response is lost', async t => {
+  const { call, state } = await fixture(t, { mapped: false, commitFailsAfterDurableWrite: true });
+  const signup = {
+    username: 'new-learner', email: 'new@example.com', password: 'StrongPass1!',
+  };
+
+  assert.equal((await call('/api/auth/sign-up', signup)).status, 503);
+  assert.deepEqual(state.deleted, []);
+  assert.equal(state.binding.user_id, 99);
+
+  const retry = await call('/api/auth/sign-up', signup);
+  assert.equal(retry.status, 200);
+  assert.equal(retry.body.confirmationRequired, true);
+  assert.equal(state.created.length, 1);
+});
+test('legacy migration retry reuses the durable player mapping after the commit response is lost', async t => {
+  const { call, state } = await fixture(t, {
+    mapped: false,
+    commitFailsAfterDurableWrite: true,
+  });
+
+  assert.equal((await call('/api/auth/sign-in', {
+    identifier: 'learner', password: 'OldPass1!',
+  })).status, 503);
+  assert.deepEqual(state.deleted, []);
+
+  const retry = await call('/api/auth/sign-in', {
+    identifier: 'learner', password: 'OldPass1!',
+  });
+  assert.equal(retry.status, 200);
+  assert.equal(retry.body.confirmationRequired, true);
+  assert.equal(state.created.length, 1);
+});
+test('ambiguous database reconciliation never deletes a newly created Auth user', async t => {
+  const { call, state } = await fixture(t, {
+    mapped: false,
+    failSql: 'reconcile',
+    commitFailsAfterDurableWrite: true,
+  });
+
+  assert.equal((await call('/api/auth/sign-in', {
+    identifier: 'learner', password: 'OldPass1!',
+  })).status, 503);
+  assert.deepEqual(state.deleted, []);
 });
 test('mapped accounts never fall back to old bcrypt password after a reset', async t => {
   const { call, state } = await fixture(t);
@@ -92,6 +218,7 @@ test('mail failure preserves migration and returns no secret or debug reset link
   const result = await call('/api/auth/sign-in', { identifier: 'learner', password: 'OldPass1!' });
   assert.equal(result.status, 503); assert.equal(result.body.code, 'EMAIL_DELIVERY');
   assert.equal(state.binding.user_id, 42);
+  assert.deepEqual(state.deleted, []);
   assert(!JSON.stringify(result).includes('smtp password'));
 });
 test('old login, registration and recovery routes cannot bypass new auth', async t => {
