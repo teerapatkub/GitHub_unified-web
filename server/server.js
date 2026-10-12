@@ -7743,23 +7743,23 @@ if (fs.existsSync(path.join(clientDist, 'index.html'))) {
 }
 
 if (require.main === module) {
-    startApplication({
-      app,
-      port: PORT,
-      validate: () => validateRuntimeEnvironment(process.env),
-      prepare: prepareApplication,
-      state: startupState,
+  startApplication({
+    app,
+    port: PORT,
+    validate: () => validateRuntimeEnvironment(process.env),
+    prepare: prepareApplication,
+    state: startupState,
+  })
+    .then(() => {
+      console.log(`Server running on port ${PORT}`);
+      console.log('\u2705 Database migrations completed; the application is ready');
     })
-        .then(() => {
-            console.log(`Server running on port ${PORT}`);
-            console.log('\u2705 Database migrations completed; the application is ready');
-        })
-        .catch((error) => {
-            console.error('\u274c Server startup failed; application traffic was never enabled:', describeError(error));
-            db.close()
-                .catch(() => {})
-                .finally(() => { process.exitCode = 1; });
-        });
+    .catch((error) => {
+      console.error('\u274c Server startup failed; application traffic was never enabled:', describeError(error));
+      db.close()
+        .catch(() => {})
+        .finally(() => { process.exitCode = 1; });
+    });
 }
 
 module.exports = {

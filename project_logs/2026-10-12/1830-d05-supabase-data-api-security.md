@@ -19,7 +19,7 @@
 - `npm run test:migrations:postgres` กับ PostgreSQL 18 ที่ทิ้งได้ — ผ่าน fresh install/repeat/rollback 1/1
 - PostgreSQL acceptance ตรวจ 71 ตารางเปิด RLS, 4 view ใช้ security invoker และป้องกัน 56 sequence
 - `anon` และ `authenticated` อ่านและเขียน `public.users` ไม่ได้จริง
-- PostgREST HTTP acceptance ส่ง anonymous GET/POST แล้วถูกปฏิเสธ 2/2 โดยไม่มีข้อมูลสำคัญใน response
+- PostgREST HTTP acceptance ใช้ endpoint key จริง ตรวจ positive control ก่อน แล้ว anonymous GET/POST ถูกปฏิเสธด้วย PostgreSQL `42501` โดยไม่มีข้อมูลสำคัญใน response
 - ไม่พบ table/view/function grants ของ `PUBLIC`, `anon`, `authenticated` ใน `public`
 - `client npm test` — ผ่าน 8/8
 - repository safety — ผ่าน 9/9
