@@ -1,6 +1,11 @@
 // Run locally; secrets are read from server/.env and never printed.
 const path = require('node:path');
 require('dotenv').config({ path: path.join(__dirname, '../.env'), quiet: true });
+require('dotenv').config({
+  path: path.join(__dirname, '../.supabase-management.env'),
+  quiet: true,
+  override: true,
+});
 const nodemailer = require('nodemailer');
 
 async function main() {

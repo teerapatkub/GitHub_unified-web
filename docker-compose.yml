@@ -36,6 +36,11 @@ services:
         # to the same origin it loaded the page from.
         VITE_API_BASE_URL: ""
         VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
+        # Public browser configuration is intentionally embedded at build time.
+        # Run compose with `--env-file server/.env` so these substitutions are
+        # available without copying server secrets into the image.
+        VITE_SUPABASE_URL: ${SUPABASE_URL:?Set SUPABASE_URL in the compose env file}
+        VITE_SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY:?Set SUPABASE_PUBLISHABLE_KEY in the compose env file}
     depends_on:
       db:
         condition: service_healthy

@@ -32,6 +32,7 @@ const {
   startApplication,
 } = require('./runtime/startup');
 const { createSupabaseAuthCheck } = require('./runtime/readiness');
+const { validateRuntimeEnvironment } = require('./runtime/environment');
 
 const app = express();
 const startupState = createStartupState();
@@ -7672,6 +7673,7 @@ const checkReadiness = async () => {
 installHealthRoutes(app, { checkReadiness, state: startupState });
 
 const prepareApplication = async ({ checkAuth = checkSupabaseAuth } = {}) => {
+    validateRuntimeEnvironment(process.env);
     await checkAuth();
     await db.ready;
     await playerAuth.ready;

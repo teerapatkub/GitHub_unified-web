@@ -5,7 +5,7 @@ PySim ทั้งระบบทำงานเป็น **process เดีย
 ทุกอย่างที่ต้องมีอยู่ในไฟล์ container ไฟล์เดียว
 
 ```bash
-docker compose up --build
+docker compose --env-file server/.env up --build
 ```
 
 เปิด http://localhost:3001 — ครั้งแรกจะสร้างตารางและใส่เนื้อหาบทเรียนให้เองทั้งหมด
@@ -83,18 +83,34 @@ docker compose exec app node scripts/mark-auto-gradable.js --apply
 | `SUPABASE_SECRET_KEY` | **ใช่** | Secret key ฝั่ง server จาก Project Settings → API Keys ห้ามใส่ใน client หรือ image |
 | `SUPABASE_PUBLISHABLE_KEY` | **ใช่** | Publishable key จาก Project Settings → API Keys ใช้สร้าง client สำหรับ Email Auth |
 | `PORT` | ไม่ | พอร์ตที่ API ฟัง (ค่าเริ่มต้น 3001) |
-| `PUBLIC_BASE_URL` | **ใช่ ถ้ามีโดเมนจริง** | ที่อยู่จากภายนอก ใช้กับลิงก์ยืนยันอีเมลที่ต้องเปิดจากเมลทีหลัง จึงเป็น URL แบบเต็มไม่ได้ |
+| `PUBLIC_BASE_URL` | **ใช่** | URL เต็มที่ผู้ใช้เปิดจากภายนอก และต้องอยู่ใน `AUTH_ALLOWED_ORIGINS` |
+| `AUTH_ALLOWED_ORIGINS` | **ใช่** | รายการ origin ที่อนุญาต คั่นด้วย comma และต้องมี origin ของ `PUBLIC_BASE_URL` |
 | `UPLOADS_DIR` | compose ตั้งให้แล้ว | ที่เก็บไฟล์อัปโหลด ต้องอยู่บน volume |
 | `NVIDIA_API_KEY` `NVIDIA_AI_MODEL` | ไม่ | แชทบอท Lumi ถ้าไม่ตั้งจะใช้เนื้อหาสำรองในตัว |
 | `NVIDIA_CODE_JUDGE_API_KEY` `NVIDIA_CODE_JUDGE_MODEL` | ไม่ | ตัวตรวจคุณภาพโค้ด ถ้าไม่ตั้งจะให้คะแนนในเครื่องโดยไม่ส่งโค้ดออกนอก |
 | `EMAIL_USER` `EMAIL_PASS` | ไม่ | อีเมลยืนยันและรีเซ็ตรหัสผ่าน |
 | `GOOGLE_CLIENT_ID` | **ใช่ ถ้าต้องการปุ่มเข้าสู่ระบบด้วย Google** | OAuth **Web** Client ID ถ้าไม่ตั้ง ปุ่ม Google จะขึ้นว่ายังไม่เปิดให้ใช้และกดไม่ได้ ส่วนการเข้าสู่ระบบด้วยชื่อผู้ใช้ยังทำงานปกติ |
 
-**ฝั่งหน้าเว็บ** ไม่ต้องตั้งอะไรในกรณีปกติ — `VITE_API_BASE_URL` ปล่อยว่างแปลว่า
-"ที่อยู่เดียวกับหน้าเว็บ" ซึ่งถูกต้องอยู่แล้วเพราะ API เป็นคนเสิร์ฟหน้าเว็บเอง
-ตั้งเมื่อแยก API ไปอีกโฮสต์เท่านั้น ดู [`client/.env.example`](../client/.env.example)
+ตอนสร้าง production image, compose นำ `SUPABASE_URL` กับ
+`SUPABASE_PUBLISHABLE_KEY` ไปเป็น `VITE_SUPABASE_URL` กับ
+`VITE_SUPABASE_PUBLISHABLE_KEY` ให้ client โดยตรง ส่วน `VITE_API_BASE_URL` ปล่อยว่าง
+เพื่อใช้ API แบบ same-origin ดูรายการฝั่ง browser ที่
+[`client/.env.example`](../client/.env.example)
 
 ⚠️ `VITE_*` ทุกตัวถูกฝังลงในไฟล์ที่ผู้ใช้ดาวน์โหลด **ห้ามใส่ความลับ**
+
+ก่อน build ระบบจะปฏิเสธ key ที่ไม่ได้ขึ้นต้นด้วย `sb_publishable_` และก่อนเปิดรับ traffic
+server จะตรวจฐานข้อมูล, Supabase keys, public URL, CORS และตำแหน่ง uploads ทั้งหมด
+ถ้าขาดหรือมี `SUPABASE_ACCESS_TOKEN` ปะปนใน runtime process จะหยุดทันที
+
+`SUPABASE_ACCESS_TOKEN` ใช้เฉพาะ Management API เท่านั้น ให้เก็บใน
+`server/.supabase-management.env` ตาม
+[`server/.supabase-management.env.example`](../server/.supabase-management.env.example)
+สคริปต์ `server/scripts/configure-supabase-auth.js --apply` จะอ่านไฟล์นี้ แต่ container
+จะอ่านเฉพาะ `server/.env` จึงไม่มี management token อยู่ใน runtime
+
+Production container รันด้วย user `node` ที่ไม่มีสิทธิ์ root และเขียนได้เฉพาะ
+`/data/uploads` ซึ่ง compose ผูกกับ volume `pysim-uploads`
 
 ### เข้าสู่ระบบด้วย Google — ตั้งที่เดียวพอ
 
@@ -183,7 +199,7 @@ URL ของไฟล์เหล่านี้เก็บใน**รูป�
 
 ```bash
 git pull
-docker compose up -d --build
+docker compose --env-file server/.env up -d --build
 ```
 
 ฐานข้อมูลจะใช้เฉพาะ migration เวอร์ชันที่ยังไม่เคยสำเร็จ

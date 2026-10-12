@@ -27,14 +27,23 @@ COPY client/ ./
 # relative path that climbs out of client/, so it has to exist at the same
 # position it does in the repo.
 COPY shared/ /build/shared/
+# Vite's @shared alias intentionally points at the server copy so the browser
+# and grader use the same Python error translator.
+COPY server/pythonErrorMessages.mjs /build/server/pythonErrorMessages.mjs
 
 # Left unset by default: the API serves this bundle from its own origin, so
 # relative paths are correct and no address needs baking in. Set it only when
 # the API really is on another host.
 ARG VITE_API_BASE_URL=""
 ARG VITE_GOOGLE_CLIENT_ID=""
+ARG VITE_SUPABASE_URL
+ARG VITE_SUPABASE_PUBLISHABLE_KEY
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
+ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
+ENV VITE_SUPABASE_PUBLISHABLE_KEY=$VITE_SUPABASE_PUBLISHABLE_KEY
+COPY server/runtime/environment.js /build/environment.js
+RUN node -e "require('/build/environment').validateClientBuildEnvironment(process.env)"
 RUN npm run build
 
 # -------------------------------------------------------------- runtime stage
@@ -76,10 +85,15 @@ RUN ln -sf $VIRTUAL_ENV/bin/python /usr/local/bin/python
 # /app leaves uploaded files untouched. Mount a volume here.
 ENV UPLOADS_DIR=/data/uploads
 RUN mkdir -p /data/uploads
+RUN chown node:node /data/uploads
 
 ENV NODE_ENV=production
 ENV PORT=3001
 EXPOSE 3001
+
+# The process needs write access only to the mounted upload directory. The
+# release itself stays owned by root and read-only to the application user.
+USER node
 
 # Readiness includes the PostgreSQL connection and the required migration
 # version. A process can be alive while its database is unavailable, so the
