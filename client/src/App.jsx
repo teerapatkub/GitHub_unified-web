@@ -40,7 +40,7 @@ import StudentProgressPage from './admin/pages/StudentProgressPage';
 import Leaderboard from './admin/pages/Leaderboard';
 import CompetitiveChallengePage from './admin/pages/CompetitiveChallengePage';
 import { API_BASE } from './config/api.js';
-import { returnPath } from './auth/return-path.js';
+import { accessForRoute, loginUrlFor, returnDestination } from './auth/route-access.js';
 import { createAuthRestorer } from './auth/restore-state.js';
 
 // ######################################################################
@@ -306,7 +306,7 @@ function AppContent() {
       syncUserToState(player);
       setAuthError('');
       if (player.level > 0 || player.role === 'admin') {
-        navigate(returnPath(location.state?.from) || (player.role === 'admin' ? '/admin/dashboard' : '/learn'), { replace: true });
+        navigate(returnDestination(location) || (player.role === 'admin' ? '/admin/dashboard' : '/learn'), { replace: true });
       }
     } catch (error) { setAuthError(error.message); }
   };
@@ -371,31 +371,21 @@ function AppContent() {
   const isCodingWorkspace = ['/exercise', '/mini-game', '/challenge', '/debug', '/promotion-exam']
     .some(route => location.pathname.startsWith(route));
   const isAdminUser = user?.role === 'admin';
-  const loginRedirect = <Navigate to="/login" state={{ from: location.pathname + location.search + location.hash }} replace />;
-  const requireStudent = (element) => {
-    if (!authReady) return null;
-    if (!isAuthenticated) return loginRedirect;
-    if (user.level === 0 && user.role !== 'admin') return loginRedirect;
-    if (isAdminUser) return <Navigate to="/admin/dashboard" replace />;
+  const guard = (kind, element) => {
+    const access = accessForRoute({ ready: authReady, user, kind });
+    if (access === 'waiting') return <div role="status" className="p-8 text-center">กำลังตรวจสอบการเข้าสู่ระบบ...</div>;
+    if (access === 'login') {
+      const from = location.pathname + location.search + location.hash;
+      return <Navigate to={loginUrlFor(from)} state={{ from }} replace />;
+    }
+    if (access === 'admin') return <Navigate to="/admin/dashboard" replace />;
+    if (access === 'learn') return <Navigate to="/learn" replace />;
+    if (access === 'locked') return <GameModeLocked user={user} />;
     return element;
   };
-  const requireAdmin = (element) => {
-    if (!authReady) return null;
-    if (!isAuthenticated) return loginRedirect;
-    if (user.level === 0 && user.role !== 'admin') return loginRedirect;
-    if (!isAdminUser) return <Navigate to="/learn" replace />;
-    return element;
-  };
-  // Game modes open at the rank defined in utils/gameModeAccess.js. Guarding
-  // the routes and not just the buttons, so typing /matchmaking straight into
-  // the address bar goes the same way as clicking it.
-  const requireGameModeRank = (element) => {
-    if (!authReady) return null;
-    if (!isAuthenticated) return loginRedirect;
-    if (user.level === 0 && user.role !== 'admin') return loginRedirect;
-    if (!canEnterGameModes(user)) return <GameModeLocked user={user} />;
-    return element;
-  };
+  const requireStudent = element => guard('student', element);
+  const requireAdmin = element => guard('admin', element);
+  const requireGameModeRank = element => guard('game', element);
 
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-transparent text-slate-800 font-sans transition-colors duration-300 relative">
@@ -433,17 +423,17 @@ function AppContent() {
                   !authReady
                     ? null
                     : isAuthenticated && user.level > 0 && !isRecovery()
-                    ? <Navigate to={returnPath(location.state?.from) || (isAdminUser ? "/admin/dashboard" : "/learn")} replace />
+                    ? <Navigate to={returnDestination(location) || (isAdminUser ? "/admin/dashboard" : "/learn")} replace />
                     : <FriendLogin onLoginSuccess={handleLoginSuccess} sessionUser={user} />
                 }
               />
 
-              <Route path="/supabase-test" element={<SupabaseConnectionTest />} />
+              <Route path="/supabase-test" element={requireAdmin(<SupabaseConnectionTest />)} />
               {/* Friend's Learning Pages */}
               <Route path="/learn" element={
                 requireStudent(<div data-mode-transition-content><LearningPage onNavigate={handleNavigate} user={user} /></div>)
               } />
-              <Route path="/lesson" element={<Navigate to="/learn" replace />} />
+              <Route path="/lesson" element={requireStudent(<Navigate to="/learn" replace />)} />
               <Route path="/lesson/:lessonId" element={
                 requireStudent(
                   <LessonPage
@@ -454,7 +444,7 @@ function AppContent() {
                   />
                 )
               } />
-              <Route path="/exercise" element={<Navigate to="/learn" replace />} />
+              <Route path="/exercise" element={requireStudent(<Navigate to="/learn" replace />)} />
               <Route path="/exercise/:lessonId" element={
                 requireStudent(
                   <ExercisePage
@@ -465,7 +455,7 @@ function AppContent() {
                   />
                 )
               } />
-              <Route path="/mini-game" element={<Navigate to="/learn" replace />} />
+              <Route path="/mini-game" element={requireStudent(<Navigate to="/learn" replace />)} />
               <Route path="/mini-game/:lessonId" element={
                 requireStudent(
                   <MiNi_Game
@@ -489,8 +479,8 @@ function AppContent() {
               {/* Student pages and direct mode routes */}
               <Route path="/profile" element={requireStudent(<ProfilePage key={location.pathname} user={user} onUserRefresh={refreshUserProfile} />)} />
               <Route path="/profile/:userId" element={requireStudent(<ProfilePage key={location.pathname} user={user} onUserRefresh={refreshUserProfile} />)} />
-              <Route path="/menu" element={<Navigate to="/learn" replace />} />
-              <Route path="/achievements" element={requireStudent(<Achievements />)} />
+              <Route path="/menu" element={requireStudent(<Navigate to="/learn" replace />)} />
+              <Route path="/achievements" element={requireStudent(<Achievements user={user} />)} />
               <Route path="/leaderboard" element={requireStudent(<LeaderboardPage user={user} />)} />
               <Route path="/online" element={requireGameModeRank(<CompetitiveArena user={user} onLogout={handleLogout} onUserUpdate={syncUserToState} />)} />
               {/* Person 2 reached the Competitive Arena at /competitive-arena on their

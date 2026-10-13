@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import ProfileAppearance from '../components/ProfileAppearance';
 import { API_BASE, assetUrl } from '../config/api.js';
+import { requestJson } from '../config/api-client.js';
 
 
 const SKILL_TIER_TH = {
@@ -79,6 +80,8 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
     const [historyTab, setHistoryTab] = useState('arcade');
     const [compHistory, setCompHistory] = useState(null);
     const [compLoading, setCompLoading] = useState(false);
+    const [compError, setCompError] = useState('');
+    const [compRetry, setCompRetry] = useState(0);
 
     // Viewing someone else's profile is just /profile/:userId; with no id it is
     // the signed-in player's own.
@@ -100,11 +103,14 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
         setLoading(true);
         setError('');
         try {
-            const res = await fetch(`${API_BASE}/api/profile/${userId}`);
-            if (!res.ok) throw new Error(res.status === 404 ? 'ไม่พบผู้ใช้คนนี้' : 'โหลดโปรไฟล์ไม่สำเร็จ');
-            setData(await res.json());
+            const profile = await requestJson(`/api/profile/${userId}`);
+            if (!profile?.user || !profile?.learning || !profile?.achievements || !profile?.arcade) {
+                throw new Error('Invalid profile response');
+            }
+            setData(profile);
         } catch (err) {
-            setError(err.message || 'โหลดโปรไฟล์ไม่สำเร็จ');
+            setError(err.status === 404 ? 'ไม่พบผู้ใช้คนนี้'
+                : err.kind === 'unauthorized' ? 'กรุณาเข้าสู่ระบบอีกครั้ง' : 'โหลดโปรไฟล์ไม่สำเร็จ');
             setData(null);
         } finally {
             setLoading(false);
@@ -119,13 +125,18 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
         if (historyTab !== 'competitive' || compHistory !== null || !userId) return;
         let cancelled = false;
         setCompLoading(true);
-        fetch(`${API_BASE}/api/competitive/players/${userId}/history`)
-            .then(r => (r.ok ? r.json() : { history: [] }))
-            .then(d => { if (!cancelled) setCompHistory(d.history || []); })
-            .catch(() => { if (!cancelled) setCompHistory([]); })
+        requestJson(`/api/competitive/players/${userId}/history`)
+            .then(d => {
+                if (!Array.isArray(d?.history)) throw new Error('Invalid history response');
+                if (!cancelled) { setCompHistory(d.history); setCompError(''); }
+            })
+            .catch(error => {
+                if (!cancelled) setCompError(error.kind === 'unauthorized'
+                    ? 'กรุณาเข้าสู่ระบบอีกครั้ง' : 'โหลดประวัติ Competitive ไม่สำเร็จ');
+            })
             .finally(() => { if (!cancelled) setCompLoading(false); });
         return () => { cancelled = true; };
-    }, [historyTab, compHistory, userId]);
+    }, [historyTab, compHistory, userId, compRetry]);
 
     const startEditing = () => {
         setPicked((data?.achievements?.showcase || []).map(a => a.achievement_id));
@@ -509,6 +520,11 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                             <>
                                 {compLoading ? (
                                     <p className="mt-4 text-sm text-pysim-outline">กำลังโหลด...</p>
+                                ) : compError ? (
+                                    <div className="mt-4 text-sm text-red-600" role="alert">
+                                        {compError}
+                                        <button type="button" className="ml-3 underline" onClick={() => { setCompError(''); setCompRetry(value => value + 1); }}>ลองใหม่</button>
+                                    </div>
                                 ) : !compHistory || compHistory.length === 0 ? (
                                     <p className="mt-4 text-sm text-pysim-outline">ยังไม่มีประวัติการแข่ง Competitive</p>
                                 ) : (

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Trophy, ArrowLeft, RefreshCw } from 'lucide-react';
-import { API_BASE, assetUrl } from '../config/api.js';
+import { assetUrl } from '../config/api.js';
 import { loadLeaderboard } from './leaderboard-data.js';
 
 // The learner-facing leaderboard, with links to each player's public profile.
@@ -94,7 +94,7 @@ export default function LeaderboardPage({ user }) {
     // has to put it back.
     const fetchRows = useCallback((key) => {
         const request = ++requestId.current;
-        return loadLeaderboard(key, { apiBase: API_BASE })
+        return loadLeaderboard(key)
         .then((data) => {
             if (request !== requestId.current) return;
             setError('');

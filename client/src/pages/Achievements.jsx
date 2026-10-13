@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Trophy, Lock, CheckCircle2, Coins } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { API_BASE, assetUrl } from '../config/api.js';
+import { assetUrl } from '../config/api.js';
+import { requestJson } from '../config/api-client.js';
 
 const DIFFICULTY_TH = {
     Medium: 'ปานกลาง',
@@ -10,7 +11,7 @@ const DIFFICULTY_TH = {
     'Very Hard': 'ยากมาก',
 };
 
-export default function Achievements() {
+export default function Achievements({ user }) {
     const navigate = useNavigate();
     const { t } = useTranslation();
     const [mounted, setMounted] = useState(false);
@@ -20,26 +21,18 @@ export default function Achievements() {
 
     useEffect(() => { setTimeout(() => setMounted(true), 100); }, []);
 
-    const userId = useMemo(() => {
-        try {
-            const u = JSON.parse(localStorage.getItem('user') || 'null');
-            return Number(u?.user_id || 0);
-        } catch {
-            return 0;
-        }
-    }, []);
+    const userId = Number(user?.user_id || 0);
 
     const load = useCallback(async () => {
         if (!userId) { setError('กรุณาเข้าสู่ระบบเพื่อดูความสำเร็จ'); setLoading(false); return; }
         setLoading(true);
         setError('');
         try {
-            const res = await fetch(`${API_BASE}/api/achievements/${userId}`);
-            if (!res.ok) throw new Error('โหลดความสำเร็จไม่สำเร็จ');
-            const data = await res.json();
-            setRows(Array.isArray(data) ? data : []);
+            const data = await requestJson(`/api/achievements/${userId}`);
+            if (!Array.isArray(data)) throw new Error('Invalid achievements response');
+            setRows(data);
         } catch (err) {
-            setError(err.message || 'โหลดความสำเร็จไม่สำเร็จ');
+            setError(err.kind === 'unauthorized' ? 'กรุณาเข้าสู่ระบบอีกครั้ง' : 'โหลดความสำเร็จไม่สำเร็จ กรุณาลองใหม่');
         } finally {
             setLoading(false);
         }

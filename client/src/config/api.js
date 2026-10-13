@@ -21,7 +21,7 @@
 // origin with no trailing slash, e.g. https://api.example.com. Vite inlines it
 // at build time, so it is baked into the bundle - it is a build input, not a
 // runtime setting, and it must never hold a secret.
-const configured = String(import.meta.env.VITE_API_BASE_URL || '').trim();
+const configured = String(import.meta.env?.VITE_API_BASE_URL || '').trim();
 
 export const API_BASE = configured.replace(/\/+$/, '');
 

@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import axios from 'axios';
 import { ArrowLeft, CheckCircle2, Loader2, ShieldAlert, Sparkles } from 'lucide-react';
 import ProgressCelebration from '../components/learning/ProgressCelebration';
-import { API_BASE } from '../config/api.js';
+import { requestJson } from '../config/api-client.js';
 
 
 export default function PromotionExamPage({ user, onUserRefresh, onNavigate }) {
@@ -26,12 +25,11 @@ export default function PromotionExamPage({ user, onUserRefresh, onNavigate }) {
       try {
         setLoading(true);
         setError('');
-        const response = await axios.get(`${API_BASE}/api/learning/promotion-exam`, {
-          params: { userId: user.user_id },
-        });
-        setExam(response.data.exam);
+        const data = await requestJson(`/api/learning/promotion-exam?userId=${encodeURIComponent(user.user_id)}`);
+        if (!data?.exam) throw new Error('Invalid promotion exam response');
+        setExam(data.exam);
       } catch (err) {
-        setError(err?.response?.data?.error || 'ไม่สามารถโหลดแบบทดสอบเลื่อนขั้นได้');
+        setError(err.kind === 'unauthorized' ? 'กรุณาเข้าสู่ระบบอีกครั้ง' : 'ไม่สามารถโหลดแบบทดสอบเลื่อนขั้นได้');
       } finally {
         setLoading(false);
       }
@@ -51,35 +49,35 @@ export default function PromotionExamPage({ user, onUserRefresh, onNavigate }) {
 
     try {
       setSubmitting(true);
-      const response = await axios.post(`${API_BASE}/api/learning/promotion-exam/submit`, {
-        userId: user.user_id,
-        examId: exam.examId,
-        answers,
+      const data = await requestJson('/api/learning/promotion-exam/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.user_id, examId: exam.examId, answers }),
       });
 
-      setResult(response.data);
+      setResult(data);
 
-      if (response.data?.user) {
-        localStorage.setItem('user', JSON.stringify({ ...user, ...response.data.user }));
-        onUserRefresh?.({ ...user, ...response.data.user });
+      if (data?.user) {
+        localStorage.setItem('user', JSON.stringify({ ...user, ...data.user }));
+        onUserRefresh?.({ ...user, ...data.user });
       }
 
-      if (response.data?.passed) {
+      if (data?.passed) {
         setCelebration({
           id: `promotion-pass-${Date.now()}`,
           type: 'levelup',
-          title: `Promotion Cleared · LV ${response.data?.user?.level || user?.level || 1}`,
-          subtitle: `คุณผ่านแบบทดสอบเลื่อนขั้นแล้ว และตอนนี้อยู่ในระดับ ${response.data?.user?.skill_tier || 'ขั้นถัดไป'}`,
-          previousLevel: Number(response.data?.celebration?.previousLevel || Math.max(1, (response.data?.user?.level || 1) - 1)),
-          newLevel: Number(response.data?.celebration?.newLevel || response.data?.user?.level || 1),
-          tierLabel: response.data?.celebration?.newTier
-            ? `${response.data?.celebration?.previousTier} → ${response.data?.celebration?.newTier}`
+          title: `Promotion Cleared · LV ${data?.user?.level || user?.level || 1}`,
+          subtitle: `คุณผ่านแบบทดสอบเลื่อนขั้นแล้ว และตอนนี้อยู่ในระดับ ${data?.user?.skill_tier || 'ขั้นถัดไป'}`,
+          previousLevel: Number(data?.celebration?.previousLevel || Math.max(1, (data?.user?.level || 1) - 1)),
+          newLevel: Number(data?.celebration?.newLevel || data?.user?.level || 1),
+          tierLabel: data?.celebration?.newTier
+            ? `${data?.celebration?.previousTier} → ${data?.celebration?.newTier}`
             : null,
           rewards: {},
         });
       }
     } catch (err) {
-      setError(err?.response?.data?.error || 'ส่งคำตอบไม่สำเร็จ');
+      setError(err.kind === 'unauthorized' ? 'กรุณาเข้าสู่ระบบอีกครั้ง' : err.detail || 'ส่งคำตอบไม่สำเร็จ');
     } finally {
       setSubmitting(false);
     }

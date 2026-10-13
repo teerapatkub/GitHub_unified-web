@@ -43,6 +43,7 @@ import PastMatchesPanel from './widgets/PastMatchesPanel.jsx';
 import ChatPanel from './widgets/ChatPanel.jsx';
 import { TRANSLATIONS } from './translations.js';
 import { roomViewForPlayer } from './rematch-view.js';
+import { API_BASE } from '../../config/api.js';
 import { parseUtcTimestamp, PHASES, TASKS, SHOP_ITEMS, BOT_NAMES, AUTO_SUBMIT_LEAD_SECONDS,
          AUTO_SUBMIT_WARN_SECONDS, ROUND_TIMES, phaseDurationsFor } from './constants.js';
 
@@ -160,7 +161,6 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
   // instead of hardcoding the backend host, so this keeps working behind
   // whatever origin the app is actually served from (dev server or a reverse
   // proxy in front of a real deployment).
-  const API_BASE = '';
 
   // Room/participants state is lifted here (rather than owned inside
   // useRoomLifecycle) because useCombat/useRoundJudging/useShopEconomy all
@@ -441,7 +441,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
       clearInterval(roomInterval);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [roomId, playerState.name, notify, t, API_BASE, handleRoomVanished]);
+  }, [roomId, playerState.name, notify, t, handleRoomVanished]);
 
   // Read current state without restarting the once-a-second countdown.
   const tickRef = useRef({});
@@ -523,7 +523,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
     load();
     const interval = setInterval(load, 2000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [roomId, watchedPlayer, playerState.name, API_BASE, t]);
+  }, [roomId, watchedPlayer, playerState.name, t]);
 
   // Phase 8.4 — the warning threshold has to scale with the room's round
   // length. A flat 16s warning is fine on a 60s round but would cover more
