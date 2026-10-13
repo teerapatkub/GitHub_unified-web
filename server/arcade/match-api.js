@@ -1,6 +1,13 @@
 const arcadeConfig = require('../../shared/arcadeConfig.json');
 const arcadePhaseDurations = room => room?.round_duration_mode === 'quick' ? arcadeConfig.quickModePhaseDurations : arcadeConfig.phaseDurations;
 
+function rematchRoster(room, previousMatch, participants) {
+  if (!room?.current_match_id || !previousMatch?.ended_at) return participants;
+  return participants.filter(participant => (
+    participant.participant_kind === 'bot' || participant.match_id == null
+  ));
+}
+
 async function drawArcadeRoundTasks(db, room) {
   const pickFrom = room.difficulty && room.difficulty !== 'default'
     ? [room.difficulty]
@@ -70,12 +77,38 @@ function installArcadeMatchStart(app, db) {
         return res.status(status).json({ error });
       };
       if (!room) return await reject(404, 'ไม่พบห้อง');
-      const [participants] = await connection.query('SELECT user_name, participant_kind FROM arcade_participants WHERE room_id = ?', [room.room_id]);
+      let [participants] = await connection.query(
+        'SELECT id, user_name, participant_kind, match_id FROM arcade_participants WHERE room_id = ? FOR UPDATE',
+        [room.room_id]
+      );
       if (room.host_name !== req.player.username || !participants.some(p => p.user_name === req.player.username && p.participant_kind === 'human')) {
         return await reject(403, 'สิทธิ์เฉพาะหัวห้องเท่านั้น');
       }
       if (room.status !== 'WAITING' || room.phase !== 'LOBBY') {
         return await reject(409, 'ห้องนี้เริ่มการแข่งขันแล้ว');
+      }
+      let previousMatch = null;
+      if (room.current_match_id) {
+        const [matches] = await connection.query(
+          'SELECT ended_at FROM arcade_matches WHERE match_id = ? FOR UPDATE',
+          [room.current_match_id]
+        );
+        previousMatch = matches[0] || null;
+      }
+      const eligibleParticipants = rematchRoster(room, previousMatch, participants);
+      const isRematch = Boolean(room.current_match_id && previousMatch?.ended_at);
+      if (isRematch && !eligibleParticipants.some(participant => (
+        participant.user_name === req.player.username && participant.participant_kind === 'human'
+      ))) {
+        return await reject(409, 'หัวห้องต้องเลือกอยู่ต่อก่อนเริ่มการแข่งขันใหม่');
+      }
+      if (isRematch) {
+        await connection.query(
+          `DELETE FROM arcade_participants
+           WHERE room_id = ? AND participant_kind = 'human' AND match_id IS NOT NULL`,
+          [room.room_id]
+        );
+        participants = eligibleParticipants;
       }
       if (participants.length < 2) return await reject(400, 'ต้องมีผู้เล่นอย่างน้อย 2 คน');
       const drawnTasks = await drawArcadeRoundTasks(connection, room);
@@ -110,4 +143,4 @@ function installArcadeMatchStart(app, db) {
     }
   });
 }
-module.exports = { installArcadeMatchStart };
+module.exports = { installArcadeMatchStart, rematchRoster };

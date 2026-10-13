@@ -117,6 +117,7 @@ test('workers ignore future deadlines, stale phases and snapshots from a previou
   await db.query("UPDATE arcade_rooms SET phase = 'RESULT'");
   await db.query('UPDATE arcade_matches SET ended_at = CURRENT_TIMESTAMP WHERE match_id = (SELECT current_match_id FROM arcade_rooms WHERE room_id = 1)');
   await call('/api/arcade/rooms/1/finish-choice', { body: { choice: 'REMAIN' } });
+  await call('/api/arcade/rooms/1/finish-choice', { user: 'bob', body: { choice: 'REMAIN' } });
   await call('/api/arcade/rooms/1/start', { body: {} });
   await db.query("UPDATE arcade_rooms SET phase_deadline = CURRENT_TIMESTAMP - INTERVAL '1 second'");
   await finalize(first);

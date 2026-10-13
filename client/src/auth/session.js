@@ -4,6 +4,8 @@ import { getSupabaseClient } from '../supabaseClient.js';
 
 const originalFetch = window.fetch.bind(window);
 const apiOrigin = new URL(API_BASE || window.location.origin, window.location.origin).origin;
+const SIGN_OUT_PENDING = 'pyarena_sign_out_pending';
+const SIGN_OUT_PROVIDERS = ['api', 'supabase'];
 let session = null;
 let ready;
 let installed = false;
@@ -82,8 +84,52 @@ export async function authRequest(path, body) {
   }
   return data;
 }
+function pendingSignOutProviders() {
+  const value = localStorage.getItem(SIGN_OUT_PENDING);
+  if (!value) return [];
+  // Support the marker written by the first version of the logout fix.
+  if (value === '1') return SIGN_OUT_PROVIDERS;
+  return value.split(',').filter(provider => SIGN_OUT_PROVIDERS.includes(provider));
+}
+function storePendingSignOut(providers) {
+  if (providers.length) localStorage.setItem(SIGN_OUT_PENDING, providers.join(','));
+  else localStorage.removeItem(SIGN_OUT_PENDING);
+}
+async function revokeSessions(providers) {
+  let signOutError = null;
+  const failedProviders = [];
+  if (providers.includes('api')) {
+    try {
+      // Revoke Google while its HttpOnly cookie is still present.
+      await authRequest('sign-out');
+    } catch (error) {
+      signOutError = error;
+      failedProviders.push('api');
+    }
+  }
+  if (providers.includes('supabase')) {
+    try {
+      // Keep this independent from Google: one unavailable provider must not
+      // leave the other provider's session active on this device.
+      const { error } = await getSupabaseClient().auth.signOut({ scope: 'local' });
+      if (error) throw new Error('ออกจากระบบไม่สำเร็จ กรุณาลองอีกครั้ง');
+    } catch (error) {
+      signOutError ||= error;
+      failedProviders.push('supabase');
+    }
+  }
+  return { signOutError, failedProviders };
+}
 export async function currentPlayer() {
   await initializeAuth();
+  const pendingProviders = pendingSignOutProviders();
+  if (pendingProviders.length) {
+    const { failedProviders } = await revokeSessions(pendingProviders);
+    session = null;
+    localStorage.removeItem('user');
+    storePendingSignOut(failedProviders);
+    return null;
+  }
   const response = await fetch(`${API_BASE}/api/auth/me`);
   if (response.status === 401) return null;
   if (!response.ok) throw new Error('ตรวจสอบการเข้าสู่ระบบไม่ได้ กรุณาลองอีกครั้ง');
@@ -93,16 +139,18 @@ export async function acceptEmailSession(next) {
   const { error } = await getSupabaseClient().auth.setSession({ access_token: next.access_token, refresh_token: next.refresh_token });
   if (error) throw new Error('เริ่มการเข้าสู่ระบบไม่ได้ กรุณาลองใหม่');
   session = next;
+  localStorage.removeItem(SIGN_OUT_PENDING);
 }
 export async function signOut() {
-  // Revoke Google first while its cookie is present, then revoke Supabase refresh tokens.
-  await authRequest('sign-out');
-  if (session) {
-    const { error } = await getSupabaseClient().auth.signOut({ scope: 'local' });
-    if (error) throw new Error('ออกจากระบบไม่สำเร็จ กรุณาลองอีกครั้ง');
-  }
+  await initializeAuth();
+  const providers = ['api'];
+  if (session) providers.push('supabase');
+  const { signOutError, failedProviders } = await revokeSessions(providers);
   session = null;
   localStorage.removeItem('user');
+  storePendingSignOut(failedProviders);
+  window.dispatchEvent(new CustomEvent('pyarena:session-changed', { detail: { event: 'SIGNED_OUT' } }));
+  if (signOutError) throw signOutError;
 }
 export async function acceptGoogleSession() {
   if (session) {
@@ -110,4 +158,5 @@ export async function acceptGoogleSession() {
     if (error) throw new Error('เปลี่ยนวิธีเข้าสู่ระบบไม่สำเร็จ');
   }
   session = null;
+  localStorage.removeItem(SIGN_OUT_PENDING);
 }

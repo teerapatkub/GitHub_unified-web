@@ -62,6 +62,7 @@ test('remain only reopens a settled match for a human member', async t => {
   await db.query('UPDATE arcade_matches SET ended_at = CURRENT_TIMESTAMP WHERE match_id = (SELECT current_match_id FROM arcade_rooms WHERE room_id = 1)');
   assert.equal((await call('/api/arcade/rooms/1/finish-choice', { user: 'outsider', body: { choice: 'REMAIN' } })).status, 403);
   assert.equal((await call('/api/arcade/rooms/1/finish-choice', { body: { choice: 'REMAIN' } })).status, 200);
+  assert.equal((await call('/api/arcade/rooms/1/finish-choice', { user: 'bob', body: { choice: 'REMAIN' } })).status, 200);
   assert.equal((await call('/api/arcade/rooms/1/start', { body: {} })).status, 200);
 });
 

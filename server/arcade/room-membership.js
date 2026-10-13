@@ -7,8 +7,9 @@ async function removeMemberLocked(connection, room, userName) {
   if (!member) return { removed: false, roomDeleted: false, nextHost: room.host_name };
 
   await connection.query('DELETE FROM arcade_participants WHERE id = ?', [member.id]);
+  const activeLobby = room.status === 'WAITING' && room.phase === 'LOBBY' && room.current_match_id;
   const [humans] = await connection.query(
-    `SELECT id, user_name FROM arcade_participants
+    `SELECT id, user_name, match_id FROM arcade_participants
      WHERE room_id = ? AND participant_kind = 'human'
      ORDER BY joined_at ASC, id ASC FOR UPDATE`,
     [room.room_id]
@@ -19,8 +20,10 @@ async function removeMemberLocked(connection, room, userName) {
     return { removed: true, roomDeleted: true, nextHost: null };
   }
 
-  const currentHostStillPresent = humans.some((participant) => participant.user_name === room.host_name);
-  const nextHost = currentHostStillPresent ? room.host_name : humans[0].user_name;
+  const eligibleHosts = activeLobby ? humans.filter(participant => participant.match_id == null) : humans;
+  const candidates = eligibleHosts.length ? eligibleHosts : humans;
+  const currentHostStillPresent = candidates.some((participant) => participant.user_name === room.host_name);
+  const nextHost = currentHostStillPresent ? room.host_name : candidates[0].user_name;
   await connection.query('UPDATE arcade_rooms SET host_name = ?, updated_at = CURRENT_TIMESTAMP WHERE room_id = ?', [nextHost, room.room_id]);
   await connection.query(
     `UPDATE arcade_participants
@@ -179,12 +182,41 @@ function installArcadeRoomMembership(app, db) {
         return res.json({ success: true, choice, ...result });
       }
 
+      if (member.match_id != null) {
+        const [[capacity]] = await connection.query(
+          `SELECT COUNT(*) AS occupied FROM arcade_participants
+           WHERE room_id = ? AND (participant_kind = 'bot' OR match_id IS NULL)`,
+          [room.room_id]
+        );
+        if (Number(capacity.occupied) >= Number(room.max_players)) {
+          await connection.rollback();
+          return res.status(409).json({ error: 'ห้องเต็มแล้ว ไม่สามารถเลือกอยู่ต่อได้' });
+        }
+      }
+
       await connection.query(
-        `UPDATE arcade_participants SET score = 0, cash = 0, is_eliminated = 0, has_submitted = 0,
+        `UPDATE arcade_participants SET match_id = NULL, score = 0, cash = 0, is_eliminated = 0, has_submitted = 0,
          pending_round_score = NULL, submitted_code = NULL, submitted_at = NULL, score_multiplier_active = 0,
          draft_code = NULL, draft_updated_at = NULL WHERE id = ?`,
         [member.id]
       );
+      const [[activeHost]] = await connection.query(
+        `SELECT id FROM arcade_participants
+         WHERE room_id = ? AND user_name = ? AND participant_kind = 'human' AND match_id IS NULL`,
+        [room.room_id, room.host_name]
+      );
+      if (!activeHost) {
+        await connection.query(
+          'UPDATE arcade_rooms SET host_name = ?, updated_at = CURRENT_TIMESTAMP WHERE room_id = ?',
+          [member.user_name, room.room_id]
+        );
+        await connection.query(
+          `UPDATE arcade_participants
+           SET is_host = CASE WHEN participant_kind = 'human' AND user_name = ? THEN 1 ELSE 0 END
+           WHERE room_id = ?`,
+          [member.user_name, room.room_id]
+        );
+      }
       if (!alreadyReopened) {
         await connection.query(
           `UPDATE arcade_rooms SET status = 'WAITING', current_round = 0, phase = 'LOBBY', phase_deadline = NULL,

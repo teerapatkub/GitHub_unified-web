@@ -87,6 +87,8 @@ async function arcadeFixture(t, { beforeMigration, beforeShopMigration } = {}) {
   };
   for (const name of ['alice', 'bob', 'outsider']) await bindAuth(name);
   require('../../arcade/bot-api').installArcadeBots(app, db);
+  require('../../arcade/lobby-api').installArcadeLobbyRoutes(app, db, (raw, maxLength) =>
+    String(raw || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, maxLength));
   installArcadeSubmissions(app, db);
   require('../../arcade/shop-api').installArcadeShop(app, db);
   installArcadeRoomReads(app, db);

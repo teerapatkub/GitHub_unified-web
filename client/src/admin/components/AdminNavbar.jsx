@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useLocation } from "react-router-dom";
+import { signOut } from "../../auth/session.js";
 
 export default function AdminNavbar() {
   const { t, i18n } = useTranslation();
@@ -25,9 +26,14 @@ export default function AdminNavbar() {
     setLangMenuOpen(false);
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem("user");
-    navigate("/login");
+  const handleLogout = async () => {
+    try {
+      await signOut();
+    } catch (error) {
+      console.warn("Admin sign-out warning:", error.message);
+    } finally {
+      navigate("/login", { replace: true });
+    }
   };
 
   const navItems = [

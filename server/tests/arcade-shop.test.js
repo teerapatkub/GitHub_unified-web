@@ -185,6 +185,7 @@ test('locked requests use the actual deadline and previous-match inventory is no
   await db.query("UPDATE arcade_rooms SET phase = 'RESULT'");
   await db.query('UPDATE arcade_matches SET ended_at = CURRENT_TIMESTAMP WHERE match_id = (SELECT current_match_id FROM arcade_rooms WHERE room_id = 1)');
   await call('/api/arcade/rooms/1/finish-choice', { body: { choice: 'REMAIN' } });
+  await call('/api/arcade/rooms/1/finish-choice', { user: 'bob', body: { choice: 'REMAIN' } });
   const next = (await call('/api/arcade/rooms/1/start', { body: {} })).body.match_id;
   assert.notEqual(next, matchId);
   assert.equal((await read()).status, 409);

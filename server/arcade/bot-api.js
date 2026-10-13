@@ -1,6 +1,7 @@
 const { randomInt, randomUUID } = require('node:crypto');
 const profiles = require('../../shared/arcadeBotProfiles.json');
 const { publicParticipants } = require('./room-api');
+const { rematchRoster } = require('./match-api');
 
 function installArcadeBots(app, db) {
   // A later account registration must not acquire control of an existing bot.
@@ -24,9 +25,13 @@ function installArcadeBots(app, db) {
       const [[room]] = await connection.query('SELECT * FROM arcade_rooms WHERE room_id = ? FOR UPDATE', [req.params.id]);
       if (!room) return await reject(404, 'ไม่พบห้อง');
       const [participants] = await connection.query('SELECT * FROM arcade_participants WHERE room_id = ?', [room.room_id]);
-      if (room.host_name !== req.player.username || !participants.some(p => p.user_name === req.player.username && p.participant_kind === 'human')) return await reject(403, 'สิทธิ์เฉพาะหัวห้องเท่านั้น');
       if (room.status !== 'WAITING' || room.phase !== 'LOBBY') return await reject(409, 'เพิ่มบอทได้ก่อนเริ่มการแข่งขันเท่านั้น');
-      if (participants.length >= room.max_players) return await reject(409, 'ห้องเต็มแล้ว');
+      const [[previousMatch]] = room.current_match_id
+        ? await connection.query('SELECT ended_at FROM arcade_matches WHERE match_id = ?', [room.current_match_id])
+        : [[null]];
+      const active = rematchRoster(room, previousMatch, participants);
+      if (room.host_name !== req.player.username || !active.some(p => p.user_name === req.player.username && p.participant_kind === 'human')) return await reject(403, 'สิทธิ์เฉพาะหัวห้องเท่านั้น');
+      if (active.length >= room.max_players) return await reject(409, 'ห้องเต็มแล้ว');
       const profile = profiles[randomInt(profiles.length)];
       let name = profile.name;
       for (;;) {
@@ -37,7 +42,7 @@ function installArcadeBots(app, db) {
       await connection.query("INSERT INTO arcade_participants (room_id, user_name, participant_kind, bot_profile) VALUES (?, ?, 'bot', ?)", [room.room_id, name, profile.id]);
       const [updated] = await connection.query('SELECT * FROM arcade_participants WHERE room_id = ? ORDER BY joined_at, id', [room.room_id]);
       await connection.commit();
-      res.json({ success: true, bot_name: name, participants: publicParticipants(updated) });
+      res.json({ success: true, bot_name: name, participants: publicParticipants(rematchRoster(room, previousMatch, updated)) });
     } catch (error) {
       if (connection) await connection.rollback();
       console.error('Arcade add bot failed:', error.message);

@@ -40,6 +40,8 @@ import StudentProgressPage from './admin/pages/StudentProgressPage';
 import Leaderboard from './admin/pages/Leaderboard';
 import CompetitiveChallengePage from './admin/pages/CompetitiveChallengePage';
 import { API_BASE } from './config/api.js';
+import { returnPath } from './auth/return-path.js';
+import { createAuthRestorer } from './auth/restore-state.js';
 
 // ######################################################################
 // ### MAIN APP
@@ -158,6 +160,8 @@ function AppContent() {
       }
       if (!response.ok) return;
       const profile = await response.json();
+      const stillSignedIn = JSON.parse(localStorage.getItem('user') || 'null');
+      if (Number(stillSignedIn?.user_id || stillSignedIn?.id) !== Number(uid)) return;
       syncUserToState({ ...currentUser, ...profile, isGuest: false });
     } catch {
       // keep existing local profile if refresh fails
@@ -196,25 +200,25 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    let sequence = 0;
-    const restore = async () => {
-      const request = ++sequence;
-      try {
-        const player = await currentPlayer();
-        if (cancelled || request !== sequence) return;
-        setAuthError('');
+    const restorer = createAuthRestorer({
+      fetchPlayer: currentPlayer,
+      onPlayer: player => {
         if (player) syncUserToState(player);
         else { setUser(null); localStorage.removeItem('user'); }
-      } catch (error) {
-        if (!cancelled && request === sequence) { setUser(null); setAuthError(error.message); }
-      } finally {
-        if (!cancelled && request === sequence) setAuthReady(true);
+      },
+      onError: setAuthError,
+      onReady: () => setAuthReady(true),
+    });
+    const onSessionChanged = event => {
+      if (event.detail?.event === 'SIGNED_OUT') {
+        restorer.signedOut();
+        return;
       }
+      restorer.restore();
     };
-    restore();
-    window.addEventListener('pyarena:session-changed', restore);
-    return () => { cancelled = true; window.removeEventListener('pyarena:session-changed', restore); };
+    restorer.restore();
+    window.addEventListener('pyarena:session-changed', onSessionChanged);
+    return () => { restorer.stop(); window.removeEventListener('pyarena:session-changed', onSessionChanged); };
   }, [syncUserToState]);
 
   useEffect(() => {
@@ -301,16 +305,22 @@ function AppContent() {
       if (!player) throw new Error('กรุณาเข้าสู่ระบบอีกครั้ง');
       syncUserToState(player);
       setAuthError('');
-      if (player.level > 0 || player.role === 'admin') navigate(player.role === 'admin' ? '/admin/dashboard' : '/learn');
+      if (player.level > 0 || player.role === 'admin') {
+        navigate(returnPath(location.state?.from) || (player.role === 'admin' ? '/admin/dashboard' : '/learn'), { replace: true });
+      }
     } catch (error) { setAuthError(error.message); }
   };
 
   const handleLogout = async () => {
     try {
       await signOut();
+      setAuthError('');
+    } catch (error) {
+      setAuthError(error.message);
+    } finally {
       setUser(null);
       navigate('/login', { replace: true });
-    } catch (error) { setAuthError(error.message); }
+    }
   };
 
   // === Lesson Navigation (Bridge for friend's onNavigate) ===
@@ -361,17 +371,18 @@ function AppContent() {
   const isCodingWorkspace = ['/exercise', '/mini-game', '/challenge', '/debug', '/promotion-exam']
     .some(route => location.pathname.startsWith(route));
   const isAdminUser = user?.role === 'admin';
+  const loginRedirect = <Navigate to="/login" state={{ from: location.pathname + location.search + location.hash }} replace />;
   const requireStudent = (element) => {
     if (!authReady) return null;
-    if (!isAuthenticated) return <Navigate to="/login" replace />;
-    if (user.level === 0 && user.role !== 'admin') return <Navigate to="/login" replace />;
+    if (!isAuthenticated) return loginRedirect;
+    if (user.level === 0 && user.role !== 'admin') return loginRedirect;
     if (isAdminUser) return <Navigate to="/admin/dashboard" replace />;
     return element;
   };
   const requireAdmin = (element) => {
     if (!authReady) return null;
-    if (!isAuthenticated) return <Navigate to="/login" replace />;
-    if (user.level === 0 && user.role !== 'admin') return <Navigate to="/login" replace />;
+    if (!isAuthenticated) return loginRedirect;
+    if (user.level === 0 && user.role !== 'admin') return loginRedirect;
     if (!isAdminUser) return <Navigate to="/learn" replace />;
     return element;
   };
@@ -380,8 +391,8 @@ function AppContent() {
   // the address bar goes the same way as clicking it.
   const requireGameModeRank = (element) => {
     if (!authReady) return null;
-    if (!isAuthenticated) return <Navigate to="/login" replace />;
-    if (user.level === 0 && user.role !== 'admin') return <Navigate to="/login" replace />;
+    if (!isAuthenticated) return loginRedirect;
+    if (user.level === 0 && user.role !== 'admin') return loginRedirect;
     if (!canEnterGameModes(user)) return <GameModeLocked user={user} />;
     return element;
   };
@@ -422,7 +433,7 @@ function AppContent() {
                   !authReady
                     ? null
                     : isAuthenticated && user.level > 0 && !isRecovery()
-                    ? <Navigate to={isAdminUser ? "/admin/dashboard" : "/learn"} replace />
+                    ? <Navigate to={returnPath(location.state?.from) || (isAdminUser ? "/admin/dashboard" : "/learn")} replace />
                     : <FriendLogin onLoginSuccess={handleLoginSuccess} sessionUser={user} />
                 }
               />
@@ -472,17 +483,15 @@ function AppContent() {
                 requireStudent(<ChallengePage onNavigate={handleNavigate} user={user} onUserRefresh={refreshUserProfile} />)
               } />
               <Route path="/promotion-exam" element={
-                isAuthenticated
-                  ? <PromotionExamPage user={user} onUserRefresh={refreshUserProfile} onNavigate={handleNavigate} />
-                  : <Navigate to="/login" replace />
+                requireStudent(<PromotionExamPage user={user} onUserRefresh={refreshUserProfile} onNavigate={handleNavigate} />)
               } />
 
               {/* Student pages and direct mode routes */}
               <Route path="/profile" element={requireStudent(<ProfilePage key={location.pathname} user={user} onUserRefresh={refreshUserProfile} />)} />
               <Route path="/profile/:userId" element={requireStudent(<ProfilePage key={location.pathname} user={user} onUserRefresh={refreshUserProfile} />)} />
               <Route path="/menu" element={<Navigate to="/learn" replace />} />
-              <Route path="/achievements" element={<Achievements />} />
-              <Route path="/leaderboard" element={<LeaderboardPage user={user} />} />
+              <Route path="/achievements" element={requireStudent(<Achievements />)} />
+              <Route path="/leaderboard" element={requireStudent(<LeaderboardPage user={user} />)} />
               <Route path="/online" element={requireGameModeRank(<CompetitiveArena user={user} onLogout={handleLogout} onUserUpdate={syncUserToState} />)} />
               {/* Person 2 reached the Competitive Arena at /competitive-arena on their
                   branch; kept as a second path so links and bookmarks from there

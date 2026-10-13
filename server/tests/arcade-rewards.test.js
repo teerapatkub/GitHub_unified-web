@@ -87,6 +87,7 @@ test('rematches pay separately and retain rewards after players leave and the ro
   const first = await finishableMatch(db, call);
   await createArcadePhaseFinalizer({ db })(first);
   assert.equal((await call('/api/arcade/rooms/1/finish-choice', { body: { choice: 'REMAIN' } })).status, 200);
+  assert.equal((await call('/api/arcade/rooms/1/finish-choice', { user: 'bob', body: { choice: 'REMAIN' } })).status, 200);
   const second = await finishableMatch(db, call);
   await createArcadePhaseFinalizer({ db })(first);
   assert.equal((await call('/api/auth/me')).body.virtual_currency, 50);

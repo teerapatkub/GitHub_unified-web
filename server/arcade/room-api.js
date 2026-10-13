@@ -1,4 +1,5 @@
 // Room polling and membership responses contain public gameplay state only.
+const { rematchRoster } = require('./match-api');
 function publicParticipants(rows) {
   const fields = ['id', 'room_id', 'match_id', 'user_name', 'is_host', 'score', 'cash',
     'participant_kind', 'bot_profile', 'is_eliminated', 'joined_at', 'last_seen', 'has_submitted', 'coins_awarded'];
@@ -40,7 +41,7 @@ function installArcadeRoomReads(app, db) {
           [roomId, userName]
         );
       }
-      const [rooms] = await db.query(`SELECT r.*, m.final_standings, clock_timestamp() AS server_now FROM arcade_rooms r
+      const [rooms] = await db.query(`SELECT r.*, m.final_standings, m.ended_at AS previous_match_ended_at, clock_timestamp() AS server_now FROM arcade_rooms r
         LEFT JOIN arcade_matches m ON m.match_id = r.current_match_id WHERE r.room_id = ?`, [roomId]);
       if (!rooms || rooms.length === 0) {
         return res.status(404).json({ error: 'ไม่พบห้องแข่งขัน' });
@@ -49,8 +50,11 @@ function installArcadeRoomReads(app, db) {
         `SELECT * FROM arcade_participants WHERE room_id = ? ORDER BY joined_at ASC`,
         [roomId]
       );
-      const { password: _pwd, server_now: serverNow, ...roomSafe } = rooms[0];
-      res.json({ success: true, room: roomSafe, serverNow: new Date(serverNow).getTime(), participants: publicParticipants(participants) });
+      const { password: _pwd, server_now: serverNow, previous_match_ended_at: previousMatchEndedAt, ...roomSafe } = rooms[0];
+      const lobbyParticipants = roomSafe.status === 'WAITING' && roomSafe.phase === 'LOBBY'
+        ? rematchRoster(roomSafe, { ended_at: previousMatchEndedAt }, participants)
+        : participants;
+      res.json({ success: true, room: roomSafe, serverNow: new Date(serverNow).getTime(), participants: publicParticipants(lobbyParticipants) });
     } catch (err) {
       console.error('❌ GET /api/arcade/rooms/:id error:', err.message);
       res.status(500).json({ error: err.message });

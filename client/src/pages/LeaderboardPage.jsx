@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Trophy, ArrowLeft, RefreshCw } from 'lucide-react';
-import { assetUrl } from '../config/api.js';
+import { API_BASE, assetUrl } from '../config/api.js';
+import { loadLeaderboard } from './leaderboard-data.js';
 
 // The learner-facing leaderboard, with links to each player's public profile.
 //
@@ -83,6 +84,7 @@ export default function LeaderboardPage({ user }) {
     const [minMatches, setMinMatches] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const requestId = useRef(0);
 
     const board = BOARDS.find((b) => b.key === boardKey) || BOARDS[0];
 
@@ -90,17 +92,22 @@ export default function LeaderboardPage({ user }) {
     // already true before the first fetch, and only switching tabs or pressing
     // refresh - both event handlers, where a synchronous setState is fine -
     // has to put it back.
-    const fetchRows = useCallback((key) => fetch(`/api/leaderboard?board=${key}&limit=20`)
-        .then((res) => res.json())
+    const fetchRows = useCallback((key) => {
+        const request = ++requestId.current;
+        return loadLeaderboard(key, { apiBase: API_BASE })
         .then((data) => {
-            setRows(Array.isArray(data?.rows) ? data.rows : []);
+            if (request !== requestId.current) return;
+            setError('');
+            setRows(data.rows);
             setMinMatches(data?.minMatches ?? null);
             setLoading(false);
         })
-        .catch(() => {
-            setError('โหลดตารางอันดับไม่สำเร็จ ลองใหม่อีกครั้ง');
+        .catch((loadError) => {
+            if (request !== requestId.current) return;
+            setError(loadError.message || 'โหลดตารางอันดับไม่สำเร็จ ลองใหม่อีกครั้ง');
             setLoading(false);
-        }), []);
+        });
+    }, []);
 
     useEffect(() => { fetchRows(boardKey); }, [boardKey, fetchRows]);
 
@@ -112,6 +119,7 @@ export default function LeaderboardPage({ user }) {
 
     const switchBoard = (key) => {
         if (key === boardKey) return;
+        requestId.current += 1;
         setLoading(true);
         setError('');
         setRows([]);

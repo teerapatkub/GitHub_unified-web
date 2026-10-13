@@ -6088,24 +6088,7 @@ let arcadeTickTimer;
 // 1. Get joinable public rooms (status = 'WAITING')
 require('./arcade/bot-api').installArcadeBots(app, db);
 
-app.get('/api/arcade/rooms', async (req, res) => {
-    try {
-        const [rooms] = await db.query(
-            `SELECT r.room_id, r.room_code, r.room_name, r.host_name, r.max_players, r.status, r.created_at,
-                    (r.password IS NOT NULL AND r.password != '') AS is_password_protected,
-                    COUNT(p.id) AS current_players
-             FROM arcade_rooms r
-             LEFT JOIN arcade_participants p ON r.room_id = p.room_id
-             WHERE r.status = 'WAITING'
-             GROUP BY r.room_id, r.room_code, r.room_name, r.host_name, r.max_players, r.status, r.created_at, r.password
-             ORDER BY r.created_at DESC`
-        );
-        res.json({ success: true, rooms: rooms || [] });
-    } catch (err) {
-        console.error('❌ GET /api/arcade/rooms error:', err.message);
-        res.status(500).json({ error: err.message });
-    }
-});
+require('./arcade/lobby-api').installArcadeLobbyRoutes(app, db, sanitizeName);
 
 // 2. Create new room
 app.post('/api/arcade/rooms/create', async (req, res) => {
@@ -6157,97 +6140,6 @@ app.post('/api/arcade/rooms/create', async (req, res) => {
         });
     } catch (err) {
         console.error('❌ POST /api/arcade/rooms/create error:', err.message);
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// 3. Join room by Code or ID. Runs inside a transaction with the room row
-// locked (SELECT ... FOR UPDATE) so two players racing for the last open
-// slot can't both pass the capacity check and both get inserted.
-app.post('/api/arcade/rooms/join', async (req, res) => {
-    const connection = await db.getConnection();
-    try {
-        const { room_code_or_id, password, user_name } = req.body;
-        if (!room_code_or_id || !user_name) {
-            connection.release();
-            return res.status(400).json({ error: 'กรุณาระบุรหัสห้องและชื่อผู้ใช้' });
-        }
-        const cleanUserName = sanitizeName(user_name, 24);
-        if (!cleanUserName) {
-            connection.release();
-            return res.status(400).json({ error: 'ชื่อผู้ใช้ไม่ถูกต้อง' });
-        }
-
-        const queryTerm = String(room_code_or_id).trim().toUpperCase();
-
-        await connection.beginTransaction();
-        const [rooms] = await connection.query(
-            `SELECT * FROM arcade_rooms WHERE (UPPER(room_code) = ? OR CAST(room_id AS TEXT) = ?) FOR UPDATE`,
-            [queryTerm, queryTerm]
-        );
-
-        if (!rooms || rooms.length === 0) {
-            await connection.rollback();
-            connection.release();
-            return res.status(404).json({ error: 'ไม่พบห้องแข่งขันที่ระบุ' });
-        }
-
-        const room = rooms[0];
-
-        if (room.status !== 'WAITING') {
-            await connection.rollback();
-            connection.release();
-            return res.status(400).json({ error: 'ห้องนี้เริ่มการแข่งขันไปแล้ว ไม่สามารถเข้าร่วมได้' });
-        }
-
-        if (room.password && !(await bcrypt.compare(password || '', room.password))) {
-            await connection.rollback();
-            connection.release();
-            return res.status(401).json({ error: 'รหัสผ่านเข้าห้องไม่ถูกต้อง' });
-        }
-
-        const [participants] = await connection.query(
-            `SELECT * FROM arcade_participants WHERE room_id = ?`,
-            [room.room_id]
-        );
-
-        if (participants.length >= room.max_players) {
-            await connection.rollback();
-            connection.release();
-            return res.status(400).json({ error: 'ห้องนี้มีผู้เล่นเต็มจำนวนแล้ว' });
-        }
-
-        // Add player if not already in room
-        const alreadyIn = participants.find(p => p.user_name === cleanUserName);
-        if (alreadyIn?.participant_kind === 'bot') {
-            await connection.rollback();
-            connection.release();
-            return res.status(409).json({ error: 'This name belongs to a bot in this room. Ask the host to remove it first.' });
-        }
-        if (!alreadyIn) {
-            await connection.query(
-                `INSERT INTO arcade_participants (room_id, user_name, is_host) VALUES (?, ?, 0)`,
-                [room.room_id, cleanUserName]
-            );
-        }
-        await connection.commit();
-        connection.release();
-
-        const [updatedParticipants] = await db.query(
-            `SELECT * FROM arcade_participants WHERE room_id = ? ORDER BY joined_at ASC`,
-            [room.room_id]
-        );
-
-        const { password: _pwd, ...roomSafe } = room;
-        res.json({
-            success: true,
-            room: roomSafe,
-            participants: publicParticipants(updatedParticipants)
-        });
-    } catch (err) {
-        try { await connection.rollback(); } catch { /* connection already closed */ }
-        try { connection.release(); } catch { /* already released */ }
-        console.error('❌ POST /api/arcade/rooms/join error:', err.message);
         res.status(500).json({ error: err.message });
     }
 });
