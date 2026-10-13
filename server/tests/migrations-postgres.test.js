@@ -47,12 +47,22 @@ test('fresh PostgreSQL installs the complete application schema repeatably', asy
   t.after(() => db.close());
 
   await db.ready;
-  const first = await runMigrations(db, applicationMigrations);
+  const initial = await runMigrations(db, applicationMigrations.slice(0, 2));
+
+  // Reproduce the fingerprints already recorded by the existing hosted DB.
+  // The migration runner must recognize them before applying 003/004, without
+  // replaying either older schema migration.
+  await db.query('UPDATE app_schema_migrations SET checksum = ? WHERE version = ?',
+    ['510e97a03e7a71f55b55055336de1e859bfd2dc60faa8fed4f950837ee7ab36a', '202610120001']);
+  await db.query('UPDATE app_schema_migrations SET checksum = ? WHERE version = ?',
+    ['8c9265911bc8d2dadbade7190308d2ec791af3e441def0b2b480715ce09ea895', '202610120002']);
+  const historical = await runMigrations(db, applicationMigrations);
   const second = await runMigrations(db, applicationMigrations);
 
-  assert.equal(first.ready, true);
+  assert.equal(initial.ready, true);
   assert.equal(second.ready, true);
-  assert.deepEqual(await getMigrationStatus(db, applicationMigrations), second);
+  assert.equal(historical.ready, true);
+  assert.deepEqual(await getMigrationStatus(db, applicationMigrations), historical);
 
   const [requiredTables] = await db.query(`
     SELECT table_name

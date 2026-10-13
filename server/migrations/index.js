@@ -2,6 +2,21 @@ const crypto = require('node:crypto');
 
 const MIGRATION_TABLE = 'app_schema_migrations';
 const MIGRATION_LOCK_KEY = 804651239;
+// The first hosted database ran these two migrations before their source was
+// finalized on 2026-10-12. Accept only that recorded fingerprint paired with
+// this exact, line-ending-normalized revision. Any later edit still fails closed.
+const HISTORICAL_FINGERPRINTS = Object.freeze({
+  '202610120001': {
+    name: 'core_schema',
+    applied: '510e97a03e7a71f55b55055336de1e859bfd2dc60faa8fed4f950837ee7ab36a',
+    current: 'a32e43374eb674f64f68a96fe73264c347cde9fab53ee618b0566b9887baa4ed',
+  },
+  '202610120002': {
+    name: 'application_schema',
+    applied: '8c9265911bc8d2dadbade7190308d2ec791af3e441def0b2b480715ce09ea895',
+    current: 'd8dc162c488575994f322131575bb72190fe8ee8770843fa099d2241467c86cc',
+  },
+});
 
 const defineMigration = ({ version, name, signature, up }) => {
   if (!/^\d{12,20}$/.test(String(version || ''))) {
@@ -16,7 +31,7 @@ const defineMigration = ({ version, name, signature, up }) => {
 
   const checksum = crypto
     .createHash('sha256')
-    .update(`${version}\0${name}\0${String(signature || '')}`)
+    .update(`${version}\0${name}\0${String(signature || '').replace(/\r\n?/g, '\n')}`)
     .digest('hex');
 
   return Object.freeze({ version: String(version), name, checksum, up });
@@ -56,7 +71,13 @@ const readAppliedMigrations = async (db) => {
 
 const assertMigrationMatches = (migration, applied) => {
   if (!applied) return;
-  if (applied.name !== migration.name || applied.checksum !== migration.checksum) {
+  const historical = HISTORICAL_FINGERPRINTS[migration.version];
+  const knownEarlierRevision = historical
+    && migration.name === historical.name
+    && applied.name === historical.name
+    && applied.checksum === historical.applied
+    && migration.checksum === historical.current;
+  if (!knownEarlierRevision && (applied.name !== migration.name || applied.checksum !== migration.checksum)) {
     throw new Error(
       `Applied migration ${migration.version} differs from the repository; create a new migration instead of editing it`,
     );

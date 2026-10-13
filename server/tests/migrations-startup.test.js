@@ -155,6 +155,47 @@ test('an applied migration cannot be edited in place', async () => {
   );
 });
 
+test('migration signatures are stable across Windows and Unix line endings', () => {
+  const details = { version: '202610120005', name: 'line_endings', up: async () => {} };
+  assert.equal(
+    defineMigration({ ...details, signature: 'first\r\nsecond' }).checksum,
+    defineMigration({ ...details, signature: 'first\nsecond' }).checksum,
+  );
+});
+
+test('the previously applied core schema fingerprint remains readable without accepting arbitrary edits', async () => {
+  const { coreMigrations } = require('../db');
+  const database = new MemoryMigrationDatabase();
+  database.tableExists = true;
+  database.applied.set('202610120001', {
+    version: '202610120001',
+    name: 'core_schema',
+    checksum: '510e97a03e7a71f55b55055336de1e859bfd2dc60faa8fed4f950837ee7ab36a',
+  });
+  assert.equal((await getMigrationStatus(database, coreMigrations)).ready, true);
+
+  database.applied.get('202610120001').checksum = 'incorrect-checksum';
+  await assert.rejects(getMigrationStatus(database, coreMigrations), /create a new migration/);
+});
+
+test('the previously applied application schema fingerprint is accepted only for the known revision', async () => {
+  const database = new MemoryMigrationDatabase();
+  database.tableExists = true;
+  database.applied.set('202610120002', {
+    version: '202610120002',
+    name: 'application_schema',
+    checksum: '8c9265911bc8d2dadbade7190308d2ec791af3e441def0b2b480715ce09ea895',
+  });
+  const current = {
+    version: '202610120002',
+    name: 'application_schema',
+    checksum: 'd8dc162c488575994f322131575bb72190fe8ee8770843fa099d2241467c86cc',
+    up: async () => {},
+  };
+  assert.equal((await getMigrationStatus(database, [current])).ready, true);
+  await assert.rejects(getMigrationStatus(database, [{ ...current, checksum: 'new-source-edit' }]), /create a new migration/);
+});
+
 test('an older binary is not ready against migration versions it does not know', async () => {
   const database = new MemoryMigrationDatabase();
   const core = defineMigration({
