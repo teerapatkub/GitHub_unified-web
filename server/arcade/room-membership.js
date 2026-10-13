@@ -67,7 +67,7 @@ function installArcadeRoomMembership(app, db) {
         return res.status(404).json({ error: 'ไม่พบห้อง' });
       }
       const [participants] = await connection.query(
-        'SELECT id, user_name, participant_kind FROM arcade_participants WHERE room_id = ? ORDER BY id FOR UPDATE',
+        'SELECT id, user_name, participant_kind, match_id FROM arcade_participants WHERE room_id = ? ORDER BY id FOR UPDATE',
         [room.room_id]
       );
       const actor = participants.find((participant) => participant.user_name === req.player.username);
@@ -76,7 +76,8 @@ function installArcadeRoomMembership(app, db) {
         return res.status(403).json({ error: 'สิทธิ์เฉพาะหัวห้องเท่านั้น' });
       }
       const target = participants.find((participant) => participant.user_name === req.body.target_user_name);
-      if (!target || target.participant_kind !== 'human') {
+      const rematchLobby = room.status === 'WAITING' && room.phase === 'LOBBY' && room.current_match_id;
+      if (!target || target.participant_kind !== 'human' || (rematchLobby && target.match_id != null)) {
         await connection.rollback();
         return res.status(400).json({ error: 'โอนตำแหน่งหัวห้องได้เฉพาะผู้เล่นจริงในห้อง' });
       }

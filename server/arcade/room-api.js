@@ -54,7 +54,15 @@ function installArcadeRoomReads(app, db) {
       const lobbyParticipants = roomSafe.status === 'WAITING' && roomSafe.phase === 'LOBBY'
         ? rematchRoster(roomSafe, { ended_at: previousMatchEndedAt }, participants)
         : participants;
-      res.json({ success: true, room: roomSafe, serverNow: new Date(serverNow).getTime(), participants: publicParticipants(lobbyParticipants) });
+      const viewer = participants.find(participant => participant.user_name === userName && participant.participant_kind === 'human');
+      const viewerPendingChoice = roomSafe.status === 'WAITING' && roomSafe.phase === 'LOBBY'
+        && Boolean(previousMatchEndedAt) && viewer?.match_id === roomSafe.current_match_id;
+      res.json({
+        success: true, room: roomSafe, serverNow: new Date(serverNow).getTime(),
+        participants: publicParticipants(lobbyParticipants),
+        viewer_pending_choice: viewerPendingChoice,
+        viewer_participant: viewerPendingChoice ? publicParticipants([viewer])[0] : null
+      });
     } catch (err) {
       console.error('❌ GET /api/arcade/rooms/:id error:', err.message);
       res.status(500).json({ error: err.message });

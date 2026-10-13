@@ -42,6 +42,7 @@ import PlayerStatsCard from './widgets/PlayerStatsCard.jsx';
 import PastMatchesPanel from './widgets/PastMatchesPanel.jsx';
 import ChatPanel from './widgets/ChatPanel.jsx';
 import { TRANSLATIONS } from './translations.js';
+import { roomViewForPlayer } from './rematch-view.js';
 import { parseUtcTimestamp, PHASES, TASKS, SHOP_ITEMS, BOT_NAMES, AUTO_SUBMIT_LEAD_SECONDS,
          AUTO_SUBMIT_WARN_SECONDS, ROUND_TIMES, phaseDurationsFor } from './constants.js';
 
@@ -317,13 +318,18 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
         const data = await res.json();
         if (stopped) return;
         if (!res.ok || !data.success) throw new Error('Room state unavailable');
+        const view = roomViewForPlayer(data, playerState.name);
+        if (!view.isMember) {
+          handleRoomVanished();
+          return;
+        }
 
         // A poll that got through means the connection is healthy again.
         failedPollsRef.current = 0;
         setConnectionLost(false);
 
         setCurrentRoom(data.room);
-        setRoomParticipants(data.participants || []);
+        setRoomParticipants(view.participants);
 
         // Scores, money and bot progress are shared server state.
         const others = (data.participants || []).filter(p => p.user_name !== playerState.name);
@@ -346,7 +352,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
         // Mirror my own authoritative score/cash/eliminated too — those are
         // only ever written by the server's round-finalize step now, not by
         // anything client-local.
-        const myRow = (data.participants || []).find(p => p.user_name === playerState.name);
+        const myRow = view.viewerRow;
         if (myRow) {
           setPlayerState(prev => ({
             ...prev,
@@ -367,7 +373,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
           phaseDeadlineRef.current = Date.now() + Math.max(0, parseUtcTimestamp(data.room.phase_deadline) - data.serverNow - (performance.now() - startedAt));
         }
 
-        const serverPhase = data.room.phase || PHASES.LOBBY;
+        const serverPhase = view.phase;
         if (serverPhase === appliedPhaseRef.current) return;
         appliedPhaseRef.current = serverPhase;
         setPhase(serverPhase);

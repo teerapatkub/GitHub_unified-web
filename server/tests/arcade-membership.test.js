@@ -132,6 +132,11 @@ test('rematch lobby admits a replacement while an old player has not chosen', as
   assert.equal(Number(list.body.rooms[0].current_players), 1);
   const waiting = await call('/api/arcade/rooms/1');
   assert.deepEqual(waiting.body.participants.map(player => player.user_name), ['alice']);
+  const undecided = await call('/api/arcade/rooms/1', { user: 'bob' });
+  assert.equal(undecided.body.viewer_pending_choice, true);
+  assert.equal(undecided.body.viewer_participant.user_name, 'bob');
+  assert.equal(undecided.body.viewer_participant.match_id, firstMatch);
+  assert.equal(undecided.body.participants.some(player => player.user_name === 'bob'), false);
 
   const joined = await call('/api/arcade/rooms/join', {
     user: 'charlie', body: { room_code_or_id: 'ARC-TEST', user_name: 'charlie' }
@@ -144,6 +149,9 @@ test('rematch lobby admits a replacement while an old player has not chosen', as
   assert.equal((await call('/api/arcade/rooms/1/start', { user: 'alice', body: {} })).status, 200);
   const room = (await call('/api/arcade/rooms/1')).body;
   assert.deepEqual(room.participants.map(player => player.user_name).sort(), ['alice', 'charlie']);
+  const formerPlayer = await call('/api/arcade/rooms/1', { user: 'bob' });
+  assert.equal(formerPlayer.body.viewer_pending_choice, false);
+  assert.equal(formerPlayer.body.viewer_participant, null);
 });
 
 test('first rematch volunteer becomes host when former host has not stayed', async t => {
@@ -157,6 +165,19 @@ test('first rematch volunteer becomes host when former host has not stayed', asy
   const room = (await call('/api/arcade/rooms/1', { user: 'bob' })).body;
   assert.equal(room.room.host_name, 'bob');
   assert.deepEqual(room.participants.map(player => player.user_name), ['bob']);
+});
+
+test('rematch host cannot hand the lobby to a player who has not chosen to stay', async t => {
+  const { call, db } = await arcadeFixture(t);
+  const matchId = (await call('/api/arcade/rooms/1/start', { user: 'alice', body: {} })).body.match_id;
+  await db.query('UPDATE arcade_matches SET ended_at = CURRENT_TIMESTAMP WHERE match_id = ?', [matchId]);
+  await db.query("UPDATE arcade_rooms SET phase = 'RESULT' WHERE room_id = 1");
+  assert.equal((await call('/api/arcade/rooms/1/finish-choice', { user: 'alice', body: { choice: 'REMAIN' } })).status, 200);
+  assert.equal((await call('/api/arcade/rooms/1/transfer-host', {
+    user: 'alice', body: { target_user_name: 'bob' }
+  })).status, 400);
+  const room = (await call('/api/arcade/rooms/1', { user: 'alice' })).body;
+  assert.equal(room.room.host_name, 'alice');
 });
 
 test('pending rematch member can still choose after the former host leaves', async t => {
@@ -189,4 +210,41 @@ test('new entrant becomes lobby host while former players are still deciding', a
   assert.equal((await call('/api/arcade/rooms/1/finish-choice', { user: 'bob', body: { choice: 'REMAIN' } })).status, 200);
   const room = (await call('/api/arcade/rooms/1', { user: 'charlie' })).body;
   assert.equal(room.room.host_name, 'charlie');
+});
+
+test('remain, leave and start retries keep one two-seat rematch and its old result', async t => {
+  const { call, db, addUsers } = await arcadeFixture(t);
+  await addUsers(['charlie']);
+  await db.query('UPDATE arcade_rooms SET max_players = 2 WHERE room_id = 1');
+  const firstMatch = (await call('/api/arcade/rooms/1/start', { user: 'alice', body: {} })).body.match_id;
+  await db.query(
+    `INSERT INTO arcade_round_history (room_id,match_id,user_name,round_num,code,round_score,match_ended_at)
+     VALUES (1,?,'alice',1,'old answer',42,CURRENT_TIMESTAMP)`, [firstMatch]
+  );
+  await db.query("UPDATE arcade_matches SET ended_at = CURRENT_TIMESTAMP, final_standings = '[]' WHERE match_id = ?", [firstMatch]);
+  await db.query("UPDATE arcade_rooms SET phase = 'RESULT' WHERE room_id = 1");
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    assert.equal((await call('/api/arcade/rooms/1/finish-choice', {
+      user: 'alice', body: { choice: 'REMAIN' }
+    })).status, 200);
+  }
+  assert.equal((await call('/api/arcade/rooms/1/finish-choice', {
+    user: 'bob', body: { choice: 'LEAVE' }
+  })).status, 200);
+  assert.equal((await call('/api/arcade/rooms/1/leave', { user: 'bob', body: {} })).status, 200);
+  assert.equal((await call('/api/arcade/rooms/join', {
+    user: 'charlie', body: { room_code_or_id: 'ARC-TEST', user_name: 'charlie' }
+  })).status, 200);
+  const started = await call('/api/arcade/rooms/1/start', { user: 'alice', body: {} });
+  assert.equal(started.status, 200);
+  assert.equal((await call('/api/arcade/rooms/1/start', { user: 'alice', body: {} })).status, 409);
+  const state = (await call('/api/arcade/rooms/1', { user: 'charlie' })).body;
+  assert.notEqual(state.room.current_match_id, firstMatch);
+  assert.equal(state.room.current_match_id, started.body.match_id);
+  assert.deepEqual(state.participants.map(player => player.user_name).sort(), ['alice', 'charlie']);
+  const history = (await call('/api/arcade/players/alice/history', { user: 'alice' })).body.matches;
+  assert.equal(history.find(match => match.match_id === firstMatch).rounds[0].code, 'old answer');
+  const [[oldMatch]] = await db.query('SELECT ended_at FROM arcade_matches WHERE match_id = ?', [firstMatch]);
+  assert.ok(oldMatch.ended_at);
 });

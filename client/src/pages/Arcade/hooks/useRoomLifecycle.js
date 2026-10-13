@@ -13,6 +13,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { PHASES } from '../constants.js';
 import { parseUtcTimestamp } from '../constants.js';
+import { roomViewForPlayer } from '../rematch-view.js';
 
 export default function useRoomLifecycle({
   playerState, setPlayerState, notify, t, navigate, API_BASE,
@@ -93,10 +94,11 @@ export default function useRoomLifecycle({
         if (!res.ok && res.status !== 404) throw new Error('Room recovery failed');
         const data = await res.json();
         if (stopped) return;
-        const myRow = (data.participants || []).find(p => p.user_name === playerState.name);
-        if (data.success && myRow) {
+        const view = data.success ? roomViewForPlayer(data, playerState.name) : null;
+        const myRow = view?.viewerRow;
+        if (view?.isMember) {
           setCurrentRoom(data.room);
-          setRoomParticipants(data.participants);
+          setRoomParticipants(view.participants);
 
           // Land directly on whatever phase the room is already in instead
           // of routing through the room-state poller's normal "phase just
@@ -106,7 +108,7 @@ export default function useRoomLifecycle({
           // progress, not entering a fresh one). Pre-seeding appliedPhaseRef
           // to match is what stops the poller from re-triggering that reset
           // on its very next tick.
-          const serverPhase = data.room.phase || PHASES.LOBBY;
+          const serverPhase = view.phase;
           appliedPhaseRef.current = serverPhase;
           setPhase(serverPhase);
           if (data.room.phase_deadline) {
