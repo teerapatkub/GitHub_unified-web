@@ -1,4 +1,5 @@
 const path = require('node:path');
+const { productionUrls } = require('../auth/productionSettings');
 
 const value = (env, name) => String(env[name] || '').trim();
 
@@ -86,27 +87,12 @@ const validateRuntimeEnvironment = (env = process.env) => {
   if (value(env, 'SUPABASE_ACCESS_TOKEN')) {
     throw new Error('SUPABASE_ACCESS_TOKEN is forbidden in the application runtime');
   }
+  if (value(env, 'AUTH_SMTP_PASS')) {
+    throw new Error('AUTH_SMTP_PASS is forbidden in the application runtime');
+  }
   assertNoPrivilegedBrowserValues(env);
 
-  const publicBaseUrl = parseHttpUrl(
-    requireValue(env, 'PUBLIC_BASE_URL'),
-    'PUBLIC_BASE_URL',
-  );
-  const clientUrl = parseHttpUrl(
-    requireValue(env, 'CLIENT_URL'),
-    'CLIENT_URL',
-  );
-  if (clientUrl.href !== publicBaseUrl.href) {
-    throw new Error('CLIENT_URL must exactly match PUBLIC_BASE_URL in production');
-  }
-  const allowedOrigins = value(env, 'AUTH_ALLOWED_ORIGINS')
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean)
-    .map((origin) => parseHttpUrl(origin, 'AUTH_ALLOWED_ORIGINS').origin);
-  if (!allowedOrigins.includes(publicBaseUrl.origin)) {
-    throw new Error('AUTH_ALLOWED_ORIGINS must include PUBLIC_BASE_URL');
-  }
+  const { siteUrl } = productionUrls(env);
 
   const uploadsDir = requireValue(env, 'UPLOADS_DIR');
   if (!path.posix.isAbsolute(uploadsDir) && !path.win32.isAbsolute(uploadsDir)) {
@@ -114,8 +100,8 @@ const validateRuntimeEnvironment = (env = process.env) => {
   }
 
   return {
-    clientUrl: clientUrl.href,
-    publicBaseUrl: publicBaseUrl.href,
+    clientUrl: `${siteUrl}/`,
+    publicBaseUrl: `${siteUrl}/`,
     uploadsDir,
   };
 };

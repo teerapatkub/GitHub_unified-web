@@ -41,6 +41,9 @@ test('production runtime rejects missing values and management credentials', () 
     }),
     /SUPABASE_ACCESS_TOKEN is forbidden/,
   );
+  assert.throws(() => validateRuntimeEnvironment({
+    ...validRuntime(), AUTH_SMTP_PASS: 'smtp-setup-only',
+  }), /AUTH_SMTP_PASS is forbidden/);
 });
 
 test('production runtime requires its public origin in the CORS allowlist', () => {
@@ -57,10 +60,25 @@ test('production runtime rejects a client URL from another origin', () => {
   assert.throws(
     () => validateRuntimeEnvironment({
       ...validRuntime(),
-      CLIENT_URL: 'http://localhost:5174',
+      CLIENT_URL: 'https://other.example.com',
     }),
     /CLIENT_URL must exactly match PUBLIC_BASE_URL/,
   );
+});
+
+test('production runtime rejects localhost, plaintext and wildcard CORS origins', () => {
+  assert.throws(() => validateRuntimeEnvironment({
+    ...validRuntime(), PUBLIC_BASE_URL: 'http://localhost:3001', CLIENT_URL: 'http://localhost:3001',
+  }), /PUBLIC_BASE_URL must be an exact public HTTPS origin/);
+  assert.throws(() => validateRuntimeEnvironment({
+    ...validRuntime(), AUTH_ALLOWED_ORIGINS: 'https://pyarena.example.com,http://localhost:5174',
+  }), /AUTH_ALLOWED_ORIGINS must be an exact public HTTPS origin/);
+  assert.throws(() => validateRuntimeEnvironment({
+    ...validRuntime(), AUTH_ALLOWED_ORIGINS: 'https://pyarena.example.com\/\*\*',
+  }), /AUTH_ALLOWED_ORIGINS must be an exact public HTTPS origin/);
+  assert.throws(() => validateRuntimeEnvironment({
+    ...validRuntime(), AUTH_ALLOWED_ORIGINS: 'https://pyarena.example.com,',
+  }), /AUTH_ALLOWED_ORIGINS must be an exact HTTPS origin/);
 });
 
 test('client build accepts only a publishable Supabase key', () => {

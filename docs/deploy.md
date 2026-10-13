@@ -89,7 +89,7 @@ docker compose exec app node scripts/mark-auto-gradable.js --apply
 | `UPLOADS_DIR` | compose ตั้งให้แล้ว | ที่เก็บไฟล์อัปโหลด ต้องอยู่บน volume |
 | `NVIDIA_API_KEY` `NVIDIA_AI_MODEL` | ไม่ | แชทบอท Lumi ถ้าไม่ตั้งจะใช้เนื้อหาสำรองในตัว |
 | `NVIDIA_CODE_JUDGE_API_KEY` `NVIDIA_CODE_JUDGE_MODEL` | ไม่ | ตัวตรวจคุณภาพโค้ด ถ้าไม่ตั้งจะให้คะแนนในเครื่องโดยไม่ส่งโค้ดออกนอก |
-| `EMAIL_USER` `EMAIL_PASS` | ไม่ | อีเมลยืนยันและรีเซ็ตรหัสผ่าน |
+| `EMAIL_USER` `EMAIL_PASS` | ไม่ | ค่าอีเมลของระบบรุ่นเก่า ไม่ใช้แทน Custom SMTP ของ Supabase Auth |
 | `GOOGLE_CLIENT_ID` | **ใช่ ถ้าต้องการปุ่มเข้าสู่ระบบด้วย Google** | OAuth **Web** Client ID ถ้าไม่ตั้ง ปุ่ม Google จะขึ้นว่ายังไม่เปิดให้ใช้และกดไม่ได้ ส่วนการเข้าสู่ระบบด้วยชื่อผู้ใช้ยังทำงานปกติ |
 
 ตอนสร้าง production image, compose นำ `SUPABASE_URL` กับ
@@ -102,13 +102,51 @@ docker compose exec app node scripts/mark-auto-gradable.js --apply
 
 ก่อน build ระบบจะปฏิเสธ key ที่ไม่ได้ขึ้นต้นด้วย `sb_publishable_` และก่อน bind พอร์ต
 server จะตรวจฐานข้อมูล, Supabase keys, public/client URL, CORS และตำแหน่ง uploads ทั้งหมด
-ถ้าขาดหรือมี `SUPABASE_ACCESS_TOKEN` ปะปนใน runtime process จะหยุดทันที
+ถ้าขาดหรือมี `SUPABASE_ACCESS_TOKEN`/`AUTH_SMTP_PASS` ปะปนใน runtime process จะหยุดทันที
 
 `SUPABASE_ACCESS_TOKEN` ใช้เฉพาะ Management API เท่านั้น ให้เก็บใน
 `server/.supabase-management.env` ตาม
 [`server/.supabase-management.env.example`](../server/.supabase-management.env.example)
 สคริปต์ `server/scripts/configure-supabase-auth.js --apply` จะอ่านไฟล์นี้ แต่ container
 จะอ่านเฉพาะ `server/.env` จึงไม่มี management token อยู่ใน runtime
+
+### D09 — ตั้งอีเมล Auth สำหรับ production
+
+ขั้นนี้ต้องมี URL ที่ผู้ใช้เปิดได้จริงผ่าน HTTPS และ SMTP จากผู้ให้บริการที่ยืนยัน
+sender/domain แล้วก่อน จึงจะทดสอบกับ mailbox นอกทีมได้ ห้ามใช้ `localhost`
+เป็น Site URL ของระบบเปิดใช้จริง และห้ามใช้ `EMAIL_USER`/`EMAIL_PASS` รุ่นเก่า
+แทนค่า `AUTH_SMTP_*` โดยไม่ตรวจสอบผู้ส่ง
+
+1. ตั้ง `PUBLIC_BASE_URL` และ `CLIENT_URL` เป็น origin HTTPS เดียวกัน เช่น
+   `https://play.example.com` (ไม่ใส่ path/query) แล้วตั้ง
+   `AUTH_ALLOWED_ORIGINS` เป็น origin HTTPS แบบ exact คั่นด้วย comma
+   โดยมี origin หลักเสมอ เพิ่ม preview เฉพาะ URL ที่ใช้งานจริง
+2. ตั้ง `AUTH_SMTP_HOST`, `AUTH_SMTP_PORT`, `AUTH_SMTP_USER`,
+   `AUTH_SMTP_PASS`, `AUTH_SMTP_SENDER` กับ `SUPABASE_ACCESS_TOKEN` ใน
+   `server/.supabase-management.env` ที่ Git ไม่ติดตามเท่านั้น ไฟล์นี้ใช้
+   กับคำสั่ง setup นอก container และไม่ถูกส่งเข้า application runtime
+3. จาก `server/` รัน `node scripts/configure-supabase-auth.js --check` เพื่อตรวจ
+   URL/ค่าที่ต้องมี โดยไม่เชื่อมต่อ SMTP หรือเปลี่ยน Supabase; จากนั้นรัน
+   `node scripts/configure-supabase-auth.js --verify-smtp` เพื่อตรวจการเชื่อมต่อ
+   (ยังไม่ส่งอีเมล) เมื่อพร้อมจึงรัน `node scripts/configure-supabase-auth.js --apply`
+4. สคริปต์ตั้ง Site URL และ allowlist ของ callback สำหรับ
+   `/login?auth=confirm` กับ `/login?auth=recovery` แบบ exact แทนรายการเดิม
+   ตรวจรายการ preview ทุกตัวก่อนรัน เพราะ redirect อื่นที่ไม่ได้อยู่ใน
+   `AUTH_ALLOWED_ORIGINS` จะถูกลบจาก allowlist ของ Supabase
+5. สมัครบัญชีทดสอบใหม่ด้วย mailbox **นอกทีมโครงการ**, เปิดอีเมลยืนยัน
+   และตรวจว่าลิงก์ยังไม่หมดอายุ กลับ HTTPS production และเข้าสู่ระบบได้
+   จากนั้นขอรีเซ็ตรหัสผ่านของบัญชีนั้น เปิดอีเมลกู้คืน เปลี่ยนรหัสผ่าน
+   และยืนยันว่าใช้รหัสผ่านใหม่ได้ ทดสอบลิงก์หมดอายุและ URL ที่ไม่อยู่ใน
+   allowlist ว่าถูกปฏิเสธ ตรวจว่าลิงก์ใดๆ ไม่กลับ localhost
+6. หลังทดสอบจริงจึงพิจารณาปรับ Auth email rate limit ให้เหมาะกับปริมาณและ
+   ข้อกำหนดของ SMTP provider; จดผลส่งถึง inbox/spam และเวลาส่งโดยไม่เก็บ
+   token, รหัสผ่าน หรือ URL ยืนยันเต็มไว้ใน log
+
+Custom SMTP ของ Supabase เป็นข้อกำหนดสำหรับการส่งถึงผู้ใช้นอกทีม เพราะ
+ตัวส่งเริ่มต้นจำกัดผู้รับและไม่เหมาะกับ production
+([Supabase Custom SMTP](https://supabase.com/docs/guides/auth/auth-smtp));
+Site URL และ Redirect URLs ต้องชี้ production จริง
+([Supabase Redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls)).
 
 Production container รันด้วย user `node` ที่ไม่มีสิทธิ์ root และเขียนได้เฉพาะ
 `/data/uploads` ซึ่ง compose ผูกกับ volume `pysim-uploads` service `uploads-init` จะปรับเจ้าของ

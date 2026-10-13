@@ -14,6 +14,10 @@ function authOrigins(env = process.env) {
     .split(',')
     .map(value => value.trim())
     .filter(Boolean);
+  if (env.NODE_ENV === 'production') {
+    for (const value of configured) addOrigin(origins, value);
+    return origins;
+  }
   for (const value of configured.length
     ? configured
     : ['http://localhost:5174', 'http://127.0.0.1:5174']) addOrigin(origins, value);
