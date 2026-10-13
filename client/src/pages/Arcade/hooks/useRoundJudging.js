@@ -6,7 +6,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import usePyodide from '../../../hooks/usePyodide.js';
 import friendlyPyError from '../../../utils/friendlyPyError.js';
-import { PHASES, TASKS, TASK_TEST_CASES, ROUND_4_FALLBACK_TASK,
+import { PHASES, TASKS, ROUND_4_FALLBACK_TASK,
          FINALE_POOL_BY_DIFFICULTY, EXAMPLE_CASES_SHOWN, pyLiteral,
          TRIAL_MARKER, TRIAL_NO_FN, TRIAL_CODE_ERROR, buildTrialHarness } from '../constants.js';
 
@@ -60,14 +60,11 @@ export default function useRoundJudging({ playerState, setPlayerState, currentRo
   // bank inside Quick Mode's usable seconds — the round was being lost to
   // keystrokes rather than to thinking.
   //
-  // `initial_code` is the finished answer and must never reach the editor:
-  // handing it over whole would let a player win by pressing submit without
-  // writing anything. It is only read here to recover the function name to
-  // grade against, and as the fallback shape for a row seeded before
-  // starter_code existed.
+  // The API only sends the starter; reference code and grading cases remain
+  // on the server. The function signature is present in that starter.
   const shapeTask = useCallback((source) => {
     if (!source) return null;
-    const sigMatch = /^def\s+(\w+)\s*\([^)]*\)\s*:/m.exec(source.initial_code || '');
+    const sigMatch = /^def\s+(\w+)\s*\([^)]*\)\s*:/m.exec(source.starter_code || '');
     if (!sigMatch) return null;
     const starter = (source.starter_code || '').trim();
     return {
@@ -77,7 +74,7 @@ export default function useRoundJudging({ playerState, setPlayerState, currentRo
     # Write your python code here
     pass`,
       functionName: sigMatch[1],
-      testCases: source.test_cases,
+      testCases: [],
       // What the aiHelper item reveals. Falls back to the old generic sentence
       // for a row seeded before hints existed, so the item always does
       // something when used.
@@ -210,15 +207,8 @@ export default function useRoundJudging({ playerState, setPlayerState, currentRo
     let captured = [];
     setPyOnOutput((lines) => { pyOutputRef.current = lines; captured = lines; });
 
-    // Arcade problems are answered by DEFINING a function, so simply executing
-    // the file prints nothing and the player was told "your code ran but did not
-    // print anything" for a perfectly correct answer. The button says "test your
-    // code", so it calls the function with the round's own cases and reports
-    // what came back.
-    //
-    // Still only a trial run: it happens in the player's browser and awards
-    // nothing. The verdict is the server's, at round close - see
-    // docs/adr/0001-server-owns-the-verdict.md.
+    // Hidden cases stay on the server. This browser run only reports execution
+    // output and syntax errors; it cannot claim a pass before round close.
     const cases = Array.isArray(task?.testCases) ? task.testCases : [];
     const fnName = task?.functionName;
     const canRunCases = Boolean(fnName) && cases.length > 0;
@@ -232,7 +222,9 @@ export default function useRoundJudging({ playerState, setPlayerState, currentRo
       .map(l => l.text);
 
     if (!canRunCases) {
-      setConsoleOutput(lines.join('\n').trim() || t('noOutput'));
+      setConsoleOutput(lines.join('\n').trim() || (lang === 'en'
+        ? 'Code ran. The server will check your answer after submission.'
+        : 'โค้ดรันแล้ว เซิร์ฟเวอร์จะตรวจคำตอบหลังส่ง'));
       return;
     }
 

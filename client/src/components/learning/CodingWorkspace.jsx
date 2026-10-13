@@ -228,7 +228,9 @@ export default function CodingWorkspace({
       setHasPassedTests(false);
       onTaskSubmitted?.(result);
     } catch (error) {
-      appendLine(`Submit Error: ${error?.response?.data?.error || error.message || 'Unable to submit task.'}`);
+      const failure = error?.response?.data;
+      appendLine(`Submit Error: ${failure?.detail || failure?.error || error.message || 'Unable to submit task.'}`);
+      if (failure?.hint) appendLine(`คำแนะนำ: ${failure.hint}`);
     } finally {
       setIsSubmitting(false);
     }

@@ -105,62 +105,6 @@ const parseJsonArray = (value) => {
   return Array.isArray(parsed) ? parsed : [];
 };
 
-const getTestConfig = (value) => {
-  const parsed = parseJsonValue(value, null);
-  if (Array.isArray(parsed)) {
-    return {
-      expected_format: "",
-      rules: parsed.filter((item) => item.branch_key || item.crossroad),
-      correctness: parsed,
-      legacy: true,
-    };
-  }
-  if (parsed && typeof parsed === "object") {
-    return {
-      expected_format: parsed.expected_format || "",
-      rules: Array.isArray(parsed.rules) ? parsed.rules : [],
-      correctness: Array.isArray(parsed.correctness) ? parsed.correctness : [],
-      legacy: false,
-    };
-  }
-  return { expected_format: "", rules: [], correctness: [], legacy: false };
-};
-
-const evaluateBranchRules = (rules, output) => {
-  if (!rules || rules.length === 0) return null;
-
-  const cleanOutput = output ? output.trim() : "";
-  const matchNum = cleanOutput.match(/-?\d+(\.\d+)?/);
-  const numericValue = matchNum ? parseFloat(matchNum[0]) : 0;
-
-  for (const rule of rules) {
-    try {
-      let conditionStr = String(rule.condition || "");
-      if (!conditionStr) continue;
-
-      if (conditionStr.includes("value")) {
-        conditionStr = conditionStr.replace(/value/g, JSON.stringify(cleanOutput));
-      } else if (conditionStr.includes("float")) {
-        conditionStr = conditionStr.replace(/float/g, String(numericValue));
-      }
-
-      if (eval(conditionStr)) {
-        return rule.branch_key || rule.crossroad || "default";
-      }
-    } catch (e) {
-      console.error("Error evaluating rule:", e, rule.condition);
-    }
-  }
-
-  return null;
-};
-
-const normalizeOutput = (text = "") =>
-  String(text || "")
-    .trim()
-    .replace(/\r/g, "")
-    .replace(/\s+/g, " ");
-
 const isProgressCompleted = (progress) => {
   const value = progress?.is_completed ?? progress?.completed ?? progress?.completed_this_run;
   return value === true || value === 1 || value === "1" || value === "true";
@@ -189,34 +133,6 @@ const getVisibleDialogues = (rows = [], isCompleted = false, selectedBranchKey =
     : defaultPostSubmit;
 
   return isCompleted ? [...preSubmit, ...postSubmit] : preSubmit;
-};
-
-const getAvailableBranchKeys = (subtopic) => {
-  if (!subtopic) return new Set(["default"]);
-
-  const keys = new Set(["default"]);
-  (subtopic.dialogues || []).forEach((dialogue) => {
-    keys.add(dialogue.branch_key || "default");
-  });
-  (subtopic.dialogue_choices || []).forEach((choice) => {
-    keys.add(choice.branch_key || choice.next_branch_key || "default");
-  });
-  const testConfig = getTestConfig(subtopic.test_cases_json);
-  testConfig.rules.forEach((rule) => {
-    keys.add(rule.branch_key || rule.crossroad || "default");
-  });
-  testConfig.correctness.forEach((testCase) => {
-    keys.add(testCase.branch_key || testCase.crossroad || "default");
-  });
-  (subtopic.dialogue_branches || []).forEach((branch) => {
-    keys.add(branch.branch_key || "default");
-  });
-  return keys;
-};
-
-const getSafeBranchKey = (subtopic, branchKey = "default") => {
-  const key = branchKey || "default";
-  return getAvailableBranchKeys(subtopic).has(key) ? key : "default";
 };
 
 const getBranchMissionCopy = (subtopic, branchKey = "default") => {
@@ -321,89 +237,6 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
   const storyInputRef = useRef("");
   const dialogueAudioRef = useRef(null);
   const outputTargetRef = useRef("terminal");
-    // --- วางฟังก์ชัน runDoneChecks ตรงนี้ ---
-  const runDoneChecks = async (storyOutput = "") => {
-    if (!pyReady && pyError) {
-      setProgramDialogue({ text: `Failed to load Python: ${pyError}` });
-      return { ok: false, output: "", reply: null };
-    }
-
-    if (!pyReady || isRunning || !currentSubtopic) {
-      setProgramDialogue({ text: "Python runtime is loading. Please try again in a moment." });
-      return { ok: false, output: "", reply: null };
-    }
-
-    const testConfig = getTestConfig(currentSubtopic.test_cases_json);
-    const correctnessCases = testConfig.correctness;
-    
-    if (correctnessCases.length === 0 && testConfig.rules.length === 0 && dialogueBranches.length === 0 && terminalLogic.length === 0) {
-      setProgramDialogue({ text: "FAIL: No correctness tests found for this exercise." });
-      return { ok: false, output: "", reply: null };
-    }
-
-    setTerminalLines(["--- Checking test cases ---"]);
-    setIsRunning(true);
-
-    try {
-      const errors = validateCode();
-      if (errors.length > 0) {
-        const message = errors.map((item) => `Error: ${item}`).join("\n");
-        setProgramDialogue({ text: message });
-        errors.forEach((item) => appendTerminalLine(`Error: ${item}`));
-        return { ok: false, output: "", reply: null };
-      }
-
-      let lastOutput = "";
-      for (let index = 0; index < correctnessCases.length; index += 1) {
-        const testCase = correctnessCases[index];
-        const rawOutput = await runCodeForCheck(testCase.input ?? "");
-        const actual = normalizeOutput(rawOutput);
-        const expectedValues = Array.isArray(testCase.expected_any)
-          ? testCase.expected_any
-          : [testCase.expected ?? testCase.expected_output ?? ""];
-        const expected = expectedValues.map((item) => normalizeOutput(String(item)));
-        lastOutput = String(rawOutput || "").trim();
-        const forbiddenValues = Array.isArray(testCase.forbidden_any)
-          ? testCase.forbidden_any
-          : [testCase.forbidden ?? testCase.not_expected ?? ""];
-        const forbidden = forbiddenValues.map((item) => normalizeOutput(String(item))).filter(Boolean);
-
-        if (forbidden.some((item) => actual.includes(item))) {
-          const message = [`FAIL Test ${index + 1}`, `Forbidden output: ${forbidden.join(" OR ")}`, `Got: ${actual || "(no output)"}`].join("\n");
-          setProgramDialogue({ text: message });
-          appendTerminalLine(`FAIL Test ${index + 1}`);
-          appendTerminalLine(`Forbidden output: ${forbidden.join(" OR ")}`);
-          appendTerminalLine(`Got: ${actual || "(no output)"}`);
-          return { ok: false, output: lastOutput || "(no output)", reply: null };
-        }
-
-        if (expected.some((item) => item && actual.includes(item))) {
-          appendTerminalLine(`PASS Test ${index + 1}`);
-        } else {
-          const message = [`FAIL Test ${index + 1}`, `Expected: ${expected.join(" OR ")}`, `Got: ${actual || "(no output)"}`].join("\n");
-          setProgramDialogue({ text: message });
-          appendTerminalLine(`FAIL Test ${index + 1}`);
-          appendTerminalLine(`Expected: ${expected.join(" OR ")}`);
-          appendTerminalLine(`Got: ${actual || "(no output)"}`);
-          return { ok: false, output: lastOutput || "(no output)", reply: null };
-        }
-      }
-
-      appendTerminalLine("--- All tests passed ---");
-      
-      return { ok: true, output: lastOutput || "(no output)", reply: null };
-    } catch (checkError) {
-      const message = `System Error: ${checkError.message}`;
-      setProgramDialogue({ text: message });
-      appendTerminalLine(message);
-      return { ok: false, output: "", reply: null };
-    } finally {
-      setIsRunning(false);
-      setCurrentPrompt("");
-      setCurrentInput("");
-      inputResolverRef.current = null;
-    }
-  };
   const subtopics = useMemo(() => {
     if (!moduleData) return [];
     const list = Array.isArray(moduleData.subtopics) && moduleData.subtopics.length > 0
@@ -480,7 +313,6 @@ const isCurrentSubtopicCompleted = useMemo(() => {
     () => getBranchMissionCopy(currentSubtopic, selectedBranchKey),
     [currentSubtopic, selectedBranchKey]
   );
-  const dialogueBranches = currentSubtopic?.dialogue_branches ?? [];
   const terminalLogic = currentSubtopic?.terminal_logic ?? [];
   const currentDialogue = dialogues[dialogueIndex] ?? null;
   const currentDialogueChoices = programDialogue ? [] : currentDialogue?.choices ?? [];
@@ -519,10 +351,6 @@ const isCurrentSubtopicCompleted = useMemo(() => {
       addBranchKey(choice.branch_key || choice.next_branch_key);
     });
     (subtopic.dialogue_branches || []).forEach((branch) => addBranchKey(branch.branch_key));
-    const testConfig = getTestConfig(subtopic.test_cases_json);
-    [...testConfig.rules, ...testConfig.correctness].forEach((item) => {
-      addBranchKey(item.branch_key || item.crossroad);
-    });
 
     return {
       subtopic,
@@ -861,55 +689,12 @@ const loadGameData = async () => {
     };
   };
 
-  const resolveDialogueBranch = (output) => {
-    const normalizedOutput = normalizeOutput(output);
-    const matchedBranch = dialogueBranches.find((branch) => {
-      const trigger = normalizeOutput(branch.trigger_output);
-      return trigger && normalizedOutput.includes(trigger);
-    });
-
-    if (matchedBranch) return matchedBranch;
-
-    const matchedLogic = terminalLogic.find((item) => {
-      const trigger = normalizeOutput(item.trigger_input);
-      return trigger && normalizedOutput.includes(trigger);
-    });
-
-    if (!matchedLogic) return null;
-
-    const trigger = normalizeOutput(matchedLogic.trigger_input);
-    const branchKey = trigger.includes("ไม่ได้") || trigger.includes("เย็นชา") ? "cold" : "friendly";
-    return {
-      branch_key: branchKey,
-      trigger_output: matchedLogic.trigger_input,
-      is_correct: 1,
-      feedback_text: matchedLogic.reply_text,
-    };
-  };
-
   // เขียนไฟล์เสริมทั้งหมด (data.txt, math_util.py, ฯลฯ) ลงใน Pyodide VFS
   // ก่อนรันโค้ด เพื่อให้ main.py เปิด/import ไฟล์เหล่านี้ได้ เหมือนกับ ExercisePage.jsx
   // Extra files (data.txt, helper modules, ...) handed to the worker so main.py
   // can open/import them; the worker writes them into its filesystem.
   const getExtraFiles = () =>
     Object.entries(fileContents).map(([name, content]) => ({ name, type: "file", content: content || "" }));
-
-  const runCodeForCheck = async (testInput = "") => {
-    let captured = "";
-    const result = await runCode(code, getExtraFiles(), {
-      interactive: true,
-      mainFileName: "main.py",
-      onInput: () => String(testInput ?? ""),
-      onStdout: (t) => { captured += t; },
-      onStderr: (t) => { captured += t; },
-    });
-
-    if (!result.success && !result.interrupted) {
-      return captured.trim() || `Error: ${result.error || "Test run failed"}`;
-    }
-
-    return captured.trim();
-  };
 
   const runCodeInTerminal = async () => {
     if (isRunning) {
@@ -1139,29 +924,6 @@ const loadGameData = async () => {
       },
     }));
 
-    if (user?.user_id && !user?.isGuest) {
-      fetch(`${API_BASE}/api/mini-game/modules/${moduleId}/progress`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mini_game_module_id: currentSubtopic.exercise_id,
-          exercise_id: currentSubtopic.exercise_id,
-          user_id: user.user_id,
-          submitted_code: code,
-          is_completed: isCurrentSubtopicCompleted,
-          score: currentProgress?.score || 0,
-          last_terminal_input: choice.choice_text,
-          last_terminal_reply: choice.feedback_text || null,
-          selected_branch_key: nextBranchKey,
-          last_output: currentProgress?.last_output || null,
-          choice_history_json: nextChoiceHistoryJson,
-          ending_key: nextEndingKey,
-        }),
-      }).catch(() => {
-        // Dialogue choices still work locally if the progress autosave fails.
-      });
-    }
-
     const nextDialogues = getVisibleDialogues(
       currentSubtopic.dialogues || [],
       isCurrentSubtopicCompleted,
@@ -1204,79 +966,38 @@ const handleSubmit = async () => {
     return;
   }
 
-  const execution = await runDoneChecks();
-  if (!execution.ok) {
-    setIsSubmitting(false);
-    return;
-  }
-
   const storyRun = await runCodeInStory();
   if (!storyRun.ok) {
     setIsSubmitting(false);
     return;
   }
 
-  const testConfig = getTestConfig(currentSubtopic.test_cases_json);
-  const branchSource = testConfig.rules.some((rule) =>
-    String(rule.condition || "").includes("float")
-  )
-    ? storyInputRef.current
-    : storyRun.output;
-  const branchKey = testConfig.rules.length > 0
-    ? evaluateBranchRules(testConfig.rules, branchSource)
-    : (resolveDialogueBranch(storyRun.output)?.branch_key || selectedBranchKey || "default");
-
-  if (testConfig.rules.length > 0 && !branchKey) {
-    const message = "FAIL: No branch rule matched the output.";
-    setProgramDialogue({ text: message });
-    appendTerminalLine(message);
-    setIsSubmitting(false);
-    return;
-  }
-
-  const branch = {
-    branch_key: branchKey,
-    trigger_output: storyRun.output,
-    is_correct: 1,
-  };
-  const destinationIndex = getSubtopicIndexForBranch(branchKey);
-  setSelectedBranchKey(branchKey);
-  setSubmittedNextSubtopicIndex(destinationIndex);
-  appendTerminalLine(`PASS Branch: ${branch.branch_key}`);
-
-  const output = storyRun.output || execution.output || "(no output)";
-  const reply = storyRun.reply;
-  const nextBranchKey = branch?.branch_key || selectedBranchKey || "default";
-  const isCompleted = true;
-
+  const output = storyRun.output || "(no output)";
   const currentExerciseId = currentSubtopic?.exercise_id || currentSubtopic?.id;
   const currentUserId = user?.user_id || user?.id || 1;
 
   try {
     const response = await fetch(`${API_BASE}/api/mini-game/modules/${moduleId}/progress`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-pyarena-request": "1" },
       body: JSON.stringify({
         mini_game_module_id: currentExerciseId,
         exercise_id: currentExerciseId,
         user_id: currentUserId,
         submitted_code: code,
-        is_completed: isCompleted,
-        score: 100,
-        last_terminal_input: output,
-        last_terminal_reply: reply,
-        selected_branch_key: nextBranchKey,
-        last_output: output,
-        choice_history_json: pendingChoice?.choice_history_json || currentProgress?.choice_history_json || null,
-        ending_key: pendingChoice?.ending_key || currentProgress?.ending_key || null,
+        story_input: storyInputRef.current,
       }),
     });
 
     const result = await response.json();
     if (!response.ok) {
-      throw new Error(result?.error || "Unable to save MiNi Game progress.");
+      throw new Error([result?.error || "Unable to save MiNi Game progress.", result?.hint].filter(Boolean).join(' — '));
     }
 
+    const nextBranchKey = result.selected_branch_key || "default";
+    setSelectedBranchKey(nextBranchKey);
+    setSubmittedNextSubtopicIndex(getSubtopicIndexForBranch(nextBranchKey));
+    appendTerminalLine(`PASS Branch: ${nextBranchKey}`);
     setIsDoneSubmitted(true);
 
     if (result?.user) {

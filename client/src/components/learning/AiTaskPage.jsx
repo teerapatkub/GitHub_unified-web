@@ -272,7 +272,7 @@ export default function AiTaskPage({ mode = 'exercise', user, onUserRefresh }) {
       starterMessage={mode === 'challenge'
         ? 'สวัสดี เราคือ Lumi ผู้ช่วยประจำด่าน Challenge นี้ ถ้าคุณอยากได้ hint หรืออยากให้ช่วยมองบั๊กจากโค้ดที่เขียนอยู่ก็เรียกเราได้เลย ✨'
         : 'สวัสดี เราคือ Lumi ผู้ช่วยของห้อง Debug Lab นี้เอง ถ้าติดบั๊กหรืออยากได้ hint ก็ถามเราได้เลย ✨'}
-      testCases={task.testCases}
+      testCases={task.example ? [{ input: task.example.input, expected: task.example.output }] : []}
       submitLabel={mode === 'challenge' ? 'Submit challenge' : 'Submit answer'}
       progressLabel={modeCopy.progressLabel}
       progressMeta={progressMeta}

@@ -25,20 +25,6 @@ import { getWebTutorial } from "../data/webTutorials";
 import { API_BASE } from '../config/api.js';
 import usePyodide from "../hooks/usePyodide";
 import friendlyPyError from "../utils/friendlyPyError";
-import { sanitizePyErrorText } from "../utils/sanitizePyErrorText.js";
-
-const parseTestCases = (raw) => {
-  if (!raw) return [];
-  if (Array.isArray(raw)) return raw;
-  if (typeof raw === "string") {
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return [];
-    }
-  }
-  return [];
-};
 
 function RewardModal({ xp, currency, hasNext, onClose, onNext }) {
   return (
@@ -301,17 +287,6 @@ const loadExercises = async () => {
     ]);
   }, [currentExIdx, currentEx, submittedCodeByExerciseId, lang]);
 
-  const normalizeOut = (text) => {
-    if (!text) return "";
-    return text
-      .trim()
-      .replace(/\r/g, "")
-      .replace(/(\d+\.\d{5,})/g, (match) =>
-        parseFloat(parseFloat(match).toFixed(2)).toString()
-      )
-      .replace(/\s+/g, " ");
-  };
-
 const handleRun = async () => {
     if (!pyReady || isRunning) return;
     setTerminalLines([]);
@@ -354,70 +329,9 @@ const handleRun = async () => {
 const handleSubmit = async () => {
     if (!pyReady || isRunning || !currentEx) return;
 
-    const testCases = parseTestCases(currentEx.test_cases);
-    if (testCases.length === 0) {
-      appendLine("ไม่พบ test cases สำหรับแบบฝึกหัดนี้");
-      return;
-    }
-
     setIsRunning(true);
-    setTerminalLines(["--- กำลังตรวจแบบฝึกหัด ---"]);
-
-    // Data/helper files so a test-case run can open() them; main.py is exec'd
-    // from its encoded form below.
-    const files = Object.entries(fileContents).map(([name, content]) => ({
-      name,
-      type: "file",
-      content: content || "",
-    }));
+    setTerminalLines(["--- กำลังตรวจแบบฝึกหัดบนเซิร์ฟเวอร์ ---"]);
     const mainCode = fileContents["main.py"] || "";
-
-    for (let index = 0; index < testCases.length; index += 1) {
-      const testCase = testCases[index];
-      const encoded = btoa(unescape(encodeURIComponent(mainCode)));
-      // Feed the case's input via StringIO, capture what the code prints, then
-      // print it back so it reaches the worker's stdout. Runs in the worker, so a
-      // learner whose code loops forever is interrupted, not left freezing the tab.
-      const script = `
-import sys, builtins, base64
-from io import StringIO
-def sync_input(prompt=""):
-    return sys.stdin.readline().rstrip('\n')
-builtins.input = sync_input
-_real_stdout = sys.stdout
-sys.stdin = StringIO(${JSON.stringify(String(testCase.input ?? ""))})
-sys.stdout = StringIO()
-try:
-    exec(base64.b64decode("${encoded}").decode("utf-8"), {"input": sync_input, "__builtins__": builtins}, {})
-    _out = sys.stdout.getvalue()
-except Exception as e:
-    _out = str(e)
-sys.stdout = _real_stdout
-print(_out, end="")
-`;
-      let captured = "";
-      const runResult = await runCode(script, files, {
-        interactive: false,
-        onStdout: (t) => { captured += t; },
-        onStderr: (t) => { captured += t; },
-      });
-      const expected = normalizeOut(String(testCase.expected ?? testCase.expected_output ?? ""));
-      // A trial run: show what the code printed, and leave the verdict to the
-      // server. Never compares here - `actual.includes(expected)` once passed 17
-      // for an expected 7. See CONTEXT.md: ลองรัน never judges.
-      appendLine(`Test ${index + 1} — คาด: ${expected}`);
-      if (!runResult.success && runResult.error && runResult.error !== "Timeout") {
-        // An interrupted loop or a worker error: show it and stop - the rest of
-        // the cases would hit the same wall.
-        appendLine(`Test ${index + 1} — ${sanitizePyErrorText(runResult.error) || runResult.error}`);
-        break;
-      }
-      const actual = normalizeOut(captured);
-      appendLine(`Test ${index + 1} — ได้: ${actual || '(ไม่ได้พิมพ์อะไรออกมา)'}`);
-    }
-
-    setIsRunning(false);
-
 
     setSubmittedCodeByExerciseId((prev) => ({
       ...prev,
@@ -439,19 +353,9 @@ print(_out, end="")
 
       const result = await response.json();
       if (!response.ok) {
-        // The server is the only thing that decides pass or fail, and it sends
-        // back a Thai explanation per failing case for a reader who has never
-        // programmed. Show that, not the raw traceback.
         appendLine(result?.detail || result?.error || "ส่งคำตอบไม่สำเร็จ");
-        const failing = (result?.results || []).filter((r) => !r.passed);
-        setLastFailure(failing.find((r) => r.hint) || failing[0] || null);
-        failing.forEach((r, i) => {
-          if (r.hint) {
-            appendLine(`ข้อ ${i + 1}: ${r.hint}${r.errorLine ? ` (บรรทัดที่ ${r.errorLine})` : ""}`);
-          } else {
-            appendLine(`ข้อ ${i + 1}: คาด ${JSON.stringify(r.expected)} แต่ได้ ${JSON.stringify(r.actual)}`);
-          }
-        });
+        if (result?.hint) appendLine(`คำแนะนำ: ${result.hint}`);
+        setLastFailure(result?.hint ? { hint: result.hint, errorLine: result.errorLine } : null);
         return;
       }
 
@@ -500,6 +404,8 @@ print(_out, end="")
       ]);
     } catch (error) {
       appendLine(`Submit Error: ${error.message}`);
+    } finally {
+      setIsRunning(false);
     }
   };
 
@@ -718,21 +624,9 @@ print(_out, end="")
               {exDescription(currentEx)}
             </p>
 
-            <div className="mt-4 rounded-2xl bg-slate-900 px-3.5 py-3 font-mono text-xs text-slate-100">
-              <p className="mb-2 text-[10px] font-bold text-emerald-400">// ตัวอย่างผลลัพธ์</p>
-              {parseTestCases(currentEx.test_cases)[0] ? (
-                <>
-                  <p className="mb-1.5 break-words text-slate-300">
-                    Input: {String(parseTestCases(currentEx.test_cases)[0].input ?? "")}
-                  </p>
-                  <p className="break-words text-xs font-bold text-white">
-                    Output: {String(parseTestCases(currentEx.test_cases)[0].expected ?? parseTestCases(currentEx.test_cases)[0].expected_output ?? "")}
-                  </p>
-                </>
-              ) : (
-                <p className="text-slate-300">ไม่มีตัวอย่าง</p>
-              )}
-            </div>
+            <p className="mt-4 rounded-2xl bg-slate-900 px-3.5 py-3 text-xs text-slate-100">
+              ลองรันโค้ดเพื่อดูผลลัพธ์ แล้วส่งคำตอบให้เซิร์ฟเวอร์ตรวจตามโจทย์
+            </p>
             
             <div className="mt-4 flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2.5">
               <div>

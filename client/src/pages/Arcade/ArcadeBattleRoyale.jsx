@@ -42,7 +42,7 @@ import PlayerStatsCard from './widgets/PlayerStatsCard.jsx';
 import PastMatchesPanel from './widgets/PastMatchesPanel.jsx';
 import ChatPanel from './widgets/ChatPanel.jsx';
 import { TRANSLATIONS } from './translations.js';
-import { parseUtcTimestamp, PHASES, TASKS, TASK_TEST_CASES, SHOP_ITEMS, BOT_NAMES, AUTO_SUBMIT_LEAD_SECONDS,
+import { parseUtcTimestamp, PHASES, TASKS, SHOP_ITEMS, BOT_NAMES, AUTO_SUBMIT_LEAD_SECONDS,
          AUTO_SUBMIT_WARN_SECONDS, ROUND_TIMES, phaseDurationsFor } from './constants.js';
 
 export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
@@ -541,15 +541,11 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
     if (!roundNum) return { title: '', desc: '' };
     const pooled = getPoolTask(roundNum);
     if (pooled) return pooled;
-    // Built-in-task fallback. It carries its test cases too, so the worked
-    // examples under the description are present here as well rather than
-    // silently disappearing on the one path that isn't DB-backed.
-    const builtIn = TASK_TEST_CASES[`ROUND_${roundNum}`];
+    // Built-in fallback has only the public prompt; grading cases stay on the server.
     return {
       title: t(`task${roundNum}Title`),
       desc: t(`task${roundNum}Desc`),
-      functionName: builtIn?.functionName,
-      testCases: builtIn?.cases
+      testCases: []
     };
   })();
   const isModeEntry = phase === PHASES.LOBBY && !currentRoom;

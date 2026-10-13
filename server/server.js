@@ -21,6 +21,7 @@ const arcadeConfig = require('../shared/arcadeConfig.json');
 // The single answer-checker. See server/problemGrader.js for why there is only
 // one now, and server/problemsSchema.js for the problem bank it grades against.
 const { gradeSubmission, screenUnverifiedSubmission } = require('./problemGrader');
+const { gradeMiniGameSubmission } = require('./miniGameGrader');
 // The single definition of how far through a lesson a learner is - see the
 // header of server/lessonProgress.js for why it had to become one.
 const { evaluateLesson, POST_PASS_RATIO } = require('./lessonProgress');
@@ -81,18 +82,21 @@ async function testSupabase(req, res) {
     });
   }
 }
-app.get('/api/your-table', testSupabase);
 
 const db = require('./db');
 const { createThemeRouter } = require('./themeRoutes');
 const { createLessonAdminRouter } = require('./lessonAdminRoutes');
 const { createLessonContentRouter } = require('./lessonContentRoutes');
-app.use('/api', createLessonContentRouter(db));
 const { createStudentProgressRouter } = require('./studentProgressRoutes');
 const { authSchemaSql, ensureAuthSchema, installAuth } = require('./auth');
 // Production schema setup belongs to the versioned application migration.
 // Standalone module tests keep installAuth's default auto-initialization.
 const playerAuth = installAuth(app, db, supabase, process.env, { initializeSchema: false });
+app.get('/api/your-table', testSupabase);
+app.use('/api', createLessonContentRouter(db, {
+    ensureQuizSchema: () => ensureLessonQuizAttemptSchema(),
+    evaluateAchievements: (userId) => evaluateAchievements(userId),
+}));
 app.use('/api/themes', createThemeRouter(db));
 app.use('/api/admin/lessons', createLessonAdminRouter(db));
 app.use('/api/admin/student-progress', createStudentProgressRouter(db));
@@ -1420,7 +1424,6 @@ const drawLearningTaskFromBank = async ({ userId, mode, level }) => {
 
 const serializeLearningTask = (row) => {
     const instructions = safeJsonParse(row.instructions_json, []);
-    const testCases = safeJsonParse(row.test_cases_json, []);
     return {
         taskId: row.task_id,
         userId: row.user_id,
@@ -1435,7 +1438,6 @@ const serializeLearningTask = (row) => {
             output: row.example_output || '',
         },
         starterCode: row.starter_code || '',
-        testCases: Array.isArray(testCases) ? testCases : [],
         rewardXp: Number(row.reward_xp || 0),
         rewardCoins: Number(row.reward_coins || 0),
         rerollsUsed: Number(row.rerolls_used || 0),
@@ -2159,10 +2161,10 @@ app.post('/api/learning/ai-task/submit', async (req, res) => {
     if (!gradedVerdict.accepted) {
         return res.status(400).json({
             error: 'ยังผ่านไม่ครบทุกเทสเคส',
-            detail: gradedVerdict.reason,
+            detail: `ผ่าน ${gradedVerdict.passedCount ?? 0} จาก ${gradedVerdict.totalCount ?? 0} เทสเคส`,
             passed: gradedVerdict.passedCount ?? 0,
             total: gradedVerdict.totalCount ?? 0,
-            results: gradedVerdict.results || [],
+            ...publicFailureFeedback(gradedVerdict),
         });
     }
 
@@ -2345,6 +2347,14 @@ async function judgeLearnerSubmission({ problem, code }) {
         totalCount: result.total,
         results: result.results,
         reason: result.allPassed ? '' : (result.error || `ผ่าน ${result.passed} จาก ${result.total} เทสเคส`),
+    };
+}
+
+function publicFailureFeedback(verdict) {
+    const failure = verdict.results?.find((item) => !item.passed);
+    return {
+        hint: String(failure?.hint || 'ตรวจรูปแบบผลลัพธ์และเงื่อนไขในโจทย์อีกครั้ง').slice(0, 500),
+        errorLine: failure?.errorLine || null,
     };
 }
 
@@ -3526,7 +3536,7 @@ const COMPETITIVE_AI_REWARD_THRESHOLD = 70;
 // had already drifted: this one never set PYTHONIOENCODING, so any competitive
 // answer that printed Thai died with UnicodeEncodeError, produced empty output,
 // and was marked wrong. Now there is one runner, in server/pythonRunner.js.
-const { normalizeOutput } = require('./pythonRunner');
+const { normalizeOutput, runPythonCase } = require('./pythonRunner');
 
 const runCompetitivePythonTests = async ({ code, testCases }) => {
     const normalizedCases = normalizeCompetitiveTestCases(testCases);
@@ -4392,7 +4402,7 @@ app.get('/api/competitive/challenges', async (req, res) => {
             }
         }
 
-        res.json(challenges);
+        res.json(challenges.map(({ test_cases, ...publicChallenge }) => publicChallenge));
     } catch (err) {
         console.error('Competitive challenges fetch error:', err.message);
         res.status(500).json({ error: err.message });
@@ -4578,7 +4588,6 @@ app.post('/api/competitive/challenges/:id/run-tests', async (req, res) => {
             success: true,
             passed: testResult.passed,
             total: testResult.total,
-            results: testResult.results,
             runnerAvailable: testResult.runnerAvailable,
         });
     } catch (err) {
@@ -4721,7 +4730,6 @@ app.post('/api/competitive/challenges/:id/submit', async (req, res) => {
             timeExpired: timedOut,
             rewardCoins,
             creatorBonusCoins,
-            testResults: testResult.results,
         });
     } catch (err) {
         console.error('Competitive challenge submit error:', err.message);
@@ -5779,15 +5787,18 @@ app.get('/api/arcade/items', async (req, res) => {
 
 app.get('/api/arcade/tasks', async (req, res) => {
     try {
-        const [easyTasks] = await db.query(`SELECT * FROM arcade_tasks WHERE difficulty = 'easy' ORDER BY task_id ASC`);
-        const [mediumTasks] = await db.query(`SELECT * FROM arcade_tasks WHERE difficulty = 'medium' ORDER BY task_id ASC`);
-        const [hardTasks] = await db.query(`SELECT * FROM arcade_tasks WHERE difficulty = 'hard' ORDER BY task_id ASC`);
+        const fields = 'task_id, difficulty, title_th, title_en, desc_th, desc_en, starter_code, hint_th, hint_en';
+        const [easyTasks] = await db.query(`SELECT ${fields} FROM arcade_tasks WHERE difficulty = 'easy' ORDER BY task_id ASC`);
+        const [mediumTasks] = await db.query(`SELECT ${fields} FROM arcade_tasks WHERE difficulty = 'medium' ORDER BY task_id ASC`);
+        const [hardTasks] = await db.query(`SELECT ${fields} FROM arcade_tasks WHERE difficulty = 'hard' ORDER BY task_id ASC`);
+        const publicTask = ({ task_id, difficulty, title_th, title_en, desc_th, desc_en, starter_code, hint_th, hint_en }) =>
+            ({ task_id, difficulty, title_th, title_en, desc_th, desc_en, starter_code, hint_th, hint_en });
 
         res.json({
             success: true,
-            easy: easyTasks || [],
-            medium: mediumTasks || [],
-            hard: hardTasks || [],
+            easy: (easyTasks || []).map(publicTask),
+            medium: (mediumTasks || []).map(publicTask),
+            hard: (hardTasks || []).map(publicTask),
             all_tasks: {
                 easy_count: (easyTasks || []).length,
                 medium_count: (mediumTasks || []).length,
@@ -5796,23 +5807,11 @@ app.get('/api/arcade/tasks', async (req, res) => {
         });
     } catch (err) {
         console.error('❌ GET /api/arcade/tasks error:', err.message);
-        res.status(500).json({ error: err.message, fallback: ARCADE_TASKS });
+        res.status(500).json({ error: 'โหลดโจทย์ Arcade ไม่สำเร็จ' });
     }
 });
 
-app.post('/api/arcade/evaluate', (req, res) => {
-    const { round, code, scoreMultiplierActive } = req.body;
-    let baseScore = 500;
-    if (scoreMultiplierActive) baseScore *= 2;
-    const baseCash = 400;
-
-    res.json({
-        success: true,
-        scoreEarned: baseScore,
-        cashEarned: baseCash,
-        message: `ประมวลผลโค้ดรอบที่ ${round} สำเร็จ!`
-    });
-});
+app.post('/api/arcade/evaluate', (_req, res) => res.status(410).json({ error: 'ใช้การส่งคำตอบของแมตช์ปัจจุบันแทน' }));
 
 // --- ARCADE ROOM MANAGEMENT ENDPOINTS ---
 
@@ -6681,7 +6680,7 @@ app.get('/api/exercises/:lessonId', async (req, res) => {
         }
 
         const [rows] = await db.execute(
-            `SELECT exercise_id, lesson_id, title, description, title_en, description_en, starter_code, test_cases, xp_reward, currency_reward
+            `SELECT exercise_id, lesson_id, title, description, title_en, description_en, starter_code, xp_reward, currency_reward
              FROM exercises
              WHERE lesson_id = ?
              ORDER BY exercise_id ASC
@@ -6706,7 +6705,6 @@ app.get('/api/exercises/:lessonId', async (req, res) => {
                 description_en: exercise.description_en,
                 initial_code: exercise.starter_code,
                 starter_code: exercise.starter_code,
-                test_cases: exercise.test_cases ?? [],
                 xp_reward: exercise.xp_reward,
                 currency_reward: exercise.currency_reward,
             },
@@ -6720,7 +6718,9 @@ app.get('/api/exercises/:lessonId', async (req, res) => {
 app.get('/api/exercises/list/:lessonId', async (req, res) => {
     try {
         const [rows] = await db.execute(
-            `SELECT e.* FROM exercises e WHERE e.lesson_id = ? ORDER BY e.exercise_id ASC`,
+            `SELECT e.exercise_id, e.lesson_id, e.title, e.description, e.title_en, e.description_en,
+                    e.starter_code, e.xp_reward, e.currency_reward
+               FROM exercises e WHERE e.lesson_id = ? ORDER BY e.exercise_id ASC`,
             [req.params.lessonId]
         );
 
@@ -6749,6 +6749,9 @@ app.get('/api/exercises/list/:lessonId', async (req, res) => {
 });
 
 app.get('/api/exercises/progress/:lessonId/:userId', async (req, res) => {
+    if (Number(req.params.userId) !== Number(req.player?.user_id)) {
+        return res.status(403).json({ error: 'ดำเนินการได้เฉพาะบัญชีของคุณ' });
+    }
     try {
         await ensureLessonExercisesSeeded();
         await ensureLessonExerciseExists(req.params.lessonId);
@@ -6823,10 +6826,10 @@ app.post('/api/exercises/:exerciseId/submit', async (req, res) => {
         if (!verdict.accepted) {
             return res.status(400).json({
                 error: 'ยังผ่านไม่ครบทุกเทสเคส',
-                detail: verdict.reason,
+                detail: `ผ่าน ${verdict.passedCount ?? 0} จาก ${verdict.totalCount ?? 0} เทสเคส`,
                 passed: verdict.passedCount ?? 0,
                 total: verdict.totalCount ?? 0,
-                results: verdict.results || [],
+                ...publicFailureFeedback(verdict),
             });
         }
 
@@ -6916,7 +6919,7 @@ app.get('/api/lessons/:lessonId/exercise', async (req, res) => {
         await ensureLessonExercisesSeeded();
         await ensureLessonExerciseExists(req.params.lessonId);
         const [rows] = await db.execute(
-            `SELECT exercise_id, lesson_id, title, description, title_en, description_en, starter_code, test_cases, xp_reward, currency_reward
+            `SELECT exercise_id, lesson_id, title, description, title_en, description_en, starter_code, xp_reward, currency_reward
              FROM exercises
              WHERE lesson_id = ?
              LIMIT 1`,
@@ -6930,82 +6933,6 @@ app.get('/api/lessons/:lessonId/exercise', async (req, res) => {
         res.json(rows[0]);
     } catch (err) {
         logRouteError('❌ Lesson exercise error:', err);
-        res.status(500).json({ error: describeError(err) });
-    }
-});
-
-app.post('/api/lessons/:lessonId/quiz-results', async (req, res) => {
-    try {
-        await ensureLessonQuizAttemptSchema();
-        const lessonId = Number(req.params.lessonId);
-        const userId = Number(req.body?.user_id);
-        const quizType = String(req.body?.quiz_type || '').trim().toLowerCase();
-        const score = Number(req.body?.score || 0);
-        const totalQuestions = Number(req.body?.total_questions || 0);
-        const answersJson = JSON.stringify(req.body?.answers || {});
-
-        if (!lessonId || !userId || !['pre', 'post'].includes(quizType)) {
-            return res.status(400).json({ error: 'Invalid quiz result payload' });
-        }
-
-        await db.execute(
-            `INSERT INTO lesson_quiz_attempts (
-                user_id, lesson_id, quiz_type, score, total_questions, answers_json
-             ) VALUES (?, ?, ?, ?, ?, ?)
-             ON CONFLICT (user_id, lesson_id, quiz_type) DO UPDATE SET
-                score = EXCLUDED.score,
-                total_questions = EXCLUDED.total_questions,
-                answers_json = EXCLUDED.answers_json,
-                completed_at = CURRENT_TIMESTAMP,
-                updated_at = CURRENT_TIMESTAMP`,
-            [userId, lessonId, quizType, score, totalQuestions, answersJson]
-        );
-
-        // Anything that can move an achievement metric checks afterwards.
-        const newAchievements = await evaluateAchievements(userId);
-
-        res.json({
-            success: true,
-            new_achievements: newAchievements,
-            lesson_id: lessonId,
-            user_id: userId,
-            quiz_type: quizType,
-            score,
-            total_questions: totalQuestions,
-        });
-    } catch (err) {
-        res.status(500).json({ error: describeError(err) });
-    }
-});
-
-app.get('/api/lessons/:lessonId/quiz-results/:userId', async (req, res) => {
-    try {
-        await ensureLessonQuizAttemptSchema();
-        const { lessonId, userId } = req.params;
-        const [rows] = await db.execute(
-            `SELECT quiz_type, score, total_questions, answers_json, completed_at, updated_at
-             FROM lesson_quiz_attempts
-             WHERE lesson_id = ? AND user_id = ?
-             ORDER BY quiz_type`,
-            [lessonId, userId]
-        );
-        const normalized = rows.map((row) => ({
-            quiz_type: row.quiz_type,
-            score: Number(row.score || 0),
-            total_questions: Number(row.total_questions || 0),
-            answers: (() => {
-                if (!row.answers_json) return {};
-                try {
-                    return JSON.parse(row.answers_json);
-                } catch (_) {
-                    return {};
-                }
-            })(),
-            completed_at: row.completed_at,
-            updated_at: row.updated_at,
-        }));
-        res.json(normalized);
-    } catch (err) {
         res.status(500).json({ error: describeError(err) });
     }
 });
@@ -7195,6 +7122,7 @@ app.get('/api/mini-game/modules/:moduleId', async (req, res) => {
 
         // 3. ประกอบร่างข้อมูลรอบเดียวเสร็จ ไม่ต้องลูปกรองซ้ำซ้อน
         const subtopics = exerciseRows.map((row) => {
+            const { test_cases_json: _privateTests, ...publicRow } = row;
             const currentDialogues = dialogueMap.get(row.exercise_id) || [];
             const allChoicesForExercise = [];
 
@@ -7212,7 +7140,7 @@ app.get('/api/mini-game/modules/:moduleId', async (req, res) => {
                 .map((f) => ({ name: f.file_name, content: f.file_content || "" }));
 
             return {
-                ...row,
+                ...publicRow,
                 dialogues,
                 dialogue_choices: allChoicesForExercise,
                 dialogue_branches: [],
@@ -7245,12 +7173,39 @@ app.get('/api/mini-game/modules/:moduleId', async (req, res) => {
         _miniGameModuleCache.set(lessonId, { data: result, ts: Date.now() });
         res.json(result);
     } catch (err) {
-        console.error('❌ MiNi Game lesson detail error:', err?.message);
-        console.error(err?.stack);
-        logRouteError('MiNi Game lesson detail error:', err);
-        res.status(500).json({ error: describeError(err) });
+        console.error('MiNi Game lesson detail error:', err?.code || err?.name);
+        res.status(500).json({ error: 'โหลดด่านเนื้อเรื่องไม่สำเร็จ' });
     }
 });
+
+function chooseMiniGameBranch(rules, output, input) {
+    const value = String(output || '');
+    const numericValue = Number(String(input || '').match(/-?\d+(?:\.\d+)?/)?.[0]);
+    for (const rule of rules) {
+        const condition = String(rule.condition || '').trim();
+        let matched = false;
+        const numeric = /^float\s*(<=|>=|<|>|==|===)\s*(-?\d+(?:\.\d+)?)$/.exec(condition);
+        const contains = /^value(\.toLowerCase\(\))?\.includes\((["'])(.*?)\2\)$/.exec(condition);
+        const regex = /^\/(.+)\/\.test\(value\)$/.exec(condition);
+        const length = /^value\.length\s*(>=|>)\s*(\d+)$/.exec(condition);
+        if (numeric && Number.isFinite(numericValue)) {
+            const limit = Number(numeric[2]);
+            matched = ({ '<': () => numericValue < limit, '<=': () => numericValue <= limit,
+                '>': () => numericValue > limit, '>=': () => numericValue >= limit,
+                '==': () => numericValue === limit, '===': () => numericValue === limit })[numeric[1]]();
+        } else if (contains) {
+            const haystack = contains[1] ? value.toLowerCase() : value;
+            const needle = contains[1] ? contains[3].toLowerCase() : contains[3];
+            matched = haystack.includes(needle);
+        } else if (regex && regex[1].length <= 100) {
+            try { matched = new RegExp(regex[1], 'u').test(value); } catch {}
+        } else if (length) {
+            matched = length[1] === '>=' ? value.length >= Number(length[2]) : value.length > Number(length[2]);
+        }
+        if (matched) return String(rule.branch_key || rule.crossroad || 'default').slice(0, 40);
+    }
+    return 'default';
+}
 
 app.post('/api/mini-game/modules/:moduleId/progress', async (req, res) => {
     const lessonId = Number(req.params.moduleId);
@@ -7258,10 +7213,7 @@ app.post('/api/mini-game/modules/:moduleId/progress', async (req, res) => {
         mini_game_module_id,
         user_id,
         submitted_code = '',
-        is_completed = false,
-        score = 0,
-        selected_branch_key = 'default',
-        last_terminal_reply = null,
+        story_input = '',
     } = req.body || {};
 
     if (!lessonId || !mini_game_module_id || !user_id) {
@@ -7270,7 +7222,7 @@ app.post('/api/mini-game/modules/:moduleId/progress', async (req, res) => {
 
     try {
         const [exerciseRows] = await db.execute(
-            `SELECT exercise_id, lesson_id, xp_reward, currency_reward
+            `SELECT exercise_id, lesson_id, xp_reward, currency_reward, test_cases_json
              FROM mini_game_exercises
              WHERE lesson_id = ? AND exercise_id = ?
              LIMIT 1`,
@@ -7282,6 +7234,31 @@ app.post('/api/mini-game/modules/:moduleId/progress', async (req, res) => {
         }
 
         const exercise = exerciseRows[0];
+        const config = safeJsonParse(exercise.test_cases_json, {});
+        const cases = Array.isArray(config) ? config : config.correctness;
+        if (!Array.isArray(cases) || cases.length === 0 || !String(submitted_code).trim()) {
+            return res.status(400).json({ error: 'โจทย์นี้ยังไม่มีเทสเคสที่ตรวจได้ หรือไม่ได้ส่งโค้ด' });
+        }
+        const [fileRows] = await db.execute(
+            'SELECT file_name, file_content FROM mini_game_exercises_files WHERE exercise_id = ?',
+            [exercise.exercise_id]
+        );
+        const files = Object.fromEntries(fileRows.map((row) => [row.file_name, row.file_content || '']));
+        const verdict = await gradeMiniGameSubmission(submitted_code, cases, files);
+        if (!verdict.accepted) {
+            return res.status(400).json({ error: 'ยังผ่านไม่ครบทุกเทสเคส',
+                passed: verdict.passed, total: verdict.total,
+                hint: verdict.hint || 'ตรวจรูปแบบผลลัพธ์และเงื่อนไขในโจทย์อีกครั้ง',
+                errorLine: verdict.errorLine });
+        }
+        const rules = Array.isArray(config)
+            ? config.filter((item) => item.branch_key || item.crossroad)
+            : Array.isArray(config.rules) ? config.rules : [];
+        let branchKey = 'default';
+        if (rules.length) {
+            const branchRun = await runPythonCase({ code: submitted_code, input: String(story_input).slice(0, 2000), expected: '', files });
+            branchKey = chooseMiniGameBranch(rules, branchRun.actual, story_input);
+        }
 
         if (isGuestUserId(user_id)) {
             return res.json({
@@ -7290,7 +7267,8 @@ app.post('/api/mini-game/modules/:moduleId/progress', async (req, res) => {
                 xp_reward: 0,
                 currency_reward: 0,
                 alreadyCompleted: false,
-                is_module_completed: Boolean(is_completed),
+                is_module_completed: true,
+                selected_branch_key: branchKey,
             });
         }
 
@@ -7302,7 +7280,7 @@ app.post('/api/mini-game/modules/:moduleId/progress', async (req, res) => {
             [user_id, exercise.exercise_id]
         );
         const existingProgress = existingProgressRows[0] || null;
-        const shouldGrantReward = Boolean(is_completed) && !existingProgress;
+        const shouldGrantReward = !existingProgress;
 
         const [submissionResult] = await db.execute(
             `INSERT INTO mini_game_exercise_submissions (
@@ -7331,10 +7309,10 @@ app.post('/api/mini-game/modules/:moduleId/progress', async (req, res) => {
             [
                 user_id,
                 exercise.exercise_id,
-                Boolean(is_completed),
+                true,
                 shouldGrantReward ? Number(exercise.xp_reward || 0) : 0,
                 shouldGrantReward ? Number(exercise.currency_reward || 0) : 0,
-                selected_branch_key || 'default',
+                branchKey,
             ]
         );
 
@@ -7354,18 +7332,22 @@ app.post('/api/mini-game/modules/:moduleId/progress', async (req, res) => {
             success: true,
             new_achievements: newAchievements,
             alreadyCompleted: Boolean(existingProgress),
-            is_module_completed: Boolean(is_completed),
+            is_module_completed: true,
+            selected_branch_key: branchKey,
             xp_reward: xpReward,
             currency_reward: coinReward,
             user: updatedUser || null,
         });
     } catch (err) {
-        logRouteError('MiNi Game exercise progress upsert error:', err);
-        res.status(500).json({ error: describeError(err) });
+        console.error('MiNi Game exercise progress error:', err?.code || err?.name);
+        res.status(500).json({ error: 'บันทึกผลด่านเนื้อเรื่องไม่สำเร็จ' });
     }
 });
 
 app.get('/api/mini-game/modules/:moduleId/progress/:userId', async (req, res) => {
+    if (Number(req.params.userId) !== Number(req.player?.user_id)) {
+        return res.status(403).json({ error: 'ดำเนินการได้เฉพาะบัญชีของคุณ' });
+    }
     try {
         const lessonId = Number(req.params.moduleId);
         const userId = req.params.userId;

@@ -4,7 +4,6 @@ import { ChevronLeft, ChevronRight, CircleHelp, Play } from "lucide-react";
 import { useParams } from "react-router-dom";
 import usePyodide from "../hooks/usePyodide";
 import friendlyPyError from "../utils/friendlyPyError";
-import { isQuizAnswerCorrect } from "../utils/quizAnswer.js";
 import { sanitizePyErrorText } from "../utils/sanitizePyErrorText.js";
 import { API_BASE, assetUrl } from '../config/api.js';
 import WebTutorialModal from "../components/WebTutorialModal";
@@ -169,7 +168,6 @@ export default function LessonPage({
             questions: (quiz.questions || []).map((question) => ({
               question: question.question_text,
               choices: question.choices?.map((choice) => choice.choice_text) || [],
-              answer: question.correct_answer,
               type: question.question_type === "fill" ? "fill" : "choice",
             })),
           })
@@ -290,25 +288,13 @@ export default function LessonPage({
     return Boolean(quizLocked[quizId]) || (questionCount > 0 && answeredCount === questionCount);
   };
 
-  const isCorrectAnswer = (question, userAnswer) =>
-    isQuizAnswerCorrect(question, userAnswer);
-
   const submitQuiz = async () => {
     if (!slide?.questions?.length) return;
-
-    let score = 0;
     const errors = {};
-
-    slide.questions.forEach((question, index) => {
+    slide.questions.forEach((_, index) => {
       const userAnswer = answers[index];
-
       if (!userAnswer || String(userAnswer).trim() === "") {
         errors[index] = true;
-        return;
-      }
-
-      if (isCorrectAnswer(question, userAnswer)) {
-        score += 1;
       }
     });
 
@@ -319,59 +305,53 @@ export default function LessonPage({
 
     setQuizErrors({});
     setQuizStatusMessage("");
-    const shouldPersistQuizResult =
-      quizId !== "post" || score >= getPostPassingScore(slide.questions.length);
-
-    if (quizId === "post" && !shouldPersistQuizResult) {
-      setScores((prev) => ({ ...prev, post: null }));
-      setQuizLocked((prev) => ({ ...prev, post: false }));
-      setShowSummary(false);
-      setShowPostTestFailModal(true);
+    if (!user?.user_id || user?.isGuest) {
+      setFetchError('กรุณาเข้าสู่ระบบก่อนส่งคำตอบ');
       return;
     }
-
-    if (shouldPersistQuizResult && user?.user_id && !user?.isGuest) {
-      try {
-        setSavingQuiz(true);
-        const response = await fetch(
-          `${API_BASE}/api/lessons/${resolvedLessonId}/quiz-results`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              user_id: user.user_id,
-              quiz_type: quizId,
-              score,
-              total_questions: slide.questions.length,
-              answers,
-            }),
-          }
-        );
-
-        if (!response.ok) {
-          const payload = await response.json().catch(() => ({}));
-          throw new Error(payload?.error || "Unable to save quiz result.");
+    try {
+      setSavingQuiz(true);
+      const response = await fetch(
+        `${API_BASE}/api/lessons/${resolvedLessonId}/quiz-results`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            user_id: user.user_id,
+            quiz_type: quizId,
+            answers,
+          }),
         }
-      } catch (error) {
-        setFetchError(
-          error instanceof Error
-            ? error.message
-            : "Unable to save quiz result."
-        );
-        return;
-      } finally {
-        setSavingQuiz(false);
+      );
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.error || "Unable to save quiz result.");
       }
+      const result = await response.json();
+      if (quizId === "post" && !result.passed) {
+        setScores((prev) => ({ ...prev, post: null }));
+        setQuizLocked((prev) => ({ ...prev, post: false }));
+        setShowSummary(false);
+        setShowPostTestFailModal(true);
+        return;
+      }
+      setScores((prev) => ({ ...prev, [quizId]: result.score }));
+      setQuizLocked((prev) => ({ ...prev, [quizId]: true }));
+      if (quizId === "post") setShowSummary(true);
+    } catch (error) {
+      setFetchError(
+        error instanceof Error
+          ? error.message
+          : "Unable to save quiz result."
+      );
+      return;
+    } finally {
+      setSavingQuiz(false);
     }
 
-    setScores((prev) => ({ ...prev, [quizId]: score }));
-    setQuizLocked((prev) => ({ ...prev, [quizId]: true }));
-
-    if (quizId === "post") {
-      setShowSummary(true);
-    }
   };
 
   const handleNextSlide = async () => {
@@ -564,9 +544,7 @@ export default function LessonPage({
                     key={index}
                     className={`rounded-lg p-4 transition-colors ${
                       quizLocked[quizId]
-                        ? isCorrectAnswer(question, answers[index])
-                          ? "border border-emerald-200 bg-emerald-50"
-                          : "border border-red-200 bg-red-50"
+                        ? "border border-blue-200 bg-blue-50"
                         : quizErrors[index]
                           ? "border border-red-200 bg-red-50"
                           : "bg-pysim-surface-low"
@@ -628,16 +606,8 @@ export default function LessonPage({
                     )}
 
                     {quizLocked[quizId] && (
-                      <p
-                        className={`mt-2 text-sm font-bold ${
-                          isCorrectAnswer(question, answers[index])
-                            ? "text-emerald-600"
-                            : "text-pysim-error"
-                        }`}
-                      >
-                        {isCorrectAnswer(question, answers[index])
-                          ? "ตอบถูก"
-                          : `ตอบผิด คำตอบที่ถูก: ${question.answer}`}
+                      <p className="mt-2 text-sm font-bold text-blue-700">
+                        บันทึกคำตอบแล้ว ดูคะแนนรวมด้านบน
                       </p>
                     )}
                   </div>

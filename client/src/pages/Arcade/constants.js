@@ -128,32 +128,7 @@ export const ROUND_4_FALLBACK_TASK = {
   title_en: 'Maximum Subarray Sum',
   desc_th: 'เขียนฟังก์ชัน `max_sub_array(nums)` หาผลรวมของอาร์เรย์ย่อยที่มีค่ามากที่สุด (Kadane Algorithm)',
   desc_en: 'Write a function `max_sub_array(nums)` finding the maximum contiguous subarray sum.',
-  initial_code: 'def max_sub_array(nums):\n    # Write your python code here\n    pass',
-  test_cases: [{ input: [[-2, 1, -3, 4, -1, 2, 1, -5, 4]], output: 6 }, { input: [[1, 2, 3, 4]], output: 10 }]
-};
-
-// Test cases for real correctness checking, one set per static TASKS entry
-// above — kept in lockstep with those so the function graded is always
-// exactly the one the player is looking at. Round 4 is handled separately
-// (see getRound4Task in useRoundJudging.js) since its content comes from the
-// DB pool.
-export const TASK_TEST_CASES = {
-  ROUND_1: {
-    functionName: 'fib',
-    cases: [{ input: [5], output: 5 }, { input: [7], output: 13 }, { input: [0], output: 0 }, { input: [1], output: 1 }]
-  },
-  ROUND_2: {
-    functionName: 'is_anagram',
-    cases: [
-      { input: ["listen", "silent"], output: true },
-      { input: ["hello", "world"], output: false },
-      { input: ["aabbcc", "abcabc"], output: true }
-    ]
-  },
-  ROUND_3: {
-    functionName: 'two_sum',
-    cases: [{ input: [[2, 7, 11, 15], 9], output: [0, 1] }, { input: [[3, 2, 4], 6], output: [1, 2] }]
-  }
+  starter_code: 'def max_sub_array(nums):\n    # Write your python code here\n    pass'
 };
 
 // UI-only metadata (icon/i18n key) per shop item — price and type are NOT

@@ -2,8 +2,23 @@ const express = require('express');
 const { evaluateLesson } = require('./lessonProgress');
 
 // Shared production reader used by the learner UI and publishing integration tests.
-function createLessonContentRouter(db) {
+function createLessonContentRouter(db, { ensureQuizSchema = async () => {}, evaluateAchievements = async () => [] } = {}) {
   const router = express.Router();
+  const quizQuestions = async (lessonId, quizType) => {
+    const [rows] = await db.execute(
+      `SELECT q.question_id, q.correct_answer
+         FROM lesson_quizzes lq JOIN quiz_questions q ON q.quiz_id = lq.quiz_id
+        WHERE lq.lesson_id = ? AND lq.quiz_type = ?
+        ORDER BY lq.quiz_id, q.question_order, q.question_id`,
+      [lessonId, quizType]
+    );
+    return rows;
+  };
+  const gradeAnswers = (questions, answers) => questions.map((question, index) => {
+    const answer = String(answers?.[index] ?? '').trim().replace(/\s+/g, ' ');
+    const expected = String(question.correct_answer ?? '').trim().replace(/\s+/g, ' ');
+    return Boolean(answer && expected && answer === expected);
+  });
   router.param('lessonId', (req, res, next, value) => {
     const id = Number(value);
     if (!Number.isInteger(id) || id < 1 || id > 2147483647) return res.status(400).json({ error: 'รหัสบทเรียนไม่ถูกต้อง' });
@@ -142,7 +157,7 @@ function createLessonContentRouter(db) {
       const [quizRows] = await db.execute('SELECT quiz_id, quiz_type FROM lesson_quizzes WHERE lesson_id = ? ORDER BY quiz_type, quiz_id', [req.params.lessonId]);
       const quizzes = [];
       for (const quiz of quizRows) {
-        const [questions] = await db.execute('SELECT question_id, question_text, question_type, correct_answer FROM quiz_questions WHERE quiz_id = ? ORDER BY question_order, question_id', [quiz.quiz_id]);
+        const [questions] = await db.execute('SELECT question_id, question_text, question_type FROM quiz_questions WHERE quiz_id = ? ORDER BY question_order, question_id', [quiz.quiz_id]);
         for (const q of questions) {
           if (q.question_type === 'choice') {
             const [choices] = await db.execute('SELECT choice_text FROM question_choices WHERE question_id = ? ORDER BY choice_id', [q.question_id]);
@@ -151,10 +166,76 @@ function createLessonContentRouter(db) {
             q.choices = [];
           }
         }
-        quizzes.push({ quiz_type: quiz.quiz_type, questions });
+        quizzes.push({ quiz_type: quiz.quiz_type, questions: questions.map(q => ({
+          question_id: q.question_id,
+          question_text: q.question_text,
+          question_type: q.question_type,
+          choices: q.choices,
+        })) });
       }
       res.json(quizzes);
     } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+  router.post('/lessons/:lessonId/quiz-results', async (req, res) => {
+    try {
+      await ensureQuizSchema();
+      const userId = Number(req.player?.user_id);
+      const quizType = String(req.body?.quiz_type || '').trim().toLowerCase();
+      const answers = req.body?.answers;
+      if (!userId || !['pre', 'post'].includes(quizType) || !answers || typeof answers !== 'object' || Array.isArray(answers)) {
+        return res.status(400).json({ error: 'Invalid quiz result payload' });
+      }
+      const questions = await quizQuestions(req.params.lessonId, quizType);
+      if (!questions.length || questions.length > 100 || Object.keys(answers).length !== questions.length
+        || questions.some((_, index) => !Object.hasOwn(answers, index))) {
+        return res.status(400).json({ error: 'Invalid quiz answers' });
+      }
+      const correct = gradeAnswers(questions, answers);
+      const score = correct.filter(Boolean).length;
+      const totalQuestions = questions.length;
+      const passed = quizType !== 'post' || score >= Math.ceil(totalQuestions * 0.6);
+      if (passed) {
+        await db.execute(
+          `INSERT INTO lesson_quiz_attempts (user_id, lesson_id, quiz_type, score, total_questions, answers_json)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT (user_id, lesson_id, quiz_type) DO UPDATE SET
+             score = EXCLUDED.score, total_questions = EXCLUDED.total_questions,
+             answers_json = EXCLUDED.answers_json, completed_at = CURRENT_TIMESTAMP,
+             updated_at = CURRENT_TIMESTAMP`,
+          [userId, req.params.lessonId, quizType, score, totalQuestions, JSON.stringify(answers)]
+        );
+      }
+      const newAchievements = passed ? await evaluateAchievements(userId) : [];
+      res.json({ success: true, lesson_id: Number(req.params.lessonId), user_id: userId,
+        quiz_type: quizType, score, total_questions: totalQuestions, passed,
+        new_achievements: newAchievements });
+    } catch (err) {
+      console.error('Quiz grading failed:', err.code || err.name);
+      res.status(500).json({ error: 'บันทึกผลแบบทดสอบไม่สำเร็จ' });
+    }
+  });
+  router.get('/lessons/:lessonId/quiz-results/:userId', async (req, res) => {
+    try {
+      if (Number(req.params.userId) !== Number(req.player?.user_id)) return res.status(403).json({ error: 'ดำเนินการได้เฉพาะบัญชีของคุณ' });
+      await ensureQuizSchema();
+      const [rows] = await db.execute(
+        `SELECT quiz_type, score, total_questions, answers_json, completed_at, updated_at
+           FROM lesson_quiz_attempts WHERE lesson_id = ? AND user_id = ? ORDER BY quiz_type`,
+        [req.params.lessonId, req.player.user_id]
+      );
+      const result = [];
+      for (const row of rows) {
+        let answers = {};
+        try { answers = typeof row.answers_json === 'string' ? JSON.parse(row.answers_json) : row.answers_json || {}; } catch {}
+        result.push({ quiz_type: row.quiz_type, score: Number(row.score || 0),
+          total_questions: Number(row.total_questions || 0), answers,
+          completed_at: row.completed_at, updated_at: row.updated_at });
+      }
+      res.json(result);
+    } catch (err) {
+      console.error('Quiz results failed:', err.code || err.name);
+      res.status(500).json({ error: 'โหลดผลแบบทดสอบไม่สำเร็จ' });
+    }
   });
   return router;
 }

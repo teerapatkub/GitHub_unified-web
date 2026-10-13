@@ -186,7 +186,7 @@ const trimLauncherFrames = (text) => {
     return head + '  ' + raw.slice(own).trimStart();
 };
 
-async function gradeStdioProblem({ problem, code, timeoutMs }) {
+async function gradeStdioProblem({ problem, code, timeoutMs, files = {} }) {
     const cases = asCases(problem.test_cases);
     if (cases.length === 0) {
         return { passed: 0, total: 0, allPassed: false, results: [], error: 'โจทย์ข้อนี้ยังไม่มี test case' };
@@ -197,18 +197,27 @@ async function gradeStdioProblem({ problem, code, timeoutMs }) {
         // A case may list several acceptable outputs (mini-game branches do).
         const accepted = Array.isArray(c.expected_any) && c.expected_any.length > 0
             ? c.expected_any
-            : [c.expected];
+            : [c.expected ?? c.expected_output];
 
         let best = null;
         for (const expected of accepted) {
             const outcome = await runPythonCase({
                 code: RUN_WITH_INPUT_PATCHED,
-                files: { 'solution.py': String(code || '') },
+                files: { ...files, 'solution.py': String(code || '') },
                 mainFileName: '__pysim_run.py',
-                input: c.input ?? '', expected, timeoutMs,
+                input: c.input ?? '', expected: c.match_mode === 'contains' ? '' : expected, timeoutMs,
             });
-            if (outcome.passed) { best = outcome; break; }
-            if (!best) best = outcome;
+            const actualText = normalizeOutput(outcome.actual).replace(/\s+/g, ' ');
+            const expectedText = normalizeOutput(expected).replace(/\s+/g, ' ');
+            const matchesPhrase = expectedText && (/^-?\d+(?:\.\d+)?$/.test(expectedText)
+                ? actualText === expectedText : actualText.includes(expectedText));
+            const forbidden = Array.isArray(c.forbidden_any) ? c.forbidden_any : [c.forbidden ?? c.not_expected];
+            const hasForbiddenOutput = forbidden.some((item) => item && actualText.includes(normalizeOutput(String(item)).replace(/\s+/g, ' ')));
+            const passed = (c.match_mode === 'contains'
+                ? !outcome.error && Boolean(matchesPhrase) : outcome.passed) && !hasForbiddenOutput;
+            const candidate = { ...outcome, passed };
+            if (passed) { best = candidate; break; }
+            if (!best) best = candidate;
         }
         const error = trimLauncherFrames(best.error || '');
         const explained = explainPythonError(error);
@@ -296,7 +305,7 @@ compile(base64.b64decode("${b64}").decode("utf-8"), "solution.py", "exec")
  * @param {string} code     what the learner wrote
  * @returns {{passed:number,total:number,allPassed:boolean,results:Array,error:string}}
  */
-async function gradeSubmission({ problem, code, timeoutMs = 6000 }) {
+async function gradeSubmission({ problem, code, timeoutMs = 6000, files = {} }) {
     if (!problem) {
         return { passed: 0, total: 0, allPassed: false, results: [], error: 'ไม่พบโจทย์' };
     }
@@ -309,7 +318,7 @@ async function gradeSubmission({ problem, code, timeoutMs = 6000 }) {
 
     return problem.test_kind === 'function'
         ? gradeFunctionProblem({ problem, code, timeoutMs })
-        : gradeStdioProblem({ problem, code, timeoutMs });
+        : gradeStdioProblem({ problem, code, timeoutMs, files });
 }
 
 module.exports = {
