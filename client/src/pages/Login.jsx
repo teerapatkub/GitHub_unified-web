@@ -2,12 +2,10 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Code, Cpu, Sparkles } from 'lucide-react';
-import { useTheme } from '../contexts/ThemeContext';
 import { API_BASE } from '../config/api.js';
 
 export default function Login() {
     const navigate = useNavigate();
-    const { isDark } = useTheme();
     const [isRegister, setIsRegister] = useState(false);
     const [formData, setFormData] = useState({ username: '', password: '' });
     const [error, setError] = useState('');
@@ -36,7 +34,7 @@ export default function Login() {
                     setIsRegister(false);
                 }
             }
-        } catch (err) {
+        } catch {
             setError('ชื่อผู้ใช้ซ้ำ หรือ รหัสผ่านผิดพลาด!');
         }
     };

@@ -1,12 +1,12 @@
-import React, { useState, useRef } from "react";
-import { 
-  motion, 
-  useMotionValue, 
-  useMotionTemplate, 
-  useAnimationFrame 
+import React, { useRef } from "react";
+import {
+  motion as Motion,
+  useMotionValue,
+  useMotionTemplate,
+  useAnimationFrame
 } from "framer-motion";
 
-export function cn(...classes) {
+function cn(...classes) {
     return classes.filter(Boolean).join(' ');
   }
 
@@ -24,7 +24,7 @@ export const TheInfiniteGrid = ({ children }) => {
   const gridOffsetX = useMotionValue(0);
   const gridOffsetY = useMotionValue(0);
 
-  const speedX = 0.3; 
+  const speedX = 0.3;
   const speedY = 0.3;
 
   useAnimationFrame(() => {
@@ -47,12 +47,12 @@ export const TheInfiniteGrid = ({ children }) => {
       <div className="fixed inset-0 z-0 opacity-[0.03]">
         <GridPattern offsetX={gridOffsetX} offsetY={gridOffsetY} />
       </div>
-      <motion.div 
+      <Motion.div
         className="fixed inset-0 z-0 opacity-30 pointer-events-none"
         style={{ maskImage, WebkitMaskImage: maskImage }}
       >
         <GridPattern offsetX={gridOffsetX} offsetY={gridOffsetY} />
-      </motion.div>
+      </Motion.div>
 
       <div className="fixed inset-0 pointer-events-none z-0">
         <div className="absolute right-[-10%] top-[-10%] w-[40%] h-[40%] rounded-full bg-blue-200/20 blur-[120px]" />
@@ -70,7 +70,7 @@ const GridPattern = ({ offsetX, offsetY }) => {
   return (
     <svg className="w-full h-full">
       <defs>
-        <motion.pattern
+        <Motion.pattern
           id="grid-pattern"
           width="40"
           height="40"
@@ -83,9 +83,9 @@ const GridPattern = ({ offsetX, offsetY }) => {
             fill="none"
             stroke="currentColor"
             strokeWidth="1"
-            className="text-slate-400" 
+            className="text-slate-400"
           />
-        </motion.pattern>
+        </Motion.pattern>
       </defs>
       <rect width="100%" height="100%" fill="url(#grid-pattern)" />
     </svg>

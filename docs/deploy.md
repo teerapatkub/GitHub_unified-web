@@ -283,6 +283,37 @@ npm run test:migrations:postgres
 
 ---
 
+## ประตูตรวจ dependency และ build (ส่วนของ D13)
+
+CI ใช้ `npm ci` จาก lockfile ของ `client` และ `server` แยกกัน แล้วรัน production audit,
+client/server lint, client test/build และตรวจทุก JavaScript chunk ไม่เกิน 500 KiB
+server lint จำกัด warning เดิมไว้ไม่เกิน 30 รายการ ส่วน image ติดตั้ง server ด้วย
+`npm ci --omit=dev` จึงไม่มี `nodemon` หรือ ESLint ใน runtime
+
+เมื่อตรวจในเครื่อง ให้รันจากแต่ละโฟลเดอร์:
+
+```bash
+cd client
+npm ci
+npm audit --omit=dev --audit-level=low
+npm run lint
+npm test
+npm run build
+npm run check:bundle
+
+cd ../server
+npm ci
+npm audit --omit=dev --audit-level=low
+npm run lint
+npm run pretest
+```
+
+ข้อยกเว้นสำหรับเครื่องมือพัฒนาและวันหมดอายุอยู่ใน
+[`docs/security/dependency-exceptions.md`](security/dependency-exceptions.md) ส่วน integration tests
+ที่ใช้ PostgreSQL ต้องรันกับฐานทดสอบที่ทิ้งได้ตาม D13
+
+---
+
 ## ยังไม่ได้เลือกโฮสต์ และไม่ต้องเลือกตอนนี้
 
 ไฟล์ในโฟลเดอร์นี้ไม่ผูกกับผู้ให้บริการรายใด สิ่งที่ต้องมีคือ

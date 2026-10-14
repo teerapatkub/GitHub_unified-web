@@ -1,5 +1,6 @@
 {
   "scripts": {
+    "lint": "eslint --max-warnings=30 server.js arcade auth runtime security",
     "pretest": "node --test tests/production-environment.test.js tests/production-auth-settings.test.js tests/data-api-security.test.js",
     "test": "node --test --test-concurrency=1 tests/auth.test.js tests/admin-principal.test.js tests/rematch-roster.test.js tests/migrations-startup.test.js tests/arcade-room-api.test.js tests/arcade-matches.test.js tests/arcade-membership.test.js tests/arcade-score-breakdown.test.js tests/arcade-submissions.test.js tests/arcade-settlement.test.js tests/arcade-rewards.test.js tests/arcade-shop.test.js tests/arcade-self-items.test.js tests/arcade-attacks.test.js tests/arcade-bots.test.js tests/arcade-reconnect.test.js tests/arcade-acceptance.test.js",
     "test:migrations": "node --test tests/migrations-startup.test.js",
@@ -55,10 +56,15 @@
     "lucide-react": "^0.562.0",
     "multer": "^2.0.2",
     "mysql2": "^3.18.2",
-    "nodemailer": "^8.0.1",
-    "nodemon": "^3.1.11",
+    "nodemailer": "10.1.0",
     "openai": "^7.4.0",
     "pg": "^8.16.3",
     "react-router-dom": "^7.12.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.1",
+    "eslint": "9.39.1",
+    "globals": "16.5.0",
+    "nodemon": "3.1.14"
   }
 }

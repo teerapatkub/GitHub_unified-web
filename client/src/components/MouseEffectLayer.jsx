@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { API_BASE, assetUrl } from '../config/api.js';
 
 
@@ -18,20 +18,22 @@ function effectDuration(effect) {
 }
 
 export default function MouseEffectLayer({ user, targetRef }) {
-  const [effects, setEffects] = useState([]);
+  const [equippedOverride, setEquippedOverride] = useState(null);
+  const userEffects = useMemo(() => parseEffects(user?.mouse_effect_data), [user?.mouse_effect_data]);
+  const effects = equippedOverride && equippedOverride.source === user?.mouse_effect_data
+    ? equippedOverride.effects : userEffects;
   const [bursts, setBursts] = useState([]);
   const lastHoverAt = useRef(0);
 
   useEffect(() => {
-    setEffects(parseEffects(user?.mouse_effect_data));
-  }, [user?.mouse_effect_data]);
-
-  useEffect(() => {
     if (targetRef) return undefined;
-    const onEquipped = (event) => setEffects(parseEffects(event.detail?.effects));
+    const onEquipped = (event) => setEquippedOverride({
+      source: user?.mouse_effect_data,
+      effects: parseEffects(event.detail?.effects),
+    });
     window.addEventListener('pysim:mouse-effect-equipped', onEquipped);
     return () => window.removeEventListener('pysim:mouse-effect-equipped', onEquipped);
-  }, [targetRef]);
+  }, [targetRef, user?.mouse_effect_data]);
 
   useEffect(() => {
     if (!effects.length) return undefined;

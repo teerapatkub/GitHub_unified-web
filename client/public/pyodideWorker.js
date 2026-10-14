@@ -99,17 +99,17 @@ self.onmessage = async function (e) {
         try {
             // Setup virtual filesystem — create working directory
             const wd = workDir || '/home/user';
-            try { pyodide.FS.mkdirTree(wd); } catch { }
+            try { pyodide.FS.mkdirTree(wd); } catch { /* Optional filesystem operation; continue when absent. */ }
 
             // Write game files into Pyodide FS
             if (files && files.length > 0) {
                 for (const f of files) {
                     if (f.type === 'folder') {
-                        try { pyodide.FS.mkdirTree(wd + '/' + f.name); } catch { }
+                        try { pyodide.FS.mkdirTree(wd + '/' + f.name); } catch { /* Optional filesystem operation; continue when absent. */ }
                     } else {
                         try {
                             pyodide.FS.writeFile(wd + '/' + f.name, f.content || '');
-                        } catch { }
+                        } catch { /* Optional filesystem operation; continue when absent. */ }
                     }
                 }
             }
@@ -118,7 +118,7 @@ self.onmessage = async function (e) {
             let filesBefore = new Set();
             try {
                 filesBefore = new Set(pyodide.FS.readdir(wd).filter(n => n !== '.' && n !== '..'));
-            } catch { }
+            } catch { /* Optional filesystem operation; continue when absent. */ }
 
             // Change to working directory and run code. Put the cwd on sys.path
             // too, so an exercise whose main.py does `import helper` finds the
@@ -152,9 +152,9 @@ if "" not in sys.path:
                             const content = pyodide.FS.readFile(wd + '/' + name, { encoding: 'utf8' });
                             filesAfter.push({ name, type: 'file', content });
                         }
-                    } catch { }
+                    } catch { /* Optional filesystem operation; continue when absent. */ }
                 }
-            } catch { }
+            } catch { /* Optional filesystem operation; continue when absent. */ }
 
             // Determine changes
             const created = filesAfter.filter(f => !filesBefore.has(f.name));

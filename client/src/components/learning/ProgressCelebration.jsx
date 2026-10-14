@@ -1,4 +1,4 @@
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, motion as Motion, useReducedMotion } from 'framer-motion';
 import { ArrowUp, Coins, Sparkles, Star, Trophy } from 'lucide-react';
 
 const MOTION_TRANSITION = { duration: 0.42, ease: [0.22, 1, 0.36, 1] };
@@ -12,7 +12,7 @@ export default function ProgressCelebration({ event, onClose }) {
 
   return (
     <AnimatePresence>
-      <motion.div
+      <Motion.div
         key={event.id}
         className="fixed inset-0 z-[120] flex items-center justify-center px-4 py-8"
         initial={{ opacity: 0 }}
@@ -20,7 +20,7 @@ export default function ProgressCelebration({ event, onClose }) {
         exit={{ opacity: 0 }}
         transition={{ duration: prefersReducedMotion ? 0.01 : 0.25 }}
       >
-        <motion.div
+        <Motion.div
           className={`absolute inset-0 ${
             isLevelUp
               ? 'bg-[radial-gradient(circle_at_top,rgba(250,204,21,0.26),transparent_36%),rgba(2,6,23,0.76)]'
@@ -31,7 +31,7 @@ export default function ProgressCelebration({ event, onClose }) {
           exit={{ opacity: 0 }}
         />
 
-        <motion.div
+        <Motion.div
           initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, scale: 0.92, y: 24 }}
           animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 }}
           exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: 10 }}
@@ -50,12 +50,12 @@ export default function ProgressCelebration({ event, onClose }) {
 
           {!prefersReducedMotion && (
             <>
-              <motion.div
+              <Motion.div
                 className="absolute -left-10 top-10 h-28 w-28 rounded-full bg-amber-200/45 blur-3xl"
                 animate={{ x: [0, 22, 0], y: [0, -10, 0] }}
                 transition={{ repeat: Infinity, duration: 5.4, ease: 'easeInOut' }}
               />
-              <motion.div
+              <Motion.div
                 className="absolute right-0 top-0 h-36 w-36 rounded-full bg-sky-200/40 blur-3xl"
                 animate={{ x: [0, -20, 0], y: [0, 18, 0] }}
                 transition={{ repeat: Infinity, duration: 6.2, ease: 'easeInOut' }}
@@ -65,7 +65,7 @@ export default function ProgressCelebration({ event, onClose }) {
 
           <div className="relative px-8 pb-8 pt-10 sm:px-10">
             <div className="flex flex-col items-center text-center">
-              <motion.div
+              <Motion.div
                 initial={prefersReducedMotion ? { opacity: 1 } : { scale: 0.8, rotate: -6, opacity: 0 }}
                 animate={prefersReducedMotion ? { opacity: 1 } : { scale: 1, rotate: 0, opacity: 1 }}
                 transition={{ ...MOTION_TRANSITION, delay: prefersReducedMotion ? 0 : 0.08 }}
@@ -76,9 +76,9 @@ export default function ProgressCelebration({ event, onClose }) {
                 }`}
               >
                 {isLevelUp ? <Trophy size={36} /> : <Sparkles size={36} />}
-              </motion.div>
+              </Motion.div>
 
-              <motion.p
+              <Motion.p
                 initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, y: 10 }}
                 animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
                 transition={{ ...MOTION_TRANSITION, delay: prefersReducedMotion ? 0 : 0.12 }}
@@ -87,26 +87,26 @@ export default function ProgressCelebration({ event, onClose }) {
                 }`}
               >
                 {isLevelUp ? 'Level Promotion' : 'Quest Complete'}
-              </motion.p>
+              </Motion.p>
 
-              <motion.h2
+              <Motion.h2
                 initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, y: 14 }}
                 animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
                 transition={{ ...MOTION_TRANSITION, delay: prefersReducedMotion ? 0 : 0.18 }}
                 className="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-5xl"
               >
                 {event.title}
-              </motion.h2>
+              </Motion.h2>
 
               {event.subtitle ? (
-                <motion.p
+                <Motion.p
                   initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, y: 10 }}
                   animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
                   transition={{ ...MOTION_TRANSITION, delay: prefersReducedMotion ? 0 : 0.24 }}
                   className="mt-4 max-w-xl text-sm font-medium leading-6 text-slate-600 sm:text-base"
                 >
                   {event.subtitle}
-                </motion.p>
+                </Motion.p>
               ) : null}
 
               <div className={`mt-8 grid w-full gap-4 ${isLevelUp ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
@@ -143,7 +143,7 @@ export default function ProgressCelebration({ event, onClose }) {
                 </div>
               ) : null}
 
-              <motion.button
+              <Motion.button
                 type="button"
                 onClick={onClose}
                 whileHover={prefersReducedMotion ? undefined : { scale: 1.02 }}
@@ -155,11 +155,11 @@ export default function ProgressCelebration({ event, onClose }) {
                 }`}
               >
                 ไปต่อ
-              </motion.button>
+              </Motion.button>
             </div>
           </div>
-        </motion.div>
-      </motion.div>
+        </Motion.div>
+      </Motion.div>
     </AnimatePresence>
   );
 }

@@ -19,7 +19,6 @@ import { API_BASE } from '../../config/api.js';
 
 
 export default function CodingWorkspace({
-  user,
   taskId,
   sectionLabel,
   title,

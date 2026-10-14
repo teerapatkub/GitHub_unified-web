@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion';
+import { motion as Motion } from 'framer-motion';
 import { HelpCircle } from 'lucide-react';
 
 // No AnimatePresence — see CreateRoomModal.jsx for why (its AnimatePresence
@@ -8,12 +8,12 @@ import { HelpCircle } from 'lucide-react';
 export default function GlossaryModal({ show, onClose, items, t }) {
   if (!show) return null;
   return (
-        <motion.div
+        <Motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6"
         >
-          <motion.div
+          <Motion.div
             initial={{ scale: 0.95, y: 15 }}
             animate={{ scale: 1, y: 0 }}
             className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full h-[80vh] flex flex-col border border-slate-200 overflow-hidden"
@@ -53,7 +53,7 @@ export default function GlossaryModal({ show, onClose, items, t }) {
                 </div>
               ))}
             </div>
-          </motion.div>
-        </motion.div>
+          </Motion.div>
+        </Motion.div>
   );
 }

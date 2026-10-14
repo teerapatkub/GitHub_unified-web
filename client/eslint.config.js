@@ -7,6 +7,16 @@ import { defineConfig, globalIgnores } from 'eslint/config'
 export default defineConfig([
   globalIgnores(['dist', 'public/pyodide']),
   {
+    files: ['public/pyodideWorker.js'],
+    languageOptions: {
+      globals: {
+        ...globals.worker,
+        importScripts: 'readonly',
+        loadPyodide: 'readonly',
+      },
+    },
+  },
+  {
     files: ['**/*.{js,jsx}'],
     extends: [
       js.configs.recommended,

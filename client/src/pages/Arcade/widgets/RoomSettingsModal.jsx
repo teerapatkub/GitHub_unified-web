@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion';
+import { motion as Motion } from 'framer-motion';
 
 // No AnimatePresence — see CreateRoomModal.jsx for why (its AnimatePresence
 // exit was found to sometimes never unmount, leaving an invisible
@@ -7,8 +7,8 @@ import { motion } from 'framer-motion';
 export default function RoomSettingsModal({ show, onClose, settingsForm, setSettingsForm, onSubmit, t }) {
   if (!show) return null;
   return (
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6">
-          <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 border border-slate-200 space-y-6">
+      <Motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6">
+          <Motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 border border-slate-200 space-y-6">
             <div className="flex justify-between items-center border-b border-slate-100 pb-4">
               <h3 className="text-lg font-black text-slate-800">{t('roomSettingsModalTitle')}</h3>
               <button onClick={onClose} className="text-slate-400 text-2xl">&times;</button>
@@ -57,7 +57,7 @@ export default function RoomSettingsModal({ show, onClose, settingsForm, setSett
                 <button type="submit" className="flex-1 py-3 bg-rose-600 hover:bg-rose-500 text-white font-black text-xs rounded-xl shadow-md">{t('saveSettingsBtn')}</button>
               </div>
             </form>
-          </motion.div>
-      </motion.div>
+          </Motion.div>
+      </Motion.div>
   );
 }

@@ -123,7 +123,6 @@ export default function usePyodide() {
         worker.onmessage = onMessage;
         workerRef.current = worker;
         worker.postMessage({ type: 'init', payload: { interruptBuffer: interruptRef.current } });
-        setStatus('loading');
 
         return () => {
             worker.terminate();
@@ -240,7 +239,6 @@ export default function usePyodide() {
         runCode,
         stopRun,
         clearOutput,
-        setOnOutput,
-        output: outputRef.current
+        setOnOutput
     };
 }

@@ -8,6 +8,57 @@ permissions:
   contents: read
 
 jobs:
+  dependency-and-client-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install client from lockfile
+        working-directory: client
+        run: npm ci
+
+      - name: Audit production client dependencies
+        working-directory: client
+        run: npm audit --omit=dev --audit-level=low
+
+      - name: Lint client source
+        working-directory: client
+        run: npm run lint
+
+      - name: Test client
+        working-directory: client
+        run: npm test
+
+      - name: Build client
+        working-directory: client
+        run: npm run build
+
+      - name: Enforce JavaScript bundle budget
+        working-directory: client
+        run: npm run check:bundle
+
+      - name: Install server from lockfile
+        working-directory: server
+        run: npm ci
+
+      - name: Lint server source
+        working-directory: server
+        run: npm run lint
+
+      - name: Audit production server dependencies
+        working-directory: server
+        run: npm audit --omit=dev --audit-level=low
+
+      - name: Test production environment rules
+        working-directory: server
+        run: npm run pretest
+
   repository-safety:
     runs-on: ubuntu-latest
     steps:
@@ -28,7 +79,11 @@ jobs:
         run: node scripts/security/repository-safety.mjs
 
       - name: Build production image
-        run: docker build --tag pyarena-repository-safety .
+        run: >-
+          docker build --tag pyarena-repository-safety
+          --build-arg VITE_SUPABASE_URL=https://ci-placeholder.supabase.co
+          --build-arg VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_ci_placeholder
+          .
 
       - name: Inspect production image contents
         run: node scripts/security/container-image-safety.mjs pyarena-repository-safety

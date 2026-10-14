@@ -2,6 +2,10 @@ import { useEffect, useState } from "react";
 import AdminNavbar from "../components/AdminNavbar";
 import { API_BASE } from '../../config/api.js';
 
+const loadAccounts = () => fetch(`${API_BASE}/api/admin/users`)
+  .then((res) => res.json())
+  .then((data) => Array.isArray(data) ? data : []);
+
 export default function ManageAccount() {
   const [users, setUsers] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
@@ -13,17 +17,17 @@ export default function ManageAccount() {
 
   const fetchUsers = () => {
     setLoading(true);
-    fetch(`${API_BASE}/api/admin/users`)
-      .then((res) => res.json())
-      .then((data) => {
-        setUsers(Array.isArray(data) ? data : []);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+    loadAccounts()
+      .then(setUsers)
+      .catch(() => {})
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => {
-    fetchUsers();
+    loadAccounts()
+      .then(setUsers)
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
   const showToast = (msg, type = "success") => {

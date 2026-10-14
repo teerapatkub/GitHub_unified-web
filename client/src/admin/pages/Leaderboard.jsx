@@ -11,6 +11,9 @@ const RANK_STYLE = [
 
 const avatarColors = ["bg-pysim-primary", "bg-pysim-primary-container", "bg-pysim-on-primary-fixed"];
 const avatarColor = (str = "") => avatarColors[str.charCodeAt(0) % avatarColors.length];
+const loadLeaderboardUsers = () => fetch(`${API_BASE}/api/admin/users`)
+  .then((res) => res.json())
+  .then((data) => Array.isArray(data) ? data.filter((user) => !user.is_deleted) : []);
 
 export default function Leaderboard() {
   const [users, setUsers] = useState([]);
@@ -19,16 +22,18 @@ export default function Leaderboard() {
 
   const fetchLeaderboard = () => {
     setLoading(true);
-    fetch(`${API_BASE}/api/admin/users`)
-      .then((res) => res.json())
-      .then((data) => {
-        setUsers(Array.isArray(data) ? data.filter((u) => !u.is_deleted) : []);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+    loadLeaderboardUsers()
+      .then(setUsers)
+      .catch(() => {})
+      .finally(() => setLoading(false));
   };
 
-  useEffect(() => { fetchLeaderboard(); }, []);
+  useEffect(() => {
+    loadLeaderboardUsers()
+      .then(setUsers)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
 
   const sorted = [...users].sort((a, b) => {
     if (tab === "score")  return (b.high_score  || 0) - (a.high_score  || 0);

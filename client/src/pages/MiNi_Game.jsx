@@ -294,14 +294,6 @@ const isCurrentSubtopicCompleted = useMemo(() => {
   return isProgressCompleted(progressBySubtopic[currentId]);
 }, [currentSubtopic, progressBySubtopic]);
 
-  const inheritedBranchKey = useMemo(() => {
-    for (let index = currentSubtopicIndex - 1; index >= 0; index -= 1) {
-      const previousSubtopic = subtopics[index];
-      const previousBranchKey = progressBySubtopic[previousSubtopic?.exercise_id]?.selected_branch_key;
-      if (previousBranchKey) return previousBranchKey;
-    }
-    return "default";
-  }, [currentSubtopicIndex, progressBySubtopic, subtopics]);
   const pendingChoice = currentSubtopic
     ? pendingChoicesBySubtopic[currentSubtopic.exercise_id]
     : null;
@@ -329,15 +321,6 @@ const isCurrentSubtopicCompleted = useMemo(() => {
       ? sceneBackgroundImage
       : `${API_BASE}/uploads/${sceneBackgroundImage}`
     : "/data_MiNiGame/cat.jpg";
-  const completedSubtopicCount = subtopics.filter((subtopic) =>
-    Boolean(progressBySubtopic[subtopic.exercise_id]?.completed_this_run)
-  ).length;
-  const branchSubtopicIndex = getSubtopicIndexForBranch(selectedBranchKey);
-  const nextSubtopicIndex = branchSubtopicIndex >= 0
-    ? branchSubtopicIndex
-    : currentSubtopicIndex + 1 < subtopics.length
-      ? currentSubtopicIndex + 1
-      : -1;
 
   const conversationMap = useMemo(() => subtopics.map((subtopic, index) => {
     const branchKeys = new Set();
@@ -555,7 +538,7 @@ const loadGameData = async () => {
           data.end_dialogues = endDialogues;
         }
       }
-    } catch (e) {
+    } catch {
       // endpoint นี้ optional
     }
 
@@ -580,7 +563,7 @@ const loadGameData = async () => {
           
           setProgressBySubtopic(progressMap);
         }
-      } catch (e) {
+      } catch {
         console.warn("ไม่สามารถโหลด Progress ได้");
       }
     }
@@ -1234,7 +1217,7 @@ if (result?.is_module_completed) {
 
                   {conversationLayers.map((layer, layerIndex) => (
                     <div key={`layer-${layerIndex}`} className="absolute flex w-[220px] flex-col gap-6" style={{ left: `${layerIndex * 280}px`, top: `${(Math.max(layer.length * 150, 300) - layer.length * 150) / 2}px` }}>
-                      {layer.map((node, nodeIndex) => {
+                      {layer.map((node) => {
                         const isLocked = !node.isCompleted && !node.isCurrent && !node.isEnd;
                         return (
                           <div key={node.subtopic.exercise_id ?? node.index} className="relative flex h-[112px] w-[190px] flex-col justify-between rounded-2xl border p-3 shadow-sm transition-colors">

@@ -42,8 +42,9 @@ ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
 ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
 ENV VITE_SUPABASE_PUBLISHABLE_KEY=$VITE_SUPABASE_PUBLISHABLE_KEY
-COPY server/runtime/environment.js /build/environment.js
-RUN node -e "require('/build/environment').validateClientBuildEnvironment(process.env)"
+COPY server/runtime/environment.js /build/server/runtime/environment.js
+COPY server/auth/productionSettings.js /build/server/auth/productionSettings.js
+RUN node -e "require('/build/server/runtime/environment').validateClientBuildEnvironment(process.env)"
 RUN npm run build
 
 # -------------------------------------------------------------- runtime stage

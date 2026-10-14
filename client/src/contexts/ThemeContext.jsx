@@ -1,9 +1,8 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import ThemeContext from './theme-context.js';
 import { BUILT_IN_THEMES, THEME_CYBERPUNK_DARK } from '../themes/themes';
 import { getShopThemePalette, shopThemeColors } from '../themes/shopPalette.js';
 import { API_BASE, assetUrl } from '../config/api.js';
-
-const ThemeContext = createContext(null);
 
 const resolveAssetUrl = (value) => {
     if (!value) return '';
@@ -215,14 +214,3 @@ export function ThemeProvider({ children }) {
         </ThemeContext.Provider>
     );
 }
-
-// Hook for consuming theme
-export function useTheme() {
-    const context = useContext(ThemeContext);
-    if (!context) {
-        throw new Error('useTheme must be used within a ThemeProvider');
-    }
-    return context;
-}
-
-export default ThemeContext;

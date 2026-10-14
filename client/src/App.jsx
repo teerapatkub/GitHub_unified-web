@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import {
   BookOpen, Target, FlaskConical
@@ -11,37 +11,35 @@ import ModeEntryHeader from './components/ModeEntryHeader';
 import useModeTransition from './hooks/useModeTransition';
 import { currentPlayer, signOut, isRecovery } from './auth/session';
 import { getSupabaseClient } from './supabaseClient.js';
-
-
-// --- Friend's Learning Pages ---
-import LearningPage from './pages/LearningPage';
-import LessonPage from './pages/LessonPage';
-import ExercisePage from './pages/ExercisePage';
-import MiNi_Game from './pages/MiNi_Game';
-import FriendLogin from './pages/FriendLogin';
-import ShopPage from './pages/ShopPage';
-import Achievements from './pages/Achievements';
-import LeaderboardPage from './pages/LeaderboardPage';
-
-// --- Your Original Pages ---
 import GameModeLocked from './pages/GameModeLocked';
 import { canEnterGameModes } from './utils/gameModeAccess.js';
-import CompetitiveArena from './pages/CompetitiveArena';
-import ArcadeBattleRoyale from './pages/Arcade/ArcadeBattleRoyale';
-import ChallengePage from './pages/ChallengePage';
-import AiTaskPage from './components/learning/AiTaskPage';
-import PromotionExamPage from './pages/PromotionExamPage';
-import ProfilePage from './pages/ProfilePage';
-import Dashboard from './admin/pages/Dashboard';
-import ManageAccount from './admin/pages/ManageAccount';
-import ThemePage from './admin/pages/ThemePage';
-import AddLesson from './admin/pages/AddLesson';
-import StudentProgressPage from './admin/pages/StudentProgressPage';
-import Leaderboard from './admin/pages/Leaderboard';
-import CompetitiveChallengePage from './admin/pages/CompetitiveChallengePage';
 import { API_BASE } from './config/api.js';
 import { accessForRoute, loginUrlFor, returnDestination } from './auth/route-access.js';
 import { createAuthRestorer } from './auth/restore-state.js';
+
+// Route components load only when visited, keeping the initial bundle small.
+const LearningPage = lazy(() => import('./pages/LearningPage'));
+const LessonPage = lazy(() => import('./pages/LessonPage'));
+const ExercisePage = lazy(() => import('./pages/ExercisePage'));
+const MiNi_Game = lazy(() => import('./pages/MiNi_Game'));
+const FriendLogin = lazy(() => import('./pages/FriendLogin'));
+const ShopPage = lazy(() => import('./pages/ShopPage'));
+const Achievements = lazy(() => import('./pages/Achievements'));
+const LeaderboardPage = lazy(() => import('./pages/LeaderboardPage'));
+
+const CompetitiveArena = lazy(() => import('./pages/CompetitiveArena'));
+const ArcadeBattleRoyale = lazy(() => import('./pages/Arcade/ArcadeBattleRoyale'));
+const ChallengePage = lazy(() => import('./pages/ChallengePage'));
+const AiTaskPage = lazy(() => import('./components/learning/AiTaskPage'));
+const PromotionExamPage = lazy(() => import('./pages/PromotionExamPage'));
+const ProfilePage = lazy(() => import('./pages/ProfilePage'));
+const Dashboard = lazy(() => import('./admin/pages/Dashboard'));
+const ManageAccount = lazy(() => import('./admin/pages/ManageAccount'));
+const ThemePage = lazy(() => import('./admin/pages/ThemePage'));
+const AddLesson = lazy(() => import('./admin/pages/AddLesson'));
+const StudentProgressPage = lazy(() => import('./admin/pages/StudentProgressPage'));
+const Leaderboard = lazy(() => import('./admin/pages/Leaderboard'));
+const CompetitiveChallengePage = lazy(() => import('./admin/pages/CompetitiveChallengePage'));
 
 // ######################################################################
 // ### MAIN APP
@@ -407,116 +405,118 @@ function AppContent() {
           : isCodingWorkspace
             ? 'app-coding-workspace box-border overflow-hidden p-4'
             : 'app-page-content pb-8'}>
-            <Routes location={location}>
-              <Route path="/" element={
-                authReady
-                  ? <Navigate to={isAuthenticated ? (isAdminUser ? "/admin/dashboard" : "/learn") : "/login"} replace />
-                  : null
-              } />
-              <Route
-                path="/shop"
-                element={requireStudent(<ShopPage />)}
-              />
-              <Route
-                path="/login"
-                element={
-                  !authReady
-                    ? null
-                    : isAuthenticated && user.level > 0 && !isRecovery()
-                    ? <Navigate to={returnDestination(location) || (isAdminUser ? "/admin/dashboard" : "/learn")} replace />
-                    : <FriendLogin onLoginSuccess={handleLoginSuccess} sessionUser={user} />
-                }
-              />
-
-              <Route path="/supabase-test" element={requireAdmin(<SupabaseConnectionTest />)} />
-              {/* Friend's Learning Pages */}
-              <Route path="/learn" element={
-                requireStudent(<div data-mode-transition-content><LearningPage onNavigate={handleNavigate} user={user} /></div>)
-              } />
-              <Route path="/lesson" element={requireStudent(<Navigate to="/learn" replace />)} />
-              <Route path="/lesson/:lessonId" element={
-                requireStudent(
-                  <LessonPage
-                    lessonId={currentLessonId}
-                    module={currentModule}
-                    onNavigate={handleNavigate}
-                    user={user}
-                  />
-                )
-              } />
-              <Route path="/exercise" element={requireStudent(<Navigate to="/learn" replace />)} />
-              <Route path="/exercise/:lessonId" element={
-                requireStudent(
-                  <ExercisePage
-                    lessonId={currentLessonId}
-                    onNavigate={handleNavigate}
-                    user={user}
-                    onUserRefresh={refreshUserProfile}
-                  />
-                )
-              } />
-              <Route path="/mini-game" element={requireStudent(<Navigate to="/learn" replace />)} />
-              <Route path="/mini-game/:lessonId" element={
-                requireStudent(
-                  <MiNi_Game
-                    lessonId={currentLessonId}
-                    onNavigate={handleNavigate}
-                    user={user}
-                    onUserRefresh={refreshUserProfile}
-                  />
-                )
-              } />
-              <Route path="/debug" element={
-                requireStudent(<AiTaskPage mode="exercise" user={user} onUserRefresh={refreshUserProfile} />)
-              } />
-              <Route path="/challenge" element={
-                requireStudent(<ChallengePage onNavigate={handleNavigate} user={user} onUserRefresh={refreshUserProfile} />)
-              } />
-              <Route path="/promotion-exam" element={
-                requireStudent(<PromotionExamPage user={user} onUserRefresh={refreshUserProfile} onNavigate={handleNavigate} />)
-              } />
-
-              {/* Student pages and direct mode routes */}
-              <Route path="/profile" element={requireStudent(<ProfilePage key={location.pathname} user={user} onUserRefresh={refreshUserProfile} />)} />
-              <Route path="/profile/:userId" element={requireStudent(<ProfilePage key={location.pathname} user={user} onUserRefresh={refreshUserProfile} />)} />
-              <Route path="/menu" element={requireStudent(<Navigate to="/learn" replace />)} />
-              <Route path="/achievements" element={requireStudent(<Achievements user={user} />)} />
-              <Route path="/leaderboard" element={requireStudent(<LeaderboardPage user={user} />)} />
-              <Route path="/online" element={requireGameModeRank(<CompetitiveArena user={user} onLogout={handleLogout} onUserUpdate={syncUserToState} />)} />
-              {/* Person 2 reached the Competitive Arena at /competitive-arena on their
-                  branch; kept as a second path so links and bookmarks from there
-                  still land, rather than renaming /online out from under ours. */}
-              <Route path="/competitive-arena" element={requireGameModeRank(<CompetitiveArena user={user} onLogout={handleLogout} onUserUpdate={syncUserToState} />)} />
-              <Route path="/matchmaking" element={requireGameModeRank(<ArcadeBattleRoyale user={user} onLogout={handleLogout} />)} />
-              <Route
-                path="/admin/dashboard"
-                element={requireAdmin(<Dashboard />)}
-              />
-              <Route
-                path="/admin/manage-account"
-                element={requireAdmin(<ManageAccount />)}
-              />
-              <Route
-                path="/admin/theme"
-                element={requireAdmin(<ThemePage />)}
-              />
-              <Route
-                  path="/admin/student-progress"
-                  element={requireAdmin(<StudentProgressPage />)}
+            <Suspense fallback={<div role="status" className="p-8 text-center">กำลังโหลดหน้า...</div>}>
+              <Routes location={location}>
+                <Route path="/" element={
+                  authReady
+                    ? <Navigate to={isAuthenticated ? (isAdminUser ? "/admin/dashboard" : "/learn") : "/login"} replace />
+                    : null
+                } />
+                <Route
+                  path="/shop"
+                  element={requireStudent(<ShopPage />)}
                 />
                 <Route
-                  path="/admin/add-lesson/*"
-                element={requireAdmin(<AddLesson />)}
-              />
-              <Route
-                path="/admin/leaderboard"
-                element={requireAdmin(<Leaderboard />)}
-              />
-              <Route
-                path="/admin/competitive-challenge"
-                element={requireAdmin(<CompetitiveChallengePage />)}
-              />
-            </Routes>
+                  path="/login"
+                  element={
+                    !authReady
+                      ? null
+                      : isAuthenticated && user.level > 0 && !isRecovery()
+                      ? <Navigate to={returnDestination(location) || (isAdminUser ? "/admin/dashboard" : "/learn")} replace />
+                      : <FriendLogin onLoginSuccess={handleLoginSuccess} sessionUser={user} />
+                  }
+                />
+
+                <Route path="/supabase-test" element={requireAdmin(<SupabaseConnectionTest />)} />
+                {/* Friend's Learning Pages */}
+                <Route path="/learn" element={
+                  requireStudent(<div data-mode-transition-content><LearningPage onNavigate={handleNavigate} user={user} /></div>)
+                } />
+                <Route path="/lesson" element={requireStudent(<Navigate to="/learn" replace />)} />
+                <Route path="/lesson/:lessonId" element={
+                  requireStudent(
+                    <LessonPage
+                      lessonId={currentLessonId}
+                      module={currentModule}
+                      onNavigate={handleNavigate}
+                      user={user}
+                    />
+                  )
+                } />
+                <Route path="/exercise" element={requireStudent(<Navigate to="/learn" replace />)} />
+                <Route path="/exercise/:lessonId" element={
+                  requireStudent(
+                    <ExercisePage
+                      lessonId={currentLessonId}
+                      onNavigate={handleNavigate}
+                      user={user}
+                      onUserRefresh={refreshUserProfile}
+                    />
+                  )
+                } />
+                <Route path="/mini-game" element={requireStudent(<Navigate to="/learn" replace />)} />
+                <Route path="/mini-game/:lessonId" element={
+                  requireStudent(
+                    <MiNi_Game
+                      lessonId={currentLessonId}
+                      onNavigate={handleNavigate}
+                      user={user}
+                      onUserRefresh={refreshUserProfile}
+                    />
+                  )
+                } />
+                <Route path="/debug" element={
+                  requireStudent(<AiTaskPage mode="exercise" user={user} onUserRefresh={refreshUserProfile} />)
+                } />
+                <Route path="/challenge" element={
+                  requireStudent(<ChallengePage onNavigate={handleNavigate} user={user} onUserRefresh={refreshUserProfile} />)
+                } />
+                <Route path="/promotion-exam" element={
+                  requireStudent(<PromotionExamPage user={user} onUserRefresh={refreshUserProfile} onNavigate={handleNavigate} />)
+                } />
+
+                {/* Student pages and direct mode routes */}
+                <Route path="/profile" element={requireStudent(<ProfilePage key={location.pathname} user={user} onUserRefresh={refreshUserProfile} />)} />
+                <Route path="/profile/:userId" element={requireStudent(<ProfilePage key={location.pathname} user={user} onUserRefresh={refreshUserProfile} />)} />
+                <Route path="/menu" element={requireStudent(<Navigate to="/learn" replace />)} />
+                <Route path="/achievements" element={requireStudent(<Achievements user={user} />)} />
+                <Route path="/leaderboard" element={requireStudent(<LeaderboardPage user={user} />)} />
+                <Route path="/online" element={requireGameModeRank(<CompetitiveArena user={user} onLogout={handleLogout} onUserUpdate={syncUserToState} />)} />
+                {/* Person 2 reached the Competitive Arena at /competitive-arena on their
+                    branch; kept as a second path so links and bookmarks from there
+                    still land, rather than renaming /online out from under ours. */}
+                <Route path="/competitive-arena" element={requireGameModeRank(<CompetitiveArena user={user} onLogout={handleLogout} onUserUpdate={syncUserToState} />)} />
+                <Route path="/matchmaking" element={requireGameModeRank(<ArcadeBattleRoyale user={user} onLogout={handleLogout} />)} />
+                <Route
+                  path="/admin/dashboard"
+                  element={requireAdmin(<Dashboard />)}
+                />
+                <Route
+                  path="/admin/manage-account"
+                  element={requireAdmin(<ManageAccount />)}
+                />
+                <Route
+                  path="/admin/theme"
+                  element={requireAdmin(<ThemePage />)}
+                />
+                <Route
+                    path="/admin/student-progress"
+                    element={requireAdmin(<StudentProgressPage />)}
+                  />
+                  <Route
+                    path="/admin/add-lesson/*"
+                  element={requireAdmin(<AddLesson />)}
+                />
+                <Route
+                  path="/admin/leaderboard"
+                  element={requireAdmin(<Leaderboard />)}
+                />
+                <Route
+                  path="/admin/competitive-challenge"
+                  element={requireAdmin(<CompetitiveChallengePage />)}
+                />
+              </Routes>
+            </Suspense>
         </div>
 
       </TheInfiniteGrid>
