@@ -5,6 +5,14 @@
     "challenge": "Challenge",
     "shop": "Shop"
   },
+  "shopPurchase": {
+    "buying": "Purchasing...",
+    "success": "Purchase complete!",
+    "itemAdded": "Added to your inventory and ready to equip.",
+    "setAdded": "The set items are now in your inventory.",
+    "continue": "Continue shopping",
+    "close": "Dismiss purchase confirmation"
+  },
   "mainMenu": {
     "simulation": "Simulation",
     "online": "Online",

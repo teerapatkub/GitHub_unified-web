@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShoppingBag, ShoppingCart, Coins, CheckCircle, Search } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -6,6 +6,7 @@ import { useTheme } from '../contexts/useTheme.js';
 import { API_BASE, assetUrl } from '../config/api.js';
 import { getShopThemePalette, shopThemeColors } from '../themes/shopPalette.js';
 import SkeletonLoading from '../components/ui/Skeleton.jsx';
+import PurchaseSuccessPopup from '../components/shop/PurchaseSuccessPopup.jsx';
 
 
 const resolveAssetUrl = (value) => assetUrl(value);
@@ -32,7 +33,7 @@ const createShopTheme = (item) => {
 
 export default function ShopPage() {
     const navigate = useNavigate();
-    const { t } = useTranslation();
+    const { t, i18n } = useTranslation();
     const { registerTheme, setTheme } = useTheme();
     const [mounted, setMounted] = useState(false);
     const [selectedCategory, setSelectedCategory] = useState('all');
@@ -43,6 +44,10 @@ export default function ShopPage() {
     const [error, setError] = useState('');
     const [sets, setSets] = useState([]);
     const [buyingSet, setBuyingSet] = useState('');
+    const [buyingItemId, setBuyingItemId] = useState(null);
+    const [purchaseNotice, setPurchaseNotice] = useState(null);
+    const purchaseBusyRef = useRef(false);
+    const purchaseSequenceRef = useRef(0);
     const [equippedItems, setEquippedItems] = useState(() => {
         try {
             const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -57,6 +62,17 @@ export default function ShopPage() {
     });
 
     useEffect(() => { setTimeout(() => setMounted(true), 100); }, []);
+
+    useEffect(() => {
+        if (!purchaseNotice) return undefined;
+        const timeout = window.setTimeout(() => setPurchaseNotice(null), 6000);
+        return () => window.clearTimeout(timeout);
+    }, [purchaseNotice]);
+
+    const showPurchaseSuccess = (details) => {
+        purchaseSequenceRef.current += 1;
+        setPurchaseNotice({ id: purchaseSequenceRef.current, ...details });
+    };
 
     useEffect(() => {
         const syncEquippedFromUser = (user) => {
@@ -205,12 +221,15 @@ export default function ShopPage() {
     });
 
     const handleBuy = async (item) => {
+        if (purchaseBusyRef.current) return;
         const user = JSON.parse(localStorage.getItem('user') || 'null');
         if (!user?.user_id || user?.isGuest) {
             alert('กรุณาเข้าสู่ระบบก่อนซื้อสินค้า');
             return;
         }
 
+        purchaseBusyRef.current = true;
+        setBuyingItemId(item.itemId);
         try {
             const res = await fetch(`${API_BASE}/api/shop/buy`, {
                 method: 'POST',
@@ -218,7 +237,7 @@ export default function ShopPage() {
                 body: JSON.stringify({ userId: user.user_id, itemId: item.itemId }),
             });
             const data = await res.json();
-            if (!res.ok) {
+            if (!res.ok || data.success !== true) {
                 alert(data.error || 'ซื้อสินค้าไม่สำเร็จ');
                 return;
             }
@@ -240,18 +259,29 @@ export default function ShopPage() {
                     detail: { user: nextUser },
                 }));
             }
+            showPurchaseSuccess({
+                kind: 'item',
+                name: item.name,
+                image: item.icon.type === 'image' ? item.icon.value : '',
+                icon: item.icon.type === 'text' ? item.icon.value : '',
+            });
         } catch {
             alert('เชื่อมต่อร้านค้าไม่สำเร็จ');
+        } finally {
+            purchaseBusyRef.current = false;
+            setBuyingItemId(null);
         }
     };
 
     const handleBuySet = async (set) => {
+        if (purchaseBusyRef.current) return;
         const user = JSON.parse(localStorage.getItem('user') || 'null');
         if (!user?.user_id || user?.isGuest) {
             alert('กรุณาเข้าสู่ระบบก่อนซื้อสินค้า');
             return;
         }
 
+        purchaseBusyRef.current = true;
         setBuyingSet(set.set_key);
         try {
             const res = await fetch(`${API_BASE}/api/shop/buy-set`, {
@@ -260,7 +290,7 @@ export default function ShopPage() {
                 body: JSON.stringify({ userId: user.user_id, setKey: set.set_key }),
             });
             const data = await res.json();
-            if (!res.ok) {
+            if (!res.ok || data.success !== true) {
                 alert(data.error || 'ซื้อเซ็ตไม่สำเร็จ');
                 return;
             }
@@ -277,9 +307,15 @@ export default function ShopPage() {
             // Re-reads items, inventory and sets in one go, so the item grid and the
             // set cards agree about what is owned without hand-patching both.
             await fetchShop();
+            showPurchaseSuccess({
+                kind: 'set',
+                name: i18n.language === 'en' ? set.name_en : set.name_th,
+                image: set.items.find((item) => item.asset_url)?.asset_url || '',
+            });
         } catch {
             alert('เชื่อมต่อร้านค้าไม่สำเร็จ');
         } finally {
+            purchaseBusyRef.current = false;
             setBuyingSet('');
         }
     };
@@ -493,7 +529,7 @@ export default function ShopPage() {
                                         </div>
                                         <button
                                             onClick={() => handleBuySet(set)}
-                                            disabled={set.fully_owned || buyingSet === set.set_key}
+                                            disabled={set.fully_owned || Boolean(buyingSet) || buyingItemId !== null}
                                             className={`rounded-lg px-6 py-2.5 text-sm font-bold transition-all duration-200 ${
                                                 set.fully_owned
                                                     ? 'bg-pysim-surface-low text-pysim-outline cursor-not-allowed'
@@ -555,10 +591,11 @@ export default function ShopPage() {
                                             <button
                                                 type="button"
                                                 onClick={() => handleBuy(item)}
-                                                className="flex items-center justify-center gap-2 rounded-lg bg-sky-400 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-sky-500 active:scale-[0.98]"
+                                                disabled={buyingItemId !== null || Boolean(buyingSet)}
+                                                className="flex items-center justify-center gap-2 rounded-lg bg-sky-400 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-sky-500 active:scale-[0.98] disabled:cursor-wait disabled:opacity-60"
                                             >
                                                 <ShoppingCart size={17} />
-                                                {t('shop.buy', 'ซื้อ')}
+                                                {buyingItemId === item.itemId ? t('shopPurchase.buying', 'กำลังซื้อ...') : t('shop.buy', 'ซื้อ')}
                                             </button>
                                         )}
                                     </div>
@@ -582,6 +619,7 @@ export default function ShopPage() {
                     ← {t('shop.back', 'กลับหน้าหลัก')}
                 </button>
             </div>
+            <PurchaseSuccessPopup purchase={purchaseNotice} onDismiss={() => setPurchaseNotice(null)} />
         </div>
     );
 }
