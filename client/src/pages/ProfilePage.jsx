@@ -16,7 +16,7 @@ import {
     Circle,
 } from 'lucide-react';
 import ProfileAppearance from '../components/ProfileAppearance';
-import { API_BASE, assetUrl } from '../config/api.js';
+import { assetUrl } from '../config/api.js';
 import { requestJson } from '../config/api-client.js';
 
 
@@ -160,17 +160,15 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
         setSavingShowcase(true);
         setShowcaseError('');
         try {
-            const res = await fetch(`${API_BASE}/api/profile/${userId}/showcase`, {
+            await requestJson(`/api/profile/${userId}/showcase`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ achievement_ids: picked }),
             });
-            const body = await res.json();
-            if (!res.ok) throw new Error(body.error || 'บันทึกไม่สำเร็จ');
             setEditingShowcase(false);
             await load();
         } catch (err) {
-            setShowcaseError(err.message || 'บันทึกไม่สำเร็จ');
+            setShowcaseError(err.detail || 'บันทึกไม่สำเร็จ');
         } finally {
             setSavingShowcase(false);
         }
@@ -183,13 +181,11 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
         setAvatarBusy(true);
         setAvatarError('');
         try {
-            const res = await request();
-            const body = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(body.error || failMessage);
+            await request();
             await load();
             onUserRefresh?.();
         } catch (err) {
-            setAvatarError(err.message || failMessage);
+            setAvatarError(err.detail || failMessage);
         } finally {
             setAvatarBusy(false);
         }
@@ -210,12 +206,12 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
         const form = new FormData();
         form.append('file', file);
         runAvatarChange(
-            () => fetch(`${API_BASE}/api/profile/${userId}/avatar`, { method: 'POST', body: form }),
+            () => requestJson(`/api/profile/${userId}/avatar`, { method: 'POST', body: form }),
             'อัปโหลดรูปไม่สำเร็จ');
     };
 
     const handleAvatarReset = () => runAvatarChange(
-        () => fetch(`${API_BASE}/api/profile/${userId}/avatar/reset`, { method: 'POST' }),
+        () => requestJson(`/api/profile/${userId}/avatar/reset`, { method: 'POST' }),
         'รีเซ็ตรูปไม่สำเร็จ');
 
     // Picking a picture the player already has. "Back to default" is the reset
@@ -225,7 +221,7 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
         if (opt.selected) return;
         if (opt.source === 'default') { handleAvatarReset(); return; }
         runAvatarChange(
-            () => fetch(`${API_BASE}/api/profile/${userId}/avatar/select`, {
+            () => requestJson(`/api/profile/${userId}/avatar/select`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ source: opt.source, itemId: opt.itemId }),

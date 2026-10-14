@@ -12,7 +12,7 @@ import {
   Users,
 } from "lucide-react";
 import AdminNavbar from "../components/AdminNavbar";
-import { API_BASE } from '../../config/api.js';
+import { loadDashboardData } from './dashboard-data.js';
 
 
 const modeMeta = {
@@ -143,30 +143,30 @@ export default function Dashboard() {
   const [learningProgress, setLearningProgress] = useState(null);
   const [selectedLessonId, setSelectedLessonId] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [retryToken, setRetryToken] = useState(0);
 
   useEffect(() => {
     let isMounted = true;
 
     const loadDashboard = async () => {
       try {
-        const [statsRes, learningRes] = await Promise.all([
-          fetch(`${API_BASE}/api/dashboard/stats`),
-          fetch(`${API_BASE}/api/dashboard/learning-progress`),
-        ]);
-        const stats = await statsRes.json();
-        const learning = await learningRes.json();
+        const { stats, learning } = await loadDashboardData();
 
         if (!isMounted) return;
-        setData(stats || {});
-        setLearningProgress(learning || {});
+        setLoadError('');
+        setData(stats);
+        setLearningProgress(learning);
         setSelectedLessonId((current) => (
           current || learning?.lesson_summaries?.[0]?.lesson_id || null
         ));
       } catch (err) {
-        console.error(err);
         if (isMounted) {
-          setData({});
-          setLearningProgress({});
+          setLoadError(err.kind === 'unauthorized'
+            ? 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบอีกครั้ง'
+            : err.kind === 'server' ? 'เซิร์ฟเวอร์ขัดข้อง กรุณาลองใหม่ภายหลัง'
+              : err.kind === 'network' ? 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจสอบเครือข่าย'
+                : 'โหลดแดชบอร์ดไม่สำเร็จ กรุณาลองใหม่');
         }
       } finally {
         if (isMounted) setIsLoading(false);
@@ -187,7 +187,7 @@ export default function Dashboard() {
       window.removeEventListener("focus", loadDashboard);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, []);
+  }, [retryToken]);
 
   const onlineUsers = Array.isArray(data?.onlineUsers) ? data.onlineUsers : [];
   const totalUsers = Number(data?.totalUsers || 0);
@@ -262,12 +262,27 @@ export default function Dashboard() {
     );
   }
 
+  if (loadError && !data) {
+    return (
+      <>
+        <AdminNavbar />
+        <main className="min-h-screen pt-24">
+          <div className="mx-auto max-w-6xl px-6 py-12 text-center" role="alert">
+            <p className="font-semibold text-red-600">{loadError}</p>
+            <button type="button" className="mt-4 rounded-xl bg-pysim-primary px-4 py-2 font-bold text-white" onClick={() => { setIsLoading(true); setRetryToken(value => value + 1); }}>ลองใหม่</button>
+          </div>
+        </main>
+      </>
+    );
+  }
+
   return (
     <>
       <AdminNavbar />
 
       <main className="min-h-screen pt-24">
         <div className="mx-auto max-w-7xl space-y-6 px-4 pb-10 sm:px-6">
+          {loadError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">{loadError} ข้อมูลที่แสดงเป็นข้อมูลก่อนหน้า</div>}
           <section className="flex flex-col gap-2">
             <p className="text-sm font-bold uppercase tracking-[0.22em] text-pysim-primary">
               Admin Overview

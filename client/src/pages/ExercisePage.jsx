@@ -22,7 +22,8 @@ import ProgressCelebration from "../components/learning/ProgressCelebration";
 import WebTutorialModal from "../components/WebTutorialModal";
 import { problemTitle, problemDescription } from "../utils/problemText";
 import { getWebTutorial } from "../data/webTutorials";
-import { API_BASE } from '../config/api.js';
+import { requestJson } from '../config/api-client.js';
+import { loadExerciseList } from './exercise-data.js';
 import usePyodide from "../hooks/usePyodide";
 import friendlyPyError from "../utils/friendlyPyError";
 
@@ -78,6 +79,7 @@ export default function ExercisePage({ lessonId, user, onUserRefresh, onNavigate
   const [currentExIdx, setCurrentExIdx] = useState(0);
   const [loadingList, setLoadingList] = useState(true);
   const [fetchError, setFetchError] = useState("");
+  const [progressError, setProgressError] = useState("");
   const [code, setCode] = useState("");
   const [terminalLines, setTerminalLines] = useState([]);
   // Python runs in the shared Web Worker (usePyodide), not on this thread, so an
@@ -118,7 +120,6 @@ export default function ExercisePage({ lessonId, user, onUserRefresh, onNavigate
 
   const appendLine = (text) => setTerminalLines((prev) => [...prev, text]);
 
-  const files = currentEx?.files || ["main.py"];
 // ใน component ExercisePage
 const [activeFile, setActiveFile] = useState("main.py");
 const [fileContents, setFileContents] = useState({}); 
@@ -174,12 +175,8 @@ useEffect(() => {
     const hydrateProgress = async (list) => {
       if (!user?.user_id || user?.isGuest || list.length === 0) return;
       try {
-        const res = await fetch(
-          `${API_BASE}/api/exercises/progress/${lessonId}/${user.user_id}`
-        );
-        if (!res.ok) return;
-
-        const rows = await res.json();
+        const rows = await requestJson(`/api/exercises/progress/${encodeURIComponent(lessonId)}/${encodeURIComponent(user.user_id)}`);
+        if (!Array.isArray(rows)) throw new Error('Invalid exercise progress response');
         const passedByIndex = {};
         const submittedCodeMap = {};
 
@@ -197,14 +194,18 @@ useEffect(() => {
 
         setPassedExercises(passedByIndex);
         setSubmittedCodeByExerciseId(submittedCodeMap);
-      } catch {
-        // ignore progress hydration failures
+      } catch (error) {
+        const reason = error.kind === 'unauthorized' ? 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบอีกครั้ง'
+          : error.kind === 'server' ? 'เซิร์ฟเวอร์ขัดข้อง'
+            : error.kind === 'network' ? 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้' : 'โหลดความคืบหน้าไม่สำเร็จ';
+        setProgressError(`${reason} ผลที่ทำผ่านแล้วอาจยังไม่แสดง`);
       }
     };
 
 const loadExercises = async () => {
   setLoadingList(true);
   setFetchError("");
+  setProgressError("");
   setPassedExercises({});
   setSubmittedCodeByExerciseId({});
 
@@ -219,54 +220,24 @@ const loadExercises = async () => {
   });
 
   try {
-    const res = await fetch(`${API_BASE}/api/exercises/list/${lessonId}`);
-    if (res.ok) {
-      const list = await res.json();
-      console.log("ข้อมูลแบบฝึกหัดที่ได้รับจาก API:", list);
-      if (Array.isArray(list) && list.length > 0) {
-        const processed = list.map(normalizeExercise); // Map ข้อมูลทั้งหมด
-        setExercises(processed);
-        setCurrentExIdx(0);
-        setCode(processed[0].starter_code);
-        await hydrateProgress(processed);
-        setLoadingList(false);
-        return;
-      }
-    }
-  } catch {}
-
-  try {
-    const res = await fetch(`${API_BASE}/api/exercises/${lessonId}`);
-    if (res.ok) {
-      const payload = await res.json();
-      if (payload?.exercise) {
-        const normalized = [normalizeExercise(payload.exercise)];
-        setExercises(normalized);
-        setCurrentExIdx(0);
-        setCode(normalized[0].starter_code);
-        await hydrateProgress(normalized);
-        setLoadingList(false);
-        return;
-      }
-    }
-  } catch {}
-
-  try {
-    const res = await fetch(`${API_BASE}/api/lessons/${lessonId}/exercise`);
-    if (res.ok) {
-      const exercise = await res.json();
-      const normalized = [normalizeExercise(exercise)];
-      setExercises(normalized);
-      setCurrentExIdx(0);
-      setCode(normalized[0].starter_code);
-      await hydrateProgress(normalized);
-      setLoadingList(false);
+    const list = await loadExerciseList(lessonId);
+    if (list.length === 0) {
+      setFetchError(`ไม่พบแบบฝึกหัดสำหรับบทเรียน ${lessonId}`);
       return;
     }
-  } catch {}
-
-  setFetchError(`ไม่พบแบบฝึกหัดสำหรับบทเรียน ${lessonId}`);
-  setLoadingList(false);
+    const processed = list.map(normalizeExercise);
+    setExercises(processed);
+    setCurrentExIdx(0);
+    setCode(processed[0].starter_code);
+    await hydrateProgress(processed);
+  } catch (error) {
+    setFetchError(error.kind === 'unauthorized' ? 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบอีกครั้ง'
+      : error.kind === 'server' ? 'เซิร์ฟเวอร์ขัดข้อง กรุณาลองใหม่ภายหลัง'
+        : error.kind === 'network' ? 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจสอบเครือข่าย'
+          : 'โหลดแบบฝึกหัดไม่สำเร็จ กรุณาลองใหม่');
+  } finally {
+    setLoadingList(false);
+  }
 };
 
     loadExercises();
@@ -339,9 +310,8 @@ const handleSubmit = async () => {
     }));
 
     try {
-      const response = await fetch(
-        `${API_BASE}/api/exercises/${currentEx.exercise_id}/submit`,
-        {
+      const result = await requestJson(
+        `/api/exercises/${currentEx.exercise_id}/submit`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -350,14 +320,6 @@ const handleSubmit = async () => {
           }),
         }
       );
-
-      const result = await response.json();
-      if (!response.ok) {
-        appendLine(result?.detail || result?.error || "ส่งคำตอบไม่สำเร็จ");
-        if (result?.hint) appendLine(`คำแนะนำ: ${result.hint}`);
-        setLastFailure(result?.hint ? { hint: result.hint, errorLine: result.errorLine } : null);
-        return;
-      }
 
       setLastFailure(null);
       setPassedExercises((prev) => ({ ...prev, [currentExIdx]: true }));
@@ -403,7 +365,10 @@ const handleSubmit = async () => {
           : []),
       ]);
     } catch (error) {
-      appendLine(`Submit Error: ${error.message}`);
+      const body = error?.body;
+      appendLine(`Submit Error: ${body?.detail || error?.detail || error?.message || 'ส่งคำตอบไม่สำเร็จ'}`);
+      if (body?.hint) appendLine(`คำแนะนำ: ${body.hint}`);
+      setLastFailure(body?.hint ? { hint: body.hint, errorLine: body.errorLine } : null);
     } finally {
       setIsRunning(false);
     }
@@ -463,7 +428,7 @@ const handleSubmit = async () => {
     setIsAiResponding(true);
 
     try {
-      const response = await fetch(`${API_BASE}/api/ai/chat`, {
+      const data = await requestJson('/api/ai/chat', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // POST /api/ai/chat takes `messages`, an OpenAI-style array. This used
@@ -493,7 +458,6 @@ const handleSubmit = async () => {
         }),
       });
 
-      const data = await response.json();
       setChatHistory([
         ...nextHistory,
         { role: "ai", text: data?.reply || "Lumi ยังตอบกลับไม่ครบ ลองถามใหม่อีกครั้งได้เลย" },
@@ -575,6 +539,7 @@ const handleSubmit = async () => {
             <h1 className="mt-1 text-lg font-black leading-snug tracking-tight text-slate-900 sm:text-xl">
               {exTitle(currentEx)}
             </h1>
+            {progressError && <p role="alert" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800">{progressError}</p>}
 
             <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm">
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">
@@ -832,18 +797,6 @@ const handleSubmit = async () => {
                   ) : null}
                 </div>
 
-                {false ? (
-                  <div className="mt-4 rounded-2xl border border-slate-700 bg-slate-900 p-4">
-                    <p className="mb-2 text-sm text-slate-300">{currentPrompt}</p>
-                    <input
-                      value={currentInput}
-                      onChange={(event) => setCurrentInput(event.target.value)}
-                      onKeyDown={handleInputKeyDown}
-                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
-                      placeholder="พิมพ์คำตอบแล้วกด Enter"
-                    />
-                  </div>
-                ) : null}
               </div>
             </div>
 

@@ -31,3 +31,18 @@ test('API client distinguishes network and invalid JSON failures', async () => {
     fetchImpl: async () => new Response('<html>error</html>', { status: 200 })
   }), error => error.kind === 'invalid');
 });
+
+test('API client keeps structured validation feedback for exercise submissions', async () => {
+  await assert.rejects(requestJson('/api/exercises/1/submit', {
+    method: 'POST',
+    fetchImpl: async () => new Response(JSON.stringify({
+      error: 'ยังผ่านไม่ครบทุกเทสเคส',
+      detail: 'ผ่าน 1 จาก 2 เทสเคส',
+      hint: 'ตรวจบรรทัดสุดท้าย',
+      errorLine: 3,
+    }), { status: 400 }),
+  }), error => error.kind === 'http'
+    && error.body?.detail === 'ผ่าน 1 จาก 2 เทสเคส'
+    && error.body?.hint === 'ตรวจบรรทัดสุดท้าย'
+    && error.body?.errorLine === 3);
+});

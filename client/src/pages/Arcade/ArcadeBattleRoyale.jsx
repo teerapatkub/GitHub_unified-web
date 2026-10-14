@@ -44,6 +44,7 @@ import ChatPanel from './widgets/ChatPanel.jsx';
 import { TRANSLATIONS } from './translations.js';
 import { roomViewForPlayer } from './rematch-view.js';
 import { API_BASE } from '../../config/api.js';
+import { requestJson } from '../../config/api-client.js';
 import { parseUtcTimestamp, PHASES, TASKS, SHOP_ITEMS, BOT_NAMES, AUTO_SUBMIT_LEAD_SECONDS,
          AUTO_SUBMIT_WARN_SECONDS, ROUND_TIMES, phaseDurationsFor } from './constants.js';
 
@@ -302,7 +303,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
       polling = true;
       const startedAt = performance.now();
       try {
-        const res = await fetch(`${API_BASE}/api/arcade/rooms/${roomId}?user_name=${encodeURIComponent(playerState.name)}`, { signal: AbortSignal.timeout(8000) });
+        const data = await requestJson(`/api/arcade/rooms/${roomId}?user_name=${encodeURIComponent(playerState.name)}`, { signal: AbortSignal.timeout(8000) });
         if (stopped) return;
 
         // The room can legitimately disappear underneath a connected client:
@@ -310,14 +311,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
         // sweep removes it. Without this the client sat forever on a lobby or
         // match screen for a room that no longer existed, with no way back
         // except a manual page reload.
-        if (res.status === 404) {
-          handleRoomVanished();
-          return;
-        }
-
-        const data = await res.json();
-        if (stopped) return;
-        if (!res.ok || !data.success) throw new Error('Room state unavailable');
+        if (!data.success) throw new Error('Room state unavailable');
         const view = roomViewForPlayer(data, playerState.name);
         if (!view.isMember) {
           handleRoomVanished();
@@ -409,12 +403,16 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
           notify(t('matchFinished'), "info");
         }
       } catch (err) {
+        if (stopped) return;
+        if (err.status === 404) {
+          handleRoomVanished();
+          return;
+        }
         // One dropped poll is normal (a hiccup, a backgrounded tab); several
         // in a row means the player is genuinely disconnected and their match
         // is still running without them, which is worth telling them about.
         // The banner is purely informational — polling keeps retrying, and a
         // single successful poll clears it again.
-        if (stopped) return;
         failedPollsRef.current += 1;
         if (failedPollsRef.current >= CONNECTION_LOST_AFTER_FAILED_POLLS) {
           setConnectionLost(true);
@@ -505,14 +503,9 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
     const load = async () => {
       let next;
       try {
-        const res = await fetch(
-          `${API_BASE}/api/arcade/rooms/${roomId}/code/${encodeURIComponent(watchedPlayer)}`
-          + `?viewer=${encodeURIComponent(playerState.name)}`
-        );
-        const data = await res.json();
-        next = res.ok ? data : { error: data?.error || t('watchUnavailable') };
-      } catch {
-        next = { error: t('watchUnavailable') };
+        next = await requestJson(`/api/arcade/rooms/${roomId}/code/${encodeURIComponent(watchedPlayer)}?viewer=${encodeURIComponent(playerState.name)}`);
+      } catch (error) {
+        next = { error: error.detail || t('watchUnavailable') };
       }
       if (cancelled) return;
       // Guarded on the player still being the one asked for, so a slow reply

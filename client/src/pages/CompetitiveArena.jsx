@@ -25,9 +25,9 @@ import {
   ShoppingBag,
   Flame
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import Editor from '@monaco-editor/react';
-import { API_BASE } from '../config/api.js';
+import { requestJson } from '../config/api-client.js';
 import ModeEntryHeader from '../components/ModeEntryHeader';
 
 const arenaFallbacks = {
@@ -202,6 +202,13 @@ const getCreatorBonus = (challenge, userId) => {
   return Math.max(10, Math.round(reward * 0.15));
 };
 
+const getLoadErrorKey = (error, fallback) => {
+  if (error?.kind === 'unauthorized') return 'apiUnauthorized';
+  if (error?.kind === 'server') return 'apiServerError';
+  if (error?.kind === 'network') return 'apiNetworkError';
+  return fallback;
+};
+
 export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
   const { t: translate, i18n } = useTranslation();
   const t = (key, fallback) => {
@@ -214,11 +221,17 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
   // States for Challenges Feed
   const [challenges, setChallenges] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
+  const [feedError, setFeedError] = useState('');
+  const [feedLoaded, setFeedLoaded] = useState(false);
+  const [leaderboardError, setLeaderboardError] = useState('');
+  const [leaderboardLoaded, setLeaderboardLoaded] = useState(false);
+  const [actionError, setActionError] = useState('');
 
   // Mailbox States
   const [mailboxOpen, setMailboxOpen] = useState(false);
   const [mailbox, setMailbox] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [mailboxError, setMailboxError] = useState('');
 
   // Editor Workspace Drawer States
   const [isEditorOpen, setIsEditorOpen] = useState(false);
@@ -328,12 +341,14 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
   const fetchMailbox = useCallback(async (userId) => {
     if (!userId) return;
     try {
-      const response = await fetch(`${API_BASE}/api/mailbox/${userId}`);
-      const data = await response.json();
+      const data = await requestJson(`/api/mailbox/${userId}`);
+      if (!Array.isArray(data)) throw new Error('Invalid mailbox response');
       setMailbox(data);
       setUnreadCount(data.filter(m => Number(m.is_read) === 0).length);
+      setMailboxError('');
     } catch (e) {
       console.error("Error fetching mailbox:", e);
+      setMailboxError('mailboxLoadError');
     }
   }, []);
 
@@ -344,13 +359,13 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
   const markMailboxAsRead = async (userId) => {
     if (!userId) return;
     try {
-      await fetch(`${API_BASE}/api/mailbox/${userId}/read-all`, {
-        method: 'POST'
-      });
+      await requestJson(`/api/mailbox/${userId}/read-all`, { method: 'POST' });
       setUnreadCount(0);
       setMailbox((current) => current.map((mail) => ({ ...mail, is_read: 1 })));
+      setMailboxError('');
     } catch (e) {
       console.error("Error marking mailbox as read:", e);
+      setMailboxError('mailboxReadError');
     }
   };
 
@@ -358,9 +373,11 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
   const fetchChallenges = async () => {
     if (!user) return;
     try {
-      const response = await fetch(`${API_BASE}/api/competitive/challenges?userId=${user.user_id}`);
-      const data = await response.json();
+      const data = await requestJson(`/api/competitive/challenges?userId=${encodeURIComponent(user.user_id)}`);
+      if (!Array.isArray(data)) throw new Error('Invalid challenges response');
       setChallenges(data);
+      setFeedError('');
+      setFeedLoaded(true);
       fetchMailbox(user.user_id);
       
       // Update active tabs if they were modified on the backend
@@ -374,18 +391,22 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
       }
     } catch (e) {
       console.error("Error fetching challenges:", e);
+      setFeedError(getLoadErrorKey(e, 'feedLoadError'));
+      setFeedLoaded(true);
     }
   };
 
   const fetchLeaderboard = async () => {
     if (!user) return;
     try {
-      const response = await fetch(`${API_BASE}/api/competitive/leaderboard?userId=${user.user_id}`);
-      if (!response.ok) return;
-      const data = await response.json();
-      setLeaderboard(Array.isArray(data) ? data : []);
+      const data = await requestJson(`/api/competitive/leaderboard?userId=${encodeURIComponent(user.user_id)}`);
+      if (!Array.isArray(data)) throw new Error('Invalid arena leaderboard response');
+      setLeaderboard(data);
+      setLeaderboardError('');
+      setLeaderboardLoaded(true);
     } catch (e) {
       console.error("Error fetching arena leaderboard:", e);
+      setLeaderboardError(getLoadErrorKey(e, 'leaderboardLoadError'));
     }
   };
 
@@ -454,7 +475,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
   const saveDraftCode = async (challengeId, code) => {
     if (!user || !challengeId) return;
     try {
-      await fetch(`${API_BASE}/api/competitive/challenges/${challengeId}/save-draft`, {
+      await requestJson(`/api/competitive/challenges/${challengeId}/save-draft`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: user.user_id, code })
@@ -463,6 +484,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
       setTimeout(() => setSaveStatus(""), 1500);
     } catch (e) {
       console.error("Failed to save draft:", e);
+      setSaveStatus('error');
     }
   };
 
@@ -470,11 +492,12 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
   const handleAcceptChallenge = async (challenge) => {
     if (!user) return;
     try {
-      await fetch(`${API_BASE}/api/competitive/challenges/${challenge.challenge_id}/accept`, {
+      await requestJson(`/api/competitive/challenges/${challenge.challenge_id}/accept`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: user.user_id })
       });
+      setActionError('');
       
       await fetchChallenges();
       
@@ -495,6 +518,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
       setEditorCode(getInitialEditorCode(challenge));
     } catch (e) {
       console.error("Error accepting challenge:", e);
+      setActionError(getLoadErrorKey(e, 'actionFailed'));
     }
   };
 
@@ -507,12 +531,11 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
     }
     setConsoleOutput("Submitting solution...\nRunning test cases...");
     try {
-      const response = await fetch(`${API_BASE}/api/competitive/challenges/${activeTabId}/submit`, {
+      const res = await requestJson(`/api/competitive/challenges/${activeTabId}/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: user.user_id, code: editorCode })
       });
-      const res = await response.json();
       if (res.success) {
         const creatorBonusLine = Number(res.creatorBonusCoins || 0) > 0
           ? `Creator bonus: ${res.creatorBonusCoins} coins were sent to the poster.`
@@ -535,8 +558,8 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
       } else {
         setConsoleOutput(`Error: ${res.error}`);
       }
-    } catch (e) {
-      setConsoleOutput(`Error: Connection failed.`);
+    } catch (error) {
+      setConsoleOutput(`Error: ${error.detail || error.message || 'Connection failed.'}`);
     }
   };
 
@@ -550,14 +573,12 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
     setConsoleOutput("Running Python test cases on the server...");
 
     try {
-      const response = await fetch(`${API_BASE}/api/competitive/challenges/${activeTabId}/run-tests`, {
+      const data = await requestJson(`/api/competitive/challenges/${activeTabId}/run-tests`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: user.user_id, code: editorCode })
       });
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
+      if (!data.success) {
         setConsoleOutput(`Error: ${data.error || 'Failed to run tests.'}`);
         return;
       }
@@ -568,8 +589,8 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
       ];
 
       setConsoleOutput(lines.join('\n\n'));
-    } catch (e) {
-      setConsoleOutput("Error: Connection failed while running tests.");
+    } catch (error) {
+      setConsoleOutput(`Error: ${error.detail || 'Connection failed while running tests.'}`);
     } finally {
       setIsRunningTests(false);
     }
@@ -579,12 +600,11 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
   const handleClaimMailReward = async (mail) => {
     if (!user) return;
     try {
-      const response = await fetch(`${API_BASE}/api/mailbox/${mail.mail_id}/claim`, {
+      const data = await requestJson(`/api/mailbox/${mail.mail_id}/claim`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: user.user_id })
       });
-      const data = await response.json();
       if (data.success) {
         fetchMailbox(user.user_id);
         const updatedUser = { ...user, virtual_currency: (user.virtual_currency || 0) + data.claimed_coins };
@@ -592,16 +612,16 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
       }
     } catch(e) {
       console.error("Error claiming rewards:", e);
+      setMailboxError(getLoadErrorKey(e, 'mailboxClaimError'));
     }
   };
 
   // Force Summary (Instant evaluation for test challenges)
   const handleForceSummary = async (challengeId) => {
     try {
-      const response = await fetch(`${API_BASE}/api/competitive/challenges/${challengeId}/force-summary`, {
+      const data = await requestJson(`/api/competitive/challenges/${challengeId}/force-summary`, {
         method: 'POST'
       });
-      const data = await response.json();
       if (data.success) {
         alert(i18n.language === 'th' ? "สรุปผลและส่งรางวัลเข้ากล่องจดหมายผู้เล่นเรียบร้อย!" : "Instant summary completed! Mailbox rewards generated.");
         fetchChallenges();
@@ -609,6 +629,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
       }
     } catch(e) {
       console.error("Error forcing challenge summary:", e);
+      setActionError(getLoadErrorKey(e, 'actionFailed'));
     }
   };
 
@@ -629,7 +650,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
     }
     
     try {
-      const response = await fetch(`${API_BASE}/api/competitive/challenges`, {
+      await requestJson('/api/competitive/challenges', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -643,17 +664,17 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
         })
       });
       
-      if (response.status === 201) {
-        setPostTitle("");
-        setPostDesc("");
-        setPostTestCases(defaultPostTestCases);
-        setPostReward(300);
-        setPostTimeLimit(300);
-        setShowPostForm(false);
-        fetchChallenges();
-      }
+      setPostTitle("");
+      setPostDesc("");
+      setPostTestCases(defaultPostTestCases);
+      setPostReward(300);
+      setPostTimeLimit(300);
+      setShowPostForm(false);
+      setActionError('');
+      fetchChallenges();
     } catch(e) {
       console.error("Error creating post:", e);
+      setActionError(getLoadErrorKey(e, 'actionFailed'));
     }
   };
 
@@ -763,7 +784,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
 
               <AnimatePresence>
                 {showPostForm && (
-                  <motion.form 
+                  <Motion.form
                     initial={{ height: 0, opacity: 0 }}
                     animate={{ height: 'auto', opacity: 1 }}
                     exit={{ height: 0, opacity: 0 }}
@@ -954,12 +975,16 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                       <PlusCircle className="h-4 w-4" />
                       <span>{t('arena.postSubmit')}</span>
                     </button>
-                  </motion.form>
+                  </Motion.form>
                 )}
               </AnimatePresence>
             </div>
 
-            {leaderboard.length > 0 && (
+            {actionError && <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-700">{t(`arena.${actionError}`)}</div>}
+            {leaderboardError && <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-700">{t(`arena.${leaderboardError}`)} <button type="button" className="underline" onClick={fetchLeaderboard}>{t('arena.retry')}</button></div>}
+            {!leaderboardError && !leaderboardLoaded && <div role="status" className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-500">{t('arena.leaderboardLoading')}</div>}
+            {!leaderboardError && leaderboardLoaded && leaderboard.length === 0 && <div className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-500">{t('arena.leaderboardEmpty')}</div>}
+            {!leaderboardError && leaderboard.length > 0 && (
               <div className="grid gap-3 md:grid-cols-3">
                 {leaderboard.slice(0, 3).map((entry, index) => (
                   <div key={`${entry.user_id}-${entry.challenge_id}-${index}`} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -978,7 +1003,13 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
             )}
 
             {/* FEED ACTIVE POSTS LIST */}
-            {challenges.length === 0 ? (
+            {!feedLoaded ? (
+              <div role="status" className="mode-entry-card rounded-3xl border border-slate-200 bg-white p-8 text-center text-sm font-semibold text-slate-500">{t('arena.feedLoading')}</div>
+            ) : feedError ? (
+              <div role="alert" className="mode-entry-card rounded-3xl border border-red-200 bg-red-50 p-8 text-center text-sm font-semibold text-red-700">
+                {t(`arena.${feedError}`)} <button type="button" className="underline" onClick={fetchChallenges}>{t('arena.retry')}</button>
+              </div>
+            ) : challenges.length === 0 ? (
               <div className="mode-entry-card bg-white border border-slate-200 rounded-3xl p-12 text-center text-slate-400 text-xs font-bold">
                 {t('arena.noActiveChallenges')}
               </div>
@@ -1147,7 +1178,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
         {/* RIGHT COLUMN: COLLAPSIBLE SPLIT SCREEN MONACO WORKSPACE (50% or 0%) */}
         <AnimatePresence>
           {isEditorOpen && (
-            <motion.div 
+            <Motion.div
               initial={{ width: 0, opacity: 0 }}
               animate={{ width: '50%', opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
@@ -1208,7 +1239,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                     {/* Draft status */}
                     {saveStatus && (
                       <span className="absolute right-4 top-4 z-40 px-2.5 py-1 rounded bg-slate-50/90 border border-slate-200 text-[9px] font-bold tracking-widest text-slate-400 uppercase select-none shadow-sm">
-                        {saveStatus === 'saving' ? t('arena.saving') : t('arena.saved')}
+                        {saveStatus === 'saving' ? t('arena.saving') : saveStatus === 'error' ? t('arena.draftSaveError') : t('arena.saved')}
                       </span>
                     )}
 
@@ -1278,7 +1309,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                 </div>
               )}
 
-            </motion.div>
+            </Motion.div>
           )}
         </AnimatePresence>
 
@@ -1305,7 +1336,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
             <div className="flex-1" onClick={() => setMailboxOpen(false)} />
 
             {/* Mailbox contents sidebar drawer */}
-            <motion.div 
+            <Motion.div
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
@@ -1327,7 +1358,11 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
 
               {/* Message items list */}
               <div className="flex-1 p-5 overflow-y-auto space-y-4 bg-slate-50/50">
-                {mailbox.length === 0 ? (
+                {mailboxError ? (
+                  <div role="alert" className="text-center text-sm font-semibold text-red-700 pt-12">
+                    {t(`arena.${mailboxError}`)} <button type="button" className="underline" onClick={() => mailboxError === 'mailboxReadError' ? markMailboxAsRead(user?.user_id) : fetchMailbox(user?.user_id)}>{t('arena.retry')}</button>
+                  </div>
+                ) : mailbox.length === 0 ? (
                   <div className="text-center text-slate-400 font-bold text-xs pt-12">
                     {t('arena.mailboxEmpty')}
                   </div>
@@ -1369,7 +1404,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                 )}
               </div>
 
-            </motion.div>
+            </Motion.div>
           </div>
         )}
       </AnimatePresence>
