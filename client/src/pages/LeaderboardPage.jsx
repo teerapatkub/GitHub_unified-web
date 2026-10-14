@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Trophy, ArrowLeft, RefreshCw, Crown, Medal, ChevronRight } from 'lucide-react';
 import { assetUrl } from '../config/api.js';
 import { loadLeaderboard } from './leaderboard-data.js';
+import SkeletonLoading from '../components/ui/Skeleton.jsx';
 
 // The learner-facing leaderboard, with links to each player's public profile.
 //
@@ -249,9 +250,7 @@ export default function LeaderboardPage({ user }) {
                 </p>
 
                 {loading && (
-                    <div className="bg-white rounded-xl whisper-shadow p-10 text-center text-sm text-pysim-on-surface-variant">
-                        กำลังโหลด...
-                    </div>
+                    <SkeletonLoading variant="list" label="กำลังโหลดตารางอันดับ..." />
                 )}
 
                 {!loading && error && (

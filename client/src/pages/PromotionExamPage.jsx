@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, CheckCircle2, Loader2, ShieldAlert, Sparkles } from 'lucide-react';
 import ProgressCelebration from '../components/learning/ProgressCelebration';
 import { requestJson } from '../config/api-client.js';
+import SkeletonLoading from '../components/ui/Skeleton.jsx';
 
 
 export default function PromotionExamPage({ user, onUserRefresh, onNavigate }) {
@@ -85,11 +86,8 @@ export default function PromotionExamPage({ user, onUserRefresh, onNavigate }) {
 
   if (loading) {
     return (
-      <div className="flex min-h-[70vh] items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="mx-auto h-10 w-10 animate-spin text-blue-600" />
-          <p className="mt-4 text-sm font-medium text-slate-500">กำลังเตรียมแบบทดสอบเลื่อนขั้นจาก AI...</p>
-        </div>
+      <div className="min-h-[70vh] px-4 py-8">
+        <SkeletonLoading variant="quiz" label="กำลังเตรียมแบบทดสอบเลื่อนขั้นจาก AI..." className="mx-auto max-w-6xl" />
       </div>
     );
   }

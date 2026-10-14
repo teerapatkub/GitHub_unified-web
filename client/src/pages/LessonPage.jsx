@@ -8,6 +8,7 @@ import { sanitizePyErrorText } from "../utils/sanitizePyErrorText.js";
 import { API_BASE, assetUrl } from '../config/api.js';
 import WebTutorialModal from "../components/WebTutorialModal";
 import { getWebTutorial } from "../data/webTutorials";
+import SkeletonLoading from "../components/ui/Skeleton";
 
 const Motion = motion;
 
@@ -386,13 +387,8 @@ export default function LessonPage({
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-pysim-surface">
-        <div className="flex flex-col items-center gap-4">
-          <div className="h-10 w-10 animate-spin rounded-full border-4 border-pysim-primary border-t-transparent"></div>
-          <span className="font-medium text-pysim-on-surface-variant">
-            กำลังโหลดบทเรียน...
-          </span>
-        </div>
+      <div className="min-h-screen bg-pysim-surface px-4 py-8">
+        <SkeletonLoading variant="article" label="กำลังโหลดบทเรียน..." className="mx-auto max-w-5xl" />
       </div>
     );
   }

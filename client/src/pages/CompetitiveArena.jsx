@@ -29,6 +29,7 @@ import { motion as Motion, AnimatePresence } from 'framer-motion';
 import Editor from '@monaco-editor/react';
 import { requestJson } from '../config/api-client.js';
 import ModeEntryHeader from '../components/ModeEntryHeader';
+import SkeletonLoading from '../components/ui/Skeleton.jsx';
 
 const arenaFallbacks = {
   acceptChallenge: 'Accept Challenge',
@@ -230,6 +231,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
   // Mailbox States
   const [mailboxOpen, setMailboxOpen] = useState(false);
   const [mailbox, setMailbox] = useState([]);
+  const [mailboxLoading, setMailboxLoading] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
   const [mailboxError, setMailboxError] = useState('');
 
@@ -340,6 +342,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
   // Fetch mailbox list
   const fetchMailbox = useCallback(async (userId) => {
     if (!userId) return;
+    setMailboxLoading(true);
     try {
       const data = await requestJson(`/api/mailbox/${userId}`);
       if (!Array.isArray(data)) throw new Error('Invalid mailbox response');
@@ -349,6 +352,8 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
     } catch (e) {
       console.error("Error fetching mailbox:", e);
       setMailboxError('mailboxLoadError');
+    } finally {
+      setMailboxLoading(false);
     }
   }, []);
 
@@ -982,7 +987,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
 
             {actionError && <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-700">{t(`arena.${actionError}`)}</div>}
             {leaderboardError && <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-700">{t(`arena.${leaderboardError}`)} <button type="button" className="underline" onClick={fetchLeaderboard}>{t('arena.retry')}</button></div>}
-            {!leaderboardError && !leaderboardLoaded && <div role="status" className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-500">{t('arena.leaderboardLoading')}</div>}
+            {!leaderboardError && !leaderboardLoaded && <SkeletonLoading variant="cards" label={t('arena.leaderboardLoading')} />}
             {!leaderboardError && leaderboardLoaded && leaderboard.length === 0 && <div className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-500">{t('arena.leaderboardEmpty')}</div>}
             {!leaderboardError && leaderboard.length > 0 && (
               <div className="grid gap-3 md:grid-cols-3">
@@ -1004,7 +1009,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
 
             {/* FEED ACTIVE POSTS LIST */}
             {!feedLoaded ? (
-              <div role="status" className="mode-entry-card rounded-3xl border border-slate-200 bg-white p-8 text-center text-sm font-semibold text-slate-500">{t('arena.feedLoading')}</div>
+              <SkeletonLoading variant="list" label={t('arena.feedLoading')} />
             ) : feedError ? (
               <div role="alert" className="mode-entry-card rounded-3xl border border-red-200 bg-red-50 p-8 text-center text-sm font-semibold text-red-700">
                 {t(`arena.${feedError}`)} <button type="button" className="underline" onClick={fetchChallenges}>{t('arena.retry')}</button>
@@ -1358,7 +1363,9 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
 
               {/* Message items list */}
               <div className="flex-1 p-5 overflow-y-auto space-y-4 bg-slate-50/50">
-                {mailboxError ? (
+                {mailboxLoading ? (
+                  <SkeletonLoading variant="list" label={t('arena.mailboxTitle')} />
+                ) : mailboxError ? (
                   <div role="alert" className="text-center text-sm font-semibold text-red-700 pt-12">
                     {t(`arena.${mailboxError}`)} <button type="button" className="underline" onClick={() => mailboxError === 'mailboxReadError' ? markMailboxAsRead(user?.user_id) : fetchMailbox(user?.user_id)}>{t('arena.retry')}</button>
                   </div>

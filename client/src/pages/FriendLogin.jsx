@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Eye, EyeOff, Check, X, AlertCircle, Code, Hexagon, Mail, KeyRound, ArrowLeft } from "lucide-react";
 import { Typewriter } from "../components/ui/typewriter-text";
+import SkeletonLoading from "../components/ui/Skeleton.jsx";
 import { API_BASE } from '../config/api.js';
 import { getSupabaseClient } from '../supabaseClient';
 import { authRequest, acceptEmailSession, currentPlayer, initializeAuth, isRecovery, acceptGoogleSession, signOut } from '../auth/session';
@@ -472,8 +473,8 @@ export default function LoginPage({ onLoginSuccess, sessionUser }) {
     const currentQ = assessmentQuestions[assessmentStep];
     if (!currentQ)
       return (
-        <div className="min-h-screen bg-pysim-surface flex items-center justify-center text-pysim-on-surface">
-          กำลังโหลด...
+        <div className="min-h-screen bg-pysim-surface px-4 py-16">
+          <SkeletonLoading variant="quiz" label="กำลังโหลดคำถามประเมินระดับ..." className="mx-auto max-w-4xl" />
         </div>
       );
 
@@ -702,10 +703,7 @@ export default function LoginPage({ onLoginSuccess, sessionUser }) {
             </div>
 
             {tokenChecking ? (
-              <div className="flex items-center justify-center gap-3 py-8 text-pysim-on-surface-variant">
-                <div className="w-5 h-5 border-2 border-pysim-primary/20 border-t-pysim-primary rounded-full animate-spin"></div>
-                กำลังตรวจสอบลิงก์...
-              </div>
+              <SkeletonLoading variant="form" label="กำลังตรวจสอบลิงก์เปลี่ยนรหัสผ่าน..." className="py-4" />
             ) : resetTokenValid ? (
               <form onSubmit={handleResetPassword} className="space-y-4">
                 <div>

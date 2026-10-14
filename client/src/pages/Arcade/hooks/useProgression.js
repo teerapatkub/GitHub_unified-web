@@ -15,6 +15,9 @@ export default function useProgression({ playerName, roomId, matchId, phase, API
   const [roundHistory, setRoundHistory] = useState([]);
   const [playerStats, setPlayerStats] = useState(null);
   const [pastMatches, setPastMatches] = useState([]);
+  const [statsLoadedFor, setStatsLoadedFor] = useState('');
+  const [historyLoadedFor, setHistoryLoadedFor] = useState('');
+  const [roundHistoryLoadedFor, setRoundHistoryLoadedFor] = useState('');
 
   // Career totals. Refetched whenever the player lands back in the lobby,
   // which is exactly when a just-finished match's numbers would have changed.
@@ -26,6 +29,8 @@ export default function useProgression({ playerName, roomId, matchId, phase, API
       if (data.success) setPlayerStats(data.stats);
     } catch {
       // A missing stats card is cosmetic — never surface an error toast for it.
+    } finally {
+      setStatsLoadedFor(playerName);
     }
   }, [playerName, API_BASE]);
 
@@ -54,6 +59,8 @@ export default function useProgression({ playerName, roomId, matchId, phase, API
         if (!cancelled && data.success) setPastMatches(data.matches || []);
       } catch {
         // Purely a review convenience — never worth interrupting the lobby for.
+      } finally {
+        if (!cancelled) setHistoryLoadedFor(playerName);
       }
     })();
     return () => { cancelled = true; };
@@ -73,10 +80,17 @@ export default function useProgression({ playerName, roomId, matchId, phase, API
         if (!cancelled && data.success) setRoundHistory(data.history || []);
       } catch {
         if (!cancelled) setRoundHistory([]);
+      } finally {
+        if (!cancelled) setRoundHistoryLoadedFor(String(matchId));
       }
     })();
     return () => { cancelled = true; };
   }, [phase, roomId, matchId, playerName, API_BASE]);
 
-  return { roundHistory, playerStats, pastMatches, fetchPlayerStats };
+  return {
+    roundHistory, playerStats, pastMatches, fetchPlayerStats,
+    statsLoaded: !playerName || statsLoadedFor === playerName,
+    historyLoaded: !playerName || historyLoadedFor === playerName,
+    roundHistoryLoaded: !matchId || roundHistoryLoadedFor === String(matchId),
+  };
 }

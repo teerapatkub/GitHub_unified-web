@@ -16,6 +16,7 @@ import { canEnterGameModes } from './utils/gameModeAccess.js';
 import { API_BASE } from './config/api.js';
 import { accessForRoute, loginUrlFor, returnDestination } from './auth/route-access.js';
 import { createAuthRestorer } from './auth/restore-state.js';
+import SkeletonLoading from './components/ui/Skeleton.jsx';
 
 // Route components load only when visited, keeping the initial bundle small.
 const LearningPage = lazy(() => import('./pages/LearningPage'));
@@ -108,7 +109,7 @@ function SupabaseConnectionTest() {
     <section className="mx-auto w-full max-w-3xl p-6 text-white" aria-label="Supabase connection test">
       <h1 className="mb-4 text-2xl font-bold">Supabase connection test</h1>
       <p>Read-only query: arcade_items (up to 20 public shop items).</p>
-      {result.loading && <p role="status">Connecting to Supabase…</p>}
+      {result.loading && <SkeletonLoading variant="table" label="Connecting to Supabase…" className="mt-4" />}
       {result.error && <p role="alert" className="mt-4 text-red-300">{result.error}</p>}
       {result.data !== null && (
         <>
@@ -371,7 +372,7 @@ function AppContent() {
   const isAdminUser = user?.role === 'admin';
   const guard = (kind, element) => {
     const access = accessForRoute({ ready: authReady, user, kind });
-    if (access === 'waiting') return <div role="status" className="p-8 text-center">กำลังตรวจสอบการเข้าสู่ระบบ...</div>;
+    if (access === 'waiting') return <SkeletonLoading variant={kind === 'admin' ? 'dashboard' : 'cards'} label="กำลังตรวจสอบการเข้าสู่ระบบ..." className="mx-auto max-w-6xl p-6" />;
     if (access === 'login') {
       const from = location.pathname + location.search + location.hash;
       return <Navigate to={loginUrlFor(from)} state={{ from }} replace />;
@@ -405,12 +406,12 @@ function AppContent() {
           : isCodingWorkspace
             ? 'app-coding-workspace box-border overflow-hidden p-4'
             : 'app-page-content pb-8'}>
-            <Suspense fallback={<div role="status" className="p-8 text-center">กำลังโหลดหน้า...</div>}>
+            <Suspense fallback={<SkeletonLoading variant="cards" label="กำลังโหลดหน้า..." className="mx-auto max-w-6xl p-6" />}>
               <Routes location={location}>
                 <Route path="/" element={
                   authReady
                     ? <Navigate to={isAuthenticated ? (isAdminUser ? "/admin/dashboard" : "/learn") : "/login"} replace />
-                    : null
+                    : <SkeletonLoading variant="cards" label="กำลังตรวจสอบการเข้าสู่ระบบ..." className="mx-auto max-w-6xl p-6" />
                 } />
                 <Route
                   path="/shop"
@@ -420,7 +421,7 @@ function AppContent() {
                   path="/login"
                   element={
                     !authReady
-                      ? null
+                      ? <SkeletonLoading variant="form" label="กำลังตรวจสอบการเข้าสู่ระบบ..." className="mx-auto max-w-xl p-6" />
                       : isAuthenticated && user.level > 0 && !isRecovery()
                       ? <Navigate to={returnDestination(location) || (isAdminUser ? "/admin/dashboard" : "/learn")} replace />
                       : <FriendLogin onLoginSuccess={handleLoginSuccess} sessionUser={user} />

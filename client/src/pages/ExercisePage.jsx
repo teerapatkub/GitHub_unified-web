@@ -26,6 +26,7 @@ import { requestJson } from '../config/api-client.js';
 import { loadExerciseList } from './exercise-data.js';
 import usePyodide from "../hooks/usePyodide";
 import friendlyPyError from "../utils/friendlyPyError";
+import SkeletonLoading from "../components/ui/Skeleton";
 
 function RewardModal({ xp, currency, hasNext, onClose, onNext }) {
   return (
@@ -498,11 +499,8 @@ const handleSubmit = async () => {
 
   if (loadingList) {
     return (
-      <div className="flex min-h-[70vh] items-center justify-center">
-        <div className="flex items-center gap-3 rounded-2xl bg-white/90 px-6 py-5 shadow-sm">
-          <Loader2 size={20} className="animate-spin text-blue-600" />
-          <span className="font-semibold text-slate-700">กำลังโหลดแบบฝึกหัด...</span>
-        </div>
+      <div className="min-h-[70vh] px-4 py-8">
+        <SkeletonLoading variant="workspace" label="กำลังโหลดแบบฝึกหัด..." className="mx-auto max-w-6xl" />
       </div>
     );
   }

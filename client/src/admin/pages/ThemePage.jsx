@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Plus, X, Pencil, Trash2, ChevronDown, Upload, Loader2 } from "lucide-react";
 import AdminNavbar from "../components/AdminNavbar";
 import { API_BASE, assetUrl } from '../../config/api.js';
+import SkeletonLoading from '../../components/ui/Skeleton.jsx';
 const UPLOAD_API = `${API_BASE}/api/upload`;
 const API = `${API_BASE}/api/themes`;
 
@@ -122,6 +123,7 @@ export default function ThemePage() {
   const [formData, setFormData]       = useState(EMPTY_FORM);
   const [saving, setSaving]           = useState(false);
   const [loading, setLoading]         = useState(false);
+  const [loadedTab, setLoadedTab]       = useState("");
   const [message, setMessage]         = useState(null);
   const requestId = useRef(0);
 
@@ -138,7 +140,7 @@ export default function ThemePage() {
       if (id === requestId.current) setItems((Array.isArray(data) ? data : []).map((t) => ({ ...t, is_active: t.is_active === true || Number(t.is_active) === 1, effects: parseEffects(t.effects) })));
     } catch (err) {
       if (id === requestId.current) { setMessage({ error: true, text: err.message }); setItems([]); }
-    } finally { if (id === requestId.current) setLoading(false); }
+    } finally { if (id === requestId.current) { setLoadedTab(activeTab); setLoading(false); } }
   }, [activeTab]);
 
   const resetForm = useCallback(() => {
@@ -150,6 +152,7 @@ export default function ThemePage() {
   }, []);
 
   useEffect(() => { fetchItems(); resetForm(); setMessage(null); }, [activeTab, fetchItems, resetForm]);
+  const listLoading = loading || loadedTab !== activeTab;
 
   const handleSave = async () => {
     if (!formData.name.trim() || formData.price === "") { setMessage({ error: true, text: 'กรุณากรอกชื่อและราคา' }); return; }
@@ -387,14 +390,14 @@ export default function ThemePage() {
             <div className="flex items-center gap-3 mb-6">
               <h2 className="text-2xl font-bold">{tabLabel} ทั้งหมด</h2>
               <span className="bg-gradient-to-r from-pysim-primary to-pysim-primary-container text-white text-xs font-bold px-3 py-1 rounded-full">
-                {items.length}
+                {listLoading ? '…' : items.length}
               </span>
             </div>
 
-            {loading ? <p role="status" className="text-center py-8">กำลังโหลดรายการ...</p> : items.length === 0 && <p className="text-center text-pysim-on-surface-variant py-8">ยังไม่มีรายการ</p>}
-            <p className="mb-4 text-sm text-pysim-on-surface-variant">ต้องการซ่อนรายการ: กด Edit แล้วนำเครื่องหมาย “แสดงในร้านค้า” ออก</p>
+            {listLoading ? <SkeletonLoading variant="list" label="กำลังโหลดรายการตกแต่ง..." /> : items.length === 0 && <p className="text-center text-pysim-on-surface-variant py-8">ยังไม่มีรายการ</p>}
+            {!listLoading && <p className="mb-4 text-sm text-pysim-on-surface-variant">ต้องการซ่อนรายการ: กด Edit แล้วนำเครื่องหมาย “แสดงในร้านค้า” ออก</p>}
 
-            <div className="space-y-3">
+            {!listLoading && <div className="space-y-3">
               {items.map((item) => (
                 <div
                   key={item.item_id}
@@ -442,7 +445,7 @@ export default function ThemePage() {
                   </div>
                 </div>
               ))}
-            </div>
+            </div>}
           </div>
 
         </div>

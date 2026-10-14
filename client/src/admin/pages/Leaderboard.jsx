@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Trophy, Medal, Star, TrendingUp, RefreshCw } from "lucide-react";
 import AdminNavbar from "../components/AdminNavbar";
 import { API_BASE } from '../../config/api.js';
+import SkeletonLoading from '../../components/ui/Skeleton.jsx';
 
 const RANK_STYLE = [
   { bg: "bg-yellow-50", border: "border-yellow-200", badge: "bg-gradient-to-br from-yellow-400 to-amber-500", text: "text-yellow-700", icon: "🥇" },
@@ -138,9 +139,7 @@ export default function Leaderboard() {
           {/* ── Full List ── */}
           <div className="bg-white rounded-2xl whisper-shadow overflow-hidden border border-pysim-outline-variant/30">
             {loading ? (
-              <div className="flex justify-center items-center h-48">
-                <div className="w-8 h-8 border-4 border-pysim-primary border-t-transparent rounded-full animate-spin" />
-              </div>
+              <div className="p-4"><SkeletonLoading variant="list" label="กำลังโหลดตารางอันดับผู้เล่น..." /></div>
             ) : sorted.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-48 text-pysim-outline gap-2">
                 <Trophy size={32} className="opacity-30" />

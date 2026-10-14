@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import AdminNavbar from "../components/AdminNavbar";
 import { API_BASE } from '../../config/api.js';
+import SkeletonLoading from '../../components/ui/Skeleton.jsx';
 
 const loadAccounts = () => fetch(`${API_BASE}/api/admin/users`)
   .then((res) => res.json())
@@ -161,9 +162,7 @@ export default function ManageAccount() {
           {/* User list */}
           <div className="bg-white rounded-2xl whisper-shadow overflow-hidden">
             {loading ? (
-              <div className="flex justify-center items-center h-48">
-                <div className="w-8 h-8 border-4 border-pysim-primary border-t-transparent rounded-full animate-spin" />
-              </div>
+              <div className="p-4"><SkeletonLoading variant="list" label="กำลังโหลดบัญชีผู้ใช้..." /></div>
             ) : displayedUsers.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-48 text-pysim-outline">
                 <svg className="w-12 h-12 mb-2 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">

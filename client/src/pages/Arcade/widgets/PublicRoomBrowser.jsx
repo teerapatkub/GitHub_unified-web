@@ -1,5 +1,9 @@
+import SkeletonLoading from '../../../components/ui/Skeleton.jsx';
+
 export default function PublicRoomBrowser({
   rooms,
+  roomsLoaded,
+  roomsError,
   fetchRooms,
   searchCode,
   setSearchCode,
@@ -58,14 +62,20 @@ export default function PublicRoomBrowser({
       <div className="space-y-3">
         <div className="flex justify-between items-center px-2">
           <span className="text-xs font-black text-slate-400 uppercase tracking-widest">
-            {t('openRoomsLabel')} ({rooms.length} {t('roomsUnit')})
+            {t('openRoomsLabel')} ({roomsLoaded ? rooms.length : '…'} {t('roomsUnit')})
           </span>
-          <button onClick={fetchRooms} className="text-xs font-bold text-rose-500 hover:underline">
+          <button onClick={() => fetchRooms(true)} className="text-xs font-bold text-rose-500 hover:underline">
             {t('refreshList')}
           </button>
         </div>
 
-        {rooms.length === 0 ? (
+        {!roomsLoaded ? (
+          <SkeletonLoading variant="cards" label="กำลังโหลดห้อง Arcade..." />
+        ) : roomsError && rooms.length === 0 ? (
+          <div role="alert" className="mode-entry-card rounded-3xl border border-red-200 bg-white p-6 text-center text-sm font-semibold text-red-700">
+            โหลดรายการห้องไม่สำเร็จ <button type="button" className="underline" onClick={() => fetchRooms(true)}>{t('refreshList')}</button>
+          </div>
+        ) : rooms.length === 0 ? (
           <div className="mode-entry-card bg-white p-6 sm:p-12 rounded-3xl border border-slate-200 text-center space-y-3">
             <div className="text-4xl">🎮</div>
             <h3 className="text-base font-black text-slate-700">{t('noRoomsTitle')}</h3>

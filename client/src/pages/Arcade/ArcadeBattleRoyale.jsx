@@ -45,6 +45,7 @@ import { TRANSLATIONS } from './translations.js';
 import { roomViewForPlayer } from './rematch-view.js';
 import { API_BASE } from '../../config/api.js';
 import { requestJson } from '../../config/api-client.js';
+import SkeletonLoading from '../../components/ui/Skeleton.jsx';
 import { parseUtcTimestamp, PHASES, TASKS, SHOP_ITEMS, BOT_NAMES, AUTO_SUBMIT_LEAD_SECONDS,
          AUTO_SUBMIT_WARN_SECONDS, ROUND_TIMES, phaseDurationsFor } from './constants.js';
 
@@ -208,7 +209,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
   // Phase 8.3 — read-only progression views (RESULT-screen code review + lobby
   // career card). Takes primitives rather than the currentRoom object so its
   // effects don't re-subscribe on every room-state poll.
-  const { roundHistory, playerStats, pastMatches } = useProgression({
+  const { roundHistory, playerStats, pastMatches, statsLoaded, historyLoaded, roundHistoryLoaded } = useProgression({
     playerName: playerState.name, roomId, matchId: currentRoom?.current_match_id, phase, API_BASE
   });
 
@@ -220,7 +221,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
   } = useChat({ playerName: playerState.name, roomId, phase, notify, t, API_BASE });
 
   const {
-    rooms, fetchRooms,
+    rooms, roomsLoaded, roomsError, fetchRooms,
     showCreateModal, setShowCreateModal, createForm, setCreateForm,
     searchCode, setSearchCode, joinPasswordPrompt, setJoinPasswordPrompt,
     inputPassword, setInputPassword, showSettingsModal, setShowSettingsModal,
@@ -619,11 +620,13 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
             {!currentRoom ? (
               <>
               {/* Phase 8.3 — career card above the room list */}
-              <PlayerStatsCard stats={playerStats} playerName={playerState.name} t={t} />
+              {statsLoaded ? <PlayerStatsCard stats={playerStats} playerName={playerState.name} t={t} /> : <SkeletonLoading variant="cards" label="กำลังโหลดสถิติ Arcade..." />}
               {/* Step 5 — reviewable long after the room is gone */}
-              <PastMatchesPanel matches={pastMatches} t={t} />
+              {historyLoaded ? <PastMatchesPanel matches={pastMatches} t={t} /> : <SkeletonLoading variant="list" label="กำลังโหลดประวัติ Arcade..." />}
               <PublicRoomBrowser
                 rooms={rooms}
+                roomsLoaded={roomsLoaded}
+                roomsError={roomsError}
                 fetchRooms={fetchRooms}
                 searchCode={searchCode}
                 setSearchCode={setSearchCode}
@@ -880,7 +883,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
             })()}
 
             {/* Phase 8.3 — this player's own code from each round they played */}
-            <RoundHistoryPanel history={roundHistory} t={t} />
+            {roundHistoryLoaded ? <RoundHistoryPanel history={roundHistory} t={t} /> : <SkeletonLoading variant="list" label="กำลังโหลดผลรอบ Arcade..." />}
 
             <div className="flex flex-wrap items-center justify-center gap-4 pt-4">
               <button

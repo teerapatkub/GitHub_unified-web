@@ -4,6 +4,7 @@ import { Trophy, Lock, CheckCircle2, Coins } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { assetUrl } from '../config/api.js';
 import { requestJson } from '../config/api-client.js';
+import SkeletonLoading from '../components/ui/Skeleton.jsx';
 
 const DIFFICULTY_TH = {
     Medium: 'ปานกลาง',
@@ -62,7 +63,7 @@ export default function Achievements({ user }) {
                 </div>
 
                 {loading ? (
-                    <p className="py-16 text-center text-sm font-semibold text-pysim-outline">กำลังโหลด...</p>
+                    <SkeletonLoading variant="dashboard" label="กำลังโหลดความสำเร็จ..." />
                 ) : error ? (
                     <div className="mx-auto max-w-md rounded-xl bg-white p-8 text-center whisper-shadow">
                         <p className="text-sm font-bold text-red-600">{error}</p>

@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/useTheme.js';
 import { API_BASE, assetUrl } from '../config/api.js';
 import { getShopThemePalette, shopThemeColors } from '../themes/shopPalette.js';
+import SkeletonLoading from '../components/ui/Skeleton.jsx';
 
 
 const resolveAssetUrl = (value) => assetUrl(value);
@@ -510,9 +511,7 @@ export default function ShopPage() {
                 )}
 
                 {loading ? (
-                    <div className="py-16 text-center text-sm font-semibold text-pysim-outline">
-                        กำลังโหลดสินค้า...
-                    </div>
+                    <SkeletonLoading variant="catalog" label="กำลังโหลดสินค้า..." className="py-4" />
                 ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                         {filteredItems.map((item, index) => (

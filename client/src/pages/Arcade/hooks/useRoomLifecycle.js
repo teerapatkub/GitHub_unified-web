@@ -22,6 +22,8 @@ export default function useRoomLifecycle({
   currentRoom, setCurrentRoom, setRoomParticipants
 }) {
   const [rooms, setRooms] = useState([]);
+  const [roomsLoaded, setRoomsLoaded] = useState(false);
+  const [roomsError, setRoomsError] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createForm, setCreateForm] = useState({ room_name: '', password: '', max_players: 4, round_duration_mode: 'standard', difficulty: 'default' });
   const [searchCode, setSearchCode] = useState('');
@@ -144,15 +146,19 @@ export default function useRoomLifecycle({
   }, [playerState.name, notify, t, tasksReady, restoreRetry, API_BASE, currentRoom, appliedPhaseRef, phaseDeadlineRef, setCurrentRoom, setPhase, setPlayerState, setRoomParticipants, setRoundSummary, setTimeLeft]);
 
   // Fetch Public Rooms list
-  const fetchRooms = useCallback(async () => {
+  const fetchRooms = useCallback(async (showSkeleton = false) => {
+    if (showSkeleton) setRoomsLoaded(false);
     try {
       const res = await fetch(`${API_BASE}/api/arcade/rooms`);
       const data = await res.json();
-      if (data.success) {
-        setRooms(data.rooms || []);
-      }
+      if (!res.ok || !data.success) throw new Error('Room list failed to load');
+      setRooms(data.rooms || []);
+      setRoomsError(false);
     } catch (err) {
       console.error("Error fetching rooms:", err);
+      setRoomsError(true);
+    } finally {
+      setRoomsLoaded(true);
     }
   }, [API_BASE]);
 
@@ -456,7 +462,7 @@ export default function useRoomLifecycle({
   };
 
   return {
-    rooms, fetchRooms,
+    rooms, roomsLoaded, roomsError, fetchRooms,
     showCreateModal, setShowCreateModal,
     createForm, setCreateForm,
     searchCode, setSearchCode,

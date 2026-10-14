@@ -18,6 +18,7 @@ import {
 import ProfileAppearance from '../components/ProfileAppearance';
 import { assetUrl } from '../config/api.js';
 import { requestJson } from '../config/api-client.js';
+import SkeletonLoading from '../components/ui/Skeleton.jsx';
 
 
 const SKILL_TIER_TH = {
@@ -231,8 +232,8 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-pysim-surface px-4 py-16 text-center text-sm font-semibold text-pysim-outline">
-                กำลังโหลดโปรไฟล์...
+            <div className="min-h-screen bg-pysim-surface px-4 py-8">
+                <SkeletonLoading variant="profile" label="กำลังโหลดโปรไฟล์..." className="mx-auto max-w-5xl" />
             </div>
         );
     }
@@ -515,7 +516,7 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                         ) : (
                             <>
                                 {compLoading ? (
-                                    <p className="mt-4 text-sm text-pysim-outline">กำลังโหลด...</p>
+                                    <SkeletonLoading variant="table" label="กำลังโหลดประวัติ Competitive..." className="mt-4" />
                                 ) : compError ? (
                                     <div className="mt-4 text-sm text-red-600" role="alert">
                                         {compError}

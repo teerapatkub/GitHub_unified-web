@@ -3,6 +3,7 @@ import { NavLink, Navigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowDown, ArrowUp, Plus, Save, Trash2 } from 'lucide-react';
 import AdminNavbar from '../components/AdminNavbar';
 import { API_BASE, assetUrl } from '../../config/api';
+import SkeletonLoading from '../../components/ui/Skeleton.jsx';
 
 const pages = [
   { path: 'info', label: 'ข้อมูลบทเรียน' },
@@ -126,6 +127,7 @@ function LessonEditor({ page }) {
       {loadError && <div role="alert" className="rounded-xl bg-red-50 p-4 text-red-700">{loadError}<button type="button" className="ml-3 underline" onClick={() => setRevision(value => value + 1)}>ลองโหลดใหม่</button></div>}
       {notice && <p role={notice.error ? 'alert' : 'status'} className={`rounded-xl p-4 ${notice.error ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>{notice.text}</p>}
       {params.get('created') && <p role="status" className="rounded-xl bg-emerald-50 p-4 text-emerald-700">สร้างบทเรียน{selected ? ` “${selected.title}”` : ''}แล้วและแสดงในรายการบทเรียนของผู้เรียน เลือกหน้าเพิ่มสไลด์สอน, Pre-test หรือ Post-test เพื่อเพิ่มเนื้อหาให้บทเรียนนี้</p>}
+      {loading ? <SkeletonLoading variant="form" label="กำลังโหลดข้อมูลบทเรียน..." /> : <>
       {!isInfo && <section className="space-y-3 rounded-2xl border border-pysim-outline-variant/50 bg-white p-5">
         <Field title="เลือกบทเรียน"><select required value={lessonId} disabled={busy || loading} className={inputClass} onChange={event => setParams(event.target.value ? { lesson: event.target.value } : {})}>
           <option value="">{loading ? 'กำลังโหลดบทเรียน...' : 'เลือกบทเรียนที่จะเพิ่มข้อมูล'}</option>
@@ -184,6 +186,7 @@ function LessonEditor({ page }) {
           </article>)}</div>
         </details>)}</div>
       </section>}
+      </>}
     </main>
   </div>;
 }

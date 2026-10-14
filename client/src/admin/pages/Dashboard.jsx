@@ -4,7 +4,6 @@ import {
   CheckCircle2,
   GraduationCap,
   Gamepad2,
-  Loader2,
   Monitor,
   Radio,
   Sparkles,
@@ -13,6 +12,7 @@ import {
 } from "lucide-react";
 import AdminNavbar from "../components/AdminNavbar";
 import { loadDashboardData } from './dashboard-data.js';
+import SkeletonLoading from '../../components/ui/Skeleton.jsx';
 
 
 const modeMeta = {
@@ -251,11 +251,8 @@ export default function Dashboard() {
       <>
         <AdminNavbar />
         <main className="min-h-screen pt-24">
-          <div className="mx-auto flex min-h-[60vh] max-w-6xl items-center justify-center px-6">
-            <div className="flex items-center gap-3 rounded-2xl border border-pysim-outline-variant/50 bg-white px-5 py-4 text-pysim-on-surface-variant shadow-sm">
-              <Loader2 className="h-5 w-5 animate-spin text-pysim-primary" />
-              <span className="font-semibold">กำลังโหลดแดชบอร์ด...</span>
-            </div>
+          <div className="mx-auto max-w-6xl px-6 py-10">
+            <SkeletonLoading variant="dashboard" label="กำลังโหลดแดชบอร์ด..." />
           </div>
         </main>
       </>

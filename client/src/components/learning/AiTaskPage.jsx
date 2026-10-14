@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import { AlertTriangle, CircleHelp, Loader2 } from 'lucide-react';
+import { AlertTriangle, CircleHelp } from 'lucide-react';
 import CodingWorkspace from './CodingWorkspace';
 import ProgressCelebration from './ProgressCelebration';
 import WebTutorialModal from '../WebTutorialModal';
 import { getWebTutorial } from '../../data/webTutorials';
 import { API_BASE } from '../../config/api.js';
+import SkeletonLoading from '../ui/Skeleton.jsx';
 
 const MODE_COPY = {
   exercise: {
@@ -204,30 +205,8 @@ export default function AiTaskPage({ mode = 'exercise', user, onUserRefresh }) {
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center overflow-hidden rounded-[24px] border border-slate-200 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.12),_transparent_38%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.96))] p-10 shadow-sm">
-        <div className="flex max-w-lg flex-col items-center gap-5 text-center">
-          <div className="relative">
-            <div className="absolute inset-0 rounded-full bg-blue-200/60 blur-2xl" />
-            <div className="relative flex h-20 w-20 items-center justify-center rounded-full border border-blue-200 bg-white shadow-[0_18px_40px_rgba(59,130,246,0.18)]">
-              <Loader2 size={28} className="animate-spin text-blue-600" />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <h2 className="text-xl font-black tracking-tight text-slate-900">
-              AI กำลังเตรียมโจทย์ให้คุณ
-            </h2>
-            <p className="text-sm font-medium leading-6 text-slate-500">
-              {alwaysGenerateOnEnter
-                ? 'รอสักครู่เพื่อให้ระบบสร้างโจทย์ใหม่สำหรับรอบนี้ก่อนเริ่มทำแบบฝึกหัด'
-                : 'กำลังตรวจสอบและเตรียมโจทย์ล่าสุดของคุณให้พร้อมใช้งาน'}
-            </p>
-          </div>
-
-          <div className="h-2.5 w-64 overflow-hidden rounded-full bg-slate-200">
-            <div className="h-full w-1/2 animate-[pulse_1.6s_ease-in-out_infinite] rounded-full bg-gradient-to-r from-blue-500 via-indigo-500 to-violet-500" />
-          </div>
-        </div>
+      <div className="h-full rounded-[24px] bg-pysim-surface p-4 sm:p-8">
+        <SkeletonLoading variant="workspace" label={alwaysGenerateOnEnter ? 'AI กำลังเตรียมโจทย์ใหม่...' : 'กำลังโหลดโจทย์ล่าสุด...'} />
       </div>
     );
   }

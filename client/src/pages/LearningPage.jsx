@@ -12,6 +12,7 @@ import { useTranslation } from "react-i18next";
 import { API_BASE } from '../config/api.js';
 import WebTutorialModal from "../components/WebTutorialModal";
 import { getWebTutorial } from "../data/webTutorials";
+import SkeletonLoading from "../components/ui/Skeleton";
 
 const getLevelProgress = (xp = 0) => {
   const numericXp = Number(xp || 0);
@@ -136,11 +137,8 @@ export default function LearningPage({ onNavigate, user }) {
 
   if (loading) {
     return (
-      <div className="flex h-96 flex-col items-center justify-center space-y-4">
-        <div className="h-12 w-12 animate-spin rounded-full border-4 border-pysim-primary border-t-transparent"></div>
-        <p className="animate-pulse text-pysim-on-surface-variant">
-          กำลังเตรียมบทเรียนให้คุณ {user?.username}...
-        </p>
+      <div className="mode-entry mode-entry--learn min-h-screen bg-pysim-surface px-4 py-8 sm:px-6">
+        <SkeletonLoading variant="dashboard" label={`กำลังเตรียมบทเรียนให้คุณ ${user?.username || ''}...`} className="mx-auto max-w-7xl" />
       </div>
     );
   }
