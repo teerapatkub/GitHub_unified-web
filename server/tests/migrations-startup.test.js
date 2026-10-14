@@ -378,6 +378,33 @@ test('only health traffic is served until preparation succeeds', async (t) => {
   assert.deepEqual(data.body, { value: 42 });
 });
 
+test('failed dependency readiness closes application traffic until recovery', async (t) => {
+  const app = express();
+  const state = createStartupState();
+  let healthy = true;
+  installStartupGate(app, state);
+  installHealthRoutes(app, {
+    state,
+    checkReadiness: async () => {
+      if (!healthy) throw new Error('database unavailable');
+      return { currentVersion: '202610120004' };
+    },
+  });
+  app.get('/api/data', (_req, res) => res.json({ value: 42 }));
+  const server = await startApplication({
+    app, port: 0, host: '127.0.0.1', prepare: async () => {}, state,
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+
+  assert.equal((await requestJson(server, '/api/data')).status, 200);
+  healthy = false;
+  assert.equal((await requestJson(server, '/api/health/ready')).status, 503);
+  assert.equal((await requestJson(server, '/api/data')).status, 503);
+  healthy = true;
+  assert.equal((await requestJson(server, '/api/health/ready')).status, 200);
+  assert.equal((await requestJson(server, '/api/data')).status, 200);
+});
+
 test('Supabase Auth readiness requires complete configuration and probes Auth directly', async () => {
   const incomplete = createSupabaseAuthCheck({
     url: 'https://example.supabase.co',

@@ -78,6 +78,10 @@ if curl --silent --fail --max-time 8 http://127.0.0.1:3001/api/health/ready >/de
   echo 'Readiness passed while PostgreSQL was stopped' >&2
   exit 1
 fi
+if curl --silent --fail --max-time 8 http://127.0.0.1:3001/login >/dev/null; then
+  echo 'Application traffic remained open during PostgreSQL outage' >&2
+  exit 1
+fi
 curl --silent --fail http://127.0.0.1:3001/api/health/live >/dev/null
 docker restart pyarena-release-app >/dev/null
 assert_startup_refuses_traffic
@@ -95,6 +99,10 @@ docker exec pyarena-release-db psql -U postgres -d pyarena_container_test \
   -c "UPDATE app_schema_migrations SET checksum = 'release_test_invalid' WHERE version = (SELECT MAX(version) FROM app_schema_migrations)" >/dev/null
 if curl --silent --fail --max-time 8 http://127.0.0.1:3001/api/health/ready >/dev/null; then
   echo 'Readiness passed with an invalid migration fingerprint' >&2
+  exit 1
+fi
+if curl --silent --fail --max-time 8 http://127.0.0.1:3001/login >/dev/null; then
+  echo 'Application traffic remained open with an invalid migration fingerprint' >&2
   exit 1
 fi
 docker restart pyarena-release-app >/dev/null

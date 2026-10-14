@@ -1,4 +1,4 @@
-const createStartupState = () => ({ ready: false, failed: false });
+const createStartupState = () => ({ initialized: false, ready: false, failed: false });
 
 const installStartupGate = (app, state) => {
   app.use((req, res, next) => {
@@ -21,7 +21,10 @@ const installHealthRoutes = (app, { checkReadiness, state }) => {
 
   const ready = async (_req, res) => {
     res.set('Cache-Control', 'no-store');
-    if (!state.ready) {
+    // Once startup completed, every readiness probe also updates the traffic
+    // gate. The container healthcheck calls this endpoint regularly, and a
+    // successful probe reopens traffic after a recovered dependency.
+    if (!state.initialized) {
       return res.status(503).json({
         status: 'not-ready',
         error: 'Dependencies are not ready',
@@ -29,11 +32,13 @@ const installHealthRoutes = (app, { checkReadiness, state }) => {
     }
     try {
       const status = await checkReadiness();
+      state.ready = true;
       return res.status(200).json({
         status: 'ready',
         migrationVersion: status.currentVersion,
       });
     } catch (error) {
+      state.ready = false;
       return res.status(503).json({
         status: 'not-ready',
         error: 'Dependencies are not ready',
@@ -66,6 +71,7 @@ const startApplication = async ({ app, port, host, validate = () => {}, prepare,
   const server = await listen(app, port, host);
   try {
     await prepare();
+    state.initialized = true;
     state.ready = true;
     return server;
   } catch (error) {

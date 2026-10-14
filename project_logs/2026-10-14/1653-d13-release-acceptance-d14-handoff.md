@@ -11,8 +11,10 @@ the older roadmap's D11 label. This work starts D13 and prepares D14.
   client/server tests, fresh PostgreSQL migrations, production image build and
   filesystem inspection, plus container readiness and upload persistence.
 - Added a disposable-container smoke script for database outage and migration
-  mismatch behavior, including refusal of application traffic after failed
-  startup. The workflow preserves the exact tested image archive with SHA-256,
+  mismatch behavior, including refusal of application traffic both while the
+  existing container is running and after failed startup. A readiness failure
+  now closes the traffic gate until a successful recovery probe. The workflow
+  preserves the exact tested image archive with SHA-256,
   and evidence records the commit, image config digest, archive checksum,
   migration version, and environment class.
 - Scoped fixture-placeholder exceptions in the secret scanner to exact known
