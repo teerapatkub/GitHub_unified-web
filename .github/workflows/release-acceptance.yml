@@ -95,6 +95,11 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.RELEASE_TEST_SUPABASE_SECRET_KEY }}
         run: bash scripts/release/container-smoke.sh
 
+      - name: Preserve the exact tested image
+        run: |
+          docker save pyarena-release-candidate | gzip -1 > "$RUNNER_TEMP/release-image.tar.gz"
+          sha256sum "$RUNNER_TEMP/release-image.tar.gz" | cut -d ' ' -f 1 > "$RUNNER_TEMP/image-archive.sha256"
+
       - name: Record candidate evidence
         run: node scripts/release/record-evidence.mjs
 
@@ -102,5 +107,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: release-acceptance-${{ github.sha }}
-          path: ${{ runner.temp }}/release-evidence.json
+          path: |
+            ${{ runner.temp }}/release-evidence.json
+            ${{ runner.temp }}/release-image.tar.gz
           if-no-files-found: error

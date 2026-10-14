@@ -20,8 +20,11 @@ client/server tests; migrations on fresh PostgreSQL; production build and bundle
 budget; image filesystem and non-root checks; container liveness/readiness;
 database and migration failure checks; and upload persistence across container
 replacement. Its artifact records the candidate commit, local image config
-digest, migration version, environment class, and passed gates. A registry
-manifest digest is recorded separately when the image is published.
+digest, migration version, environment class, and passed gates. It also contains
+the exact tested image archive and its SHA-256 checksum. Download the artifact,
+verify the checksum, load it with `docker load`, and verify the loaded image
+config digest before D14 or registry publication. Do not rebuild for D14.
+Record the registry manifest digest after publishing that tested image.
 
 Current blocker: historical Git backup/account data still fails the full-history
 scan. The fixture-placeholder false positives in the tracked snapshot were

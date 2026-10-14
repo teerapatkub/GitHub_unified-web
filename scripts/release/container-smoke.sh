@@ -46,6 +46,21 @@ wait_ready() {
   return 1
 }
 
+assert_startup_refuses_traffic() {
+  for attempt in {1..60}; do
+    if [[ "$(docker inspect -f '{{.State.Running}}' pyarena-release-app)" != true ]]; then
+      if curl --silent --fail --max-time 3 http://127.0.0.1:3001/login >/dev/null; then
+        echo 'Application traffic remained open after startup failed' >&2
+        return 1
+      fi
+      return 0
+    fi
+    sleep 2
+  done
+  echo 'Application remained running after startup failed' >&2
+  return 1
+}
+
 trap 'docker rm -f pyarena-release-app >/dev/null 2>&1 || true' EXIT
 start_app
 wait_ready
@@ -64,11 +79,15 @@ if curl --silent --fail --max-time 8 http://127.0.0.1:3001/api/health/ready >/de
   exit 1
 fi
 curl --silent --fail http://127.0.0.1:3001/api/health/live >/dev/null
+docker restart pyarena-release-app >/dev/null
+assert_startup_refuses_traffic
 docker start pyarena-release-db >/dev/null
 for attempt in {1..60}; do
   [[ "$(docker inspect -f '{{.State.Health.Status}}' pyarena-release-db)" == healthy ]] && break
   sleep 2
 done
+docker start pyarena-release-app >/dev/null
+wait_ready
 
 # An incompatible migration fingerprint must fail both current readiness and
 # startup after a container restart. This database is discarded with the job.
@@ -79,11 +98,4 @@ if curl --silent --fail --max-time 8 http://127.0.0.1:3001/api/health/ready >/de
   exit 1
 fi
 docker restart pyarena-release-app >/dev/null
-for attempt in {1..30}; do
-  if [[ "$(docker inspect -f '{{.State.Running}}' pyarena-release-app)" != true ]]; then
-    exit 0
-  fi
-  sleep 2
-done
-echo 'Application stayed running after migration startup failed' >&2
-exit 1
+assert_startup_refuses_traffic

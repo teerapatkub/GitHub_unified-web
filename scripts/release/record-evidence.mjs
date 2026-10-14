@@ -8,8 +8,10 @@ if (!outputDirectory || !/^[a-f0-9]{40}$/i.test(commit || '')) {
 }
 
 const imageId = fs.readFileSync(path.join(outputDirectory, 'image-id.txt'), 'utf8').trim();
+const archiveChecksum = fs.readFileSync(path.join(outputDirectory, 'image-archive.sha256'), 'utf8').trim();
 const readiness = JSON.parse(fs.readFileSync(path.join(outputDirectory, 'release-ready.json'), 'utf8'));
 if (!/^sha256:[a-f0-9]{64}$/i.test(imageId)
+  || !/^[a-f0-9]{64}$/i.test(archiveChecksum)
   || readiness.status !== 'ready'
   || !/^\d{12,20}$/.test(String(readiness.migrationVersion || ''))) {
   throw new Error('Image ID or migration readiness evidence is missing');
@@ -18,6 +20,7 @@ if (!/^sha256:[a-f0-9]{64}$/i.test(imageId)
 const evidence = {
   candidateCommit: commit,
   imageConfigDigest: imageId,
+  imageArchiveSha256: archiveChecksum,
   migrationVersion: String(readiness.migrationVersion),
   environmentClass: 'disposable-ci',
   checks: [
