@@ -1,0 +1,106 @@
+name: Release acceptance
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    environment: release-test
+    timeout-minutes: 90
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:example-release-only@127.0.0.1:5432/pyarena_release_test
+      PGSSLMODE: disable
+    steps:
+      - name: Check out one candidate with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Scan source and reachable history
+        run: |
+          node --test scripts/security/*.test.mjs
+          node scripts/security/repository-safety.mjs
+
+      - name: Start disposable PostgreSQL
+        run: |
+          docker run -d --name pyarena-release-db \
+            -e POSTGRES_PASSWORD=example-release-only \
+            -e POSTGRES_DB=pyarena_release_test \
+            -p 5432:5432 \
+            --health-cmd 'pg_isready -U postgres' \
+            --health-interval 2s --health-retries 30 postgres:18-alpine
+          for attempt in {1..60}; do
+            if [[ "$(docker inspect -f '{{.State.Health.Status}}' pyarena-release-db)" == healthy ]]; then
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
+
+      - name: Install, audit, lint, test and build client
+        working-directory: client
+        run: |
+          npm ci
+          npm audit --omit=dev --audit-level=low
+          npm run lint
+          npm test
+          npm run build
+          npm run check:bundle
+
+      - name: Install, audit, lint and test server
+        working-directory: server
+        run: |
+          npm ci
+          npm audit --omit=dev --audit-level=low
+          npm run lint
+          npm run pretest
+          npm run test:migrations:postgres
+          npm test
+
+      - name: Require isolated Auth project configuration
+        env:
+          RELEASE_TEST_SUPABASE_URL: ${{ secrets.RELEASE_TEST_SUPABASE_URL }}
+          RELEASE_TEST_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.RELEASE_TEST_SUPABASE_PUBLISHABLE_KEY }}
+          RELEASE_TEST_SUPABASE_SECRET_KEY: ${{ secrets.RELEASE_TEST_SUPABASE_SECRET_KEY }}
+        run: |
+          test -n "$RELEASE_TEST_SUPABASE_URL"
+          test -n "$RELEASE_TEST_SUPABASE_PUBLISHABLE_KEY"
+          test -n "$RELEASE_TEST_SUPABASE_SECRET_KEY"
+
+      - name: Build and inspect production image
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.RELEASE_TEST_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.RELEASE_TEST_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          docker build --tag pyarena-release-candidate \
+            --build-arg VITE_SUPABASE_URL \
+            --build-arg VITE_SUPABASE_PUBLISHABLE_KEY .
+          node scripts/security/container-image-safety.mjs pyarena-release-candidate
+          test "$(docker image inspect -f '{{.Config.User}}' pyarena-release-candidate)" = node
+          docker image inspect -f '{{.Id}}' pyarena-release-candidate > "$RUNNER_TEMP/image-id.txt"
+
+      - name: Smoke test container readiness and persistent uploads
+        env:
+          SUPABASE_URL: ${{ secrets.RELEASE_TEST_SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.RELEASE_TEST_SUPABASE_PUBLISHABLE_KEY }}
+          SUPABASE_SECRET_KEY: ${{ secrets.RELEASE_TEST_SUPABASE_SECRET_KEY }}
+        run: bash scripts/release/container-smoke.sh
+
+      - name: Record candidate evidence
+        run: node scripts/release/record-evidence.mjs
+
+      - name: Upload release evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-acceptance-${{ github.sha }}
+          path: ${{ runner.temp }}/release-evidence.json
+          if-no-files-found: error

@@ -67,6 +67,22 @@ function isPlaceholderSecret(value) {
     || normalized === '...';
 }
 
+function isKnownFixturePlaceholder(path, name, value) {
+  const normalizedPath = normalizePath(path);
+  const normalizedValue = value.trim().replace(/^['"]|['"]$/g, '').toLowerCase();
+  if (normalizedPath === 'server/tests/production-auth-settings.test.js') {
+    return (name === 'AUTH_SMTP_PASS' && normalizedValue === 'smtp-password')
+      || (name === 'EMAIL_PASS' && normalizedValue === 'legacy-password');
+  }
+  if (normalizedPath === 'server/tests/production-environment.test.js') {
+    return (name === 'DATABASE_URL' && normalizedValue === 'password')
+      || (name === 'SUPABASE_ACCESS_TOKEN' && normalizedValue === 'management-token-must-not-reach-runtime')
+      || (name === 'AUTH_SMTP_PASS' && normalizedValue === 'smtp-setup-only');
+  }
+  return normalizedPath === 'docs/deploy.md'
+    && name === 'DATABASE_URL' && normalizedValue === 'password';
+}
+
 function isHarmlessCodeToken(path, name, value) {
   const codeExtensions = new Set(['.cjs', '.js', '.jsx', '.mjs', '.ts', '.tsx']);
   const normalized = value.trim().replace(/^['"]|['"]$/g, '');
@@ -140,13 +156,15 @@ export function findSensitiveContent(path, text) {
 
     for (const assignment of line.matchAll(secretAssignment)) {
       if (!isPlaceholderSecret(assignment[2])
+        && !isKnownFixturePlaceholder(path, assignment[1], assignment[2])
         && !isHarmlessCodeToken(path, assignment[1], assignment[2])) {
         findings.push({ path: normalizePath(path), type: 'credential-assignment', line: index + 1 });
       }
     }
 
     const databaseUrlMatch = line.match(databaseUrl);
-    if (databaseUrlMatch && !isPlaceholderSecret(databaseUrlMatch[1])) {
+    if (databaseUrlMatch && !isPlaceholderSecret(databaseUrlMatch[1])
+      && !isKnownFixturePlaceholder(path, 'DATABASE_URL', databaseUrlMatch[1])) {
       findings.push({ path: normalizePath(path), type: 'database-url-password', line: index + 1 });
     }
   }

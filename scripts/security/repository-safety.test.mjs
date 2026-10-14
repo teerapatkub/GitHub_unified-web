@@ -115,6 +115,18 @@ test('does not flag documentation placeholders or educational email examples', (
   assert.deepEqual(findings, []);
 });
 
+test('recognizes only exact historical fixture placeholders in their known files', () => {
+  const fixture = ["AUTH_SMTP_", "PASS: 'smtp-password'; EMAIL_", "PASS: 'legacy-password';"].join('');
+  const url = ['DATABASE_URL=postgresql', '://app:password@db.example.com:6543/postgres'].join('');
+  assert.deepEqual(findSensitiveContent('server/tests/production-auth-settings.test.js', fixture), []);
+  assert.deepEqual(findSensitiveContent('server/tests/production-environment.test.js', url), []);
+  assert.deepEqual(findSensitiveContent('docs/deploy.md', url), []);
+  assert.equal(findSensitiveContent('server/config.js', fixture).length, 2);
+  assert.equal(findSensitiveContent('server/config.js', url).length, 1);
+  assert.equal(findSensitiveContent('server/tests/production-environment.test.js',
+    ['DATABASE_URL=postgresql', '://app:actual-password@db.example.com/app'].join('')).length, 1);
+});
+
 test('does not treat short semantic token constants in bundled code as credentials', () => {
   const findings = findSensitiveContent(
     'client/dist/assets/index.js',
