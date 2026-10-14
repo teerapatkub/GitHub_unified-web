@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Trophy, ArrowLeft, RefreshCw } from 'lucide-react';
+import { Trophy, ArrowLeft, RefreshCw, Crown, Medal, ChevronRight } from 'lucide-react';
 import { assetUrl } from '../config/api.js';
 import { loadLeaderboard } from './leaderboard-data.js';
 
@@ -15,7 +15,73 @@ import { loadLeaderboard } from './leaderboard-data.js';
 // Reads /api/leaderboard?board=..., which returns name, level, XP, coins and
 // the metric that board sorts by - and nothing else. The admin roster endpoint
 // returns far more about each account and is deliberately not what this calls.
-const MEDALS = ['🥇', '🥈', '🥉'];
+const PODIUM_STYLES = {
+  1: {
+    order: 'md:order-2',
+    card: 'border-amber-300 bg-gradient-to-b from-amber-50 via-white to-white shadow-[0_18px_45px_-22px_rgba(161,98,7,0.55)] md:-translate-y-3 md:hover:-translate-y-4',
+    badge: 'bg-amber-100 text-amber-800',
+    avatar: 'ring-4 ring-amber-300',
+    metric: 'bg-amber-100 text-amber-900',
+    icon: 'text-amber-600',
+  },
+  2: {
+    order: 'md:order-1',
+    card: 'border-slate-300 bg-gradient-to-b from-slate-100 via-white to-white shadow-[0_14px_35px_-24px_rgba(51,65,85,0.5)]',
+    badge: 'bg-slate-200 text-slate-700',
+    avatar: 'ring-4 ring-slate-300',
+    metric: 'bg-slate-100 text-slate-800',
+    icon: 'text-slate-500',
+  },
+  3: {
+    order: 'md:order-3',
+    card: 'border-orange-200 bg-gradient-to-b from-orange-50 via-white to-white shadow-[0_14px_35px_-24px_rgba(154,52,18,0.45)]',
+    badge: 'bg-orange-100 text-orange-800',
+    avatar: 'ring-4 ring-orange-200',
+    metric: 'bg-orange-100 text-orange-900',
+    icon: 'text-orange-700',
+  },
+};
+
+function playerDetail(board, row) {
+  return board.detail?.(row) || `เลเวล ${row.level} · 🪙 ${row.coins}`;
+}
+
+function PodiumCard({ row, board, isMe }) {
+  const style = PODIUM_STYLES[row.rank];
+  const Card = row.user_id ? Link : 'div';
+
+  return (
+    <Card
+      {...(row.user_id ? { to: `/profile/${row.user_id}` } : {})}
+      aria-label={row.user_id ? `ดูโปรไฟล์ของ ${row.username} อันดับ ${row.rank}` : undefined}
+      className={`group relative flex min-w-0 flex-col items-center rounded-3xl border-2 px-4 pb-5 pt-6 text-center transition-all duration-200 hover:-translate-y-1 hover:shadow-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pysim-primary ${style.order} ${style.card}`}
+    >
+      <span className={`absolute -top-3 rounded-full px-4 py-1 text-xs font-black shadow-sm ${style.badge}`}>
+        อันดับ {row.rank}
+      </span>
+      {row.rank === 1
+        ? <Crown size={30} className={`mb-4 ${style.icon}`} aria-hidden="true" />
+        : <Medal size={28} className={`mb-4 ${style.icon}`} aria-hidden="true" />}
+      <div className={`mb-4 flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white text-3xl font-black text-pysim-primary ${style.avatar}`}>
+        {row.avatar?.url
+          ? <img src={assetUrl(row.avatar.url)} alt="" className="h-full w-full object-cover" />
+          : <span aria-hidden="true">{row.username?.slice(0, 1).toUpperCase() || '?'}</span>}
+      </div>
+      <span className={`max-w-full truncate text-base font-black ${isMe ? 'text-pysim-primary' : 'text-pysim-on-surface'}`}>
+        {row.username}{isMe ? ' (คุณ)' : ''}
+      </span>
+      <span className="mt-1 min-h-8 text-xs leading-4 text-pysim-on-surface-variant">{playerDetail(board, row)}</span>
+      <span className={`mt-4 rounded-full px-4 py-2 text-sm font-black ${style.metric}`}>
+        {board.format(row)}
+      </span>
+      {row.user_id && (
+        <span className="mt-4 inline-flex items-center gap-1 text-xs font-bold text-pysim-primary group-hover:underline">
+          ดูโปรไฟล์ <ChevronRight size={14} aria-hidden="true" />
+        </span>
+      )}
+    </Card>
+  );
+}
 
 const BOARDS = [
     {
@@ -130,7 +196,7 @@ export default function LeaderboardPage({ user }) {
 
     return (
         <div className="min-h-screen bg-pysim-surface">
-            <div className="max-w-3xl mx-auto px-4 sm:px-8 py-8">
+            <div className="max-w-5xl mx-auto px-4 sm:px-8 py-8">
 
                 <button
                     onClick={() => navigate('/learn')}
@@ -199,47 +265,69 @@ export default function LeaderboardPage({ user }) {
                 )}
 
                 {!loading && !error && rows.length > 0 && (
-                    <div className="bg-white rounded-xl whisper-shadow overflow-hidden">
-                        {rows.map((row) => {
+                  <>
+                    <section aria-label="สามอันดับแรก" className="mb-9 pt-4">
+                      <div className="mb-6 flex items-center gap-2 text-pysim-on-surface">
+                        <Trophy size={18} className="text-amber-600" aria-hidden="true" />
+                        <h2 className="text-lg font-black">ผู้เล่นระดับท็อป</h2>
+                      </div>
+                      <div className="grid gap-5 md:grid-cols-3 md:items-end">
+                        {rows.filter((row) => row.rank <= 3).map((row) => (
+                          <PodiumCard
+                            key={`${boardKey}-${row.rank}`}
+                            row={row}
+                            board={board}
+                            isMe={Boolean(myName && row.username === myName)}
+                          />
+                        ))}
+                      </div>
+                    </section>
+                    {rows.length > 3 && (
+                      <section aria-label="อันดับถัดไป">
+                        <h2 className="mb-3 text-sm font-black text-pysim-on-surface-variant">อันดับถัดไป</h2>
+                        <div className="bg-white rounded-xl whisper-shadow overflow-hidden">
+                          {rows.filter((row) => row.rank > 3).map((row) => {
                             const isMe = myName && row.username === myName;
-                            const detail = board.detail?.(row);
                             const Row = row.user_id ? Link : 'div';
                             return (
-                                <Row
-                                    to={row.user_id ? `/profile/${row.user_id}` : undefined}
-                                    aria-label={row.user_id ? `ดูโปรไฟล์ของ ${row.username}` : undefined}
-                                    key={`${boardKey}-${row.rank}`}
-                                    className={`flex items-center gap-3 px-3 sm:px-5 py-4 border-b border-slate-100 last:border-0 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-600
-                                        ${isMe ? 'bg-pysim-primary/5' : ''}`}
-                                >
-                                    <span className="w-10 text-center text-sm font-black text-slate-400">
-                                        {MEDALS[row.rank - 1] || `#${row.rank}`}
-                                    </span>
+                              <Row
+                                to={row.user_id ? `/profile/${row.user_id}` : undefined}
+                                aria-label={row.user_id ? `ดูโปรไฟล์ของ ${row.username}` : undefined}
+                                key={`${boardKey}-${row.rank}`}
+                                className={`flex items-center gap-3 px-3 sm:px-5 py-4 border-b border-slate-100 last:border-0 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-600
+                                  ${isMe ? 'bg-pysim-primary/5' : ''}`}
+                              >
+                                <span className="w-10 text-center text-sm font-black text-slate-400">
+                                  #{row.rank}
+                                </span>
 
-                                    {row.avatar?.url && (
-                                        <img
-                                            src={assetUrl(row.avatar.url)}
-                                            alt=""
-                                            className="h-9 w-9 shrink-0 rounded-full bg-pysim-surface-low object-cover"
-                                        />
-                                    )}
+                                {row.avatar?.url && (
+                                  <img
+                                    src={assetUrl(row.avatar.url)}
+                                    alt=""
+                                    className="h-9 w-9 shrink-0 rounded-full bg-pysim-surface-low object-cover"
+                                  />
+                                )}
 
-                                    <div className="flex-1 min-w-0">
-                                        <span className={`block truncate text-sm ${isMe ? 'font-black text-pysim-primary' : 'font-bold text-pysim-on-surface'}`}>
-                                            {row.username}{isMe ? ' (คุณ)' : ''}
-                                        </span>
-                                        <span className="block text-[11px] text-pysim-on-surface-variant">
-                                            {detail || `เลเวล ${row.level} · 🪙 ${row.coins}`}
-                                        </span>
-                                    </div>
+                                <div className="flex-1 min-w-0">
+                                  <span className={`block truncate text-sm ${isMe ? 'font-black text-pysim-primary' : 'font-bold text-pysim-on-surface'}`}>
+                                    {row.username}{isMe ? ' (คุณ)' : ''}
+                                  </span>
+                                  <span className="block text-[11px] text-pysim-on-surface-variant">
+                                    {playerDetail(board, row)}
+                                  </span>
+                                </div>
 
-                                    <span className={`text-sm font-black whitespace-nowrap ${board.tone}`}>
-                                        {board.format(row)}
-                                    </span>
-                                </Row>
+                                <span className={`text-sm font-black whitespace-nowrap ${board.tone}`}>
+                                  {board.format(row)}
+                                </span>
+                              </Row>
                             );
-                        })}
-                    </div>
+                          })}
+                        </div>
+                      </section>
+                    )}
+                  </>
                 )}
 
             </div>
