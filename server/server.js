@@ -92,6 +92,7 @@ const { createThemeRouter } = require('./themeRoutes');
 const { createLessonAdminRouter } = require('./lessonAdminRoutes');
 const { createLessonContentRouter } = require('./lessonContentRoutes');
 const { createStudentProgressRouter } = require('./studentProgressRoutes');
+const { createPromotionExamRouter } = require('./promotionExamRoutes');
 const { authSchemaSql, ensureAuthSchema, installAuth } = require('./auth');
 // Production schema setup belongs to the versioned application migration.
 // Standalone module tests keep installAuth's default auto-initialization.
@@ -99,6 +100,10 @@ const playerAuth = installAuth(app, db, supabase, process.env, { initializeSchem
 app.get('/api/your-table', testSupabase);
 app.use('/api', createLessonContentRouter(db, {
     ensureQuizSchema: () => ensureLessonQuizAttemptSchema(),
+    evaluateAchievements: (userId) => evaluateAchievements(userId),
+}));
+app.use('/api', createPromotionExamRouter(db, {
+    tierForLevel: (level) => normalizePlayerLevel(level),
     evaluateAchievements: (userId) => evaluateAchievements(userId),
 }));
 app.use('/api/themes', createThemeRouter(db));

@@ -30,7 +30,7 @@ export default function PromotionExamPage({ user, onUserRefresh, onNavigate }) {
         if (!data?.exam) throw new Error('Invalid promotion exam response');
         setExam(data.exam);
       } catch (err) {
-        setError(err.kind === 'unauthorized' ? 'กรุณาเข้าสู่ระบบอีกครั้ง' : 'ไม่สามารถโหลดแบบทดสอบเลื่อนขั้นได้');
+        setError(err.kind === 'unauthorized' ? 'กรุณาเข้าสู่ระบบอีกครั้ง' : err.detail || 'ไม่สามารถโหลดแบบทดสอบเลื่อนขั้นได้');
       } finally {
         setLoading(false);
       }
@@ -87,7 +87,7 @@ export default function PromotionExamPage({ user, onUserRefresh, onNavigate }) {
   if (loading) {
     return (
       <div className="min-h-[70vh] px-4 py-8">
-        <SkeletonLoading variant="quiz" label="กำลังเตรียมแบบทดสอบเลื่อนขั้นจาก AI..." className="mx-auto max-w-6xl" />
+        <SkeletonLoading variant="quiz" label="กำลังเตรียมแบบทดสอบเลื่อนขั้น..." className="mx-auto max-w-6xl" />
       </div>
     );
   }
@@ -103,9 +103,11 @@ export default function PromotionExamPage({ user, onUserRefresh, onNavigate }) {
                 Promotion Exam
               </div>
               <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950">{exam?.title || 'Level Promotion Exam'}</h1>
-              <p className="mt-2 text-sm font-medium text-slate-500">
-                ด่านเลื่อนขั้น {stageLabel} · ต้องผ่านอย่างน้อย {exam?.passScore || 0} / {exam?.totalQuestions || 0} ข้อ
-              </p>
+              {exam ? (
+                <p className="mt-2 text-sm font-medium text-slate-500">
+                  ด่านเลื่อนขั้น {stageLabel} · ต้องผ่านอย่างน้อย {exam.passScore} / {exam.totalQuestions} ข้อ
+                </p>
+              ) : null}
             </div>
             <button
               type="button"

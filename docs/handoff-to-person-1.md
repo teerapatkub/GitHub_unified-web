@@ -1,5 +1,31 @@
 # ไฟล์ของ Person 1 ที่ Person 3 เข้าไปแก้
 
+## 2026-10-15 — แบบทดสอบเลื่อนขั้น: เพิ่ม route ฝั่ง server ที่ไม่เคยมี
+
+`PromotionExamPage.jsx` เรียก `GET /api/learning/promotion-exam` และ `POST .../submit` มาตลอด
+แต่ **ไม่เคยมี route นี้ใน server ของ repo** (ไม่ได้หายตอน merge — log รวมโปรเจค 2026-08-25
+บันทึกไว้แล้วว่าขาด; โค้ดเดิมมีแค่ใน working copy เก่า เห็นร่องรอยใน error log ของ `fd94742`)
+ผลคือหน้านี้ 404 และแสดง 0/0 ข้อ
+
+- ใหม่ `server/promotionExamRoutes.js` mount ใน `server.js` ถัดจาก lesson router
+- คลังข้อสอบแบบคงที่อยู่ในไฟล์นั้น: Beginner→Intermediate 10 ข้อ ผ่าน 7 · Intermediate→Advanced 12 ข้อ
+  ผ่าน 9 (ตาม `project_discription.txt` ข้อ 13) — **เติม/แก้ข้อสอบได้ที่ `PROMOTION_STAGES`
+  แล้วเพิ่ม `version`** เพื่อให้ข้อสอบที่เปิดค้างไว้ก่อนแก้ถูกปฏิเสธ แทนที่จะตรวจกับเฉลยใหม่
+- เฉลยไม่ถูกส่งไป browser · server ตรวจเอง · ผ่านแล้ว server ตั้ง `users.level` เอง
+  (UPDATE แบบมีเงื่อนไข level เดิม กันส่งซ้ำพร้อมกัน) · ผู้กระทำคือ `req.player` เสมอ
+- ด่านคำนวณจาก `normalizePlayerLevel()` ตัวเดียวกับที่ระบบใช้: level 1 สอบขึ้น 2, level 2 สอบขึ้น 3,
+  level 3+ ได้ 409 "อยู่ระดับสูงสุดแล้ว"; XP ไม่ถูกแตะ
+- `PromotionExamPage.jsx` แก้ 3 จุด: แสดงข้อความ error จาก server ตอนโหลด, ซ่อนบรรทัด
+  "ต้องผ่านอย่างน้อย 0 / 0" เมื่อไม่มีข้อสอบ, ข้อความโหลดไม่อ้าง "จาก AI" แล้ว
+
+**ต้องตัดสินใจต่อ (ของ Person 1):**
+1. ตอนนี้ข้อสอบเป็นทาง "สอบข้ามขั้น" ไม่ได้เป็นด่านกั้น — XP ยังเลื่อนเลเวลเองตามเดิม
+   ถ้าต้องการ "cap จนกว่าจะสอบผ่าน" ตามสเปก ต้องแก้ `applyXpRewardToUser()` และเพิ่มสถานะ
+   ผ่านด่านลงฐาน (ต้องทำผ่าน migration ใหม่)
+2. server ยังไม่ส่ง `progression.promotionExamEligible` ให้ client → แบนเนอร์ใน `LearningPage.jsx`
+   ไม่เคยขึ้น หน้าเข้าได้ทาง URL ตรงเท่านั้น
+3. สอบซ้ำได้ไม่จำกัดและเห็นคะแนนรวม จึงไล่เดาได้ — ถ้าต้องการคูลดาวน์ต้องมีตารางเก็บประวัติสอบ
+
 ## 2026-10-02 — หน้าแอดมินเพิ่มของตกแต่ง (งาน Person 2 ตามคำขอผู้ใช้)
 
 - เพิ่ม `server/themeRoutes.js` และเชื่อม `ThemePage.jsx` กับ `shop_items` เดิมทั้งสี่หมวด แก้ Cannot POST /api/themes
