@@ -77,10 +77,27 @@ function listFiles(root) {
   return files;
 }
 
+// Setup-only credentials (spec 0002): the Supabase management token and the
+// Auth SMTP password configure the project from a workstation or CI, and the
+// game's runtime refuses to boot with either. Their name alone is a finding,
+// whatever the value looks like.
+export const setupOnlyEnvironmentNames = ['SUPABASE_ACCESS_TOKEN', 'AUTH_SMTP_PASS'];
+
+export function inspectEnvironmentEntries(entries) {
+  const findings = [];
+  for (const [index, entry] of entries.entries()) {
+    const separator = entry.indexOf('=');
+    const name = (separator < 0 ? entry : entry.slice(0, separator)).trim();
+    if (setupOnlyEnvironmentNames.includes(name)) {
+      findings.push({ path: 'image-config.env', type: 'setup-only-environment', line: index + 1 });
+    }
+  }
+  return [...findings, ...findSensitiveContent('image-config.env', entries.join('\n'))];
+}
+
 function inspectImageEnvironment(image) {
   const metadata = JSON.parse(runDocker(['image', 'inspect', image]));
-  const environment = metadata[0]?.Config?.Env ?? [];
-  return findSensitiveContent('image-config.env', environment.join('\n'));
+  return inspectEnvironmentEntries(metadata[0]?.Config?.Env ?? []);
 }
 
 export function inspectApplicationDirectory(root, pathPrefix = '') {

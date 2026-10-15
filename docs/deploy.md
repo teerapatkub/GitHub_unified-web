@@ -8,7 +8,9 @@ PySim ทั้งระบบทำงานเป็น **process เดีย
 docker compose --env-file server/.env up --build
 ```
 
-เปิด http://localhost:3001 — ครั้งแรกจะสร้างตารางและใส่เนื้อหาบทเรียนให้เองทั้งหมด
+ก่อนรัน ต้องตั้ง `PUBLIC_BASE_URL` (และ `AUTH_ALLOWED_ORIGINS`) ใน `server/.env` เป็น origin HTTPS
+สาธารณะของ deployment นี้ เพราะ image รันแบบ `NODE_ENV=production` ซึ่งไม่รับ `http://localhost`
+แล้วเปิด origin นั้น (หรือ http://localhost:3001 จากเครื่องที่รัน) — ครั้งแรกจะสร้างตารางและใส่เนื้อหาบทเรียนให้เองทั้งหมด
 เซิร์ฟเวอร์จะเปิดพอร์ตสำหรับ liveness ระหว่างเตรียมระบบ แต่จะตอบ `503` ต่อ traffic อื่น
 จนกว่า PostgreSQL, Supabase Auth configuration และ migration ทุกเวอร์ชันสำเร็จ
 
@@ -83,7 +85,7 @@ docker compose exec app node scripts/mark-auto-gradable.js --apply
 | `SUPABASE_SECRET_KEY` | **ใช่** | Secret key ฝั่ง server จาก Project Settings → API Keys ห้ามใส่ใน client หรือ image |
 | `SUPABASE_PUBLISHABLE_KEY` | **ใช่** | Publishable key จาก Project Settings → API Keys ใช้สร้าง client สำหรับ Email Auth |
 | `PORT` | ไม่ | พอร์ตที่ API ฟัง (ค่าเริ่มต้น 3001) |
-| `PUBLIC_BASE_URL` | **ใช่** | URL เต็มที่ผู้ใช้เปิดจากภายนอก และต้องอยู่ใน `AUTH_ALLOWED_ORIGINS` |
+| `PUBLIC_BASE_URL` | **ใช่** | URL เต็มที่ผู้ใช้เปิดจากภายนอก และต้องอยู่ใน `AUTH_ALLOWED_ORIGINS` ต้องเป็น origin HTTPS สาธารณะแบบ exact (ไม่ใช่ `localhost` ไม่มี path) compose ไม่มีค่าเริ่มต้นให้ ถ้าไม่ตั้ง `docker compose` จะหยุดพร้อมบอกชื่อตัวแปร แทนที่จะปล่อยให้ container ขึ้นแล้วล้มตอนบูต |
 | `CLIENT_URL` | **ใช่** | URL ของหน้าเว็บ ต้องตรงกับ `PUBLIC_BASE_URL` ใน production; compose ตั้งให้จากค่าเดียวกัน |
 | `AUTH_ALLOWED_ORIGINS` | **ใช่** | รายการ origin ที่อนุญาต คั่นด้วย comma และต้องมี origin ของ `PUBLIC_BASE_URL` |
 | `UPLOADS_DIR` | compose ตั้งให้แล้ว | ที่เก็บไฟล์อัปโหลด ต้องอยู่บน volume |

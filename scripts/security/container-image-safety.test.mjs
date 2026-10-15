@@ -9,6 +9,7 @@ import {
   approvedRuntimeAssetHashes,
   hashFile,
   inspectApplicationDirectory,
+  inspectEnvironmentEntries,
   isApprovedRuntimeAsset,
 } from './container-image-safety.mjs';
 
@@ -32,6 +33,48 @@ test('detects forbidden data files and secrets in an extracted application', () 
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('rejects the Supabase management env file wherever it lands in the image', () => {
+  const root = mkdtempSync(join(tmpdir(), 'pyarena-image-test-'));
+  try {
+    mkdirSync(join(root, 'server'), { recursive: true });
+    // No secret-looking content on purpose: these are forbidden by path alone.
+    writeFileSync(join(root, 'server', '.supabase-management.env'), '# setup only');
+    writeFileSync(join(root, 'server', 'production.env'), '# setup only');
+
+    assert.deepEqual(
+      inspectApplicationDirectory(root).map(({ path, type }) => ({ path, type })),
+      [
+        { path: 'server/.supabase-management.env', type: 'forbidden-runtime-path' },
+        { path: 'server/production.env', type: 'forbidden-runtime-path' },
+      ],
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('rejects setup-only credentials in the image environment by name', () => {
+  const accessToken = ['sbp', '_0123456789abcdef0123456789abcdef01234567'].join('');
+  const findings = inspectEnvironmentEntries([
+    'NODE_ENV=production',
+    `SUPABASE_ACCESS_TOKEN=${accessToken}`,
+    'AUTH_SMTP_PASS=changeme',
+    'PATH=/opt/pysim-venv/bin:/usr/local/bin',
+  ]);
+
+  assert.deepEqual(
+    findings.map(({ type, line }) => ({ type, line })),
+    [
+      { type: 'setup-only-environment', line: 2 },
+      { type: 'setup-only-environment', line: 3 },
+      { type: 'supabase-access-token', line: 2 },
+      { type: 'credential-assignment', line: 2 },
+    ],
+  );
+  assert.equal(JSON.stringify(findings).includes('0123456789abcdef'), false);
+  assert.deepEqual(inspectEnvironmentEntries(['NODE_ENV=production', 'PORT=3001']), []);
 });
 
 test('ignores installed dependencies while inspecting application-owned files', () => {

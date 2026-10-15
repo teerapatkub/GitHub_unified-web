@@ -5,7 +5,9 @@ import test from 'node:test';
 import {
   findSensitiveContent,
   isForbiddenRepositoryPath,
+  isForbiddenRuntimePath,
   requiredBackupIgnorePatterns,
+  requiredEnvironmentFileDockerIgnorePatterns,
 } from './repository-safety.mjs';
 
 test('rejects database backups and dumps at any directory depth', () => {
@@ -160,6 +162,92 @@ test('checks every credential assignment on a minified source line', () => {
     findings.map(({ type, line }) => ({ type, line })),
     [{ type: 'credential-assignment', line: 1 }],
   );
+});
+
+test('rejects every dotenv-style file except committed .env.example templates', () => {
+  const forbiddenPaths = [
+    'server/.env',
+    'server/.env.local',
+    'server/.supabase-management.env',
+    'app/server/.supabase-management.env',
+    'server/.supabase-management.env.local',
+    'server/.supabase-management.env.backup',
+    'server/production.env',
+    'server/prod.env.backup-2026-10-15',
+  ];
+  for (const path of forbiddenPaths) {
+    assert.equal(isForbiddenRuntimePath(path), true, path);
+    assert.equal(isForbiddenRepositoryPath(path), true, path);
+  }
+
+  const allowedPaths = [
+    'server/.env.example',
+    'server/.supabase-management.env.example',
+    'server/runtime/environment.js',
+    'client/src/vite-env.d.ts',
+  ];
+  for (const path of allowedPaths) {
+    assert.equal(isForbiddenRuntimePath(path), false, path);
+  }
+});
+
+test('detects SMTP passwords and Supabase access tokens in setup files', () => {
+  const accessToken = ['sbp', '_0123456789abcdef0123456789abcdef01234567'].join('');
+  const findings = findSensitiveContent(
+    'server/.supabase-management.env',
+    [
+      `SUPABASE_ACCESS_TOKEN=${accessToken}`,
+      ['AUTH_SMTP', '_PASS="abcd efgh ijkl mnop"'].join(''),
+      ['{"smtp', '_pass":"real-relay-password"}'].join(''),
+      ['const transport = { smtp', 'Password: \'real-relay-password\' };'].join(''),
+      ['SMTP_URL=smtps', '://mailer:real-relay-password@smtp.example.com:465'].join(''),
+    ].join('\n'),
+  );
+
+  assert.deepEqual(
+    findings.map(({ type, line }) => ({ type, line })),
+    [
+      { type: 'supabase-access-token', line: 1 },
+      { type: 'credential-assignment', line: 1 },
+      { type: 'credential-assignment', line: 2 },
+      { type: 'smtp-password', line: 3 },
+      { type: 'smtp-password', line: 4 },
+      { type: 'smtp-url-password', line: 5 },
+    ],
+  );
+  assert.equal(JSON.stringify(findings).includes('real-relay-password'), false);
+  assert.equal(JSON.stringify(findings).includes('abcd'), false);
+});
+
+test('does not flag SMTP settings that only reference a variable or placeholder', () => {
+  const findings = findSensitiveContent(
+    'server/auth/productionSettings.js',
+    [
+      'smtp_pass: smtpPass,',
+      'const smtpPass = required(env, "AUTH_SMTP_PASS");',
+      '{"smtp_pass": "${AUTH_SMTP_PASS}"}',
+      'AUTH_SMTP_PASS=',
+      'SMTP_URL=smtps://mailer:${SMTP_PASSWORD}@smtp.example.com',
+    ].join('\n'),
+  );
+
+  assert.deepEqual(findings, []);
+});
+
+test('keeps every environment file out of the Docker build context', () => {
+  const lines = new Set(
+    readFileSync('.dockerignore', 'utf8')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean),
+  );
+
+  for (const pattern of requiredEnvironmentFileDockerIgnorePatterns) {
+    assert.equal(lines.has(pattern), true, `.dockerignore is missing ${pattern}`);
+  }
+  for (const line of lines) {
+    assert.equal(/^!.*env/.test(line), false, `.dockerignore re-includes an env file: ${line}`);
+  }
 });
 
 test('keeps Git and Docker backup exclusions aligned with the scanner policy', () => {

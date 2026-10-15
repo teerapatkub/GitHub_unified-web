@@ -15,6 +15,16 @@ export const requiredBackupIgnorePatterns = [
   '**/*backup*.sql',
   '**/*dump*.sql',
 ];
+// Dotenv-style files never belong in the image: configuration is injected by
+// the host. `*.env` covers server/.supabase-management.env, which holds the
+// setup-only SUPABASE_ACCESS_TOKEN and AUTH_SMTP_PASS.
+export const requiredEnvironmentFileDockerIgnorePatterns = [
+  '**/.env',
+  '**/.env.*',
+  '**/*.env',
+  '**/*.env.*',
+  '**/.supabase-management.env*',
+];
 const textExtensions = new Set([
   '.cjs', '.env', '.html', '.js', '.json', '.jsx', '.md', '.mjs', '.ps1',
   '.sh', '.sql', '.ts', '.tsx', '.txt', '.yaml', '.yml',
@@ -35,7 +45,14 @@ const sensitivePatterns = [
 
 const secretAssignment = /\b([A-Z][A-Z0-9_]*(?:PASSWORD|PASS|SECRET|TOKEN|API_KEY|PRIVATE_KEY))\s*[:=]\s*["']?([^\s,"'#]+)/g;
 const accountDataSql = /^\s*(?:INSERT\s+INTO|COPY)\s+(?:["`]?\w+["`]?\.)?["`]?(?:users?|players?|player_accounts?|user_accounts?|admins?)["`]?(?:\s|\()/i;
-const databaseUrl = /\b(?:postgres(?:ql)?|mysql):\/\/[^:\s/]+:([^@\s/]+)@/i;
+const credentialUrls = [
+  { type: 'database-url-password', name: 'DATABASE_URL', pattern: /\b(?:postgres(?:ql)?|mysql):\/\/[^:\s/]+:([^@\s/]+)@/i },
+  { type: 'smtp-url-password', name: 'SMTP_URL', pattern: /\bsmtps?:\/\/[^:\s/@]+:([^@\s/]+)@/i },
+];
+// Lower- and camel-case SMTP password keys with a literal value, as they appear
+// in JSON settings payloads or mailer config. Upper-case names are covered by
+// secretAssignment.
+const smtpPasswordKey = /(?<![A-Za-z0-9_])["']?[a-z0-9_]*smtp_?[Pp]ass(?:[Ww]ord)?["']?\s*[:=]\s*["']([^"'\s]+)["']/g;
 const harmlessCodeTokens = new Map([
   ['COLOR_TOKEN', 'color'],
   ['NUMBER_TOKEN', 'number'],
@@ -106,9 +123,10 @@ export function isForbiddenRuntimePath(path) {
   const normalized = normalizePath(path).toLowerCase();
   const basename = normalized.slice(normalized.lastIndexOf('/') + 1);
 
-  if (basename === '.env') return true;
-  if (basename.startsWith('.env.') && basename !== '.env.example') return true;
-  if (/\.env\.backup(?:\..*)?$/.test(basename)) return true;
+  // `.env`, `.env.local`, `.supabase-management.env`, `prod.env.backup`, ...
+  // Only committed templates ending in `.env.example` are allowed.
+  if (basename.endsWith('.env')) return true;
+  if (basename.includes('.env.') && !basename.endsWith('.env.example')) return true;
   if (/\.(?:dump|bak|db|sqlite|sqlite3)$/.test(basename)) return true;
   if (/\.sql\.gz$/.test(basename)) return true;
   if (/\.(?:zip|tar\.gz)$/.test(basename)) return true;
@@ -162,10 +180,18 @@ export function findSensitiveContent(path, text) {
       }
     }
 
-    const databaseUrlMatch = line.match(databaseUrl);
-    if (databaseUrlMatch && !isPlaceholderSecret(databaseUrlMatch[1])
-      && !isKnownFixturePlaceholder(path, 'DATABASE_URL', databaseUrlMatch[1])) {
-      findings.push({ path: normalizePath(path), type: 'database-url-password', line: index + 1 });
+    for (const { type, name, pattern } of credentialUrls) {
+      const match = line.match(pattern);
+      if (match && !isPlaceholderSecret(match[1])
+        && !isKnownFixturePlaceholder(path, name, match[1])) {
+        findings.push({ path: normalizePath(path), type, line: index + 1 });
+      }
+    }
+
+    for (const assignment of line.matchAll(smtpPasswordKey)) {
+      if (!isPlaceholderSecret(assignment[1])) {
+        findings.push({ path: normalizePath(path), type: 'smtp-password', line: index + 1 });
+      }
     }
   }
   return findings;

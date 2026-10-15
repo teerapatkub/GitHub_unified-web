@@ -28,8 +28,16 @@ skills-lock.json
 server/scripts/archive
 scripts
 
+# Configuration reaches the container from the environment the host injects,
+# never from a file baked into the image - so every dotenv-style file is left
+# out at every depth, examples included. `*.env` matters as much as `.env`:
+# server/.supabase-management.env holds the setup-only SUPABASE_ACCESS_TOKEN
+# and AUTH_SMTP_PASS, and `COPY server/ ./` would otherwise ship both.
 **/.env
 **/.env.*
+**/*.env
+**/*.env.*
+**/.supabase-management.env*
 
 # Uploaded files belong on a mounted volume, not baked into the image.
 server/uploads
