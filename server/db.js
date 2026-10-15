@@ -1735,7 +1735,29 @@ db.initialize = () => {
     // The application migration follows the core migration and therefore
     // appears newer on every subsequent boot. Only the complete application
     // readiness check rejects versions unknown to that binary.
-    if (!readyPromise) readyPromise = runMigrations(db, coreMigrations, { allowNewer: true });
+    //
+    // Arcade readiness follows the recorded migration status, not the
+    // `db.arcadeReady = true` inside initializeCoreSchema: that body only runs
+    // on the boot that first applies the core migration, so on every restart
+    // after it Arcade answered 503 and its ticker never ran. The assignment
+    // there (and its neighbouring "Upserted ... on every boot" comment, which
+    // has also been wrong since the seed became part of the one-time
+    // migration) stays as-is - the function's source is part of the applied
+    // migration's checksum, and editing it would stop every migrated database
+    // from booting.
+    if (!readyPromise) {
+        readyPromise = runMigrations(db, coreMigrations, { allowNewer: true }).then(
+            (status) => {
+                db.arcadeReady = status.ready === true;
+                return status;
+            },
+            (error) => {
+                // A rolled-back first run may already have set the flag.
+                db.arcadeReady = false;
+                throw error;
+            },
+        );
+    }
     return readyPromise;
 };
 Object.defineProperty(db, 'ready', { get: () => db.initialize() });

@@ -7655,4 +7655,5 @@ module.exports = {
     applicationMigrations,
     checkReadiness,
     prepareApplication,
+    startupState,
 };
