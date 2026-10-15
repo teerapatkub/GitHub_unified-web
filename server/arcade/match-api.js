@@ -113,7 +113,7 @@ function installArcadeMatchStart(app, db) {
       if (participants.length < 2) return await reject(400, 'ต้องมีผู้เล่นอย่างน้อย 2 คน');
       const drawnTasks = await drawArcadeRoundTasks(connection, room);
       const tasks = drawnTasks ? JSON.stringify(drawnTasks) : null;
-      const deadline = new Date(Date.now() + arcadePhaseDurations(room).ROUND_1 * 1000);
+      const roundSeconds = arcadePhaseDurations(room).ROUND_1;
       const [inserted] = await connection.query(
         `INSERT INTO arcade_matches (room_id, room_code, room_name, difficulty, round_duration_mode, round_task_ids)
          VALUES (?, ?, ?, ?, ?, ?) RETURNING match_id`,
@@ -121,9 +121,10 @@ function installArcadeMatchStart(app, db) {
       );
       const matchId = inserted.insertId;
       await connection.query(
-        `UPDATE arcade_rooms SET current_match_id = ?, status = 'PLAYING', phase = 'ROUND_1', phase_deadline = ?,
+        `UPDATE arcade_rooms SET current_match_id = ?, status = 'PLAYING', phase = 'ROUND_1',
+         phase_deadline = clock_timestamp() + make_interval(secs => ?),
          current_round = 1, last_round_summary = NULL, round_task_ids = ? WHERE room_id = ?`,
-        [matchId, deadline, tasks, room.room_id]
+        [matchId, roundSeconds, tasks, room.room_id]
       );
       await connection.query(
         `UPDATE arcade_participants SET match_id = ?, score = 0, cash = 0, coins_awarded = 0, is_eliminated = 0,

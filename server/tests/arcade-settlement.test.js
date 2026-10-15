@@ -143,3 +143,31 @@ test('a persistently failing room does not stop another due room from advancing'
   assert.equal(second.room.phase, 'SUMMARY_1');
   assert.deepEqual(second.participants.map(p => p.cash).sort((a, b) => b - a), [500, 400]);
 });
+
+test('phase deadlines follow the database clock when the app clock drifts', async t => {
+  const { phaseDurations } = require('../../shared/arcadeConfig.json');
+  const { db, call } = await arcadeFixture(t);
+  const finalize = createArcadePhaseFinalizer({ db, judgeCodeQuality: async () => ({ score: 0 }) });
+  const realNow = Date.now;
+  // Every open/closed decision reads the database clock, so a deadline taken
+  // from the app server's clock would stretch or cut each phase by however far
+  // the two machines disagree (Render and Supabase are different machines).
+  Date.now = () => realNow() + 10 * 60 * 1000;
+  t.after(() => { Date.now = realNow; });
+  const remaining = async () => {
+    const [[row]] = await db.query('SELECT phase, EXTRACT(EPOCH FROM (phase_deadline - clock_timestamp()::timestamp)) AS secs FROM arcade_rooms WHERE room_id = 1');
+    return row;
+  };
+  const assertWithinDuration = async expectedPhase => {
+    const { phase, secs } = await remaining();
+    assert.equal(phase, expectedPhase);
+    assert.ok(secs > 0 && secs <= phaseDurations[expectedPhase], `${phase} has ${secs}s left of ${phaseDurations[expectedPhase]}s`);
+  };
+  assert.equal((await call('/api/arcade/rooms/1/start', { body: {} })).status, 200);
+  await assertWithinDuration('ROUND_1');
+  for (const next of ['SUMMARY_1', 'SHOP_1', 'ROUND_2']) {
+    await db.query('UPDATE arcade_rooms SET phase_deadline = clock_timestamp() - INTERVAL \'1 second\'');
+    await finalize((await call('/api/arcade/rooms/1')).body.room);
+    await assertWithinDuration(next);
+  }
+});

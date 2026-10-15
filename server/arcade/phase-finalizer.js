@@ -6,6 +6,11 @@ const { settleArcadeRewards } = require('./match-rewards');
 
 const ARCADE_PHASE_DURATIONS = arcadeConfig.phaseDurations;
 const ARCADE_QUICK_PHASE_DURATIONS = arcadeConfig.quickModePhaseDurations;
+// Phase deadlines are set from the database clock, the same clock every
+// open/closed check and serverNow read. The app server (Render) and the
+// database (Supabase) are different machines, so Date.now() here would
+// stretch or cut every phase by their clock skew.
+const NEXT_DEADLINE_SQL = 'clock_timestamp() + make_interval(secs => ?)';
 
 // Phase 8.4 — a room's phase lengths come from its own `round_duration_mode`,
 // not from a module-level constant. Every timing decision (start, and each
@@ -261,10 +266,9 @@ function createArcadePhaseFinalizer({ db, judgeCodeQuality, random = Math.random
         );
         return { finished: true, roomId, matchId: room.current_match_id };
       } else {
-        const nextDeadline = new Date(Date.now() + arcadePhaseDurations(room)[`SUMMARY_${roundNum}`] * 1000);
         await db.query(
-          `UPDATE arcade_rooms SET phase = ?, phase_deadline = ?, current_round = ?, last_round_summary = ? WHERE room_id = ?`,
-          [`SUMMARY_${roundNum}`, nextDeadline, roundNum, JSON.stringify(summary), roomId]
+          `UPDATE arcade_rooms SET phase = ?, phase_deadline = ${NEXT_DEADLINE_SQL}, current_round = ?, last_round_summary = ? WHERE room_id = ?`,
+          [`SUMMARY_${roundNum}`, arcadePhaseDurations(room)[`SUMMARY_${roundNum}`], roundNum, JSON.stringify(summary), roomId]
         );
       }
       return;
@@ -273,16 +277,16 @@ function createArcadePhaseFinalizer({ db, judgeCodeQuality, random = Math.random
     if (phase.startsWith('SUMMARY_')) {
       const roundNum = phase.split('_')[1];
       const nextPhase = `SHOP_${roundNum}`;
-      const nextDeadline = new Date(Date.now() + arcadePhaseDurations(room)[nextPhase] * 1000);
-      await db.query(`UPDATE arcade_rooms SET phase = ?, phase_deadline = ? WHERE room_id = ?`, [nextPhase, nextDeadline, roomId]);
+      await db.query(`UPDATE arcade_rooms SET phase = ?, phase_deadline = ${NEXT_DEADLINE_SQL} WHERE room_id = ?`,
+        [nextPhase, arcadePhaseDurations(room)[nextPhase], roomId]);
       return;
     }
 
     if (phase.startsWith('SHOP_')) {
       const roundNum = parseInt(phase.split('_')[1], 10);
       const nextPhase = `ROUND_${roundNum + 1}`;
-      const nextDeadline = new Date(Date.now() + arcadePhaseDurations(room)[nextPhase] * 1000);
-      await db.query(`UPDATE arcade_rooms SET phase = ?, phase_deadline = ? WHERE room_id = ?`, [nextPhase, nextDeadline, roomId]);
+      await db.query(`UPDATE arcade_rooms SET phase = ?, phase_deadline = ${NEXT_DEADLINE_SQL} WHERE room_id = ?`,
+        [nextPhase, arcadePhaseDurations(room)[nextPhase], roomId]);
       return;
     }
   }
