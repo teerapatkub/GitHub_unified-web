@@ -32,10 +32,10 @@ async function applyArcadeAttack({ db, room, player, item, targetName }) {
   }
   if (!targets.length) rejectAttack('เป้าหมายไม่อยู่ในแมตช์หรือถูกคัดออกแล้ว');
 
-  // All targets of one AOE share one activation instant. Capture it only after
-  // validation/participant reads so hosted-database latency does not consume
-  // most of the visible effect duration.
-  const effectStartedAt = Date.now();
+  // All targets of one AOE share one activation instant, taken from the
+  // database clock read after the participant lock. Phase deadlines and every
+  // expiry check use that clock too; the app server's clock may disagree.
+  const effectStartedAt = clock.nowMs;
   const results = [];
   for (const target of targets) {
     // Keep one lifetime for every target hit by the same AOE activation.

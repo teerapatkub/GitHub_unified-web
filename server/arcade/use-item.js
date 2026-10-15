@@ -3,13 +3,14 @@ const { applyArcadeAttack } = require('./attacks');
 
 // Both authenticated commands and bot decisions own the room lock and commit
 // inventory, effects and money together. This is the shared item rule boundary.
-async function useOwnedItem({ db, room, player, state, instanceId, targetName, phaseDeadlineMs }) {
+async function useOwnedItem({ db, room, player, state, instanceId, targetName, now, phaseDeadlineMs }) {
   const index = state.inventory.findIndex(item => item.instance_id === instanceId);
   if (index < 0) throw Object.assign(new Error('คุณไม่มีไอเทมชิ้นนี้'), { status: 409 });
   const item = state.inventory[index];
   let result = null;
   if (SELF_ITEM_IDS.includes(item.id)) {
-    const effectNow = Date.now();
+    // Callers pass the database clock; expiry checks compare against it.
+    const effectNow = now;
     if (targetName != null) throw Object.assign(new Error('ไอเทมนี้ใช้กับตนเองเท่านั้น'), { status: 409 });
     state.self_effects = activeSelfEffects(state.self_effects, room.phase, effectNow);
     if (state.self_effects.some(effect => effect.type === item.id)) throw Object.assign(new Error('เอฟเฟกต์นี้กำลังทำงานอยู่'), { status: 409 });

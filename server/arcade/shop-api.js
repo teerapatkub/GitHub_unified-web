@@ -127,14 +127,18 @@ function installArcadeShop(app, db) {
       const [opponentStates] = await connection.query(`SELECT p.user_name, s.attack_effects FROM arcade_participants p
         LEFT JOIN arcade_shop_states s ON s.match_id = p.match_id AND s.user_name = p.user_name
         WHERE p.room_id = ? AND p.match_id = ? AND p.user_name <> ?`, [room.room_id, matchId, player.user_name]);
+      // An attack stamps its effects with a clock read after this request's
+      // first one, so report the time again: a client measuring remaining
+      // effect time from serverNow must never see more than the full duration.
+      const responseNow = writing ? (await readPhaseClock(connection, room.room_id)).nowMs : now;
       await connection.commit();
       res.json({ success: true, replayed, match_id: matchId, phase: room.phase, revision: state.revision,
         offers: state.offers, inventory: state.inventory, rerollCost: state.reroll_cost, cash: player.cash,
-        selfEffects: activeSelfEffects(state.self_effects, room.phase, now), serverNow: now, attackResult,
-        attackEffects: activeAttackEffects(state.attack_effects, room.phase, now),
+        selfEffects: activeSelfEffects(state.self_effects, room.phase, responseNow), serverNow: responseNow, attackResult,
+        attackEffects: activeAttackEffects(state.attack_effects, room.phase, responseNow),
         opponents: opponentStates.map(opponent => ({ name: opponent.user_name,
-          effects: activeAttackEffects(opponent.attack_effects, room.phase, now),
-          isDebuffed: activeAttackEffects(opponent.attack_effects, room.phase, now).length > 0 })) });
+          effects: activeAttackEffects(opponent.attack_effects, room.phase, responseNow),
+          isDebuffed: activeAttackEffects(opponent.attack_effects, room.phase, responseNow).length > 0 })) });
     } catch (error) {
       if (connection) await connection.rollback();
       if (error.status === 409) return res.status(409).json({ error: error.message });

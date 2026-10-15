@@ -78,6 +78,21 @@ test('AOE selects all live opponents once and stores fixed effect expiry for ref
   assert.equal(saved[1].attack_effects.length, 1);
 });
 
+test('effect lifetimes follow the database clock when the app clock drifts', async t => {
+  const { attack, read } = await attackFixture(t, 'timeFreeze');
+  const realNow = Date.now;
+  // The phase deadline and every expiry check use the database clock, so an
+  // effect stamped with the app server's clock would run long or short by
+  // however far the two machines disagree.
+  Date.now = () => realNow() + 120000;
+  t.after(() => { Date.now = realNow; });
+  const used = await attack({ target_name: undefined });
+  assert.equal(used.status, 200);
+  const [freeze] = (await read('bob')).body.attackEffects;
+  assert.ok(freeze.expiresAt <= used.body.serverNow + 5000, 'attack expiry must not exceed its duration');
+  assert.ok(freeze.expiresAt > used.body.serverNow, 'attack must still be active when reported');
+});
+
 test('tax chooses the richest live opponent on the server and rounds down twenty percent once', async t => {
   const { db, attack, read, matchId } = await attackFixture(t, 'taxCollection');
   await db.query("INSERT INTO arcade_participants (room_id, match_id, user_name, cash) VALUES (1, ?, 'outsider', 9004)", [matchId]);
