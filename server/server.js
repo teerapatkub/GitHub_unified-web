@@ -38,6 +38,10 @@ const { validateRuntimeEnvironment } = require('./runtime/environment');
 const app = express();
 const startupState = createStartupState();
 installStartupGate(app, startupState);
+// Probes must answer before any auth middleware: orchestrators call them
+// without a session. checkReadiness is defined further down, so resolve it
+// at request time.
+installHealthRoutes(app, { checkReadiness: () => checkReadiness(), state: startupState });
 app.use(cors({ origin: (origin, callback) => {
   callback(null, !origin || authOrigins(process.env).has(origin));
 }, credentials: true }));
@@ -7572,8 +7576,6 @@ const checkReadiness = async () => {
     }
     return status;
 };
-
-installHealthRoutes(app, { checkReadiness, state: startupState });
 
 const prepareApplication = async ({ checkAuth = checkSupabaseAuth } = {}) => {
     await checkAuth();
