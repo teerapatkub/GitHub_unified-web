@@ -51,7 +51,7 @@ The project is divided among three team members. **Always respect these boundari
 - `project_logs/` — Work logs and master project description doc (`project_logs/YYYY-MM-DD/`).
 - `docs/` — `adr/` การตัดสินใจเชิงสถาปัตยกรรม · `arcade-map.md` sitemap โหมด Arcade แยกเป็น ทำเสร็จแล้ว / กำลังพัฒนา / ยังไม่ทำ · `arcade-solutions.md` เฉลยโจทย์ Arcade ทุกข้อ · `archive/` เอกสารที่ถูกแทนที่แล้ว
 - `specs/` — สเปกของงานที่ยังทำไม่เสร็จ
-- `_archive/` — ของเก่าที่ไม่ได้ใช้แล้ว (ไม่อยู่ใน git ดู `_archive/README.md`)
+- `_archive/` — สำรองฐานข้อมูลผู้ใช้ที่เก็บไว้นอก Git เพื่อการกู้คืนเท่านั้น ดู `_archive/README.md`
 
 ---
 

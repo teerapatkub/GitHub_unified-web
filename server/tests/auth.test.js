@@ -180,6 +180,26 @@ async function fixture(t, {
   return { user, state, call, auth };
 }
 
+test('auth schema waits for the core database bootstrap', async () => {
+  let finishBootstrap;
+  let authSqlStarted = false;
+  const db = {
+    ready: new Promise(resolve => { finishBootstrap = resolve; }),
+    execute: async sql => {
+      authSqlStarted = true;
+      return sql.includes('pg_roles') ? [[]] : [{}];
+    },
+  };
+
+  const auth = installAuth(express(), db, {}, { AUTH_ALLOWED_ORIGINS: 'http://localhost:5174' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(authSqlStarted, false);
+
+  finishBootstrap();
+  await auth.ready;
+  assert.equal(authSqlStarted, true);
+});
+
 test('profile cache and arbitrary player ID cannot authenticate requests', async t => {
   const { call } = await fixture(t);
   assert.equal((await call('/api/auth/me')).status, 401);

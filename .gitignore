@@ -31,9 +31,8 @@ Thumbs.db
 **/*.zip
 **/*.tar.gz
 
-# Everything superseded but not yet thrown away: Person 2's handover copy, old
-# repo archives, prototypes, and database dumps with real user rows. See
-# _archive/README.md for what each one is and whether it can be deleted.
+# Recovery-only database backups with real user rows. Keep these outside Git;
+# _archive/README.md records the remaining local backup and handling rules.
 /_archive/
 
 # Database backups and dumps can contain real user rows, email addresses, and
