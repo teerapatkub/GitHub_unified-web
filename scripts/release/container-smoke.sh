@@ -27,6 +27,7 @@ start_app() {
     --env CLIENT_URL=https://release-test.example.com \
     --env AUTH_ALLOWED_ORIGINS=https://release-test.example.com \
     --env UPLOADS_DIR=/data/uploads \
+    --env ASSET_STORAGE_BUCKET=uploads \
     pyarena-release-candidate >/dev/null
 }
 

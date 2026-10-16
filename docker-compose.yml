@@ -71,6 +71,8 @@ services:
       PGPASSWORD: ${PGPASSWORD:-postgres}
       PGDATABASE: ${PGDATABASE:-postgres}
       UPLOADS_DIR: /data/uploads
+      # Supabase Storage bucket for admin uploads (lesson media, cosmetic art).
+      ASSET_STORAGE_BUCKET: ${ASSET_STORAGE_BUCKET:-uploads}
       # The address this deployment answers on from outside. Only links that
       # leave the process need it - the email verification link, which cannot
       # be relative because it is opened days later from a mail client.

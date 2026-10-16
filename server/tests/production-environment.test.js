@@ -16,6 +16,7 @@ const validRuntime = () => ({
   CLIENT_URL: 'https://pyarena.example.com',
   AUTH_ALLOWED_ORIGINS: 'https://pyarena.example.com',
   UPLOADS_DIR: '/data/uploads',
+  ASSET_STORAGE_BUCKET: 'uploads',
 });
 
 test('production runtime accepts complete server-only configuration', () => {
@@ -23,7 +24,17 @@ test('production runtime accepts complete server-only configuration', () => {
     clientUrl: 'https://pyarena.example.com/',
     publicBaseUrl: 'https://pyarena.example.com/',
     uploadsDir: '/data/uploads',
+    assetStorageBucket: 'uploads',
   });
+});
+
+test('production runtime requires a Storage bucket for admin uploads', () => {
+  // The free host has no persistent disk: without a bucket every admin upload
+  // would vanish at the next restart while the database still points at it.
+  const missing = validRuntime();
+  delete missing.ASSET_STORAGE_BUCKET;
+  assert.throws(() => validateRuntimeEnvironment(missing), /ASSET_STORAGE_BUCKET/);
+  assert.throws(() => validateRuntimeEnvironment({ ...validRuntime(), ASSET_STORAGE_BUCKET: '../uploads' }), /ASSET_STORAGE_BUCKET/);
 });
 
 test('production runtime rejects missing values and management credentials', () => {

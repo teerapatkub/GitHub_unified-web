@@ -92,6 +92,8 @@ const { createLessonAdminRouter } = require('./lessonAdminRoutes');
 const { createLessonContentRouter } = require('./lessonContentRoutes');
 const { createStudentProgressRouter } = require('./studentProgressRoutes');
 const { createPromotionExamRouter } = require('./promotionExamRoutes');
+const { createDiskAssetStore, createSupabaseAssetStore } = require('./assetStore');
+const { createUploadRouter, redirectUploadsToStore } = require('./uploadRoutes');
 const { createPlacementRouter } = require('./placementRoutes');
 const { authSchemaSql, ensureAuthSchema, installAuth } = require('./auth');
 // Production schema setup belongs to the versioned application migration.
@@ -277,6 +279,16 @@ app.use('/uploads', express.static(uploadsDir));
 // actually uploaded; this is the fallback for everything that came with the app.
 const seedAssetsDir = path.join(__dirname, 'seed-assets');
 app.use('/uploads', express.static(seedAssetsDir));
+
+// Admin uploads (lesson media, cosmetic art). With ASSET_STORAGE_BUCKET set they
+// go to that Supabase Storage bucket, which outlives restarts on a host without
+// a persistent disk; /uploads/<name> not found above redirects there. Without
+// it (local development) they stay in uploadsDir.
+const assetStorageBucket = String(process.env.ASSET_STORAGE_BUCKET || '').trim();
+const assetStore = assetStorageBucket && supabase
+    ? createSupabaseAssetStore({ client: supabase, bucket: assetStorageBucket, supabaseUrl: process.env.SUPABASE_URL })
+    : createDiskAssetStore(uploadsDir);
+app.use('/uploads', redirectUploadsToStore(assetStore));
 
 // The address this deployment is reachable at from OUTSIDE.
 //
@@ -646,25 +658,7 @@ const uploadStorage = multer.diskStorage({
     },
 });
 
-const upload = multer({
-    storage: uploadStorage,
-    limits: { fileSize: 25 * 1024 * 1024 },
-    fileFilter: (_req, file, cb) => {
-        const allowedMime = /image\/|video\//;
-        const allowedExt = /\.(png|jpg|jpeg|gif|webp|mp4|mov|webm|avi)$/i;
-        const name = file.originalname || '';
-        const mime = file.mimetype || '';
-
-        if (allowedMime.test(mime) && allowedExt.test(name)) {
-            cb(null, true);
-            return;
-        }
-
-        cb(new Error('Only image and video uploads are allowed'));
-    },
-});
-
-// Profile pictures are narrower than the general uploader on purpose: an avatar
+// Profile pictures are narrower than the admin uploader on purpose: an avatar
 // is a small still image, never a video, and never the 25MB a lesson asset may
 // need. Enforced on the server because a client-side check is advice, not a
 // guard - a crafted request skips it.
@@ -7326,24 +7320,7 @@ app.post('/api/presence', async (req, res) => {
     }
 });
 
-app.post('/api/upload', (req, res) => {
-    upload.single('file')(req, res, (error) => {
-        if (error) {
-            return res.status(400).json({ error: describeError(error) });
-        }
-
-        if (!req.file) {
-            return res.status(400).json({ error: 'No file uploaded' });
-        }
-
-        // Relative on purpose. This string is stored in the database and
-        // rendered months later, possibly from a different host than the one
-        // that took the upload - an absolute URL baked in here is a picture
-        // that 404s for every user the day the domain changes.
-        const url = `/uploads/${req.file.filename}`;
-        return res.json({ url });
-    });
-});
+app.use('/api/upload', createUploadRouter({ store: assetStore }));
 
 // Tables that the merged Person 2 routes rely on. Their branch created these
 // lazily on the first request that happened to need them, which left the schema

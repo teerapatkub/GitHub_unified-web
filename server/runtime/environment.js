@@ -101,11 +101,18 @@ const validateRuntimeEnvironment = (env = process.env) => {
   if (!path.posix.isAbsolute(uploadsDir) && !path.win32.isAbsolute(uploadsDir)) {
     throw new Error('UPLOADS_DIR must be an absolute path in production');
   }
+  // Admin uploads go to this Supabase Storage bucket; the host's disk does not
+  // survive a restart.
+  const assetStorageBucket = requireValue(env, 'ASSET_STORAGE_BUCKET');
+  if (!/^[a-z0-9][a-z0-9_-]{1,62}$/.test(assetStorageBucket)) {
+    throw new Error('ASSET_STORAGE_BUCKET must be a Supabase Storage bucket name');
+  }
 
   return {
     clientUrl: `${siteUrl}/`,
     publicBaseUrl: `${siteUrl}/`,
     uploadsDir,
+    assetStorageBucket,
   };
 };
 
