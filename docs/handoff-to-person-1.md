@@ -406,3 +406,16 @@ Combined main navigation and mode styling with admin lesson publishing and tutor
 
 ## 2026-10-03: Dashboard progress threshold
 Fixed undefined LESSON_PASS_PERCENT using POST_PASS_RATIO * 100. Read-only route validation returns 6 students and 24 lessons. No database changes; restart server to load fix.
+
+## 2026-10-15 — แบบวัดระดับตอนสมัครตรวจบน server, ลบ `/api/user/update-level`
+ปิดช่องที่ผู้เล่นยิง `POST /api/user/update-level` `{user_id: <ตัวเอง>, level: 10}` เพื่อปลดล็อก Competitive/Arcade ได้ และ `GET /api/advanced-validation` ที่ส่ง `correct_answer` ไปเบราว์เซอร์
+- **ลบ** route เดิมสามตัวใน `server.js` ย้ายไป `server/placementRoutes.js` (แบบเดียวกับ `promotionExamRoutes.js`): GET ไม่มีเฉลย, `POST /api/assessment/submit` รับ `{option_id, answers: {question_id: choice}}` ตรวจบน server เลเวลอ่านจาก `survey_options.level_value`, `POST /api/assessment/beginner` สำหรับ "ยังไม่เคยเลย" (0 → 1)
+- ทั้งสองทางใช้ได้เฉพาะบัญชีเลเวล 0 (ขั้นตอนสมัคร) — หลังจากนั้นเลเวลขึ้นผ่านบทเรียนและแบบทดสอบเลื่อนขั้นเท่านั้น
+- `FriendLogin.jsx` เลิกตรวจคำตอบเอง ส่งคำตอบแล้วใช้เลเวลที่ server ตอบกลับ
+- เทส `server/tests/placement.test.js` อยู่ใน `pretest`; ถ้าจะเพิ่มทางให้ตั้งเลเวลอีก ให้ทำฝั่ง server เท่านั้น ห้ามรับเลเวล/คะแนนจาก client
+ยังไม่ได้ลองสมัครจริงผ่านเบราว์เซอร์ รายละเอียดใน project_logs/2026-10-15/1410-placement-level-lockdown.md
+
+## 2026-10-15 — ปุ่ม "ย้อนกลับเลือกระดับใหม่" พากลับไปผิดข้อ
+`goBackToExperience` ใน `FriendLogin.jsx` หาคำถามประสบการณ์ด้วย `s.id === 3` แต่ข้อ 3 คือคำถามเวลาเรียน (ประสบการณ์คือ id 4, key `experience`) ผู้ใช้ที่สอบวัดระดับไม่ผ่านหรือกด "✕ ออกจากการทดสอบ" จึงถูกพาไปข้อ 3 แทนข้อ 4 — มีมาตั้งแต่ `fd94742`
+- แก้เป็น `s.key === "experience"` แบบเดียวกับ `handleSelectSurvey` บรรทัดเดียว ไม่แตะ server/schema
+- ทดสอบในเบราว์เซอร์แล้ว (ทั้งปุ่มบนหน้าไม่ผ่าน และ ✕) รายละเอียดใน project_logs/2026-10-15/1428-placement-back-to-experience.md

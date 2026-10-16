@@ -93,6 +93,7 @@ const { createLessonAdminRouter } = require('./lessonAdminRoutes');
 const { createLessonContentRouter } = require('./lessonContentRoutes');
 const { createStudentProgressRouter } = require('./studentProgressRoutes');
 const { createPromotionExamRouter } = require('./promotionExamRoutes');
+const { createPlacementRouter } = require('./placementRoutes');
 const { authSchemaSql, ensureAuthSchema, installAuth } = require('./auth');
 // Production schema setup belongs to the versioned application migration.
 // Standalone module tests keep installAuth's default auto-initialization.
@@ -104,6 +105,9 @@ app.use('/api', createLessonContentRouter(db, {
 }));
 app.use('/api', createPromotionExamRouter(db, {
     tierForLevel: (level) => normalizePlayerLevel(level),
+    evaluateAchievements: (userId) => evaluateAchievements(userId),
+}));
+app.use('/api', createPlacementRouter(db, {
     evaluateAchievements: (userId) => evaluateAchievements(userId),
 }));
 app.use('/api/themes', createThemeRouter(db));
@@ -5240,14 +5244,8 @@ const ensurePasswordResetSchema = async () => {
 
 
 // --- Lesson Slides ---
-// --- User Level Update ---
-app.post('/api/user/update-level', async (req, res) => {
-    const { user_id, level } = req.body;
-    try {
-        await db.execute('UPDATE users SET level = ? WHERE user_id = ?', [level, user_id]);
-        res.json({ success: true, level });
-    } catch (err) { res.status(500).json({ error: err.message }); }
-});
+// POST /api/user/update-level was removed on 2026-10-15: it wrote whatever level
+// the body named. Signup placement now lives in placementRoutes.js.
 
 // --- Survey ---
 // The signup survey. Only active questions are served: the old damaged
@@ -5320,33 +5318,8 @@ app.post('/api/survey/responses', async (req, res) => {
 });
 
 // --- Advanced Validation (ข้อสอบวัดระดับ) ---
-app.get('/api/advanced-validation', async (req, res) => {
-    try {
-        const [questions] = await db.execute('SELECT * FROM advanced_validation ORDER BY id');
-        for (const q of questions) {
-            const [choices] = await db.execute('SELECT choice_text FROM advanced_validation_choices WHERE question_id = ? ORDER BY id', [q.id]);
-            q.choices = choices.map(c => c.choice_text);
-        }
-        res.json(questions);
-    } catch (err) {
-        console.error('❌ Assessment Error:', err.message);
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// --- Assessment Submit ---
-app.post('/api/assessment/submit', async (req, res) => {
-    const { user_id, selected_level, score, total_questions } = req.body;
-    try {
-        const isPassed = score >= Math.ceil(total_questions * 0.6);
-        if (isPassed) {
-            await db.execute('UPDATE users SET level = ? WHERE user_id = ?', [selected_level, user_id]);
-            return res.json({ success: true, message: 'ผ่าน!', new_level: selected_level });
-        } else {
-            return res.json({ success: false, message: 'ไม่ผ่าน' });
-        }
-    } catch (err) { res.status(500).json({ error: err.message }); }
-});
+// GET /api/advanced-validation and POST /api/assessment/submit moved to
+// placementRoutes.js (2026-10-15), which grades on the server.
 
 // ==========================================
 // 7.5 API: Day Progression & Game State

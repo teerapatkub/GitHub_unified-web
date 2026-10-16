@@ -407,35 +407,52 @@ export default function LoginPage({ onLoginSuccess, sessionUser }) {
     }
   };
 
+  // The server sets the level; the page only reports what was chosen and
+  // answered, then uses the level the server sends back.
+  const postPlacement = async (path, body) => {
+    const res = await fetch(`${API_BASE}/api/assessment/${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "บันทึกระดับไม่สำเร็จ");
+    return data;
+  };
+
   const updateUserLevel = async (level) => {
     if (loggedInUser.isGuest) {
       onLoginSuccess({ ...loggedInUser, level });
       return;
     }
-    await fetch(`${API_BASE}/api/user/update-level`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ user_id: loggedInUser.user_id, level }),
-    });
-    onLoginSuccess({ ...loggedInUser, level });
-  };
-
-  const checkAssessment = () => {
-    let score = 0;
-    assessmentQuestions.forEach((q, i) => {
-      if (assessmentAnswers[i] === q.correct_answer) score++;
-    });
-    const passingScore = assessmentQuestions.length / 1.5;
-    if (score >= passingScore) {
-      const targetLevel = selectedLevelConfig?.level || 10;
-      updateUserLevel(targetLevel);
-    } else {
-      setAssessmentResult("failed");
+    try {
+      const data = await postPlacement("beginner", {});
+      onLoginSuccess({ ...loggedInUser, level: data.user?.level ?? level });
+    } catch (err) {
+      alert(err.message);
     }
   };
 
+  const checkAssessment = async () => {
+    const answers = Object.fromEntries(
+      assessmentQuestions.map((q, i) => [q.id, assessmentAnswers[i]]).filter(([, a]) => a != null),
+    );
+    setLoading(true);
+    try {
+      const data = await postPlacement("submit", { option_id: selectedLevelConfig?.id, answers });
+      if (data.passed) onLoginSuccess({ ...loggedInUser, level: data.user.level });
+      else setAssessmentResult("failed");
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Same key match as handleSelectSurvey: id 3 is the weekly-time question,
+  // so matching by id sent the player one question short of where they meant to go.
   const goBackToExperience = () => {
-    const idx = surveySteps.findIndex((s) => s.id === 3);
+    const idx = surveySteps.findIndex((s) => s.key === "experience");
     setSurveyStep(idx !== -1 ? idx : 0);
     setStep("survey");
     setAssessmentResult(null);
