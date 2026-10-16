@@ -68,3 +68,23 @@ Google Identity Services → `POST /api/auth/google` → ตรวจ token ด�
    หรือแก้ใน Supabase Dashboard → Authentication → Providers → Google
 3. restart backend ที่ :3001 แล้วทดสอบ login ด้วย Google จริง (ผู้ใช้กดเอง) กับบัญชี 128/141 ที่เคยเข้าด้วย Google
 4. ภายหลัง ลบตาราง `player_google_sessions` ด้วย migration ใหม่
+
+## ผลทดสอบจริงหลังตั้งค่า Google provider (2026-10-16 ช่วงค่ำ)
+
+ผู้ใช้แก้ค่าใน Supabase แล้ว: Client ID/secret ชนิด Web จริง, redirect URI ของ Supabase callback และ redirect URL `http://localhost:5174/login?auth=google`
+
+- restart backend :3001 ด้วยโค้ดใหม่ ได้ผลดังนี้
+  - `/api/health/live` → 200 `alive`
+  - `/api/health/ready` → 200 `ready` ไม่ต้อง login (ยืนยันการแก้ health route บน server จริงด้วย)
+  - `/api/config/google` → `{"enabled":true}`
+- กดปุ่ม Google แล้วถึงหน้า "Sign in with Google" จริง (redirect_uri = Supabase callback, redirect_to = `/login?auth=google`)
+- ผู้ใช้กรอกบัญชี Google เอง ผลบนฐานจริง (อ่านอย่างเดียว):
+  - บัญชี Google ที่อีเมลตรงกับ pong: Supabase เชื่อม Google เข้ากับบัญชี Auth เดิมเอง (providers `email`, `google`) จึงเข้าผู้เล่น **142** เดิมทันที
+  - บัญชี Google อีกบัญชีที่ไม่มีผู้เล่นมาก่อน: ได้ผู้เล่นใหม่ **144** พร้อมแถวใน `player_auth_identities`
+- จำลองการกลับจาก Google พร้อม `returnTo=/leaderboard` ที่เก็บไว้ ได้ไปที่ `/leaderboard` ถูกต้อง
+- refresh แล้วยังอยู่ในระบบ (`/api/auth/me` 200) กด logout แล้วกลับไป `/login?returnTo=...`, `/api/auth/me` 401 และ session ของ Supabase ใน localStorage ถูกลบ
+
+## ข้อสังเกตเพิ่ม
+
+- หลัง login ด้วย Google หน้า `/learn` ยิง `course-content` สลับกับ `auth/me` ราว 15 คู่ติดกันแล้วหยุดเอง 10 วินาทีต่อมาไม่มีคำขอใหม่
+  น่าจะมาจาก event ของ Supabase (`SIGNED_IN`/`TOKEN_REFRESHED`) ที่ทำให้โปรไฟล์ถูกโหลดซ้ำ ไม่วนต่อเนื่อง แต่ควรลดเป็นงานแยก
