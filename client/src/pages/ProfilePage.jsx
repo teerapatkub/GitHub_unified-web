@@ -175,7 +175,7 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
         }
     };
 
-    // Upload and reset are the same shape: POST, then reload the profile and ask
+    // Select and reset are the same shape: POST, then reload the profile and ask
     // the navbar to refresh so the new picture shows everywhere at once. Only the
     // request and the failure wording differ, so they share one runner.
     const runAvatarChange = async (request, failMessage) => {
@@ -190,25 +190,6 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
         } finally {
             setAvatarBusy(false);
         }
-    };
-
-    // Validated on the client for a fast, friendly message, but the server
-    // enforces the same limits again — a client check is advice, not a guard.
-    const handleAvatarUpload = (file) => {
-        if (!file) return;
-        if (!/^image\/(png|jpe?g|webp)$/i.test(file.type)) {
-            setAvatarError('รับเฉพาะไฟล์ภาพ .png .jpg หรือ .webp');
-            return;
-        }
-        if (file.size > 5 * 1024 * 1024) {
-            setAvatarError('ไฟล์ใหญ่เกิน 5MB');
-            return;
-        }
-        const form = new FormData();
-        form.append('file', file);
-        runAvatarChange(
-            () => requestJson(`/api/profile/${userId}/avatar`, { method: 'POST', body: form }),
-            'อัปโหลดรูปไม่สำเร็จ');
     };
 
     const handleAvatarReset = () => runAvatarChange(
@@ -305,8 +286,9 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                             </div>
 
                             {/* Only the owner can change their own picture. The picker
-                                shows every picture they can switch to; the button
-                                below adds a new one by upload. */}
+                                shows every picture they can switch to: the level
+                                default, Google, and pictures from the shop or
+                                achievements. Players cannot upload their own. */}
                             {isOwner && (
                                 <div className="flex flex-col items-center gap-2">
                                     {user.avatar_options?.length > 1 && (
@@ -324,15 +306,6 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                                             ))}
                                         </div>
                                     )}
-                                    <label className={`cursor-pointer rounded-lg python-gradient px-3 py-1.5 text-xs font-bold text-white ${avatarBusy ? 'pointer-events-none opacity-60' : ''}`}>
-                                        อัปโหลดรูป
-                                        <input
-                                            type="file"
-                                            accept="image/png,image/jpeg,image/webp"
-                                            className="hidden"
-                                            onChange={(e) => { handleAvatarUpload(e.target.files?.[0]); e.target.value = ''; }}
-                                        />
-                                    </label>
                                     {avatarError && <p className="max-w-[12rem] text-center text-[11px] font-semibold text-red-500">{avatarError}</p>}
                                 </div>
                             )}

@@ -29,3 +29,10 @@
 เส้นทาง Google ย้ายไป Supabase Auth แล้ว (ADR 0004) `POST /api/auth/google` ถูกลบ การเก็บรูปจาก Google ยังทำแบบเดิม
 แต่ย้ายไปอยู่ใน callback `onOAuthSignIn` ของ `installAuth` ใน `server/server.js` โดยอ่าน URL รูปจาก `user_metadata.avatar_url` ของ Supabase
 กฎ "avatar_url เป็นตัวเลือกเดียว" ยังเหมือนเดิม
+
+## อัปเดต 2026-10-16 (ช่วงค่ำ) — ตัดการอัปโหลดรูปโปรไฟล์
+
+- `POST /api/profile/:userId/avatar` ตอบ 410 แล้ว และ `avatar/select` รับเฉพาะ `google` กับ `shop`
+- กฎเลือกรูปย้ายไปอยู่ที่ `server/avatar.js` (`resolveAvatar`, `avatarOptions`)
+- ถ้า `avatar_source` เป็น `upload` (หรือว่างแต่มี `avatar_url`) จะได้รูปเริ่มต้นตามระดับแทน
+- คอลัมน์ `uploaded_picture_url` ยังอยู่ แต่ไม่ได้ใช้แล้ว

@@ -425,3 +425,6 @@ Fixed undefined LESSON_PASS_PERCENT using POST_PASS_RATIO * 100. Read-only route
 - กลับมาที่ `/login?auth=google` แล้ว `completeOAuthSignIn()` เรียก `POST /api/auth/oauth/complete` เพื่อผูกกับบัญชีผู้เล่น จากนั้นใช้ flow เดิม (เลเวล 0 ไปทำแบบสำรวจ)
 - `restoreOAuthReturn()` ใน `main.jsx` นำ `returnTo` กลับเข้า URL ก่อน router อ่าน เพราะ URL ที่กลับมาต้องตรงกับ allowlist ของ Supabase แบบ exact
 - ลบ `acceptGoogleSession` และ `VITE_GOOGLE_CLIENT_ID` แล้ว เหตุผลอยู่ใน `docs/adr/0004-google-sign-in-through-supabase-auth.md`
+
+## 2026-10-16 — เอาปุ่ม "อัปโหลดรูป" ออกจาก `ProfilePage.jsx`
+ผู้เล่นอัปโหลดรูปโปรไฟล์เองไม่ได้แล้ว เพราะโฮสต์ฟรีไม่มีดิสก์ถาวร (Spec 0003 ticket 5) ตัวเลือกรูปเดิม (ค่าเริ่มต้น / Google / ร้านค้า) ยังทำงานเหมือนเดิม และ server ตอบ 410 ถ้ามีคนเรียก route อัปโหลดเดิม

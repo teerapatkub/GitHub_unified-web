@@ -94,6 +94,7 @@ const { createStudentProgressRouter } = require('./studentProgressRoutes');
 const { createPromotionExamRouter } = require('./promotionExamRoutes');
 const { createDiskAssetStore, createSupabaseAssetStore } = require('./assetStore');
 const { createUploadRouter, redirectUploadsToStore } = require('./uploadRoutes');
+const { AVATAR_SOURCE, avatarOptions: avatarPickerOptions, resolveAvatar } = require('./avatar');
 const { createPlacementRouter } = require('./placementRoutes');
 const { authSchemaSql, ensureAuthSchema, installAuth } = require('./auth');
 // Production schema setup belongs to the versioned application migration.
@@ -242,17 +243,9 @@ const applyXpRewardToUser = async (executor, userId, xpDelta = 0, coinDelta = 0)
     };
 };
 
-let multer;
-try {
-    multer = require('multer');
-} catch (error) {
-    console.error('Missing dependency: multer. Run "npm install" in the server directory before starting the API.');
-    throw error;
-}
-
-// Where uploaded files live. Configurable because this directory is the one
-// piece of state that is NOT in the database: profile pictures, lesson media
-// and cosmetic art all land here, and a deployment that unpacks a new version
+// Where admin uploads live in local development (production sends them to
+// Supabase Storage, see ASSET_STORAGE_BUCKET below). Configurable because this
+// directory is state that is NOT in the database, and a deployment that unpacks a new version
 // over the old one would take them with it. Pointing UPLOADS_DIR at a mounted
 // volume keeps them outside the release, which is the only way an update stops
 // being a data loss event.
@@ -650,32 +643,6 @@ const ensureLessonExercisesSeeded = async () => {
     }
 };
 
-const uploadStorage = multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, uploadsDir),
-    filename: (_req, file, cb) => {
-        const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-        cb(null, `${unique}${path.extname(file.originalname || '').toLowerCase()}`);
-    },
-});
-
-// Profile pictures are narrower than the admin uploader on purpose: an avatar
-// is a small still image, never a video, and never the 25MB a lesson asset may
-// need. Enforced on the server because a client-side check is advice, not a
-// guard - a crafted request skips it.
-const avatarUpload = multer({
-    storage: uploadStorage,
-    limits: { fileSize: 5 * 1024 * 1024 },
-    fileFilter: (_req, file, cb) => {
-        const allowedMime = /^image\/(png|jpe?g|webp)$/i;
-        const allowedExt = /\.(png|jpg|jpeg|webp)$/i;
-        if (allowedMime.test(file.mimetype || '') && allowedExt.test(file.originalname || '')) {
-            cb(null, true);
-            return;
-        }
-        cb(new Error('รูปโปรไฟล์รับเฉพาะไฟล์ภาพ .png .jpg หรือ .webp'));
-    },
-});
-
 const ensureUserPresenceSchema = async () => {
     await db.execute(`
         CREATE TABLE IF NOT EXISTS user_presence (
@@ -868,28 +835,7 @@ const normalizePlayerLevel = (level) => {
 // Where a chosen picture came from, written down in one place so every writer of
 // users.avatar_source keeps the column's value set honest: upload (ticket 3),
 // google (ticket 5), shop and achievement (tickets 6 and 9).
-const AVATAR_SOURCE = Object.freeze({
-    DEFAULT: 'default',
-    UPLOAD: 'upload',
-    GOOGLE: 'google',
-    SHOP: 'shop',
-    ACHIEVEMENT: 'achievement',
-});
-const AVATAR_DEFAULT_BEGINNER = '/uploads/avatar-beginner.svg';
-const AVATAR_DEFAULT_EXPERT = '/uploads/avatar-expert.svg';
-const AVATAR_EXPERT_LEVEL = 10;
-const resolveAvatar = (user) => {
-    if (user && user.avatar_url) {
-        // A picture is set but its provenance was never recorded: it was chosen
-        // before avatar_source existed, so call it an upload rather than a default.
-        return { url: user.avatar_url, source: user.avatar_source || AVATAR_SOURCE.UPLOAD };
-    }
-    const level = Number(user?.level || 1);
-    return {
-        url: level >= AVATAR_EXPERT_LEVEL ? AVATAR_DEFAULT_EXPERT : AVATAR_DEFAULT_BEGINNER,
-        source: AVATAR_SOURCE.DEFAULT,
-    };
-};
+// Profile picture rules live in avatar.js (ADR 0002).
 
 // Set the shown picture to a PROFILE_PICTURE the player owns. Ownership is
 // checked against user_inventory, so a request naming a picture the player has
@@ -1596,11 +1542,7 @@ app.get('/api/profile/:userId', async (req, res) => {
         const themeRow = equipped(user.equipped_theme_id);
         const mouseRow = equipped(user.equipped_mouse_effect_id);
 
-        // Every picture this player could switch the avatar to, for the profile
-        // picker: the two level defaults are always offered; the last upload and
-        // the last Google picture if they have them; and every PROFILE_PICTURE
-        // they own from the shop. `selected` marks whichever avatar_url points at
-        // now so the picker can highlight it.
+        // Every picture this player could switch the avatar to (avatar.js).
         const [ownedPics] = await db.execute(
             `SELECT si.item_id, si.name, si.asset_url FROM user_inventory ui
                 JOIN shop_items si ON si.item_id = ui.item_id
@@ -1608,15 +1550,7 @@ app.get('/api/profile/:userId', async (req, res) => {
                ORDER BY si.item_id`,
             [userId]
         );
-        const defaultAvatar = resolveAvatar({ level: user.level });
-        const avatarOptions = [
-            { source: 'default', url: defaultAvatar.url, label: 'รูปเริ่มต้น' },
-            ...(user.uploaded_picture_url ? [{ source: 'upload', url: user.uploaded_picture_url, label: 'รูปที่อัปโหลด' }] : []),
-            ...(user.google_picture_url ? [{ source: 'google', url: user.google_picture_url, label: 'รูปจาก Google' }] : []),
-            ...ownedPics.map(p => ({ source: 'shop', itemId: Number(p.item_id), url: p.asset_url, label: p.name })),
-        ];
-        const currentUrl = resolveAvatar(user).url;
-        for (const opt of avatarOptions) opt.selected = opt.url === currentUrl;
+        const avatarOptions = avatarPickerOptions({ user, ownedPictures: ownedPics });
 
         // --- curriculum -----------------------------------------------------
         // A lesson's progress is measured against what it actually contains: the
@@ -1937,36 +1871,17 @@ app.put('/api/profile/:userId/showcase', async (req, res) => {
     }
 });
 
-// Choosing a profile picture by uploading one. The app has no server-side auth
-// layer yet: every mutation trusts the userId in the URL, the way the showcase
-// route above does, so this matches that pattern rather than inventing a lone
-// half-measure. Real per-user authorisation arrives with the account work
-// (Plan2 item 4), not here.
+// Player profile-picture uploads were retired on 2026-10-16: the free host has
+// no persistent disk, so the file vanished at the next restart while the
+// account still pointed at it. Pictures now come from the level default,
+// Google, the shop or achievements.
 app.post('/api/profile/:userId/avatar', (req, res) => {
-    const userId = Number(req.params.userId);
-    if (!userId) return res.status(400).json({ error: 'userId is required' });
-    avatarUpload.single('file')(req, res, async (error) => {
-        if (error) return res.status(400).json({ error: describeError(error) });
-        if (!req.file) return res.status(400).json({ error: 'ไม่พบไฟล์รูป' });
-        const url = `/uploads/${req.file.filename}`;
-        try {
-            const [result] = await db.execute(
-                `UPDATE users SET avatar_url = ?, avatar_source = ?, uploaded_picture_url = ?
-                  WHERE user_id = ?`,
-                [url, AVATAR_SOURCE.UPLOAD, url, userId]
-            );
-            if (!result.affectedRows) return res.status(404).json({ error: 'ไม่พบผู้ใช้' });
-            res.json({ avatar: resolveAvatar({ avatar_url: url, avatar_source: AVATAR_SOURCE.UPLOAD }) });
-        } catch (err) {
-            console.error('❌ POST /api/profile/:userId/avatar error:', describeError(err));
-            res.status(500).json({ error: 'บันทึกรูปโปรไฟล์ไม่สำเร็จ' });
-        }
-    });
+    res.status(410).json({ error: 'ไม่รองรับการอัปโหลดรูปโปรไฟล์แล้ว เลือกรูปจากร้านค้า รางวัล หรือรูปจาก Google แทน' });
 });
 
-// Back to the level-based default. The uploaded and Google pictures stay in
-// their own columns, so this clears the current choice without deleting what the
-// user could switch back to later.
+// Back to the level-based default. The Google picture stays in its own column,
+// so this clears the current choice without deleting what the user could switch
+// back to later.
 app.post('/api/profile/:userId/avatar/reset', async (req, res) => {
     const userId = Number(req.params.userId);
     if (!userId) return res.status(400).json({ error: 'userId is required' });
@@ -1984,8 +1899,8 @@ app.post('/api/profile/:userId/avatar/reset', async (req, res) => {
     }
 });
 
-// Pick which picture to show, out of the ones the player already has. Uploaded
-// and Google pictures live in their own columns; a shop picture is named by its
+// Pick which picture to show, out of the ones the player already has. The
+// Google picture lives in its own column; a shop picture is named by its
 // itemId and verified against ownership. "Back to default" is the reset route
 // above, not a source here.
 app.post('/api/profile/:userId/avatar/select', async (req, res) => {
@@ -1993,13 +1908,9 @@ app.post('/api/profile/:userId/avatar/select', async (req, res) => {
     const { source, itemId } = req.body || {};
     if (!userId) return res.status(400).json({ error: 'userId is required' });
     try {
-        if (source === AVATAR_SOURCE.UPLOAD || source === AVATAR_SOURCE.GOOGLE) {
-            // Read both remembered pictures with one fixed query, then pick the
-            // one for this source - rather than interpolating the column name into
-            // the SQL text.
-            const [rows] = await db.execute(
-                'SELECT uploaded_picture_url, google_picture_url FROM users WHERE user_id = ? LIMIT 1', [userId]);
-            const url = source === AVATAR_SOURCE.UPLOAD ? rows[0]?.uploaded_picture_url : rows[0]?.google_picture_url;
+        if (source === AVATAR_SOURCE.GOOGLE) {
+            const [rows] = await db.execute('SELECT google_picture_url FROM users WHERE user_id = ? LIMIT 1', [userId]);
+            const url = rows[0]?.google_picture_url;
             if (!url) return res.status(400).json({ error: 'ยังไม่มีรูปจากแหล่งนี้' });
             await db.execute('UPDATE users SET avatar_url = ?, avatar_source = ? WHERE user_id = ?', [url, source, userId]);
             return res.json({ avatar: resolveAvatar({ avatar_url: url, avatar_source: source }) });

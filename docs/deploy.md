@@ -88,7 +88,7 @@ docker compose exec app node scripts/mark-auto-gradable.js --apply
 | `PUBLIC_BASE_URL` | **ใช่** | URL เต็มที่ผู้ใช้เปิดจากภายนอก และต้องอยู่ใน `AUTH_ALLOWED_ORIGINS` ต้องเป็น origin HTTPS สาธารณะแบบ exact (ไม่ใช่ `localhost` ไม่มี path) compose ไม่มีค่าเริ่มต้นให้ ถ้าไม่ตั้ง `docker compose` จะหยุดพร้อมบอกชื่อตัวแปร แทนที่จะปล่อยให้ container ขึ้นแล้วล้มตอนบูต |
 | `CLIENT_URL` | **ใช่** | URL ของหน้าเว็บ ต้องตรงกับ `PUBLIC_BASE_URL` ใน production; compose ตั้งให้จากค่าเดียวกัน |
 | `AUTH_ALLOWED_ORIGINS` | **ใช่** | รายการ origin ที่อนุญาต คั่นด้วย comma และต้องมี origin ของ `PUBLIC_BASE_URL` |
-| `UPLOADS_DIR` | compose ตั้งให้แล้ว | ที่เก็บรูปโปรไฟล์ที่ผู้เล่นอัปโหลด ต้องอยู่บน volume |
+| `UPLOADS_DIR` | compose ตั้งให้แล้ว | โฟลเดอร์ไฟล์ในเครื่อง ใช้เก็บไฟล์ที่ admin อัปโหลดเฉพาะตอน dev ที่ไม่ได้ตั้ง `ASSET_STORAGE_BUCKET` (ผู้เล่นอัปโหลดรูปโปรไฟล์เองไม่ได้แล้ว) |
 | `ASSET_STORAGE_BUCKET` | **ใช่** (compose ตั้งค่าเริ่มต้นเป็น `uploads`) | ชื่อ bucket ใน Supabase Storage ที่เก็บไฟล์ที่ admin อัปโหลด (สื่อบทเรียน, รูปไอเทม) server สร้าง bucket แบบอ่านได้สาธารณะให้เองตอนอัปโหลดครั้งแรก |
 | `NVIDIA_API_KEY` `NVIDIA_AI_MODEL` | ไม่ | แชทบอท Lumi ถ้าไม่ตั้งจะใช้เนื้อหาสำรองในตัว |
 | `NVIDIA_CODE_JUDGE_API_KEY` `NVIDIA_CODE_JUDGE_MODEL` | ไม่ | ตัวตรวจคุณภาพโค้ด ถ้าไม่ตั้งจะให้คะแนนในเครื่องโดยไม่ส่งโค้ดออกนอก |
@@ -238,8 +238,8 @@ DATABASE_URL=postgres://postgres:<password>@<host>:6543/postgres
 ไฟล์ที่ admin อัปโหลด (สื่อของบทเรียน, งานศิลป์ของเครื่องแต่งตัว) เก็บใน Supabase Storage
 bucket `ASSET_STORAGE_BUCKET` ตั้งแต่ 2026-10-16 จึงไม่หายเมื่อ restart บนโฮสต์ที่ไม่มีดิสก์ถาวร
 URL ในฐานข้อมูลยังเป็น `/uploads/<ชื่อไฟล์>` เหมือนเดิม ถ้าไม่พบไฟล์บนดิสก์ server จะ redirect ไปยัง Storage
-ส่วนรูปโปรไฟล์ที่ผู้เล่นอัปโหลดยังอยู่ใน `UPLOADS_DIR`
-ซึ่งเป็น **สถานะเดียวของระบบที่ไม่ได้อยู่ในฐานข้อมูล**
+ผู้เล่นอัปโหลดรูปโปรไฟล์เองไม่ได้แล้ว (2026-10-16) รูปมาจากรูปเริ่มต้นตามระดับ, Google, ร้านค้า หรือ achievement
+ไฟล์ใน `UPLOADS_DIR` เป็นสถานะที่ไม่ได้อยู่ในฐานข้อมูล ใช้เฉพาะตอน dev
 compose ผูก volume `pysim-uploads` ไว้ที่ `/data/uploads` แล้ว
 ถ้าย้ายโฮสต์ ต้องยกโฟลเดอร์นี้ไปด้วย ไม่งั้นทุกคนเสียรูปโปรไฟล์
 
