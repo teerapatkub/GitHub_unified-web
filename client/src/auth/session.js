@@ -25,9 +25,14 @@ export function initializeAuth() {
     try {
       const client = getSupabaseClient();
       client.auth.onAuthStateChange((event, nextSession) => {
+        const previousUser = session?.user?.id;
         session = nextSession;
+        // supabase-js re-announces SIGNED_IN for the same user whenever the tab
+        // becomes visible again, and TOKEN_REFRESHED hourly. The new token is
+        // kept above; the app only re-reads the player when the user changed.
+        const userChanged = event === 'SIGNED_OUT' || nextSession?.user?.id !== previousUser;
         // Do not await another Supabase method inside its auth callback lock.
-        if (initialized && event !== 'INITIAL_SESSION') {
+        if (initialized && event !== 'INITIAL_SESSION' && userChanged) {
           window.setTimeout(() => window.dispatchEvent(new CustomEvent('pyarena:session-changed', { detail: { event } })), 0);
         }
       });

@@ -30,7 +30,10 @@ globalThis.CustomEvent ??= class CustomEvent {
 globalThis.fetch = (...args) => fetchResponse(...args);
 globalThis.__authTestSupabase = {
   auth: {
-    onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
+    onAuthStateChange: (callback) => {
+      globalThis.__authTestStateChange = callback;
+      return { data: { subscription: { unsubscribe() {} } } };
+    },
     getSession: async () => ({ data: { session: null }, error: null }),
     setSession: async () => ({ error: null }),
     signOut: async () => {
@@ -158,4 +161,25 @@ test('a refused Google binding leaves no half-signed-in Supabase session behind'
   fetchResponse = async () => new Response(JSON.stringify({ message: 'บัญชีนี้เชื่อมกับการเข้าสู่ระบบอื่นแล้ว' }), { status: 409 });
   await assert.rejects(authSession.completeOAuthSignIn(), /เชื่อมกับการเข้าสู่ระบบอื่นแล้ว/);
   assert.equal(supabaseSignOutCalls, signOutsBefore + 1);
+});
+
+// supabase-js re-announces SIGNED_IN for the same user every time the tab
+// becomes visible again, and TOKEN_REFRESHED hourly. Only a change of user, or
+// signing out, means the app has to look the player up again.
+test('only a different user or a sign-out announces a session change', async () => {
+  const announced = [];
+  window.dispatchEvent = (event) => { announced.push(event.detail?.event); return true; };
+  const fire = async (event, nextSession) => {
+    globalThis.__authTestStateChange(event, nextSession);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  };
+  const alice = { access_token: 'a1', user: { id: 'auth-alice' } };
+  await fire('SIGNED_IN', alice);
+  await fire('SIGNED_IN', { ...alice, access_token: 'a2' });
+  await fire('TOKEN_REFRESHED', { ...alice, access_token: 'a3' });
+  assert.deepEqual(announced, ['SIGNED_IN'], 'the same user signing in again is not news');
+  await fire('SIGNED_IN', { access_token: 'b1', user: { id: 'auth-bob' } });
+  await fire('SIGNED_OUT', null);
+  assert.deepEqual(announced, ['SIGNED_IN', 'SIGNED_IN', 'SIGNED_OUT']);
+  window.dispatchEvent = () => true;
 });
