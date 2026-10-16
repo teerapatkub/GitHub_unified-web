@@ -261,7 +261,10 @@ function installAuth(app, db, admin, env = process.env, options = {}) {
     const authUser = await supabaseUserFor(req);
     if (!authUser) return message(res, 401, 'กรุณาเข้าสู่ระบบด้วย Google อีกครั้ง');
     const metadata = authUser.user_metadata || {};
-    const picture = metadata.avatar_url || metadata.picture || null;
+    // An account that signed up by email and linked Google later keeps its
+    // email sign-up metadata; the picture is then only on the Google identity.
+    const googleIdentity = (authUser.identities || []).find((identity) => identity.provider === 'google')?.identity_data || {};
+    const picture = metadata.avatar_url || metadata.picture || googleIdentity.avatar_url || googleIdentity.picture || null;
     const respond = async (user, created) => {
       if (!accountEnabled(user)) return message(res, 403, 'บัญชีนี้ไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแล');
       const extra = options.onOAuthSignIn ? await options.onOAuthSignIn({ user, created, picture }) : {};

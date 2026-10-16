@@ -9,12 +9,12 @@ import { NavBar } from './components/ui/tubelight-navbar';
 import MouseEffectLayer from './components/MouseEffectLayer';
 import ModeEntryHeader from './components/ModeEntryHeader';
 import useModeTransition from './hooks/useModeTransition';
-import { currentPlayer, signOut, isRecovery } from './auth/session';
+import { currentPlayer, signOut, isOAuthReturn, isRecovery } from './auth/session';
 import { getSupabaseClient } from './supabaseClient.js';
 import GameModeLocked from './pages/GameModeLocked';
 import { canEnterGameModes } from './utils/gameModeAccess.js';
 import { API_BASE } from './config/api.js';
-import { accessForRoute, loginUrlFor, returnDestination } from './auth/route-access.js';
+import { accessForRoute, leavesLoginPage, loginUrlFor, returnDestination } from './auth/route-access.js';
 import { createAuthRestorer } from './auth/restore-state.js';
 import SkeletonLoading from './components/ui/Skeleton.jsx';
 
@@ -422,7 +422,7 @@ function AppContent() {
                   element={
                     !authReady
                       ? <SkeletonLoading variant="form" label="กำลังตรวจสอบการเข้าสู่ระบบ..." className="mx-auto max-w-xl p-6" />
-                      : isAuthenticated && user.level > 0 && !isRecovery()
+                      : leavesLoginPage({ user, recovery: isRecovery(), oauthReturn: isOAuthReturn() })
                       ? <Navigate to={returnDestination(location) || (isAdminUser ? "/admin/dashboard" : "/learn")} replace />
                       : <FriendLogin onLoginSuccess={handleLoginSuccess} sessionUser={user} />
                   }

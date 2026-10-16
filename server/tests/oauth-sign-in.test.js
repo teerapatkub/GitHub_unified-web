@@ -161,6 +161,25 @@ test('a Google identity linked onto an already bound Auth user signs straight in
   assert.equal(result.body.user_id, 142);
 });
 
+test('an already bound player that linked Google still hands its Google picture on', async (t) => {
+  const seen = [];
+  const { complete, pool } = await oauthFixture(t, {
+    players: [{ user_id: 142, username: 'pong', email: 'pong@example.com' }],
+    authUsers: { tok: googleUser(AUTH_A, 'pong@example.com', {
+      app_metadata: { provider: 'email', providers: ['email', 'google'] },
+      user_metadata: { email: 'pong@example.com', email_verified: true },
+      identities: [
+        { provider: 'email', identity_data: { email: 'pong@example.com' } },
+        { provider: 'google', identity_data: { email: 'pong@example.com', picture: 'https://lh3.googleusercontent.com/a/pong' } },
+      ],
+    }) },
+    onOAuthSignIn: async ({ user, created, picture }) => { seen.push({ id: user.user_id, created, picture }); return {}; },
+  });
+  await pool.query('INSERT INTO player_auth_identities (user_id, auth_user_id, email) VALUES (142, $1, $2)', [AUTH_A, 'pong@example.com']);
+  assert.equal((await complete('tok')).status, 200);
+  assert.deepEqual(seen, [{ id: 142, created: false, picture: 'https://lh3.googleusercontent.com/a/pong' }]);
+});
+
 test('a disabled player cannot sign in with Google', async (t) => {
   const { complete, pool } = await oauthFixture(t, {
     players: [{ user_id: 141, username: 'max', email: 'max@example.com' }],
