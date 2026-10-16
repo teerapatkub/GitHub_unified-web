@@ -271,6 +271,7 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                                     <img
                                         src={assetUrl(user.avatar.url)}
                                         alt=""
+                                        referrerPolicy="no-referrer"
                                         className="absolute inset-[14px] h-[calc(100%-28px)] w-[calc(100%-28px)] rounded-full bg-pysim-surface-low object-cover"
                                     />
                                 ) : (
@@ -301,7 +302,8 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                                                     title={opt.label}
                                                     className={`h-11 w-11 overflow-hidden rounded-full border-2 transition disabled:opacity-60 ${opt.selected ? 'border-pysim-primary ring-2 ring-pysim-primary/30' : 'border-transparent hover:border-pysim-outline/40'}`}
                                                 >
-                                                    <img src={assetUrl(opt.url)} alt={opt.label} className="h-full w-full bg-pysim-surface-low object-cover" />
+                                                    {/* Google's picture host refuses requests that carry a Referer. */}
+                                                    <img src={assetUrl(opt.url)} alt={opt.label} referrerPolicy="no-referrer" className="h-full w-full bg-pysim-surface-low object-cover" />
                                                 </button>
                                             ))}
                                         </div>

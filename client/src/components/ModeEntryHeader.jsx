@@ -84,7 +84,7 @@ export default function ModeEntryHeader({ mode, user, children, onNavigate, onLo
               }}>
                 <summary className="mode-entry-button app-profile-trigger" aria-label={profileLabel} title={profileLabel}>
                   <span className="app-profile-avatar">
-                    {avatar ? <img src={avatar} alt="" className="app-profile-picture" /> : <span className="app-profile-initial">{String(user?.username || '?').trim().charAt(0).toUpperCase()}</span>}
+                    {avatar ? <img src={avatar} alt="" referrerPolicy="no-referrer" className="app-profile-picture" /> : <span className="app-profile-initial">{String(user?.username || '?').trim().charAt(0).toUpperCase()}</span>}
                     {frame && <img src={frame} alt="" className="app-profile-frame" />}
                   </span>
                   <span className="app-profile-name">{user?.username}<small>LV. {levelOf(user)}</small></span>

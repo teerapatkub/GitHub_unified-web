@@ -428,3 +428,8 @@ Fixed undefined LESSON_PASS_PERCENT using POST_PASS_RATIO * 100. Read-only route
 
 ## 2026-10-16 — เอาปุ่ม "อัปโหลดรูป" ออกจาก `ProfilePage.jsx`
 ผู้เล่นอัปโหลดรูปโปรไฟล์เองไม่ได้แล้ว เพราะโฮสต์ฟรีไม่มีดิสก์ถาวร (Spec 0003 ticket 5) ตัวเลือกรูปเดิม (ค่าเริ่มต้น / Google / ร้านค้า) ยังทำงานเหมือนเดิม และ server ตอบ 410 ถ้ามีคนเรียก route อัปโหลดเดิม
+
+## 2026-10-16 — รูปจาก Google สำหรับบัญชีที่ผูกไว้แล้ว (แตะ `App.jsx`, `ProfilePage.jsx`, `LeaderboardPage.jsx`, `ModeEntryHeader.jsx`)
+- route `/login` ไม่ redirect ระหว่างกลับจาก Google (`leavesLoginPage()` ใน `client/src/auth/route-access.js`) เพื่อให้ `FriendLogin` เรียก `completeOAuthSignIn()` ได้ทุกครั้ง ไม่ใช่แค่ครั้งแรกที่ผูกบัญชี
+- `<img>` รูปโปรไฟล์ทุกจุดใส่ `referrerPolicy="no-referrer"` — โฮสต์รูปของ Google (`lh3.googleusercontent.com`) ปฏิเสธคำขอที่มี Referer รูปจึงขึ้นเป็นรูปเสีย ถ้าเพิ่มจุดแสดงรูปโปรไฟล์ใหม่ให้ใส่ด้วย
+- รายละเอียดใน project_logs/2026-10-16/2104-google-picture-for-bound-players.md

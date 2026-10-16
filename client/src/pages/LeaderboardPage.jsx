@@ -65,7 +65,7 @@ function PodiumCard({ row, board, isMe }) {
         : <Medal size={28} className={`mb-4 ${style.icon}`} aria-hidden="true" />}
       <div className={`mb-4 flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white text-3xl font-black text-pysim-primary ${style.avatar}`}>
         {row.avatar?.url
-          ? <img src={assetUrl(row.avatar.url)} alt="" className="h-full w-full object-cover" />
+          ? <img src={assetUrl(row.avatar.url)} alt="" referrerPolicy="no-referrer" className="h-full w-full object-cover" />
           : <span aria-hidden="true">{row.username?.slice(0, 1).toUpperCase() || '?'}</span>}
       </div>
       <span className={`max-w-full truncate text-base font-black ${isMe ? 'text-pysim-primary' : 'text-pysim-on-surface'}`}>
@@ -304,6 +304,7 @@ export default function LeaderboardPage({ user }) {
                                   <img
                                     src={assetUrl(row.avatar.url)}
                                     alt=""
+                                    referrerPolicy="no-referrer"
                                     className="h-9 w-9 shrink-0 rounded-full bg-pysim-surface-low object-cover"
                                   />
                                 )}

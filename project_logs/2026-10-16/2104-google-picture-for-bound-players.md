@@ -38,9 +38,21 @@
 - ไม่แตะ schema, Bot AI, Arcade
 - ผู้เล่นที่ผูกแล้วจะเห็นหน้า login (สถานะกำลังโหลด) ชั่วครู่ระหว่าง `completeOAuthSignIn()` ก่อนถูกส่งไปหน้าเดิม
   ผ่าน `handleLoginSuccess` — เหมือน flow ของผู้เล่นใหม่
-- `App.jsx` / `FriendLogin.jsx` เป็นส่วน auth ส่วนกลาง ไม่ใช่ไฟล์ของ Person 1/2 จึงไม่ต้องเขียน handoff
+- แตะ `App.jsx` และหน้าที่แสดงรูปโปรไฟล์ — บันทึกไว้ใน `docs/handoff-to-person-1.md`
+
+## ทดสอบในเบราว์เซอร์ (21:10)
+- รีสตาร์ต backend :3001 (ผู้ใช้อนุญาต) ผู้ใช้เข้าสู่ระบบ Google เป็น pong เองใน browser pane
+- `POST /api/auth/oauth/complete` → 200 (ก่อนแก้ไม่ถูกเรียกเลยสำหรับบัญชีที่ผูกแล้ว) ไม่มี error ใน log ของ server
+- หน้า `/profile` มีปุ่ม "รูปจาก Google" แล้ว รูปที่ pong เลือกไว้ไม่ถูกเปลี่ยน
+- **เจอบั๊กที่สอง**: รูป Google ขึ้นเป็นรูปเสีย (`naturalWidth` 0) เพราะ `lh3.googleusercontent.com`
+  ปฏิเสธคำขอที่มี Referer ลองโหลด URL เดียวกันด้วย `referrerPolicy = 'no-referrer'` แล้วได้รูป 96px
+  → ใส่ `referrerPolicy="no-referrer"` ให้ `<img>` รูปโปรไฟล์ใน `ProfilePage.jsx` (2 จุด),
+  `LeaderboardPage.jsx` (2 จุด), `ModeEntryHeader.jsx` หลัง HMR รูปในตัวเลือกโหลดได้ (96px) และแสดงจริง
+- บันทึกลง `docs/handoff-to-person-1.md` แล้วเพราะแตะหน้าของคนอื่น
 
 ## ยังไม่เสร็จ
-- ทดสอบในเบราว์เซอร์ด้วยการให้ผู้ใช้เข้าสู่ระบบ Google เอง — ต้องรีสตาร์ต backend :3001
-  (เป็น `node server.js` ที่ไม่ได้ auto-reload จึงยังไม่มีการแก้ฝั่ง server)
-- ยังไม่ได้ดู `auth.users.raw_user_meta_data` / `auth.identities.identity_data` ของ pong จริง
+- ยังไม่รู้ว่ารูปของ pong มาจาก `user_metadata` หรือจาก fallback ไปที่ identity ของ Google
+  (ไม่ได้รับอนุญาตให้อ่าน `auth.users` / `auth.identities` ของฐานจริง) — เทสฝั่ง server ครอบคลุมทั้งสองทาง
+- `oauth/complete` ถูกเรียก 3 ครั้งต่อการเข้าสู่ระบบหนึ่งครั้ง (effect รันซ้ำ) ไม่มีผลเสียเพราะ idempotent
+  แต่ควรดูภายหลัง
+- ไม่ได้กดเลือก "รูปจาก Google" เพราะจะเปลี่ยนการตั้งค่าของบัญชีจริง
