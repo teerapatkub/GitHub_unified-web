@@ -49,3 +49,21 @@ test('production CORS origins never include implicit development ports', () => {
   assert.deepEqual([...origins], ['https://play.example.com', 'https://preview.example.com']);
   assert.equal(origins.has('http://localhost:3001'), false);
 });
+
+test('Google sign-in is enabled through Supabase only with both setup-only credentials', () => {
+  const google = { ...valid(), AUTH_GOOGLE_CLIENT_ID: '123-abc.apps.googleusercontent.com', AUTH_GOOGLE_CLIENT_SECRET: 'google-secret' };
+  const settings = buildProductionAuthSettings(google);
+  assert.ok(settings.redirectUrls.includes('https://play.example.com/login?auth=google'));
+  assert.equal(settings.patch.external_google_enabled, true);
+  assert.equal(settings.patch.external_google_client_id, '123-abc.apps.googleusercontent.com');
+  assert.equal(settings.patch.external_google_secret, 'google-secret');
+  const applied = { ...settings.patch, uri_allow_list: settings.redirectUrls.join(',') };
+  assert.equal(matchesAppliedAuthSettings(applied, settings), true);
+  assert.equal(matchesAppliedAuthSettings({ ...applied, external_google_enabled: false }, settings), false);
+  assert.equal(matchesAppliedAuthSettings({ ...applied, external_google_client_id: 'other.apps.googleusercontent.com' }, settings), false);
+
+  // Without Google credentials the patch leaves the provider alone.
+  assert.equal('external_google_enabled' in buildProductionAuthSettings(valid()).patch, false);
+  assert.throws(() => buildProductionAuthSettings({ ...valid(), AUTH_GOOGLE_CLIENT_ID: '123-abc.apps.googleusercontent.com' }), /AUTH_GOOGLE_CLIENT_SECRET/);
+  assert.throws(() => buildProductionAuthSettings({ ...valid(), AUTH_GOOGLE_CLIENT_ID: 'not-a-client-id', AUTH_GOOGLE_CLIENT_SECRET: 's' }), /AUTH_GOOGLE_CLIENT_ID/);
+});

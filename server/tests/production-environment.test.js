@@ -44,6 +44,9 @@ test('production runtime rejects missing values and management credentials', () 
   assert.throws(() => validateRuntimeEnvironment({
     ...validRuntime(), AUTH_SMTP_PASS: 'smtp-setup-only',
   }), /AUTH_SMTP_PASS is forbidden/);
+  assert.throws(() => validateRuntimeEnvironment({
+    ...validRuntime(), AUTH_GOOGLE_CLIENT_SECRET: 'google-setup-only',
+  }), /AUTH_GOOGLE_CLIENT_SECRET is forbidden/);
 });
 
 test('production runtime requires its public origin in the CORS allowlist', () => {

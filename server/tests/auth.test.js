@@ -24,7 +24,6 @@ async function fixture(t, {
     signupUser: null,
     created: [],
     deleted: [],
-    cookies: new Map(),
     mails: 0,
     provisioning: new Map(),
     authUsers: new Map(mapped ? [[user.email, { id: 'auth-42', email: user.email }]] : []),
@@ -37,9 +36,6 @@ async function fixture(t, {
   const execute = async (sql, args = []) => {
     if (/CREATE|ALTER|REVOKE|pg_roles|pg_advisory/.test(sql)) return [[]];
     if (sql.includes('JOIN player_auth_identities')) return [[state.binding && args[0] === state.binding.auth_user_id ? user : null].filter(Boolean)];
-    if (sql.includes('JOIN player_google_sessions')) return [[state.cookies.has(args[0]) ? user : null].filter(Boolean)];
-    if (sql.startsWith('INSERT INTO player_google_sessions')) { state.cookies.set(args[0], user.user_id); return [{}]; }
-    if (sql.startsWith('DELETE FROM player_google_sessions')) { if (args.length) state.cookies.delete(args[0]); return [{}]; }
     if (sql.startsWith('SELECT * FROM player_auth_identities')) {
       return [[state.binding && Number(state.binding.user_id) === Number(args[0]) ? state.binding : null].filter(Boolean)];
     }
@@ -351,13 +347,12 @@ test('old login, registration and recovery routes cannot bypass new auth', async
   const { call } = await fixture(t);
   for (const path of ['/login', '/register', '/api/login', '/api/register', '/api/password/reset', '/api/password/forgot']) assert.equal((await call(path, {})).status, 410);
 });
-test('Google session cookie is httpOnly and logout revokes it', async t => {
-  const { auth, call } = await fixture(t);
-  let cookie;
-  await auth.issueGoogleSession({ cookie: (name, value, opts) => { assert(opts.httpOnly); assert.equal(opts.sameSite, 'lax'); cookie = `${name}=${value}`; } }, 42);
-  assert.equal((await call('/api/auth/me', null, { Cookie: cookie })).status, 200);
-  assert.equal((await call('/api/auth/sign-out', {}, { Cookie: cookie })).status, 200);
+test('the retired server-side Google cookie no longer signs anyone in', async t => {
+  const { call } = await fixture(t);
+  const cookie = `pyarena_google_session=${'a'.repeat(64)}`;
   assert.equal((await call('/api/auth/me', null, { Cookie: cookie })).status, 401);
+  assert.equal((await call('/api/auth/google', { token: 'x' })).status, 401);
+  assert.equal((await call('/api/auth/sign-out', {}, { Cookie: cookie })).status, 200);
 });
 test('cross-origin credential requests are rejected', async t => {
   const { call } = await fixture(t);

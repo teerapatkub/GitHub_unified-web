@@ -92,7 +92,6 @@ docker compose exec app node scripts/mark-auto-gradable.js --apply
 | `NVIDIA_API_KEY` `NVIDIA_AI_MODEL` | ไม่ | แชทบอท Lumi ถ้าไม่ตั้งจะใช้เนื้อหาสำรองในตัว |
 | `NVIDIA_CODE_JUDGE_API_KEY` `NVIDIA_CODE_JUDGE_MODEL` | ไม่ | ตัวตรวจคุณภาพโค้ด ถ้าไม่ตั้งจะให้คะแนนในเครื่องโดยไม่ส่งโค้ดออกนอก |
 | `EMAIL_USER` `EMAIL_PASS` | ไม่ | ค่าอีเมลของระบบรุ่นเก่า ไม่ใช้แทน Custom SMTP ของ Supabase Auth |
-| `GOOGLE_CLIENT_ID` | **ใช่ ถ้าต้องการปุ่มเข้าสู่ระบบด้วย Google** | OAuth **Web** Client ID ถ้าไม่ตั้ง ปุ่ม Google จะขึ้นว่ายังไม่เปิดให้ใช้และกดไม่ได้ ส่วนการเข้าสู่ระบบด้วยชื่อผู้ใช้ยังทำงานปกติ |
 
 ตอนสร้าง production image, compose นำ `SUPABASE_URL` กับ
 `SUPABASE_PUBLISHABLE_KEY` ไปเป็น `VITE_SUPABASE_URL` กับ
@@ -154,20 +153,24 @@ Production container รันด้วย user `node` ที่ไม่มี�
 `/data/uploads` ซึ่ง compose ผูกกับ volume `pysim-uploads` service `uploads-init` จะปรับเจ้าของ
 ไฟล์เดิมใน volume เป็น UID/GID 1000 ก่อนเริ่ม app จึงอัปเกรดจาก image รุ่นที่เคยสร้างไฟล์ด้วย root ได้
 
-### เข้าสู่ระบบด้วย Google — ตั้งที่เดียวพอ
+### เข้าสู่ระบบด้วย Google — ผ่าน Supabase Auth
 
-ใส่ `GOOGLE_CLIENT_ID` ใน `server/.env` **ที่เดียว** หน้าเข้าสู่ระบบขอค่านี้จาก
-`/api/config/google` ตอนเปิดหน้า จึงไม่ต้องตั้ง `VITE_GOOGLE_CLIENT_ID` ตอน build
-(ตั้งได้ถ้าอยากให้ฝังไว้ในบันเดิล แต่ค่าที่ server ให้มาจะถูกใช้ก่อนเสมอ)
+ตั้งแต่ 2026-10-16 Google login ใช้ Google provider ของ Supabase (ADR 0004) นับรวมในโควตา
+MAU ของ Supabase เหมือนผู้ใช้อีเมล ไม่ต้องตั้ง `GOOGLE_CLIENT_ID` ใน server หรือ client อีกแล้ว
+หน้า login แสดงปุ่มเมื่อ Supabase รายงานว่าเปิด provider นี้ (`/api/config/google`
+ถาม `/auth/v1/settings` ของ Supabase ไว้ 5 นาทีต่อครั้ง)
 
-**สองครึ่งนี้ต้องเป็น client id เดียวกัน** เบราว์เซอร์ใช้ค่าหนึ่งไปขอ token จาก Google
-และ server ใช้อีกค่าหนึ่งไปตรวจ token นั้น ถ้าไม่ตรงกัน ผู้ใช้จะเลือกบัญชี Google ได้ตามปกติ
-แล้วไปล้มเอาตอนสุดท้าย ซึ่งเป็นจุดที่หาสาเหตุยากที่สุด
-
-อย่าลืมเพิ่มโดเมนจริงเข้าไปใน **Authorized JavaScript origins** ของ client id นั้น
-ใน Google Cloud Console ไม่งั้น Google จะตอบ 403 ทั้งที่ตั้งค่าฝั่งเราถูกหมดแล้ว
-
----
+1. **Google Cloud Console** (เจ้าของ OAuth client ทำ) ใช้ OAuth client ชนิด *Web application*
+   - Authorized redirect URIs: `https://<project-ref>.supabase.co/auth/v1/callback`
+   - Authorized JavaScript origins: origin ของเว็บ เช่น `https://<app>.vercel.app`
+   - คัดลอก Client ID และ Client secret
+2. ใส่ `AUTH_GOOGLE_CLIENT_ID` กับ `AUTH_GOOGLE_CLIENT_SECRET` ใน `server/.supabase-management.env`
+   (ไฟล์นี้ไม่เข้า image และ runtime ห้ามมี secret นี้)
+3. รัน `node scripts/configure-supabase-auth.js --check` แล้ว `--apply` สคริปต์จะเปิด Google provider
+   และเพิ่ม `<PUBLIC_BASE_URL>/login?auth=google` ใน redirect allowlist แบบ exact
+4. ทดสอบ: กด "เข้าสู่ระบบด้วย Google" แล้วกลับมาที่ `/login?auth=google`
+   - ผู้เล่นเดิมที่อีเมลตรงกับบัญชี Google จะถูกผูกกับบัญชีเดิม
+   - อีเมลใหม่จะได้บัญชีใหม่ที่เลเวล 0 และไปทำแบบสำรวจต่อ
 
 ## ย้ายฐานข้อมูลไปที่ Supabase (หรือ Postgres เจ้าอื่น)
 

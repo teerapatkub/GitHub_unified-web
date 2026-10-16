@@ -1,16 +1,19 @@
 import axios from 'axios';
 import { API_BASE } from '../config/api.js';
 import { getSupabaseClient } from '../supabaseClient.js';
+import { returnPath } from './return-path.js';
 
 const originalFetch = window.fetch.bind(window);
 const apiOrigin = new URL(API_BASE || window.location.origin, window.location.origin).origin;
 const SIGN_OUT_PENDING = 'pyarena_sign_out_pending';
 const SIGN_OUT_PROVIDERS = ['api', 'supabase'];
+const OAUTH_RETURN = 'pyarena_oauth_return';
 let session = null;
 let ready;
 let installed = false;
 let initialized = false;
 export const isRecovery = () => new URLSearchParams(window.location.search).get('auth') === 'recovery';
+export const isOAuthReturn = () => new URLSearchParams(window.location.search).get('auth') === 'google';
 const isApi = (value) => {
   const url = new URL(value, window.location.origin);
   return url.origin === apiOrigin && /^\/(api(?:\/|$)|rooms(?:\/|$)|shop(?:\/|$)|user\/|achievements\/|music\/)/.test(url.pathname);
@@ -32,7 +35,7 @@ export function initializeAuth() {
       if (error) throw error;
       session = data.session;
     } catch {
-      // Google remains available even if Supabase settings are temporarily missing.
+      // A missing or unreachable Supabase config leaves the visitor signed out.
       session = null;
     }
     initialized = true;
@@ -100,7 +103,7 @@ async function revokeSessions(providers) {
   const failedProviders = [];
   if (providers.includes('api')) {
     try {
-      // Revoke Google while its HttpOnly cookie is still present.
+      // Also clears the cookie of the retired server-side Google session.
       await authRequest('sign-out');
     } catch (error) {
       signOutError = error;
@@ -109,8 +112,8 @@ async function revokeSessions(providers) {
   }
   if (providers.includes('supabase')) {
     try {
-      // Keep this independent from Google: one unavailable provider must not
-      // leave the other provider's session active on this device.
+      // Independent of the API call: one failure must not leave the Supabase
+      // session active on this device.
       const { error } = await getSupabaseClient().auth.signOut({ scope: 'local' });
       if (error) throw new Error('ออกจากระบบไม่สำเร็จ กรุณาลองอีกครั้ง');
     } catch (error) {
@@ -152,11 +155,53 @@ export async function signOut() {
   window.dispatchEvent(new CustomEvent('pyarena:session-changed', { detail: { event: 'SIGNED_OUT' } }));
   if (signOutError) throw signOutError;
 }
-export async function acceptGoogleSession() {
-  if (session) {
-    const { error } = await getSupabaseClient().auth.signOut({ scope: 'local' });
-    if (error) throw new Error('เปลี่ยนวิธีเข้าสู่ระบบไม่สำเร็จ');
+
+// Google sign-in is Supabase's Google provider: a full-page redirect to Google
+// and back to /login?auth=google, where Supabase picks the session up from the
+// URL. That return URL must match Supabase's exact allowlist, so the page the
+// player was heading to travels in sessionStorage instead of the URL.
+export async function startGoogleSignIn() {
+  const returnTo = returnPath(new URLSearchParams(window.location.search).get('returnTo'));
+  try {
+    if (returnTo) sessionStorage.setItem(OAUTH_RETURN, returnTo);
+    else sessionStorage.removeItem(OAUTH_RETURN);
+  } catch { /* storage blocked: the player lands on the default page */ }
+  const { error } = await getSupabaseClient().auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: `${window.location.origin}/login?auth=google` },
+  });
+  if (error) throw new Error('เริ่มเข้าสู่ระบบด้วย Google ไม่ได้ กรุณาลองอีกครั้ง');
+}
+
+// Call before the router reads the address bar.
+export function restoreOAuthReturn() {
+  if (!isOAuthReturn()) return;
+  let returnTo = null;
+  try {
+    returnTo = returnPath(sessionStorage.getItem(OAUTH_RETURN));
+    sessionStorage.removeItem(OAUTH_RETURN);
+  } catch { return; }
+  if (!returnTo) return;
+  const url = new URL(window.location.href);
+  url.searchParams.set('returnTo', returnTo);
+  window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+}
+
+// The server binds the Supabase user to a player account (an existing player
+// with the same Google-verified email, or a new one). A refused binding signs
+// the Supabase session out, so the device is not left half signed in.
+export async function completeOAuthSignIn() {
+  await initializeAuth();
+  if (!session) throw new Error('เข้าสู่ระบบด้วย Google ไม่สำเร็จ กรุณาลองอีกครั้ง');
+  const response = await fetch(`${API_BASE}/api/auth/oauth/complete`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok || !data || typeof data !== 'object') {
+    try { await getSupabaseClient().auth.signOut({ scope: 'local' }); } catch { /* best effort */ }
+    session = null;
+    throw new Error(data?.message || 'เข้าสู่ระบบด้วย Google ไม่สำเร็จ กรุณาลองอีกครั้ง');
   }
-  session = null;
   localStorage.removeItem(SIGN_OUT_PENDING);
+  return data;
 }

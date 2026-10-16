@@ -4,9 +4,8 @@ import { Typewriter } from "../components/ui/typewriter-text";
 import SkeletonLoading from "../components/ui/Skeleton.jsx";
 import { API_BASE } from '../config/api.js';
 import { getSupabaseClient } from '../supabaseClient';
-import { authRequest, acceptEmailSession, currentPlayer, initializeAuth, isRecovery, acceptGoogleSession, signOut } from '../auth/session';
+import { authRequest, acceptEmailSession, completeOAuthSignIn, currentPlayer, initializeAuth, isOAuthReturn, isRecovery, signOut, startGoogleSignIn } from '../auth/session';
 
-const isValidGoogleClientId = (clientId) => /^[\w.-]+\.apps\.googleusercontent\.com$/.test(clientId);
 
 // ======================================================
 // Password Validation Rules (หลักสากล)
@@ -86,8 +85,10 @@ export default function LoginPage({ onLoginSuccess, sessionUser }) {
 
   useEffect(() => {
     const hash = new URLSearchParams(window.location.hash.slice(1));
-    if (hash.has('error')) {
-      setError('ลิงก์ยืนยันหมดอายุหรือใช้ไปแล้ว กรุณาขออีเมลใหม่');
+    if (hash.has('error') || new URLSearchParams(window.location.search).has('error')) {
+      setError(isOAuthReturn()
+        ? 'เข้าสู่ระบบด้วย Google ไม่สำเร็จหรือถูกยกเลิก กรุณาลองอีกครั้ง'
+        : 'ลิงก์ยืนยันหมดอายุหรือใช้ไปแล้ว กรุณาขออีเมลใหม่');
       window.history.replaceState({}, '', '/login');
     }
     if (!isRecovery()) return;
@@ -222,118 +223,54 @@ export default function LoginPage({ onLoginSuccess, sessionUser }) {
   // ======================================================
   // Google Login
   // ======================================================
-  const [googleLoaded, setGoogleLoaded] = useState(false);
+  // Google sign-in is Supabase's Google provider (full-page redirect). The
+  // button shows only when Supabase reports the provider switched on, so it
+  // never leads into a flow that fails at the last step.
   const [googleConfigLoaded, setGoogleConfigLoaded] = useState(false);
-  const [googleClientId, setGoogleClientId] = useState("");
-  // Whether the SERVER can verify a Google token, which is a different
-  // question from whether this page knows a client id. Google sign-in needs
-  // both, and when only the browser half was configured the button worked all
-  // the way through Google's account chooser and then failed at the last step
-  // with a message about a file on the developer's machine.
-  const [googleServerReady, setGoogleServerReady] = useState(true);
-
-  // ตรวจสอบว่า Google SDK โหลดแล้วหรือยัง
-  useEffect(() => {
-    const check = setInterval(() => {
-      if (window.google) {
-        setGoogleLoaded(true);
-        clearInterval(check);
-      }
-    }, 500);
-    return () => clearInterval(check);
-  }, []);
+  const [googleEnabled, setGoogleEnabled] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
-    const bundledClientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID || "").trim();
-
-    // The id can be baked into the bundle at build time, but the server is
-    // still asked, because only it knows whether it holds the same id and can
-    // verify what Google hands back. Showing a working-looking button that the
-    // server will reject is worse than not showing one.
     fetch(`${API_BASE}/api/config/google`)
       .then(async (res) => {
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.message || "โหลดการตั้งค่า Google ไม่สำเร็จ");
-        if (!isMounted) return;
-        const serverClientId = (data.clientId || "").trim();
-        setGoogleServerReady(Boolean(data.enabled));
-        setGoogleClientId(
-          isValidGoogleClientId(serverClientId) ? serverClientId : bundledClientId
-        );
+        if (isMounted) setGoogleEnabled(res.ok && Boolean(data.enabled));
       })
-      .catch(() => {
-        // The server is unreachable, so nothing on this page works anyway.
-        // Keep whatever the bundle knows rather than hiding the button over a
-        // request that may just have been a blip.
-        if (!isMounted) return;
-        setGoogleClientId(bundledClientId);
-      })
-      .finally(() => {
-        if (isMounted) setGoogleConfigLoaded(true);
-      });
-
-    return () => {
-      isMounted = false;
-    };
+      .catch(() => { if (isMounted) setGoogleEnabled(false); })
+      .finally(() => { if (isMounted) setGoogleConfigLoaded(true); });
+    return () => { isMounted = false; };
   }, []);
 
-  const handleGoogleLogin = () => {
-    setError("");
-    if (!window.google) {
-      setError("Google SDK ยังไม่โหลด กรุณารีเฟรชหน้าเว็บ");
-      return;
-    }
-    if (!googleConfigLoaded) {
-      setError("กำลังโหลดการตั้งค่า Google กรุณาลองอีกครั้ง");
-      return;
-    }
-    const clientId = googleClientId.trim();
-    if (!isValidGoogleClientId(clientId) || !googleServerReady) {
-      // The person reading this did not configure anything and cannot fix it.
-      // Point them at the way in that does work; the part a developer needs is
-      // in the console and in the server log.
-      setError("ตอนนี้เข้าสู่ระบบด้วย Google ยังใช้ไม่ได้ กรุณาเข้าสู่ระบบด้วยชื่อผู้ใช้และรหัสผ่าน");
-      console.warn(
-        "Google sign-in is off: ตั้งค่า GOOGLE_CLIENT_ID (OAuth Web Client ID) ใน server/.env แล้วรีสตาร์ท server"
-      );
-      return;
-    }
+  // Back from Google: bind the Supabase user to a player, then continue the
+  // same way an email sign-in does.
+  useEffect(() => {
+    if (!isOAuthReturn() || new URLSearchParams(window.location.hash.slice(1)).has('error')) return;
+    let active = true;
+    setLoading(true);
+    completeOAuthSignIn()
+      .then(async (player) => {
+        if (!active) return;
+        setLoggedInUser(player);
+        if (player.level === 0) setStep('survey');
+        else await onLoginSuccess(player);
+      })
+      .catch((err) => { if (active) setError(err.message || 'เข้าสู่ระบบด้วย Google ไม่สำเร็จ'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [onLoginSuccess]);
 
+  const handleGoogleLogin = async () => {
+    setError("");
+    if (!googleEnabled) {
+      setError("ตอนนี้เข้าสู่ระบบด้วย Google ยังใช้ไม่ได้ กรุณาเข้าสู่ระบบด้วยอีเมลและรหัสผ่าน");
+      return;
+    }
+    setLoading(true);
     try {
-      window.google.accounts.id.initialize({
-        client_id: clientId,
-        // Google's own SDK logs a deprecation warning into the console on
-        // every visit until a site opts in to FedCM, and has announced it will
-        // become mandatory. Opting in also RETIRES notification.isNotDisplayed()
-        // and isSkippedMoment(), which is why the prompt() call below no longer
-        // passes a callback — under FedCM the browser shows its own account
-        // chooser and reports nothing back for us to inspect.
-        use_fedcm_for_prompt: true,
-        callback: async (response) => {
-          setLoading(true);
-          try {
-            const res = await fetch(`${API_BASE}/api/auth/google`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ token: response.credential }),
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.message);
-            await acceptGoogleSession();
-            setLoggedInUser(data);
-            if (data.level === 0) setStep("survey");
-            else onLoginSuccess(data);
-          } catch (err) {
-            setError(err.message || "ไม่สามารถเข้าสู่ระบบด้วย Google ได้");
-          } finally {
-            setLoading(false);
-          }
-        },
-      });
-      window.google.accounts.id.prompt();
+      await startGoogleSignIn();
     } catch (err) {
-      setError("ไม่สามารถเชื่อมต่อ Google ได้: " + err.message);
+      setError(err.message || "ไม่สามารถเชื่อมต่อ Google ได้");
+      setLoading(false);
     }
   };
 
@@ -897,9 +834,9 @@ export default function LoginPage({ onLoginSuccess, sessionUser }) {
           <button
             type="button"
             onClick={handleGoogleLogin}
-            disabled={!googleLoaded || !googleConfigLoaded || !googleServerReady}
+            disabled={!googleConfigLoaded || !googleEnabled || loading}
             title={
-              googleConfigLoaded && !googleServerReady
+              googleConfigLoaded && !googleEnabled
                 ? "ระบบยังไม่ได้เปิดการเข้าสู่ระบบด้วย Google"
                 : undefined
             }
@@ -911,9 +848,9 @@ export default function LoginPage({ onLoginSuccess, sessionUser }) {
               <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
               <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
             </svg>
-            {!googleConfigLoaded || !googleLoaded
+            {!googleConfigLoaded
               ? "กำลังโหลด..."
-              : googleServerReady
+              : googleEnabled
                 ? "เข้าสู่ระบบด้วย Google"
                 : "ยังไม่เปิดให้เข้าสู่ระบบด้วย Google"}
           </button>

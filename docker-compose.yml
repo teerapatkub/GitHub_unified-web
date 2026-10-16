@@ -43,7 +43,6 @@ services:
         # Empty on purpose: the API serves the front end, so the browser talks
         # to the same origin it loaded the page from.
         VITE_API_BASE_URL: ""
-        VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
         # Public browser configuration is intentionally embedded at build time.
         # Run compose with `--env-file server/.env` so these substitutions are
         # available without copying server secrets into the image.

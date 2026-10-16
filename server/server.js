@@ -8,7 +8,6 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const OpenAI = require('openai');
-const { OAuth2Client } = require('google-auth-library');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -97,7 +96,24 @@ const { createPlacementRouter } = require('./placementRoutes');
 const { authSchemaSql, ensureAuthSchema, installAuth } = require('./auth');
 // Production schema setup belongs to the versioned application migration.
 // Standalone module tests keep installAuth's default auto-initialization.
-const playerAuth = installAuth(app, db, supabase, process.env, { initializeSchema: false });
+const playerAuth = installAuth(app, db, supabase, process.env, {
+    initializeSchema: false,
+    // Google sign-in through Supabase: remember the Google picture, and show it
+    // only when the account has not already chosen a picture of its own.
+    onOAuthSignIn: async ({ user, picture }) => {
+        if (picture) {
+            if (user.avatar_url) {
+                await db.execute('UPDATE users SET google_picture_url = ? WHERE user_id = ?', [picture, user.user_id]);
+            } else {
+                await db.execute('UPDATE users SET google_picture_url = ?, avatar_url = ?, avatar_source = ? WHERE user_id = ?',
+                    [picture, picture, AVATAR_SOURCE.GOOGLE, user.user_id]);
+                user.avatar_url = picture;
+                user.avatar_source = AVATAR_SOURCE.GOOGLE;
+            }
+        }
+        return { avatar: resolveAvatar(user) };
+    },
+});
 app.get('/api/your-table', testSupabase);
 app.use('/api', createLessonContentRouter(db, {
     ensureQuizSchema: () => ensureLessonQuizAttemptSchema(),
@@ -114,10 +130,6 @@ app.use('/api/themes', createThemeRouter(db));
 app.use('/api/admin/lessons', createLessonAdminRouter(db));
 app.use('/api/admin/student-progress', createStudentProgressRouter(db));
 
-const GOOGLE_CLIENT_ID = String(process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || '').trim();
-const isValidGoogleClientId = (clientId) => /^[\w.-]+\.apps\.googleusercontent\.com$/.test(clientId);
-const GOOGLE_LOGIN_ENABLED = isValidGoogleClientId(GOOGLE_CLIENT_ID);
-const googleOAuthClient = new OAuth2Client();
 
 // ==========================================================================
 // Merged in from Person 1's branch (origin/main, 2026-08-20).
@@ -2747,125 +2759,33 @@ app.post('/api/login', async (req, res) => {
 });
 
 // --- Google OAuth Login ---
-app.get('/api/config/google', (req, res) => {
-    res.json({
-        clientId: GOOGLE_LOGIN_ENABLED ? GOOGLE_CLIENT_ID : '',
-        enabled: GOOGLE_LOGIN_ENABLED
-    });
-});
-
-app.post('/api/auth/google', async (req, res) => {
-    const { token } = req.body;
+// Google sign-in is Supabase's Google provider. Whether it is switched on is
+// Supabase's own setting, so ask Supabase instead of keeping a second copy in
+// this server's environment. A failed lookup hides the button rather than
+// showing one that cannot work.
+let googleProviderCache = { enabled: false, checkedAt: 0 };
+const googleProviderEnabled = async () => {
+    if (Date.now() - googleProviderCache.checkedAt < 5 * 60 * 1000) return googleProviderCache.enabled;
+    const url = String(process.env.SUPABASE_URL || '').trim().replace(/\/$/, '');
+    const key = String(process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || '').trim();
+    let enabled = false;
     try {
-        if (!GOOGLE_LOGIN_ENABLED) {
-            // Two audiences, two messages. Whoever is looking at the login
-            // screen did not configure this and cannot fix it, so they get the
-            // way in that works; the fix goes to the log, where the person who
-            // can act on it will look.
-            console.error(
-                '❌ /api/auth/google ถูกเรียกทั้งที่ยังไม่ได้ตั้งค่า GOOGLE_CLIENT_ID ' +
-                '(ใส่ OAuth Web Client ID ใน server/.env แล้วรีสตาร์ท server)'
-            );
-            return res.status(503).json({
-                message: 'ตอนนี้เข้าสู่ระบบด้วย Google ยังใช้ไม่ได้ กรุณาเข้าสู่ระบบด้วยชื่อผู้ใช้และรหัสผ่าน'
-            });
+        if (url && key) {
+            const response = await fetch(`${url}/auth/v1/settings`, { headers: { apikey: key }, signal: AbortSignal.timeout(5000) });
+            enabled = response.ok && Boolean((await response.json())?.external?.google);
         }
+    } catch { enabled = false; }
+    googleProviderCache = { enabled, checkedAt: Date.now() };
+    return enabled;
+};
 
-        if (!token || typeof token !== 'string') {
-            return res.status(400).json({ message: 'ไม่พบ Google token' });
-        }
-
-        const ticket = await googleOAuthClient.verifyIdToken({
-            idToken: token,
-            audience: GOOGLE_CLIENT_ID,
-        });
-        const payload = ticket.getPayload();
-        const { email, name, email_verified: emailVerified, picture } = payload || {};
-
-        if (!email) return res.status(400).json({ message: 'ไม่สามารถดึงอีเมลจาก Google ได้' });
-        if (!emailVerified) return res.status(400).json({ message: 'บัญชี Google นี้ยังไม่ได้ยืนยันอีเมล' });
-
-        // ตรวจสอบว่ามี user ในระบบแล้วหรือยัง
-        const [existing] = await db.execute('SELECT * FROM users WHERE lower(trim(email)) = ? LIMIT 2', [email.toLowerCase()]);
-        if (existing.length > 1) return res.status(409).json({ message: 'อีเมลซ้ำกับหลายบัญชี กรุณาติดต่อผู้ดูแล' });
-
-        if (existing.length > 0) {
-            // Login ถ้ามี user อยู่แล้ว
-            const user = existing[0];
-            if (!playerAuth.accountEnabled(user)) return res.status(403).json({ message: 'บัญชีนี้ไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแล' });
-            // Remember the Google picture, and show it only if the account has not
-            // already chosen a picture of its own - a returning user who uploaded
-            // one should keep it. Google sign-in is blocked externally right now
-            // (no GOOGLE_CLIENT_ID), so this path cannot run end to end yet; the
-            // storage is here and ready for the day it is unblocked.
-            if (picture) {
-                if (user.avatar_url) {
-                    await db.execute('UPDATE users SET google_picture_url = ? WHERE user_id = ?',
-                        [picture, user.user_id]);
-                } else {
-                    await db.execute(
-                        'UPDATE users SET google_picture_url = ?, avatar_url = ?, avatar_source = ? WHERE user_id = ?',
-                        [picture, picture, AVATAR_SOURCE.GOOGLE, user.user_id]);
-                    user.avatar_url = picture;
-                    user.avatar_source = AVATAR_SOURCE.GOOGLE;
-                }
-            }
-            await playerAuth.issueGoogleSession(res, user.user_id);
-            res.json({
-                user_id: user.user_id,
-                username: user.username,
-                email: user.email,
-                role: user.role || 'user',
-                level: user.level || 0,
-                xp: user.xp || 0,
-                email_verified: 1, // Google email ถือว่า verified แล้ว
-                avatar: resolveAvatar(user),
-            });
-        } else {
-            // สร้าง user ใหม่จาก Google
-            const username = name || email.split('@')[0];
-            const randomPass = crypto.randomBytes(16).toString('hex');
-            const hash = await bcrypt.hash(randomPass, 10);
-
-            // A picture from Google is this new account's first chosen picture,
-            // stored in avatar_url (source google) and remembered in
-            // google_picture_url so it survives a later switch.
-            const googleSource = picture ? AVATAR_SOURCE.GOOGLE : null;
-            const [result] = await db.execute(
-                `INSERT INTO users (username, password_hash, email, role, level, xp, virtual_currency,
-                                    google_picture_url, avatar_url, avatar_source)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [username, hash, email, 'user', 0, 0, 0, picture || null, picture || null, googleSource]
-            );
-
-            // Google user ถือว่า email verified แล้ว
-            await db.execute(
-                'INSERT INTO email_verifications (user_id, token, verified_at) VALUES (?, ?, NOW())',
-                [result.insertId, 'google-oauth']
-            );
-
-            await playerAuth.issueGoogleSession(res, result.insertId);
-            res.json({
-                user_id: result.insertId,
-                username,
-                email,
-                role: 'user',
-                level: 0,  // ต้องทำ survey
-                xp: 0,
-                email_verified: 1,
-                avatar: resolveAvatar({ level: 0, avatar_url: picture || null, avatar_source: googleSource }),
-            });
-        }
-    } catch (err) {
-        console.error('❌ Google Auth Error:', err.message);
-        // A failed verifyIdToken() is the common case here, and it means the
-        // id the browser signed in with is not the id this server checks
-        // against - the two halves of the same setting, out of step.
-        res.status(500).json({
-            message: 'เข้าสู่ระบบด้วย Google ไม่สำเร็จ กรุณาลองใหม่ หรือเข้าสู่ระบบด้วยชื่อผู้ใช้และรหัสผ่าน'
-        });
-    }
+app.get('/api/config/google', async (req, res) => {
+    res.json({ enabled: await googleProviderEnabled() });
 });
+
+// POST /api/auth/google (Google ID token verified here, cookie session issued
+// here) was removed on 2026-10-16. Google sign-in now completes through
+// POST /api/auth/oauth/complete in server/auth/index.js.
 
 // --- Email Verification ---
 app.get('/api/verify-email/:token', async (req, res) => {

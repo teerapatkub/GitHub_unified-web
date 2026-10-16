@@ -35,11 +35,9 @@ COPY server/pythonErrorMessages.mjs /build/server/pythonErrorMessages.mjs
 # relative paths are correct and no address needs baking in. Set it only when
 # the API really is on another host.
 ARG VITE_API_BASE_URL=""
-ARG VITE_GOOGLE_CLIENT_ID=""
 ARG VITE_SUPABASE_URL
 ARG VITE_SUPABASE_PUBLISHABLE_KEY
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
-ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
 ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
 ENV VITE_SUPABASE_PUBLISHABLE_KEY=$VITE_SUPABASE_PUBLISHABLE_KEY
 COPY server/runtime/environment.js /build/server/runtime/environment.js

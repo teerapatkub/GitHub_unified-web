@@ -6,8 +6,7 @@ const { createClient } = require('@supabase/supabase-js');
 const { normalizeEmail, validEmail, hashToken, accountEnabled, strongPassword, actorMatches } = require('./policy');
 const { authOrigins } = require('./origins');
 const { createProvisioningService } = require('./provisioning');
-const COOKIE = 'pyarena_google_session';
-const SESSION_DAYS = 7;
+const LEGACY_GOOGLE_COOKIE = 'pyarena_google_session';
 const message = (res, status, text, code) => res.status(status).json({ message: text, code });
 const authSchemaSql = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
 
@@ -220,39 +219,110 @@ function installAuth(app, db, admin, env = process.env, options = {}) {
     return res.json({ message: 'หากบัญชีนี้เชื่อมระบบใหม่แล้ว ระบบจะส่งลิงก์ให้ หากยังไม่เคยเชื่อมและจำรหัสผ่านเดิมไม่ได้ กรุณาติดต่อผู้ดูแล' });
   }));
 
+  const supabaseUserFor = async (req) => {
+    const bearer = /^Bearer (.+)$/i.exec(req.get('authorization') || '');
+    if (!bearer) return null;
+    if (!admin) throw new Error('AUTH_CONFIG');
+    const { data, error } = await admin.auth.getUser(bearer[1]);
+    return error || !data.user?.email_confirmed_at ? null : data.user;
+  };
+  const playerForAuthUser = async (authUserId, executor = db) => {
+    const [rows] = await executor.execute('SELECT u.* FROM users u JOIN player_auth_identities a ON a.user_id = u.user_id WHERE a.auth_user_id = ?', [authUserId]);
+    return rows[0];
+  };
   async function authenticate(req) {
     await ready;
-    const bearer = /^Bearer (.+)$/i.exec(req.get('authorization') || '');
-    let user;
-    if (bearer) {
-      if (!admin) throw new Error('AUTH_CONFIG');
-      const { data, error } = await admin.auth.getUser(bearer[1]);
-      if (error || !data.user?.email_confirmed_at) return null;
-      const [rows] = await db.execute('SELECT u.* FROM users u JOIN player_auth_identities a ON a.user_id = u.user_id WHERE a.auth_user_id = ?', [data.user.id]);
-      user = rows[0];
-      req.authProvider = 'supabase';
-    } else {
-      const token = String(req.get('cookie') || '').split(';').map(s => s.trim()).find(s => s.startsWith(COOKIE + '='))?.slice(COOKIE.length + 1);
-      if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
-      const [rows] = await db.execute('SELECT u.* FROM users u JOIN player_google_sessions s ON s.user_id = u.user_id WHERE s.token_hash = ? AND s.expires_at > NOW()', [hashToken(token)]);
-      user = rows[0];
-      req.authProvider = 'google';
-    }
+    const authUser = await supabaseUserFor(req);
+    if (!authUser) return null;
+    const user = await playerForAuthUser(authUser.id);
+    req.authProvider = 'supabase';
     return accountEnabled(user) ? user : null;
   }
+
+  // Google sign-in runs through Supabase Auth. After the OAuth redirect the
+  // browser holds a Supabase session and calls this once to bind that Auth
+  // user to a player account. The email Google verified, as reported by
+  // Supabase rather than by the browser, is the proof of ownership; it binds
+  // to the one player with that email or creates a new one. This is the only
+  // place an unbound Auth user becomes a player, so authenticate() stays strict.
+  const isGoogle = (authUser) => authUser.app_metadata?.provider === 'google'
+    || (authUser.app_metadata?.providers || []).includes('google');
+  const uniqueUsername = async (executor, wanted) => {
+    const base = String(wanted || '').replace(/[@<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 34) || 'player';
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const candidate = attempt ? `${base} ${crypto.randomInt(1000, 9999)}` : base;
+      const [taken] = await executor.execute('SELECT 1 FROM users WHERE lower(username) = lower(?)', [candidate]);
+      if (!taken.length) return candidate;
+    }
+    throw new Error('USERNAME_UNAVAILABLE');
+  };
+  app.post('/api/auth/oauth/complete', route(async (req, res) => {
+    if (req.get('x-pyarena-request') !== '1') return message(res, 403, 'คำขอไม่ถูกต้อง');
+    const authUser = await supabaseUserFor(req);
+    if (!authUser) return message(res, 401, 'กรุณาเข้าสู่ระบบด้วย Google อีกครั้ง');
+    const metadata = authUser.user_metadata || {};
+    const picture = metadata.avatar_url || metadata.picture || null;
+    const respond = async (user, created) => {
+      if (!accountEnabled(user)) return message(res, 403, 'บัญชีนี้ไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแล');
+      const extra = options.onOAuthSignIn ? await options.onOAuthSignIn({ user, created, picture }) : {};
+      return res.status(created ? 201 : 200).json({ ...safeUser(user), ...extra, created });
+    };
+    const bound = await playerForAuthUser(authUser.id);
+    if (bound) return respond(bound, false);
+    const email = normalizeEmail(authUser.email);
+    if (!isGoogle(authUser) || !validEmail(email)) return message(res, 403, 'บัญชีนี้ต้องเข้าสู่ระบบด้วยอีเมลและรหัสผ่าน');
+
+    const connection = await db.getConnection();
+    let outcome;
+    try {
+      await connection.beginTransaction();
+      await connection.execute('SELECT pg_advisory_xact_lock(hashtext(?))', ['auth:' + email]);
+      const again = await playerForAuthUser(authUser.id, connection);
+      if (again) {
+        outcome = { user: again, created: false };
+      } else {
+        const [matches] = await connection.execute('SELECT * FROM users WHERE lower(trim(email)) = ? LIMIT 2 FOR UPDATE', [email]);
+        if (matches.length > 1) {
+          outcome = { status: 409, text: 'อีเมลนี้ซ้ำกับหลายบัญชี กรุณาติดต่อผู้ดูแล' };
+        } else if (matches.length === 1) {
+          const player = matches[0];
+          if (await bindingFor(player.user_id, connection)) {
+            outcome = { status: 409, text: 'บัญชีนี้เชื่อมกับการเข้าสู่ระบบอื่นแล้ว กรุณาเข้าสู่ระบบด้วยอีเมลและรหัสผ่าน' };
+          } else if (!accountEnabled(player)) {
+            outcome = { user: player, created: false };
+          } else {
+            await connection.execute('INSERT INTO player_auth_identities (user_id, auth_user_id, email) VALUES (?, ?, ?)', [player.user_id, authUser.id, email]);
+            outcome = { user: player, created: false };
+          }
+        } else {
+          const username = await uniqueUsername(connection, metadata.full_name || metadata.name || email.split('@')[0]);
+          const [created] = await connection.execute(
+            `INSERT INTO users (username, email, password_hash, role, level, xp, virtual_currency)
+             VALUES (?, ?, ?, 'user', 0, 0, 0) RETURNING user_id`,
+            [username, email, await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10)]);
+          await connection.execute('INSERT INTO player_auth_identities (user_id, auth_user_id, email) VALUES (?, ?, ?)', [created.insertId, authUser.id, email]);
+          const [rows] = await connection.execute('SELECT * FROM users WHERE user_id = ?', [created.insertId]);
+          outcome = { user: rows[0], created: true };
+        }
+      }
+      if (outcome.status) await connection.rollback(); else await connection.commit();
+    } catch (error) {
+      await connection.rollback().catch(() => {});
+      throw error;
+    } finally {
+      connection.release();
+    }
+    if (outcome.status) return message(res, outcome.status, outcome.text);
+    return respond(outcome.user, outcome.created);
+  }));
+
+  // Sessions now live in Supabase. This route stays so the client's logout
+  // contract is unchanged, and it clears the cookie of the retired server-side
+  // Google session so a browser that still holds one drops it.
   const cookieOptions = { httpOnly: true, sameSite: 'lax', secure: env.NODE_ENV === 'production', path: '/' };
-  async function issueGoogleSession(res, userId) {
-    await ready;
-    const token = crypto.randomBytes(32).toString('hex');
-    await db.execute('DELETE FROM player_google_sessions WHERE expires_at <= NOW()');
-    await db.execute('INSERT INTO player_google_sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)', [hashToken(token), userId, new Date(Date.now() + SESSION_DAYS * 86400000)]);
-    res.cookie(COOKIE, token, { ...cookieOptions, maxAge: SESSION_DAYS * 86400000 });
-  }
   app.post('/api/auth/sign-out', route(async (req, res) => {
     if (req.get('x-pyarena-request') !== '1') return message(res, 403, 'คำขอไม่ถูกต้อง');
-    const token = String(req.get('cookie') || '').split(';').map(s => s.trim()).find(s => s.startsWith(COOKIE + '='))?.slice(COOKIE.length + 1);
-    if (token) await db.execute('DELETE FROM player_google_sessions WHERE token_hash = ?', [hashToken(token)]);
-    res.clearCookie(COOKIE, cookieOptions);
+    res.clearCookie(LEGACY_GOOGLE_COOKIE, cookieOptions);
     return res.json({ success: true });
   }));
 
@@ -264,7 +334,7 @@ function installAuth(app, db, admin, env = process.env, options = {}) {
     next();
   });
   app.use(async (req, res, next) => {
-    const publicRoutes = ['/api/config/google', '/api/auth/google'];
+    const publicRoutes = ['/api/config/google'];
     if (publicRoutes.includes(req.path) || !/^\/(api(?:\/|$)|rooms(?:\/|$)|user\/|shop(?:\/|$)|achievements\/|music\/)/.test(req.path)) return next();
     try {
       req.player = await authenticate(req);
@@ -284,6 +354,6 @@ function installAuth(app, db, admin, env = process.env, options = {}) {
     } catch { return message(res, 503, 'ตรวจสอบการเข้าสู่ระบบไม่ได้ กรุณาลองอีกครั้ง'); }
   });
   app.get('/api/auth/me', (req, res) => { res.set('Cache-Control', 'no-store'); res.json(safeUser(req.player)); });
-  return { issueGoogleSession, accountEnabled, ready, origins };
+  return { accountEnabled, ready, origins };
 }
 module.exports = { authSchemaSql, ensureAuthSchema, installAuth };

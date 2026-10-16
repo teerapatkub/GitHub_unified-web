@@ -419,3 +419,9 @@ Fixed undefined LESSON_PASS_PERCENT using POST_PASS_RATIO * 100. Read-only route
 `goBackToExperience` ใน `FriendLogin.jsx` หาคำถามประสบการณ์ด้วย `s.id === 3` แต่ข้อ 3 คือคำถามเวลาเรียน (ประสบการณ์คือ id 4, key `experience`) ผู้ใช้ที่สอบวัดระดับไม่ผ่านหรือกด "✕ ออกจากการทดสอบ" จึงถูกพาไปข้อ 3 แทนข้อ 4 — มีมาตั้งแต่ `fd94742`
 - แก้เป็น `s.key === "experience"` แบบเดียวกับ `handleSelectSurvey` บรรทัดเดียว ไม่แตะ server/schema
 - ทดสอบในเบราว์เซอร์แล้ว (ทั้งปุ่มบนหน้าไม่ผ่าน และ ✕) รายละเอียดใน project_logs/2026-10-15/1428-placement-back-to-experience.md
+
+## 2026-10-16 — Google login ย้ายไป Supabase Auth (แตะ `FriendLogin.jsx`, `session.js`, `main.jsx`, `index.html`)
+- ปุ่ม Google เรียก `startGoogleSignIn()` ซึ่งเป็น redirect เต็มหน้าไปยัง Google provider ของ Supabase ไม่ใช้ Google Identity Services แล้ว จึงเอา script GIS ออกจาก `index.html`
+- กลับมาที่ `/login?auth=google` แล้ว `completeOAuthSignIn()` เรียก `POST /api/auth/oauth/complete` เพื่อผูกกับบัญชีผู้เล่น จากนั้นใช้ flow เดิม (เลเวล 0 ไปทำแบบสำรวจ)
+- `restoreOAuthReturn()` ใน `main.jsx` นำ `returnTo` กลับเข้า URL ก่อน router อ่าน เพราะ URL ที่กลับมาต้องตรงกับ allowlist ของ Supabase แบบ exact
+- ลบ `acceptGoogleSession` และ `VITE_GOOGLE_CLIENT_ID` แล้ว เหตุผลอยู่ใน `docs/adr/0004-google-sign-in-through-supabase-auth.md`

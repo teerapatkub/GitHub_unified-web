@@ -4,9 +4,11 @@ import App from './App.jsx';
 import { ThemeProvider } from './contexts/ThemeContext';
 import './index.css';
 import './i18n';
-import { installAuthTransport } from './auth/session';
+import { installAuthTransport, restoreOAuthReturn } from './auth/session';
 import SkeletonLoading from './components/ui/Skeleton.jsx';
 
+// Before the router reads the address bar on the way back from Google.
+restoreOAuthReturn();
 installAuthTransport();
 
 ReactDOM.createRoot(document.getElementById('root')).render(

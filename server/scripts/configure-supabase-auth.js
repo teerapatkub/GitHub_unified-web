@@ -47,9 +47,9 @@ async function main() {
   const check = await fetch(url, { headers });
   if (!check.ok) throw new Error(`Auth configuration saved but verification failed (HTTP ${check.status}).`);
   if (!matchesAppliedAuthSettings(await check.json(), settings)) {
-    throw new Error('Auth settings differ from the requested production URLs or SMTP configuration.');
+    throw new Error('Auth settings differ from the requested production URLs, SMTP or Google configuration.');
   }
-  console.log('Supabase production Auth URLs and SMTP settings saved and verified.');
+  console.log(`Supabase production Auth URLs and SMTP settings saved and verified${settings.patch.external_google_enabled ? ', Google provider enabled' : ''}.`);
   console.log('External mailbox signup and recovery still require a separate end-to-end test.');
 }
 

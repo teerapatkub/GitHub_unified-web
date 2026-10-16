@@ -23,3 +23,9 @@
   เพิ่มเติม ให้คงกติกา "avatar_url เป็นตัวเลือกเดียว" ไว้
 - คอลัมน์ใหม่ `users.google_picture_url`, `users.uploaded_picture_url` เพิ่มผ่าน `server/db.js`
   (ADD COLUMN IF NOT EXISTS) แล้ว
+
+## อัปเดต 2026-10-16
+
+เส้นทาง Google ย้ายไป Supabase Auth แล้ว (ADR 0004) `POST /api/auth/google` ถูกลบ การเก็บรูปจาก Google ยังทำแบบเดิม
+แต่ย้ายไปอยู่ใน callback `onOAuthSignIn` ของ `installAuth` ใน `server/server.js` โดยอ่าน URL รูปจาก `user_metadata.avatar_url` ของ Supabase
+กฎ "avatar_url เป็นตัวเลือกเดียว" ยังเหมือนเดิม
