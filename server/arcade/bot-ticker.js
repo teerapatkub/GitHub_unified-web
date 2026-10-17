@@ -39,6 +39,42 @@ async function useForBot(db, room, player, state, memory, now, phaseDeadlineMs, 
   }
 }
 
+// A bot's progress bar is what its round score is read from (phase-finalizer):
+// the moment it reaches 100% is the bot's "submission time", and a bar that
+// never gets there passes only its share of the cases. Fog and Freeze stop the
+// bar, so they now cost a bot points the way they cost a human.
+//
+// 14-24 typing steps per round (avg 19) puts an unattacked bot's finish near
+// mid-round on average, which keeps its score where the old random submission
+// time put it (uniform over the round). Pacing the old 22-34 steps against the
+// bar would have made every bot ~10% weaker without anyone attacking it.
+const BOT_MIN_STEPS = 14;
+const BOT_STEP_SPREAD = 11;
+
+// A Quick Mode round is half as long, so each typing step is too: the bar
+// fills in the same share of the round either way. Paced at full length, a
+// bot's bar almost never reached 100% in a 30-second round.
+function roundPaceScale(room) {
+  const durations = room.round_duration_mode === 'quick' ? config.quickModePhaseDurations : config.phaseDurations;
+  return durations[room.phase] / config.phaseDurations[room.phase];
+}
+
+function advanceProgress(memory, stepMs, now) {
+  const before = memory.progress || 0;
+  if (before >= 100) return;
+  const steps = Math.floor((now - memory.lastProgress) / stepMs);
+  const startedAt = memory.lastProgress;
+  memory.lastProgress += steps * stepMs;
+  // Tolerate float drift: 22 steps of 100/22 must land on 100, not 99.999.
+  if (before + steps * 100 / memory.stepsToFinish >= 100 - 1e-9) {
+    memory.progress = 100;
+    // Ticks are a second apart; stamp the step that actually filled the bar.
+    memory.finishedAt = startedAt + Math.ceil((100 - before) * memory.stepsToFinish / 100 - 1e-9) * stepMs;
+  } else {
+    memory.progress = before + steps * 100 / memory.stepsToFinish;
+  }
+}
+
 // Persist decision clocks under the same room lock as settlement and human
 // commands. Extra workers, restarts and disconnected browsers cannot replay a turn.
 async function tickArcadeBots(db, roomId, random = Math.random) {
@@ -65,18 +101,15 @@ async function tickArcadeBots(db, roomId, random = Math.random) {
       if (memory.phase !== room.phase) {
         memory.phase = room.phase;
         memory.progress = 0;
-        memory.stepsToFinish = 22 + Math.floor(random() * 13);
+        memory.stepsToFinish = BOT_MIN_STEPS + Math.floor(random() * BOT_STEP_SPREAD);
         memory.lastProgress = now;
+        delete memory.finishedAt;
       }
       const effects = activeAttackEffects(state.attack_effects, room.phase, now);
       const frozen = effects.some(e => e.type === 'timeFreeze' || e.type === 'inkFog');
       if (frozen) memory.lastProgress = now;
       else {
-        if (room.phase.startsWith('ROUND_')) {
-          const steps = Math.floor((now - memory.lastProgress) / profile.typingSpeedMs);
-          memory.lastProgress += steps * profile.typingSpeedMs;
-          memory.progress = Math.min(100, (memory.progress || 0) + steps * 100 / memory.stepsToFinish);
-        }
+        if (room.phase.startsWith('ROUND_')) advanceProgress(memory, profile.typingSpeedMs * roundPaceScale(room), now);
         if (room.phase.startsWith('SHOP_') && now - (memory.lastBuy || 0) >= config.botBuyAttemptIntervalMs) {
           memory.lastBuy = now;
           buyForBot(player, state, profile, random);

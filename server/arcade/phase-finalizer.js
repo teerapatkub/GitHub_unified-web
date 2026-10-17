@@ -51,17 +51,43 @@ const ARCADE_ROUND_CASE_COUNTS = arcadeConfig.roundCaseCounts;
 //      against exactly the same opposition, so it was not actually easier to
 //      survive. arcadeConfig's `medium` band reproduces the old fixed numbers
 //      exactly, so any change in behaviour is attributable to the room.
-function synthesizeBotRoundScore(totalCount, roundDuration, difficulty, random) {
+//
+// The skill roll says how good the bot's answer is; its progress bar says how
+// far it got and when. `bar` comes from botRoundBar():
+//
+//   - finished (bar hit 100%): time is scored from that moment, exactly like a
+//     human's submit time. Fog and Freeze stop the bar, so they push it later.
+//   - never finished: the bot passes only its share of the cases
+//     (completion x skill roll) and gets no speed points - it is a human whose
+//     answer was auto-submitted at the deadline half-written.
+//
+// Quality is not scaled: a fogged bot writes less code, not worse code.
+function synthesizeBotRoundScore({ totalCount, roundDuration, difficulty, random, bar }) {
   const skill = arcadeConfig.botSkillByDifficulty[difficulty]
       || arcadeConfig.botSkillByDifficulty.default;
   const band = Math.min(1, Math.max(0, skill.passMin + random() * skill.passSpread));
-  const passCount = totalCount === 0 ? 0 : Math.min(totalCount, Math.max(0, Math.round(totalCount * band)));
+  const passCount = totalCount === 0 ? 0
+    : Math.min(totalCount, Math.max(0, Math.round(totalCount * band * bar.completion)));
   const passRatio = totalCount === 0 ? 0 : passCount / totalCount;
   const testScore = passRatio * 100;
   const qualityScore = skill.qualityMin + Math.floor(random() * skill.qualitySpread);
-  const timeUsed = Math.floor(random() * roundDuration);
-  const timeScore = passRatio * ((roundDuration - timeUsed) / roundDuration) * 100;
+  const timeScore = passRatio * ((roundDuration - bar.timeUsed) / roundDuration) * 100;
   return Math.round(testScore + qualityScore + timeScore);
+}
+
+// Read a bot's bar (bot-ticker.js) for the round being settled. State left
+// over from an earlier round counts as no work in this one.
+function botRoundBar(botState, phase, roundStartMs, roundDuration) {
+  const state = botState || {};
+  if (state.phase !== phase) return { completion: 0, timeUsed: roundDuration };
+  const progress = Math.max(0, Math.min(100, Number(state.progress) || 0));
+  if (progress < 100) return { completion: progress / 100, timeUsed: roundDuration };
+  // A bar filled before finishedAt was recorded (a round in flight across the
+  // deploy) keeps its cases but earns no speed points.
+  const finishedAt = Number(state.finishedAt);
+  if (!Number.isFinite(finishedAt)) return { completion: 1, timeUsed: roundDuration };
+  const timeUsed = Math.max(0, Math.min(roundDuration, (finishedAt - roundStartMs) / 1000));
+  return { completion: 1, timeUsed };
 }
 
 
@@ -208,10 +234,12 @@ function createArcadePhaseFinalizer({ db, judgeCodeQuality, random = Math.random
       });
 
       const phaseClock = await readPhaseClock(db, roomId);
+      const roundStartMs = phaseClock.deadlineMs - roundDuration * 1000;
       const roundResults = await Promise.all(alive.map(async p => {
         const isBot = p.participant_kind === 'bot';
         const roundScore = isBot
-          ? synthesizeBotRoundScore(totalCount, roundDuration, room.difficulty, random)
+          ? synthesizeBotRoundScore({ totalCount, roundDuration, difficulty: room.difficulty, random,
+            bar: botRoundBar(p.bot_state, room.phase, roundStartMs, roundDuration) })
             * (await verifiedMultiplier(db, room.current_match_id, p.user_name, room.phase, phaseClock.deadlineMs - 1) ? 2 : 1)
           : (graded.get(p.id)?.roundScore || 0);
         return { participant: p, roundScore };

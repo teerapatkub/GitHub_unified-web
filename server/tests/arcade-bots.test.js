@@ -17,10 +17,11 @@ test('host adds explicitly typed bots while a human named Bot_alice stays human'
 
 const { settleDueArcadeRooms } = require('../arcade/match-ticker');
 const { randomUUID } = require('node:crypto');
-async function botMatch(t) {
+async function botMatch(t, { bots = 1 } = {}) {
   const f = await arcadeFixture(t);
-  const added = await f.call('/api/arcade/rooms/1/add-bot', { body: {} });
-  const botName = added.body.bot_name;
+  const botNames = [];
+  for (let i = 0; i < bots; i++) botNames.push((await f.call('/api/arcade/rooms/1/add-bot', { body: {} })).body.bot_name);
+  const botName = botNames[0];
   const matchId = (await f.call('/api/arcade/rooms/1/start', { body: {} })).body.match_id;
   await f.db.query("UPDATE arcade_participants SET cash = 5000, bot_profile = CASE WHEN participant_kind = 'bot' THEN 'bot_pyninja' END");
   const tick = () => settleDueArcadeRooms({ db: f.db, random: () => 0, judgeCodeQuality: async () => ({ score: 0 }) });
@@ -32,7 +33,39 @@ async function botMatch(t) {
     await f.db.query('INSERT INTO arcade_shop_states (match_id,user_name,inventory) VALUES (?,?,?) ON CONFLICT (match_id,user_name) DO UPDATE SET inventory = EXCLUDED.inventory', [matchId,botName,JSON.stringify([{...item,instance_id:randomUUID()}])]);
     await f.db.query("UPDATE arcade_participants SET bot_state = '{}' WHERE participant_kind = 'bot'");
   };
-  return { ...f, botName, matchId, tick, room, read, phase, give };
+  // Open a round that began `secondsIn` seconds ago on the database clock.
+  const roundAt = (name, secondsIn, roundSeconds = 60) => f.db.query(
+    'UPDATE arcade_rooms SET phase = ?, phase_deadline = clock_timestamp() + make_interval(secs => ?)',
+    [name, roundSeconds - secondsIn]);
+  const setBot = (name, state) => f.db.query('UPDATE arcade_participants SET bot_state = ? WHERE user_name = ?', [JSON.stringify(state), name]);
+  const attackBot = (name, type, ms) => f.db.query(
+    'INSERT INTO arcade_shop_states (match_id,user_name,attack_effects) VALUES (?,?,?) ON CONFLICT (match_id,user_name) DO UPDATE SET attack_effects = EXCLUDED.attack_effects',
+    [matchId, name, JSON.stringify(type ? [{ type, phase: 'ROUND_2', expiresAt: Date.now() + ms, instance_id: randomUUID(), attacker: 'alice' }] : [])]);
+  // Move the whole round `ms` into the past instead of waiting for it: the
+  // deadline and every stored bot timestamp shift together, so elapsed round
+  // time advances by `ms` for the ticker and the finalizer alike.
+  const elapse = async ms => {
+    await f.db.query('UPDATE arcade_rooms SET phase_deadline = phase_deadline - make_interval(secs => ?)', [ms / 1000]);
+    const [bots] = await f.db.query("SELECT user_name, bot_state FROM arcade_participants WHERE participant_kind = 'bot'");
+    for (const { user_name, bot_state: s } of bots) {
+      for (const key of ['lastProgress', 'finishedAt', 'lastUse']) if (typeof s[key] === 'number') s[key] -= ms;
+      await setBot(user_name, s);
+    }
+  };
+  // Run the round out to one second past its deadline.
+  const expire = async () => {
+    const [[{ ms }]] = await f.db.query('SELECT EXTRACT(EPOCH FROM (phase_deadline - clock_timestamp()::timestamp)) * 1000 AS ms FROM arcade_rooms');
+    await elapse(Number(ms) + 1000);
+  };
+  // Record that a bot's bar reached 100% `secondsIn` seconds into the room's
+  // current round, measured on the same clock readPhaseClock() uses.
+  const finishBot = (name, secondsIn, roundSeconds = 60) => f.db.query(
+    `UPDATE arcade_participants p SET bot_state = p.bot_state || jsonb_build_object('phase', r.phase, 'progress', 100,
+      'finishedAt', EXTRACT(EPOCH FROM clock_timestamp()) * 1000
+        + EXTRACT(EPOCH FROM (r.phase_deadline - clock_timestamp()::timestamp)) * 1000 - (?::numeric - ?::numeric) * 1000)
+     FROM arcade_rooms r WHERE r.room_id = p.room_id AND p.user_name = ?`, [roundSeconds, secondsIn, name]);
+  const scoreOf = async name => (await room()).participants.find(p => p.user_name === name).score;
+  return { ...f, botName, botNames, matchId, tick, room, read, phase, give, roundAt, setBot, attackBot, elapse, expire, finishBot, scoreOf };
 }
 
 test('server bots buy with real cash and concurrent ticks apply one shared attack', async t => {
@@ -104,13 +137,16 @@ test('bot multiplier is consumed server-side and doubles only its activation rou
   await f.phase('ROUND_2');
   await f.give('scoreMultiplier');
   await f.tick();
-  await f.db.query("UPDATE arcade_rooms SET phase_deadline = clock_timestamp() - INTERVAL '1 second'");
+  await f.expire();
   // Deterministic randomness is a system boundary: default difficulty with
-  // 3 cases gives 1 pass, quality 35, time 33.33 = 102; owned multiplier makes 204.
+  // 3 cases gives 1 pass, quality 35, and a bar that filled the instant the
+  // round opened earns time 33.33 = 102; owned multiplier makes 204.
+  await f.finishBot(f.botName, 0);
   await settleDueArcadeRooms({db:f.db,random:()=>0,judgeCodeQuality:async()=>({score:0})});
   assert.equal((await f.room()).participants.find(p=>p.user_name===f.botName).score,204);
   await f.db.query("UPDATE arcade_rooms SET phase = 'ROUND_3', phase_deadline = clock_timestamp() - INTERVAL '1 second'");
   await f.db.query('UPDATE arcade_participants SET is_eliminated = 0');
+  await f.finishBot(f.botName, 0);
   await settleDueArcadeRooms({db:f.db,random:()=>0,judgeCodeQuality:async()=>({score:0})});
   assert.equal((await f.room()).participants.find(p=>p.user_name===f.botName).score,339);
 });
@@ -176,4 +212,78 @@ test('bot progress survives worker restart and freezes while a real attack is ac
   assert.equal((await readBot()).bot_progress,progressed);
   assert.equal((await f.call('/api/arcade/rooms/1',{user:'bob'})).body.participants.find(p=>p.user_name===f.botName).bot_progress,progressed);
   assert.equal(Object.hasOwn(await readBot(),'bot_state'),false);
+});
+
+// Fog and Freeze pause a bot's bar. Its round score is read from that bar:
+// speed points come from the moment it reached 100%, and a bar that never got
+// there passes only its share of the cases and earns no speed points.
+const settleRound = f => settleDueArcadeRooms({ db: f.db, random: () => 0, judgeCodeQuality: async () => ({ score: 0 }) });
+
+test('an ink-fogged bot finishes later and scores less than an identical unattacked bot', async t => {
+  const f = await botMatch(t, { bots: 2 });
+  const [clear, fogged] = f.botNames;
+  await f.roundAt('ROUND_2', 30);
+  const start = { phase: 'ROUND_2', progress: 0, stepsToFinish: 20, lastProgress: Date.now() - 30000, lastUse: Date.now() };
+  await f.setBot(clear, start);
+  await f.setBot(fogged, start);
+  await f.attackBot(fogged, 'inkFog', 15000);
+  await f.tick();
+  const progressOf = async name => (await f.room()).participants.find(p => p.user_name === name).bot_progress;
+  // PyNinja types a step every 1.2 s: 20 steps fill the bar 24 s into the round.
+  assert.equal(await progressOf(clear), 100);
+  assert.equal(await progressOf(fogged), 0);
+  // The fog lifts and 26 more seconds pass: the fogged twin fills its bar at 54 s.
+  await f.attackBot(fogged, null);
+  await f.elapse(26000);
+  await f.tick();
+  assert.equal(await progressOf(fogged), 100);
+  await f.expire();
+  await settleRound(f);
+  // Same skill roll for both: 1 of 3 cases (33.33) and quality 35. Only the
+  // speed leg differs - 1/3 x 36/60 = 20 for the clear bot, 1/3 x 6/60 = 3.33
+  // for the fogged one.
+  assert.equal(await f.scoreOf(clear), 88);
+  assert.equal(await f.scoreOf(fogged), 72);
+});
+
+test('a bot frozen until the deadline is scored on the share of its bar it filled', async t => {
+  const f = await botMatch(t, { bots: 2 });
+  const [finished, frozen] = f.botNames;
+  await f.roundAt('ROUND_2', 30);
+  await f.finishBot(finished, 30);
+  await f.setBot(frozen, { phase: 'ROUND_2', progress: 50, stepsToFinish: 20, lastProgress: Date.now() - 10000, lastUse: Date.now() });
+  await f.attackBot(frozen, 'timeFreeze', 40000);
+  await f.tick();
+  assert.equal((await f.room()).participants.find(p => p.user_name === frozen).bot_progress, 50);
+  await f.expire();
+  await settleDueArcadeRooms({ db: f.db, random: () => 0.99, judgeCodeQuality: async () => ({ score: 0 }) });
+  // Skill roll 0.99 on default: 79% of 3 cases and quality 79. Finished at the
+  // halfway mark: 2 cases (66.67) + 79 + 2/3 x 1/2 = 33.33 -> 179. Half a bar:
+  // round(3 x 0.79 x 0.5) = 1 case (33.33) + 79 + no speed points -> 112.
+  assert.equal(await f.scoreOf(finished), 179);
+  assert.equal(await f.scoreOf(frozen), 112);
+});
+
+test('a bot that never worked this round earns only its quality score', async t => {
+  const f = await botMatch(t);
+  await f.roundAt('ROUND_2', 30);
+  // Progress saved from last round belongs to last round.
+  await f.setBot(f.botName, { phase: 'ROUND_1', progress: 100, finishedAt: Date.now() - 60000 });
+  await f.expire();
+  await settleRound(f);
+  assert.equal(await f.scoreOf(f.botName), 35);
+});
+
+test('a Quick Mode bot fills its bar in the same share of the round as in a standard round', async t => {
+  const f = await botMatch(t);
+  await f.db.query("UPDATE arcade_rooms SET round_duration_mode = 'quick'");
+  await f.roundAt('ROUND_2', 15, 30);
+  await f.setBot(f.botName, { phase: 'ROUND_2', progress: 0, stepsToFinish: 20, lastProgress: Date.now() - 15000, lastUse: Date.now() });
+  await f.tick();
+  // A 30 s round paces a 1.2 s typist at 0.6 s a step: 20 steps end 12 s in,
+  // 40% of the round - the same share as 24 s of a 60 s round.
+  assert.equal((await f.room()).participants.find(p => p.user_name === f.botName).bot_progress, 100);
+  await f.expire();
+  await settleRound(f);
+  assert.equal(await f.scoreOf(f.botName), 88);
 });
