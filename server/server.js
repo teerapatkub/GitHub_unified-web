@@ -17,6 +17,7 @@ const { spawn } = require('child_process');
 // (client/src/pages/Arcade/ArcadeBattleRoyale.jsx, client/src/pages/Arcade/bot/*.js)
 // — see shared/arcadeConfig.json's own header comment before editing values here.
 const arcadeConfig = require('../shared/arcadeConfig.json');
+const { publicArcadeTask } = require('./arcade/public-task');
 // The single answer-checker. See server/problemGrader.js for why there is only
 // one now, and server/problemsSchema.js for the problem bank it grades against.
 const { gradeSubmission, screenUnverifiedSubmission } = require('./problemGrader');
@@ -5594,12 +5595,12 @@ app.get('/api/arcade/items', async (req, res) => {
 
 app.get('/api/arcade/tasks', async (req, res) => {
     try {
-        const fields = 'task_id, difficulty, title_th, title_en, desc_th, desc_en, starter_code, hint_th, hint_en';
+        const fields = 'task_id, difficulty, title_th, title_en, desc_th, desc_en, starter_code, hint_th, hint_en, test_cases';
         const [easyTasks] = await db.query(`SELECT ${fields} FROM arcade_tasks WHERE difficulty = 'easy' ORDER BY task_id ASC`);
         const [mediumTasks] = await db.query(`SELECT ${fields} FROM arcade_tasks WHERE difficulty = 'medium' ORDER BY task_id ASC`);
         const [hardTasks] = await db.query(`SELECT ${fields} FROM arcade_tasks WHERE difficulty = 'hard' ORDER BY task_id ASC`);
-        const publicTask = ({ task_id, difficulty, title_th, title_en, desc_th, desc_en, starter_code, hint_th, hint_en }) =>
-            ({ task_id, difficulty, title_th, title_en, desc_th, desc_en, starter_code, hint_th, hint_en });
+        // Only the worked examples leave the server; see arcade/public-task.js.
+        const publicTask = publicArcadeTask;
 
         res.json({
             success: true,

@@ -32,7 +32,12 @@ function installArcadeBots(app, db) {
       const active = rematchRoster(room, previousMatch, participants);
       if (room.host_name !== req.player.username || !active.some(p => p.user_name === req.player.username && p.participant_kind === 'human')) return await reject(403, 'สิทธิ์เฉพาะหัวห้องเท่านั้น');
       if (active.length >= room.max_players) return await reject(409, 'ห้องเต็มแล้ว');
-      const profile = profiles[randomInt(profiles.length)];
+      // Prefer a persona nobody in the room has yet, so a full room shows
+      // the different play styles instead of three copies of one.
+      const used = new Set(active.map(p => p.bot_profile).filter(Boolean));
+      const unused = profiles.filter(p => !used.has(p.id));
+      const pool = unused.length ? unused : profiles;
+      const profile = pool[randomInt(pool.length)];
       let name = profile.name;
       for (;;) {
         const [accounts] = await connection.query('SELECT user_id FROM users WHERE username = ?', [name]);

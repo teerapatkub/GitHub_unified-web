@@ -775,6 +775,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
             challengeDesc={activeRoundTask.desc}
             challengeFunctionName={activeRoundTask.functionName}
             challengeTestCases={activeRoundTask.testCases}
+            challengeHiddenCaseCount={activeRoundTask.hiddenCaseCount || 0}
             timeLeft={timeLeft}
             playerState={playerState}
             checkEffectActive={checkEffectActive}

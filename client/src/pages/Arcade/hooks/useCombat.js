@@ -1,5 +1,6 @@
 // Server-owned item commands and rendering of the returned effect snapshot.
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { applyTypingDebuffs, blocksKey } from '../typing-debuffs.js';
 
 export default function useCombat({ playerState, setPlayerState, opponents, currentRoom, notify, t, consumeItem }) {
   const scope = `${currentRoom?.room_id}:${currentRoom?.current_match_id}:${currentRoom?.phase}`;
@@ -8,6 +9,7 @@ export default function useCombat({ playerState, setPlayerState, opponents, curr
   const setTargetingItem = useCallback(item => setTargeting(item ? { item, scope } : null), [scope]);
   const seenEffects = useRef(new Set());
   const checkEffectActive = effectId => playerState.activeEffects.some(effect => effect.type === effectId && effect.expiresAt > Date.now());
+  const activeEffectTypes = () => playerState.activeEffects.filter(effect => effect.expiresAt > Date.now()).map(effect => effect.type);
 
   useEffect(() => {
     seenEffects.current = new Set();
@@ -60,14 +62,15 @@ export default function useCombat({ playerState, setPlayerState, opponents, curr
     if (targetingItem && target && !target.eliminated && !target.isDebuffed) executeItem(targetingItem, index);
   };
 
-  // Keyboard and Input Debuffs for Monaco
+  // Keyboard debuffs. Called from Monaco's own key handler (see the editor's
+  // onMount): a listener on any other element never sees the player's keys.
   const handleEditorKeyDown = (e) => {
     if (checkEffectActive('timeFreeze') || checkEffectActive('blackout')) {
       e.preventDefault();
       return;
     }
 
-    if (checkEffectActive('backspaceLock') && (e.key === 'Backspace' || e.key === 'Delete')) {
+    if (blocksKey(e.key, activeEffectTypes())) {
       e.preventDefault();
       notify(t('backspaceLocked'), "error");
     }
@@ -79,28 +82,8 @@ export default function useCombat({ playerState, setPlayerState, opponents, curr
       return;
     }
 
-    let nextValue = value || "";
-
-    // Scramble Keys active
-    if (checkEffectActive('keyScrambler')) {
-      const scrambleMap = { 'a': 'q', 'e': 'w', 'i': 'r', 'o': 't', 'u': 'y', 's': 'd', 't': 'f' };
-      const lastChar = nextValue.slice(-1).toLowerCase();
-      if (scrambleMap[lastChar]) {
-        nextValue = nextValue.slice(0, -1) + scrambleMap[lastChar];
-      }
-    }
-
-    // Typo Glitch active
-    if (checkEffectActive('typoGenerator') && Math.random() < 0.15) {
-      const randomChars = "xyz1!#";
-      nextValue += randomChars[Math.floor(Math.random() * randomChars.length)];
-    }
-
-    // Caps Lock Lock active
-    if (checkEffectActive('capsLockLock')) {
-      nextValue = nextValue.toUpperCase();
-    }
-
+    // Scrambler, typo glitch and caps lock change only what is typed now.
+    const nextValue = applyTypingDebuffs(playerState.code || '', value || '', activeEffectTypes());
     setPlayerState(prev => ({ ...prev, code: nextValue }));
   };
 
