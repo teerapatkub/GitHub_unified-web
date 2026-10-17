@@ -177,3 +177,35 @@ test('bot progress survives worker restart and freezes while a real attack is ac
   assert.equal((await f.call('/api/arcade/rooms/1',{user:'bob'})).body.participants.find(p=>p.user_name===f.botName).bot_progress,progressed);
   assert.equal(Object.hasOwn(await readBot(),'bot_state'),false);
 });
+
+// Playtest 2026-10-17: bots spent their attacks on the score leader even after
+// that player had submitted. A submitted player's editor is already locked, so
+// the debuff did nothing and the opponent still typing went untouched.
+test('bot attacks skip a player who has already submitted this round', async t => {
+  const f = await botMatch(t);
+  await f.phase('ROUND_2');
+  await f.db.query("UPDATE arcade_participants SET bot_profile = 'bot_bughunter' WHERE participant_kind = 'bot'");
+  await f.db.query("UPDATE arcade_participants SET score = 999 WHERE user_name = 'alice'");
+  assert.equal((await f.call('/api/arcade/rooms/1/submit-round', { body: { match_id: f.matchId, round_num: 2, code: 'print(1)' } })).status, 200);
+  const ink = { id: 'inkFog', type: 'attack', price: 400, instance_id: randomUUID() };
+  await f.db.query('INSERT INTO arcade_shop_states (match_id,user_name,inventory) VALUES (?,?,?) ON CONFLICT (match_id,user_name) DO UPDATE SET inventory = EXCLUDED.inventory', [f.matchId, f.botName, JSON.stringify([ink])]);
+  await f.db.query("UPDATE arcade_participants SET bot_state = '{}' WHERE participant_kind = 'bot'");
+  await f.tick();
+  assert.equal((await f.read('bob')).attackEffects[0]?.attacker, f.botName);
+  assert.deepEqual((await f.read()).attackEffects, []);
+});
+
+// Picking a persona with replacement put three Bot_SyntaxPro in one room.
+test('added bots use a different persona until every persona is in the room', async t => {
+  const { db, call } = await arcadeFixture(t);
+  await db.query('UPDATE arcade_rooms SET max_players = 7');
+  const profiles = require('../../shared/arcadeBotProfiles.json');
+  const added = [];
+  for (let i = 0; i < profiles.length; i++) {
+    const response = await call('/api/arcade/rooms/1/add-bot', { body: {} });
+    assert.equal(response.status, 200);
+    added.push(response.body.bot_name);
+  }
+  const [rows] = await db.query("SELECT bot_profile FROM arcade_participants WHERE participant_kind = 'bot'");
+  assert.equal(new Set(rows.map(r => r.bot_profile)).size, profiles.length);
+});

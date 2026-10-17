@@ -18,7 +18,12 @@ export default function useRoundJudging({ playerState, setPlayerState, currentRo
   // PostgreSQL Tasks State (Bilingual TH/EN)
   const [dbTasks, setDbTasks] = useState({ easy: [], medium: [], hard: [] });
   const [isGrading, setIsGrading] = useState(false);
-  const [consoleOutput, setConsoleOutput] = useState("");
+  // Output belongs to one round. A message from the last round or the last
+  // match ("code ran ...") must not greet the player on a new problem.
+  const outputScope = `${currentRoom?.room_id}:${currentRoom?.current_match_id}:${currentRoom?.phase}`;
+  const [consoleState, setConsoleState] = useState({ scope: null, text: '' });
+  const setConsoleOutput = useCallback(text => setConsoleState({ scope: outputScope, text }), [outputScope]);
+  const consoleOutput = consoleState.scope === outputScope ? consoleState.text : '';
 
   useEffect(() => {
     let stopped = false;
@@ -60,7 +65,8 @@ export default function useRoundJudging({ playerState, setPlayerState, currentRo
   // bank inside Quick Mode's usable seconds — the round was being lost to
   // keystrokes rather than to thinking.
   //
-  // The API only sends the starter; reference code and grading cases remain
+  // The API sends the starter and the worked examples (the first
+  // exampleCasesShown cases). The reference answer and the remaining cases stay
   // on the server. The function signature is present in that starter.
   const shapeTask = useCallback((source) => {
     if (!source) return null;
@@ -74,7 +80,8 @@ export default function useRoundJudging({ playerState, setPlayerState, currentRo
     # Write your python code here
     pass`,
       functionName: sigMatch[1],
-      testCases: [],
+      testCases: Array.isArray(source.example_cases) ? source.example_cases : [],
+      hiddenCaseCount: Number(source.example_count_hidden) || 0,
       // What the aiHelper item reveals. Falls back to the old generic sentence
       // for a row seeded before hints existed, so the item always does
       // something when used.
@@ -207,8 +214,8 @@ export default function useRoundJudging({ playerState, setPlayerState, currentRo
     let captured = [];
     setPyOnOutput((lines) => { pyOutputRef.current = lines; captured = lines; });
 
-    // Hidden cases stay on the server. This browser run only reports execution
-    // output and syntax errors; it cannot claim a pass before round close.
+    // Only the worked examples are here; the hidden cases stay on the server.
+    // A pass on the examples is a practice result, never the round's verdict.
     const cases = Array.isArray(task?.testCases) ? task.testCases : [];
     const fnName = task?.functionName;
     const canRunCases = Boolean(fnName) && cases.length > 0;

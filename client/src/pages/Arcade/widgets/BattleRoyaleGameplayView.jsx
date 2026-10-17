@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Shield, AlertTriangle, ChevronDown, ChevronUp, Eye, ArrowLeft } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 import { EXAMPLE_CASES_SHOWN, pyLiteral } from '../constants.js';
@@ -43,6 +43,7 @@ export default function BattleRoyaleGameplayView({
   challengeDesc,
   challengeFunctionName,
   challengeTestCases,
+  challengeHiddenCaseCount = 0,
   timeLeft,
   playerState,
   checkEffectActive,
@@ -66,11 +67,14 @@ export default function BattleRoyaleGameplayView({
   watchedCode
 }) {
   const [collapsed, setCollapsed] = useState(readCollapsed);
+  // Monaco registers its key handler once; read the current debuffs through a ref.
+  const keyDownRef = useRef(handleEditorKeyDown);
+  useEffect(() => { keyDownRef.current = handleEditorKeyDown; });
 
   // Once the answer is in it cannot be changed, so the editor stops being an
-  // editor: it locks, and the rest of the round is spent watching. Items are
-  // deliberately still usable - sending an answer early is meant to buy time to
-  // play the sabotage game, not to end the round for that player.
+  // editor: it locks, and the rest of the round is spent watching. Items lock
+  // too: the server refuses every item command from a player who has submitted
+  // (arcade/shop-api.js), so the screen must not promise otherwise.
   const spectating = Boolean(playerState.hasSubmittedThisRound) && !playerState.eliminated;
   const editorLocked = !draftReady || playerState.eliminated || spectating
     || checkEffectActive('timeFreeze')
@@ -143,7 +147,7 @@ export default function BattleRoyaleGameplayView({
                       </div>
                     ))}
                   </div>
-                  {challengeTestCases.length > EXAMPLE_CASES_SHOWN && (
+                  {challengeHiddenCaseCount > 0 && (
                     <div className="text-[9px] text-slate-300 font-bold mt-1">{t('exampleHint')}</div>
                   )}
                 </div>
@@ -288,7 +292,9 @@ export default function BattleRoyaleGameplayView({
                   {t('watchingTitle')} {watchedPlayer}
                   {watchedCode && !watchedCode.error && (
                     <span className="text-slate-400 font-medium">
-                      · {watchedCode.has_submitted ? t('watchingSubmitted') : t('watchingTyping')}
+                      · {watchedCode.has_submitted ? t('watchingSubmitted')
+                        : (watchedCode.is_bot && (opponents.find(o => o.name === watchedPlayer)?.progress || 0) >= 100)
+                          ? t('watchingBotDone') : t('watchingTyping')}
                     </span>
                   )}
                 </span>
@@ -344,7 +350,13 @@ export default function BattleRoyaleGameplayView({
                 theme="vs-light"
                 value={playerState.code}
                 onChange={handleCodeChange}
-                onMount={(editor) => { editorRef.current = editor; }}
+                onMount={(editor) => {
+                  editorRef.current = editor;
+                  editor.onKeyDown(event => keyDownRef.current({
+                    key: event.browserEvent.key,
+                    preventDefault: () => { event.preventDefault(); event.stopPropagation(); },
+                  }));
+                }}
                 options={{
                   minimap: { enabled: false },
                   fontSize: 14,
@@ -383,27 +395,21 @@ export default function BattleRoyaleGameplayView({
                   plainly instead of letting the player type into a silent box. A
                   debuff overlay (blackout/inkFog) takes the screen when active, so
                   this only shows when the lock is the player's own submission. It
-                  is pointer-events-none: items on the right stay usable, which is
-                  the whole point of submitting early. */}
+                  is pointer-events-none so the player list stays clickable for
+                  watching other players' code. */}
               {spectating && !checkEffectActive('blackout') && !checkEffectActive('inkFog') && (
                 <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-slate-900/60 text-center pointer-events-none select-none">
                   <div className="rounded-full border border-emerald-400/50 bg-emerald-500/20 px-4 py-1.5 text-sm font-black uppercase tracking-wider text-emerald-200">
                     ✓ ส่งคำตอบรอบนี้แล้ว
                   </div>
                   <p className="text-sm font-bold text-white">แก้โค้ดไม่ได้จนจบรอบ · รอผลแล้วไปต่อรอบถัดไป</p>
-                  <p className="text-[11px] text-slate-300">ระหว่างนี้ยังกดใช้ไอเทมและดูโค้ดคนอื่นได้</p>
+                  <p className="text-[11px] text-slate-300">ระหว่างนี้กดที่ชื่อผู้เล่นเพื่อดูโค้ดคนอื่นได้ · ไอเทมใช้ได้อีกครั้งในรอบถัดไป</p>
                 </div>
               )}
             </div>
             )}
           </div>
 
-          {/* Monaco Editor Textarea Listener for Keyboard Attacks (Backspace Lock) */}
-          <textarea
-            className="hidden-listener absolute opacity-0 pointer-events-none h-0 w-0"
-            onKeyDown={handleEditorKeyDown}
-            autoFocus
-          />
         </div>
 
         {/* Console log outputs. Foldable like the problem card: between rounds

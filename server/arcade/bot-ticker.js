@@ -28,7 +28,10 @@ async function useForBot(db, room, player, state, memory, now, phaseDeadlineMs, 
     if (activeSelfEffects(state.self_effects, room.phase, now).some(e => e.type === item.id)) continue;
     let targetName;
     if (item.type === 'attack') {
-      const eligible = opponents.filter(p => !activeAttackEffects(p.attack_effects, room.phase, now).length);
+      // A player who has submitted has a locked editor, so a debuff on them
+      // is wasted. Aim at someone still typing.
+      const eligible = opponents.filter(p => !p.has_submitted
+        && !activeAttackEffects(p.attack_effects, room.phase, now).length);
       const revenge = memory.revengeTarget && random() < 0.8
         ? eligible.find(p => p.user_name === memory.revengeTarget) : null;
       targetName = (revenge || eligible[0])?.user_name;
