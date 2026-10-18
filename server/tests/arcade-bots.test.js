@@ -74,12 +74,12 @@ test('server bots buy with real cash and concurrent ticks apply one shared attac
   await f.phase('SHOP_1');
   await f.tick();
   const bot = (await f.room()).participants.find(p => p.user_name === f.botName);
-  assert.equal(bot.cash, 4600); // PyNinja selects the first affordable favorite: 400-coin ink.
+  assert.equal(bot.cash, 4350); // Greedy PyNinja, neck and neck with everyone, buys the 650-coin Score Booster.
   await f.give('cashSteal');
   await f.phase('ROUND_2');
   assert.deepEqual(await Promise.all([f.tick(), f.tick()]), [[], []]);
   assert.equal((await f.read()).cash, 4700);
-  assert.equal((await f.room()).participants.find(p => p.user_name === f.botName).cash, 4900);
+  assert.equal((await f.room()).participants.find(p => p.user_name === f.botName).cash, 4650);
   await f.tick();
   assert.equal((await f.read()).cash, 4700);
 });
@@ -407,4 +407,49 @@ test('under Glitch and Backspace Lock a bot cannot clean its draft and is graded
   await f.tick();
   // The glitched answer does not compile, so only the rolled quality counts.
   assert.equal(await f.scoreOf(f.botName), 50);
+});
+
+// ---- Shopping and attacking with a plan ------------------------------------
+test('a cautious leader buys a shield and no bot ever buys AI Helper', async t => {
+  const f = await botMatch(t);
+  await f.db.query("UPDATE arcade_participants SET bot_profile = 'bot_codemaster', score = 900, cash = 1000 WHERE participant_kind = 'bot'");
+  await f.db.query("UPDATE arcade_participants SET score = 300 WHERE participant_kind = 'human'");
+  await f.phase('SHOP_2');
+  await f.tick();
+  const inventory = (await f.db.query('SELECT inventory FROM arcade_shop_states WHERE user_name = ?', [f.botName]))[0][0].inventory;
+  assert.deepEqual(inventory.map(i => i.id), ['shield']);
+  for (const profile of require('../../shared/arcadeBotProfiles.json')) {
+    await f.db.query("UPDATE arcade_participants SET bot_profile = ?, bot_state = '{}', cash = 5000 WHERE participant_kind = 'bot'", [profile.id]);
+    await f.db.query("UPDATE arcade_shop_states SET inventory = '[]' WHERE user_name = ?", [f.botName]);
+    for (let i = 0; i < 3; i++) { await f.db.query("UPDATE arcade_participants SET bot_state = '{}' WHERE participant_kind = 'bot'"); await f.tick(); }
+    const bought = (await f.db.query('SELECT inventory FROM arcade_shop_states WHERE user_name = ?', [f.botName]))[0][0].inventory;
+    assert.equal(bought.some(i => i.id === 'aiHelper'), false, profile.id);
+  }
+});
+
+test('a bot aims at the rival fighting it for survival, not the runaway leader', async t => {
+  const f = await botMatch(t);
+  await f.phase('ROUND_2');
+  await f.db.query("UPDATE arcade_participants SET bot_profile = 'bot_bughunter', score = 300 WHERE participant_kind = 'bot'");
+  await f.db.query("UPDATE arcade_participants SET score = CASE user_name WHEN 'alice' THEN 999 ELSE 290 END WHERE participant_kind = 'human'");
+  await f.give('inkFog');
+  await f.tick();
+  assert.equal((await f.read('bob')).attackEffects[0]?.attacker, f.botName);
+  assert.deepEqual((await f.read()).attackEffects, []);
+});
+
+test('a bot writing a real answer saves its Score Booster and presses it as it submits', async t => {
+  const f = await codingBotMatch(t);
+  await f.roundAt('ROUND_2', 0);
+  await f.give('scoreMultiplier');
+  await f.tick();
+  await f.elapse(3000);
+  await f.tick();
+  const early = (await f.db.query('SELECT self_effects, inventory FROM arcade_shop_states WHERE user_name = ?', [f.botName]))[0][0];
+  assert.deepEqual(early.self_effects, []);
+  assert.equal(early.inventory[0].id, 'scoreMultiplier');
+  for (let i = 0; i < 10; i++) { await f.elapse(5000); await f.tick(); }
+  const sent = await f.bot(f.botName);
+  assert.equal(sent.has_submitted, 1);
+  assert.equal(sent.score_multiplier_active, 1);
 });

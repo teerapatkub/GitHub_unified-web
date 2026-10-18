@@ -5,40 +5,99 @@ const { activeSelfEffects } = require('./self-effects');
 const { activeAttackEffects } = require('./attacks');
 const { useOwnedItem } = require('./use-item');
 const { readPhaseClock } = require('./phase-clock');
-const { verifiedMultiplier } = require('./self-effects');
 const coder = require('./bot-coder');
 
-function buyForBot(player, state, profile, random) {
-  if (state.inventory.length >= config.maxInventory || random() >= profile.attackChance) return;
-  const affordable = config.shopItems.filter(item => item.price <= player.cash
-    && (item.type !== 'aoe' || state.inventory.filter(i => i.type === 'aoe').length < config.maxAoeHeld));
-  const favorites = affordable.filter(item => profile.favoriteItems.includes(item.id));
-  const choices = favorites.length ? favorites : affordable;
-  if (!choices.length) return;
-  const item = choices[Math.floor(random() * choices.length)];
+// ---- Shopping and attacking with a plan --------------------------------------
+//
+// A bot reads the standings the way a player does: who is close to it around
+// the next elimination line, whether it is leading, whether someone just hit
+// it. It never looks at what a player cannot see (other players' shields).
+
+// Items that stop or wreck typing are worth more than ones that only distract.
+const ATTACK_WEIGHT = {
+  inkFog: 1, timeFreeze: 1, blackout: 1, backspaceLock: 0.7, typoGenerator: 0.7, keyScrambler: 0.7,
+  capsLockLock: 0.8, mirrorMode: 0.5, screenDimmer: 0.5, screenShake: 0.4,
+};
+
+function standingsFor(player, participants) {
+  const alive = participants.filter(p => !p.is_eliminated);
+  const ranked = alive.slice().sort((a, b) => b.score - a.score);
+  const others = alive.filter(p => p.id !== player.id);
+  const closest = others.reduce((best, p) => (!best || Math.abs(p.score - player.score) < Math.abs(best.score - player.score) ? p : best), null);
+  return {
+    alive: alive.length,
+    leading: ranked[0]?.id === player.id,
+    gap: closest ? Math.abs(closest.score - player.score) : Infinity,
+    richest: others.reduce((max, p) => Math.max(max, p.cash), 0),
+  };
+}
+
+function offerValue(item, { profile, standings, memory, state }) {
+  const holds = id => state.inventory.some(i => i.id === id);
+  const close = Math.max(0, 1 - standings.gap / 300); // 1 = neck and neck
+  if (item.id === 'aiHelper') return 0; // a hint is no use to a bot
+  if (item.id === 'shield') {
+    if (holds('shield') || (state.self_effects || []).some(e => e.type === 'shield')) return 0;
+    return profile.caution * ((standings.leading ? 0.6 : 0.2) + (memory.revengeTarget ? 0.6 : 0));
+  }
+  if (item.id === 'scoreMultiplier') return holds('scoreMultiplier') ? 0 : profile.greed * (0.4 + 0.6 * close);
+  if (item.id === 'cashSteal' || item.id === 'taxCollection') return profile.greed * Math.min(1, standings.richest / 1500) * 0.6;
+  const weight = ATTACK_WEIGHT[item.id] || 0.4;
+  const crowd = item.type === 'aoe' ? Math.min(1, (standings.alive - 1) / 3) : 1;
+  return profile.aggression * weight * (0.3 + 0.7 * close) * crowd;
+}
+
+function buyForBot(player, state, profile, random, { participants, memory, phase }) {
+  if (state.inventory.length >= config.maxInventory) return;
+  const finalShop = phase === 'SHOP_3';
+  // Keep a little cash back for the next shop, unless this is the last one.
+  const reserve = finalShop ? 0 : Math.round(300 * profile.caution);
+  const standings = standingsFor(player, participants);
+  const options = config.shopItems
+    .filter(item => item.price <= player.cash - reserve
+      && (item.type !== 'aoe' || state.inventory.filter(i => i.type === 'aoe').length < config.maxAoeHeld))
+    .map(item => ({ item, value: offerValue(item, { profile, standings, memory, state }) * (0.8 + 0.4 * random()) }))
+    .filter(option => option.value > 0.25)
+    .sort((a, b) => b.value - a.value);
+  if (!options.length) return;
+  const { item } = options[0];
   player.cash -= item.price;
   state.inventory.push({ ...item, instance_id: randomUUID() });
 }
 
-async function useForBot(db, room, player, state, memory, now, phaseDeadlineMs, random) {
-  if (random() >= 0.6) return;
+// Who is worth hitting: a player near this bot's score (the elimination fight
+// is with them, not with a runaway leader), someone who hit it if it holds a
+// grudge, and only while they are still typing.
+function pickTarget(player, opponents, memory, profile, now, phase) {
+  const typing = opponents.filter(p => !p.has_submitted
+    && !(p.participant_kind === 'bot' && (p.bot_state?.phase === phase) && (p.bot_state?.progress || 0) >= 85)
+    && !activeAttackEffects(p.attack_effects, phase, now).length);
+  const threat = p => 1 / (1 + Math.abs(p.score - player.score) / 100)
+    + (memory.revengeTarget === p.user_name ? profile.vengeance : 0)
+    + (p.score > player.score ? 0.2 : 0);
+  return typing.sort((a, b) => threat(b) - threat(a) || a.id - b.id)[0] || null;
+}
+
+async function useForBot(db, room, player, state, memory, now, phaseDeadlineMs, random, profile) {
+  if (random() >= 0.35 + 0.5 * profile.aggression) return;
+  // A debuff landing with a few seconds left changes nothing.
+  if (phaseDeadlineMs - now < 8000) return;
   const [opponents] = await db.query(`SELECT p.*, s.attack_effects FROM arcade_participants p
     LEFT JOIN arcade_shop_states s ON s.match_id = p.match_id AND s.user_name = p.user_name
     WHERE p.room_id = ? AND p.match_id = ? AND p.id <> ? AND p.is_eliminated = 0 ORDER BY p.score DESC, p.id`,
   [room.room_id, room.current_match_id, player.id]);
   for (const item of state.inventory) {
     if (activeSelfEffects(state.self_effects, room.phase, now).some(e => e.type === item.id)) continue;
+    if (item.id === 'aiHelper') continue;
+    // A bot writing a real answer saves its booster for the moment it submits.
+    if (item.id === 'scoreMultiplier' && memory.plan) continue;
     let targetName;
     if (item.type === 'attack') {
-      // A player who has submitted has a locked editor, so a debuff on them
-      // is wasted. Aim at someone still typing.
-      const eligible = opponents.filter(p => !p.has_submitted
-        && !activeAttackEffects(p.attack_effects, room.phase, now).length);
-      const revenge = memory.revengeTarget && random() < 0.8
-        ? eligible.find(p => p.user_name === memory.revengeTarget) : null;
-      targetName = (revenge || eligible[0])?.user_name;
+      targetName = pickTarget(player, opponents, memory, profile, now, room.phase)?.user_name;
       if (!targetName) continue;
-    } else if ((item.type === 'aoe' || item.id === 'taxCollection') && !opponents.length) continue;
+    } else if (item.type === 'aoe') {
+      if (opponents.filter(p => !p.has_submitted).length < 2) continue;
+    } else if (item.id === 'taxCollection' && !opponents.length) continue;
     await useOwnedItem({ db, room, player, state, instanceId: item.instance_id, targetName, now, phaseDeadlineMs });
     break;
   }
@@ -199,7 +258,13 @@ async function tickArcadeBots(db, roomId, random = Math.random) {
           const finishedAt = typeAnswer({ room, profile, memory, effects, now, random });
           const draft = coder.draftOf(memory.plan);
           if (finishedAt !== null) {
-            const multiplier = await verifiedMultiplier(connection, room.current_match_id, player.user_name, room.phase, finishedAt);
+            // Press the booster just before sending, so it covers this answer.
+            const booster = state.inventory.find(i => i.id === 'scoreMultiplier');
+            if (booster && !activeSelfEffects(state.self_effects, room.phase, finishedAt).some(e => e.type === 'scoreMultiplier')) {
+              await useOwnedItem({ db: connection, room, player, state, instanceId: booster.instance_id, now: finishedAt, phaseDeadlineMs: clock.deadlineMs });
+            }
+            const multiplier = activeSelfEffects(state.self_effects, room.phase, finishedAt)
+              .some(e => e.type === 'scoreMultiplier') ? 1 : 0;
             await connection.query(`UPDATE arcade_participants SET has_submitted = 1, submitted_code = ?, draft_code = ?,
               submitted_at = to_timestamp(?::double precision / 1000), score_multiplier_active = ? WHERE id = ?`,
             [draft, draft, finishedAt, multiplier, player.id]);
@@ -214,11 +279,11 @@ async function tickArcadeBots(db, roomId, random = Math.random) {
         if (room.phase.startsWith('ROUND_') && !writesCode) advanceProgress(memory, profile.typingSpeedMs * roundPaceScale(room), now);
         if (room.phase.startsWith('SHOP_') && now - (memory.lastBuy || 0) >= config.botBuyAttemptIntervalMs) {
           memory.lastBuy = now;
-          buyForBot(player, state, profile, random);
+          buyForBot(player, state, profile, random, { participants, memory, phase: room.phase });
         }
         if (/^ROUND_[2-4]$/.test(room.phase) && now - (memory.lastUse || 0) >= config.botItemUseIntervalMs) {
           memory.lastUse = now;
-          await useForBot(connection, room, player, state, memory, now, clock.deadlineMs, random);
+          await useForBot(connection, room, player, state, memory, now, clock.deadlineMs, random, profile);
         }
       }
       await connection.query('UPDATE arcade_shop_states SET inventory = ?, self_effects = ?, revision = revision + 1 WHERE match_id = ? AND user_name = ?',

@@ -11,7 +11,11 @@
       "scoreMultiplier",
       "inkFog"
     ],
-    "description": "สายสปีด พิมพ์โค้ดเร็วมาก มุ่งเน้นเก็บคะแนนนำก่อนใคร"
+    "description": "สายสปีด พิมพ์โค้ดเร็วมาก มุ่งเน้นเก็บคะแนนนำก่อนใคร",
+    "aggression": 0.35,
+    "caution": 0.3,
+    "greed": 0.9,
+    "vengeance": 0.2
   },
   {
     "id": "bot_bughunter",
@@ -27,7 +31,11 @@
       "mirrorMode",
       "screenShake"
     ],
-    "description": "สายก่อกวน ชอบซื้อไอเทมหมึกบังตา แช่แข็ง กลับหัวโค้ด ยิงใส่ผู้เล่น"
+    "description": "สายก่อกวน ชอบซื้อไอเทมหมึกบังตา แช่แข็ง กลับหัวโค้ด ยิงใส่ผู้เล่น",
+    "aggression": 0.95,
+    "caution": 0.2,
+    "greed": 0.3,
+    "vengeance": 0.4
   },
   {
     "id": "bot_nullpointer",
@@ -42,7 +50,11 @@
       "screenDimmer",
       "timeFreeze"
     ],
-    "description": "สายแก้แค้น จะจดจำและยิงไอเทมสวนคืนใส่คนที่เคยโจมตีมันเท่านั้น"
+    "description": "สายแก้แค้น จะจดจำและยิงไอเทมสวนคืนใส่คนที่เคยโจมตีมันเท่านั้น",
+    "aggression": 0.6,
+    "caution": 0.45,
+    "greed": 0.3,
+    "vengeance": 1.0
   },
   {
     "id": "bot_codemaster",
@@ -57,7 +69,11 @@
       "scoreMultiplier",
       "timeFreeze"
     ],
-    "description": "สายโปร บาลานซ์การพิมพ์โค้ด การกางเกราะป้องกัน และการยิงก่อกวน"
+    "description": "สายโปร บาลานซ์การพิมพ์โค้ด การกางเกราะป้องกัน และการยิงก่อกวน",
+    "aggression": 0.55,
+    "caution": 0.75,
+    "greed": 0.55,
+    "vengeance": 0.4
   },
   {
     "id": "bot_syntaxpro",
@@ -71,6 +87,10 @@
       "scoreMultiplier",
       "shield"
     ],
-    "description": "สายปั๊มคะแนน ซื้อ Score Booster และตั้งรับกางเกราะ"
+    "description": "สายปั๊มคะแนน ซื้อ Score Booster และตั้งรับกางเกราะ",
+    "aggression": 0.3,
+    "caution": 0.65,
+    "greed": 0.85,
+    "vengeance": 0.2
   }
 ]
