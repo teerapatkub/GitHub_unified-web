@@ -292,9 +292,7 @@ export default function BattleRoyaleGameplayView({
                   {t('watchingTitle')} {watchedPlayer}
                   {watchedCode && !watchedCode.error && (
                     <span className="text-slate-400 font-medium">
-                      · {watchedCode.has_submitted ? t('watchingSubmitted')
-                        : (watchedCode.is_bot && (opponents.find(o => o.name === watchedPlayer)?.progress || 0) >= 100)
-                          ? t('watchingBotDone') : t('watchingTyping')}
+                      · {watchedCode.has_submitted ? t('watchingSubmitted') : t('watchingTyping')}
                     </span>
                   )}
                 </span>
@@ -326,8 +324,6 @@ export default function BattleRoyaleGameplayView({
               <div className="flex-1 w-full relative overflow-auto no-scrollbar bg-slate-50">
                 {watchedCode?.error ? (
                   <div className="p-6 text-xs font-bold text-slate-400">{watchedCode.error}</div>
-                ) : watchedCode?.is_bot ? (
-                  <div className="p-6 text-xs font-bold text-slate-400">{t('watchingBot')}</div>
                 ) : watchedCode?.code ? (
                   <pre className="p-4 text-[13px] leading-[22px] font-mono text-slate-700 whitespace-pre">
                     {watchedCode.code}

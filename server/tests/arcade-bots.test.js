@@ -453,3 +453,20 @@ test('a bot writing a real answer saves its Score Booster and presses it as it s
   assert.equal(sent.has_submitted, 1);
   assert.equal(sent.score_multiplier_active, 1);
 });
+
+test('a bot reacts in chat once per shop break and never while a round is running', async t => {
+  const f = await botMatch(t);
+  const summary = { roundNum: 1, entries: [{ name: f.botName, rank: 1 }, { name: 'alice', rank: 2 }, { name: 'bob', rank: 3 }] };
+  await f.db.query('UPDATE arcade_rooms SET last_round_summary = ?', [JSON.stringify(summary)]);
+  await f.phase('ROUND_2');
+  await f.tick();
+  const said = async () => (await f.db.query('SELECT kind, message, emoji FROM arcade_chat_messages WHERE user_name = ?', [f.botName]))[0];
+  assert.deepEqual(await said(), []);
+  await f.phase('SHOP_2');
+  await f.tick();
+  await f.db.query("UPDATE arcade_participants SET bot_state = bot_state - 'lastBuy' WHERE participant_kind = 'bot'");
+  await f.tick();
+  const lines = await said();
+  assert.equal(lines.length, 1);
+  assert.ok(['😎', '🔥', '👏'].includes(lines[0].emoji) || lines[0].message);
+});

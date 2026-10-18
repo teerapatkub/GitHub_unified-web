@@ -66,7 +66,8 @@ async function applyArcadeAttack({ db, room, player, item, targetName }) {
       WHERE match_id = ? AND user_name = ?`, [JSON.stringify(state.self_effects), JSON.stringify(state.attack_effects), room.current_match_id, target.user_name]);
     if (target.participant_kind === 'bot' && !blocked) {
       await db.query("UPDATE arcade_participants SET bot_state = bot_state || ?::jsonb WHERE id = ?",
-        [JSON.stringify({ revengeTarget: player.user_name }), target.id]);
+        [JSON.stringify({ revengeTarget: player.user_name, hitAt: effectNow,
+          hitRound: Number(String(room.phase).split('_')[1]) || null }), target.id]);
     }
     results.push({ name: target.user_name, blocked, stolen });
   }

@@ -176,9 +176,36 @@ function answerKeystrokeMs(profile, plan, steps) {
   return profile.typingSpeedMs * steps * lengthFactor / (chars + pauses);
 }
 
-function keystrokeMs(room, memory, effects) {
+// Being hit rattles a bot for a few seconds after the debuff itself; a calm
+// (cautious) persona shakes it off faster.
+const TILT_MS = 8000;
+
+function keystrokeMs(room, memory, effects, profile, now) {
   const slow = effects.some(e => SLOWS_TYPING.has(e.type)) ? 2 : 1;
-  return memory.charMs * roundPaceScale(room) * slow;
+  const tilt = memory.hitAt && now - memory.hitAt < TILT_MS ? 1 + 0.6 * (1 - profile.caution) : 1;
+  return memory.charMs * roundPaceScale(room) * slow * tilt;
+}
+
+// ---- Talking between rounds --------------------------------------------------
+// Chat is closed while a round runs, so a bot speaks once per shop break, about
+// the round that just ended: a win, a hit it took, or a close finish.
+const CHAT_EMOJI = { win: ['😎', '🔥', '👏'], hit: ['😮', '😕'], close: ['😢', '🔥', '👍'] };
+
+function chatFor(player, room, profile, memory, random) {
+  const entries = room.last_round_summary?.entries || [];
+  const mine = entries.find(e => e.name === player.user_name);
+  if (!mine) return null;
+  const mood = mine.rank === 1 ? 'win'
+    : memory.revengeTarget && memory.hitRound === room.last_round_summary.roundNum ? 'hit'
+      : mine.rank >= entries.length - 1 ? 'close' : null;
+  if (!mood || random() > 0.7) return null;
+  const options = profile.chatLines?.[mood] || [];
+  if (random() < 0.35 || !options.length) {
+    const emoji = CHAT_EMOJI[mood];
+    return { emoji: emoji[Math.floor(random() * emoji.length)] };
+  }
+  const line = options[Math.floor(random() * options.length)];
+  return { message: line.replace('{name}', memory.revengeTarget || '').slice(0, 300) };
 }
 
 // Returns the DB-clock time the bot finished, or null while it is still typing.
@@ -186,7 +213,7 @@ function typeAnswer({ room, profile, memory, effects, now, random }) {
   if (effects.some(e => STOPS_TYPING.has(e.type))) { memory.lastProgress = now; return null; }
   const plan = memory.plan;
   const typingEffects = new Set(effects.map(e => e.type));
-  const charMs = keystrokeMs(room, memory, effects);
+  const charMs = keystrokeMs(room, memory, effects, profile, now);
   for (;;) {
     const cost = coder.stepCost(plan, charMs);
     if (now - memory.lastProgress < cost) break;
@@ -277,6 +304,14 @@ async function tickArcadeBots(db, roomId, random = Math.random) {
       if (frozen) memory.lastProgress = now;
       else {
         if (room.phase.startsWith('ROUND_') && !writesCode) advanceProgress(memory, profile.typingSpeedMs * roundPaceScale(room), now);
+        if (room.phase.startsWith('SHOP_') && memory.chatPhase !== room.phase) {
+          memory.chatPhase = room.phase;
+          const said = chatFor(player, room, profile, memory, random);
+          if (said) {
+            await connection.query(`INSERT INTO arcade_chat_messages (room_id, user_name, kind, message, emoji)
+              VALUES (?, ?, ?, ?, ?)`, [room.room_id, player.user_name, said.emoji ? 'emoji' : 'text', said.message || null, said.emoji || null]);
+          }
+        }
         if (room.phase.startsWith('SHOP_') && now - (memory.lastBuy || 0) >= config.botBuyAttemptIntervalMs) {
           memory.lastBuy = now;
           buyForBot(player, state, profile, random, { participants, memory, phase: room.phase });
