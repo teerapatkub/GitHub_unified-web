@@ -470,3 +470,19 @@ test('a bot reacts in chat once per shop break and never while a round is runnin
   assert.equal(lines.length, 1);
   assert.ok(['😎', '🔥', '👏'].includes(lines[0].emoji) || lines[0].message);
 });
+
+// Playtest 2026-10-18: a bot whose roll landed on "send the scaffold" sent it
+// the second the round opened, earning speed points for doing nothing.
+test('a bot that gives up keeps the scaffold until the deadline instead of sending it at once', async t => {
+  const f = await codingBotMatch(t);
+  await f.roundAt('ROUND_2', 0);
+  const [[{ now }]] = await f.db.query('SELECT (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint AS now');
+  await f.setBot(f.botName, { phase: 'ROUND_2', progress: 0, stepsToFinish: 14, lastProgress: Number(now), taskId: f.taskId, answerId: 'starter', charMs: 100,
+    plan: { prefix: SUM_TO_N.starter_code, insert: '', suffix: '', text: '', next: 0 } });
+  for (let i = 0; i < 6; i++) { await f.elapse(5000); await f.tick(); }
+  assert.equal((await f.bot(f.botName)).has_submitted, 0);
+  await f.expire();
+  await f.tick();
+  // The scaffold passes 1 of 4 cases: 25 test points + 50 quality, and no speed points.
+  assert.equal(await f.scoreOf(f.botName), 75);
+});

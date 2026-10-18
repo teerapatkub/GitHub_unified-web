@@ -106,7 +106,10 @@ function chooseAnswer(bank, targetRatio, random) {
   let best = [];
   let bestDistance = Infinity;
   for (const answer of bank) {
-    const distance = Math.abs(answer.passed / answer.total - targetRatio);
+    // A weak player usually sends a wrong attempt rather than nothing, so
+    // giving up only wins when no attempt comes reasonably close.
+    const giveUpPenalty = answer.id === 'starter' ? 0.2 : 0;
+    const distance = Math.abs(answer.passed / answer.total - targetRatio) + giveUpPenalty;
     if (distance < bestDistance - 1e-9) { best = [answer]; bestDistance = distance; }
     else if (Math.abs(distance - bestDistance) <= 1e-9) best.push(answer);
   }

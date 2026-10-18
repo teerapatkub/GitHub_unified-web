@@ -212,6 +212,9 @@ function chatFor(player, room, profile, memory, random) {
 function typeAnswer({ room, profile, memory, effects, now, random }) {
   if (effects.some(e => STOPS_TYPING.has(e.type))) { memory.lastProgress = now; return null; }
   const plan = memory.plan;
+  // Nothing to write means the bot gave up on this one. Like a stuck player it
+  // leaves the scaffold in place and lets the deadline send it - never at once.
+  if (!plan.insert) { memory.progress = 0; memory.lastProgress = now; return null; }
   const typingEffects = new Set(effects.map(e => e.type));
   const charMs = keystrokeMs(room, memory, effects, profile, now);
   for (;;) {
