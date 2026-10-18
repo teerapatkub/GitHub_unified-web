@@ -77,8 +77,7 @@ function installArcadeRoomReads(app, db) {
   // when the player they want to watch has finished. A viewer may always read
   // their own row back, which is what makes this double as reconnect recovery.
   //
-  // Bots have no code. They are answered honestly rather than with an empty
-  // editor that reads like a player who has written nothing.
+  // Bots type real answers (ADR 0005), so their draft is served the same way.
   app.get('/api/arcade/rooms/:id/code/:user_name', async (req, res) => {
     try {
       const roomId = req.params.id;
@@ -106,14 +105,10 @@ function installArcadeRoomReads(app, db) {
         return res.status(403).json({ error: 'ดูโค้ดของผู้เล่นคนอื่นได้หลังจากส่งคำตอบแล้วเท่านั้น' });
       }
 
-      if (targetRow.participant_kind === 'bot') {
-        return res.json({ user_name: target, is_bot: true, code: null, has_submitted: Number(targetRow.has_submitted) === 1 });
-      }
-
       const submitted = Number(targetRow.has_submitted) === 1;
       res.json({
         user_name: target,
-        is_bot: false,
+        is_bot: targetRow.participant_kind === 'bot',
         match_id: targetRow.match_id,
         phase: targetRow.phase,
         has_saved_code: submitted ? targetRow.submitted_code !== null : targetRow.draft_code !== null,

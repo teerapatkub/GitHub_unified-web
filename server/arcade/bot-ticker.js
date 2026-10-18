@@ -5,6 +5,8 @@ const { activeSelfEffects } = require('./self-effects');
 const { activeAttackEffects } = require('./attacks');
 const { useOwnedItem } = require('./use-item');
 const { readPhaseClock } = require('./phase-clock');
+const { verifiedMultiplier } = require('./self-effects');
+const coder = require('./bot-coder');
 
 function buyForBot(player, state, profile, random) {
   if (state.inventory.length >= config.maxInventory || random() >= profile.attackChance) return;
@@ -78,9 +80,71 @@ function advanceProgress(memory, stepMs, now) {
   }
 }
 
+// ---- Typing a real answer (ADR 0005) ----------------------------------------
+
+// Debuffs that stop the keyboard, and ones that make typing slower.
+const STOPS_TYPING = new Set(['inkFog', 'timeFreeze', 'blackout']);
+const SLOWS_TYPING = new Set(['mirrorMode', 'screenShake', 'screenDimmer']);
+
+const roundTaskId = room => {
+  const ids = Array.isArray(room.round_task_ids) ? room.round_task_ids : null;
+  const round = Number(String(room.phase).split('_')[1]);
+  return ids && Number.isInteger(round) ? ids[round - 1] : undefined;
+};
+
+async function loadArcadeProblem(db, taskId) {
+  const [rows] = await db.query(`SELECT p.test_kind, p.test_cases, p.solution_code, p.starter_code
+    FROM problem_modes m JOIN problems p ON p.problem_id = m.problem_id
+    WHERE m.mode = 'arcade' AND m.entry_id = ?`, [taskId]);
+  return rows?.[0] || null;
+}
+
+// Start grading every drawn problem's answer bank, Round 1 first. Never awaited
+// under a room lock: a bot simply keeps reading the problem until it is ready.
+function warmRoundAnswers(db, taskIds) {
+  return (taskIds || []).reduce((chain, id) => chain.then(() => coder.warmBank(id, () => loadArcadeProblem(db, id))), Promise.resolve());
+}
+
+// Milliseconds per keystroke for this answer. The whole answer takes about as
+// long as the old progress bar did (stepsToFinish typing steps), so bot
+// strength stays where botSkillByDifficulty puts it; a longer answer takes
+// longer, but only by the square root of its length, within 0.7-1.6x. Pauses
+// at line ends count against the same budget.
+function answerKeystrokeMs(profile, plan, steps) {
+  const chars = Math.max(1, plan.insert.length);
+  const pauses = (plan.insert.match(/[\n:]/g) || []).length * (coder.PAUSE_FACTOR - 1);
+  const lengthFactor = Math.min(1.6, Math.max(0.7, Math.sqrt(chars / config.botReferenceAnswerChars)));
+  return profile.typingSpeedMs * steps * lengthFactor / (chars + pauses);
+}
+
+function keystrokeMs(room, memory, effects) {
+  const slow = effects.some(e => SLOWS_TYPING.has(e.type)) ? 2 : 1;
+  return memory.charMs * roundPaceScale(room) * slow;
+}
+
+// Returns the DB-clock time the bot finished, or null while it is still typing.
+function typeAnswer({ room, profile, memory, effects, now, random }) {
+  if (effects.some(e => STOPS_TYPING.has(e.type))) { memory.lastProgress = now; return null; }
+  const plan = memory.plan;
+  const typingEffects = new Set(effects.map(e => e.type));
+  const charMs = keystrokeMs(room, memory, effects);
+  for (;;) {
+    const cost = coder.stepCost(plan, charMs);
+    if (now - memory.lastProgress < cost) break;
+    memory.lastProgress += cost;
+    if (coder.typingStep(plan, { accuracy: profile.accuracy, effects: typingEffects, random }) === 'done') {
+      memory.progress = 100;
+      return memory.lastProgress;
+    }
+  }
+  memory.progress = coder.progressOf(plan);
+  return null;
+}
+
 // Persist decision clocks under the same room lock as settlement and human
 // commands. Extra workers, restarts and disconnected browsers cannot replay a turn.
 async function tickArcadeBots(db, roomId, random = Math.random) {
+  const pool = db;
   const connection = await db.getConnection();
   try {
     await connection.beginTransaction();
@@ -107,12 +171,47 @@ async function tickArcadeBots(db, roomId, random = Math.random) {
         memory.stepsToFinish = BOT_MIN_STEPS + Math.floor(random() * BOT_STEP_SPREAD);
         memory.lastProgress = now;
         delete memory.finishedAt;
+        delete memory.plan;
+        delete memory.answerId;
+        delete memory.taskId;
       }
       const effects = activeAttackEffects(state.attack_effects, room.phase, now);
+      const taskId = roundTaskId(room);
+      // A drawn problem means the bot writes and submits a real answer. Rooms
+      // without one, or whose answers could not be graded, keep the progress
+      // bar (phase-finalizer synthesizes that bot's score) so a match never stalls.
+      const writesCode = room.phase.startsWith('ROUND_') && taskId !== undefined && !coder.bankFailed(taskId);
+      if (writesCode && !player.has_submitted) {
+        const bank = coder.readyBank(taskId);
+        if (!bank) {
+          warmRoundAnswers(pool, [taskId]);
+          memory.lastProgress = now; // still reading the problem
+        } else {
+          if (!memory.plan) {
+            const skill = config.botSkillByDifficulty[room.difficulty] || config.botSkillByDifficulty.default;
+            const target = Math.min(1, Math.max(0, skill.passMin + random() * skill.passSpread));
+            const answer = coder.chooseAnswer(bank, target, random);
+            memory.taskId = taskId;
+            memory.answerId = answer.id;
+            memory.plan = coder.typingPlan(bank.starter, answer.code);
+            memory.charMs = answerKeystrokeMs(profile, memory.plan, memory.stepsToFinish);
+          }
+          const finishedAt = typeAnswer({ room, profile, memory, effects, now, random });
+          const draft = coder.draftOf(memory.plan);
+          if (finishedAt !== null) {
+            const multiplier = await verifiedMultiplier(connection, room.current_match_id, player.user_name, room.phase, finishedAt);
+            await connection.query(`UPDATE arcade_participants SET has_submitted = 1, submitted_code = ?, draft_code = ?,
+              submitted_at = to_timestamp(?::double precision / 1000), score_multiplier_active = ? WHERE id = ?`,
+            [draft, draft, finishedAt, multiplier, player.id]);
+          } else {
+            await connection.query('UPDATE arcade_participants SET draft_code = ?, draft_updated_at = clock_timestamp() WHERE id = ?', [draft, player.id]);
+          }
+        }
+      }
       const frozen = effects.some(e => e.type === 'timeFreeze' || e.type === 'inkFog');
       if (frozen) memory.lastProgress = now;
       else {
-        if (room.phase.startsWith('ROUND_')) advanceProgress(memory, profile.typingSpeedMs * roundPaceScale(room), now);
+        if (room.phase.startsWith('ROUND_') && !writesCode) advanceProgress(memory, profile.typingSpeedMs * roundPaceScale(room), now);
         if (room.phase.startsWith('SHOP_') && now - (memory.lastBuy || 0) >= config.botBuyAttemptIntervalMs) {
           memory.lastBuy = now;
           buyForBot(player, state, profile, random);
@@ -134,4 +233,4 @@ async function tickArcadeBots(db, roomId, random = Math.random) {
     connection.release();
   }
 }
-module.exports = { tickArcadeBots };
+module.exports = { tickArcadeBots, warmRoundAnswers, loadArcadeProblem, roundTaskId };

@@ -135,6 +135,10 @@ function installArcadeMatchStart(app, db) {
       await connection.query('DELETE FROM arcade_effects WHERE room_id = ?', [room.room_id]);
       await connection.commit();
       res.json({ success: true, match_id: matchId, message: 'เริ่มการแข่งขันแล้ว!' });
+      // Grade the bots' answer banks now, after the lock is gone (ADR 0005).
+      if (drawnTasks && participants.some(p => p.participant_kind === 'bot')) {
+        require('./bot-ticker').warmRoundAnswers(db, drawnTasks).catch(() => {});
+      }
     } catch (error) {
       if (connection) await connection.rollback();
       console.error('Arcade match action failed:', error.message);

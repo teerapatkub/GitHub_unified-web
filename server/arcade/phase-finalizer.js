@@ -3,6 +3,7 @@ const arcadeConfig = require('../../shared/arcadeConfig.json');
 const { readPhaseClock } = require('./phase-clock');
 const { gradeSubmission } = require('../problemGrader');
 const { settleArcadeRewards } = require('./match-rewards');
+const coder = require('./bot-coder');
 
 const ARCADE_PHASE_DURATIONS = arcadeConfig.phaseDurations;
 const ARCADE_QUICK_PHASE_DURATIONS = arcadeConfig.quickModePhaseDurations;
@@ -92,25 +93,47 @@ function botRoundBar(botState, phase, roundStartMs, roundDuration) {
 
 
 function createArcadePhaseFinalizer({ db, judgeCodeQuality, random = Math.random }) {
-  async function gradeArcadeRoundSubmissions({ room, roundNum, participants, roundDuration, db }) {
+  async function loadRoundProblem(room, roundNum, db) {
+    const drawn = Array.isArray(room.round_task_ids) ? room.round_task_ids : null;
+    const taskId = drawn ? drawn[roundNum - 1] : undefined;
+    if (taskId === undefined) return { taskId, problem: null };
+    const [rows] = await db.query(
+      `SELECT p.test_kind, p.test_cases, p.solution_code, p.starter_code
+       FROM problem_modes m JOIN problems p ON p.problem_id = m.problem_id
+       WHERE m.mode = 'arcade' AND m.entry_id = ?`,
+      [taskId]
+    );
+    return { taskId, problem: rows?.[0] || null };
+  }
+
+  // A bot that typed a real answer this round (bot-ticker.js) is graded like a
+  // player: the real grader on what it submitted - or on its unfinished draft
+  // if the round ran out, as a player's draft is auto-submitted - and time from
+  // when it sent it. Its quality score is still rolled from the room's band:
+  // the AI judge's quota belongs to the players (CLAUDE.md).
+  async function gradeBotAnswer({ p, taskId, problem, roundDuration, room, phaseClock, db }) {
+    const submitted = Number(p.has_submitted) === 1;
+    const code = (submitted ? p.submitted_code : p.draft_code) || '';
+    const banked = coder.gradedFromBank(taskId, code);
+    const verdict = banked || await gradeSubmission({ problem, code });
+    const passRatio = verdict.total ? verdict.passed / verdict.total : 0;
+    const skill = arcadeConfig.botSkillByDifficulty[room.difficulty] || arcadeConfig.botSkillByDifficulty.default;
+    const quality = skill.qualityMin + Math.floor(random() * skill.qualitySpread);
+    const elapsed = Number(p.submitted_elapsed_seconds);
+    const timeUsed = submitted && Number.isFinite(elapsed) ? Math.max(0, Math.min(roundDuration, elapsed)) : roundDuration;
+    const timeScore = passRatio * ((roundDuration - timeUsed) / roundDuration) * 100;
+    const multiplied = submitted
+      ? Number(p.score_multiplier_active) === 1
+      : await verifiedMultiplier(db, room.current_match_id, p.user_name, room.phase, phaseClock.deadlineMs - 1);
+    return Math.round((passRatio * 100 + quality + timeScore) * (multiplied ? 2 : 1));
+  }
+
+  async function gradeArcadeRoundSubmissions({ room, roundNum, participants, roundDuration, db, problem }) {
     const graded = new Map();
     const humans = (participants || []).filter(
       (p) => p.participant_kind === 'human' && p.has_submitted && typeof p.submitted_code === 'string'
     );
     if (humans.length === 0) return graded;
-
-    const drawn = Array.isArray(room.round_task_ids) ? room.round_task_ids : null;
-    const taskId = drawn ? drawn[roundNum - 1] : undefined;
-    let problem = null;
-    if (taskId !== undefined) {
-      const [rows] = await db.query(
-        `SELECT p.test_kind, p.test_cases, p.solution_code, p.starter_code
-         FROM problem_modes m JOIN problems p ON p.problem_id = m.problem_id
-         WHERE m.mode = 'arcade' AND m.entry_id = ?`,
-        [taskId]
-      );
-      problem = rows?.[0] || null;
-    }
 
     // In parallel: four players each cost one Python run and one judge call,
     // and the tick loop is serial, so doing these one after another would hold
@@ -229,14 +252,19 @@ function createArcadePhaseFinalizer({ db, judgeCodeQuality, random = Math.random
 
       // Grade the humans now, from what they submitted. Until ADR 0001 this
       // read pending_round_score - a number the browser had computed and sent.
+      const { taskId, problem } = await loadRoundProblem(room, roundNum, db);
       const graded = await gradeArcadeRoundSubmissions({
-        room, roundNum, participants: alive, roundDuration, db,
+        room, roundNum, participants: alive, roundDuration, db, problem,
       });
 
       const phaseClock = await readPhaseClock(db, roomId);
       const roundStartMs = phaseClock.deadlineMs - roundDuration * 1000;
       const roundResults = await Promise.all(alive.map(async p => {
         const isBot = p.participant_kind === 'bot';
+        const wroteCode = isBot && problem && p.bot_state?.phase === room.phase && p.bot_state?.answerId;
+        if (wroteCode) {
+          return { participant: p, roundScore: await gradeBotAnswer({ p, taskId, problem, roundDuration, room, phaseClock, db }) };
+        }
         const roundScore = isBot
           ? synthesizeBotRoundScore({ totalCount, roundDuration, difficulty: room.difficulty, random,
             bar: botRoundBar(p.bot_state, room.phase, roundStartMs, roundDuration) })

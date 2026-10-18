@@ -71,7 +71,9 @@ async function buildBank(problem) {
     if (answer.passed < answer.total) mistakes.push(answer);
     if (mistakes.length >= 8) break;
   }
-  return [solution, ...mistakes];
+  const bank = [solution, ...mistakes];
+  bank.starter = starter.code; // where a bot starts typing
+  return bank;
 }
 
 // Load and grade a problem's bank once; later calls share the same promise.
@@ -137,6 +139,7 @@ function correctLength(plan) {
   return n;
 }
 
+const PAUSE_FACTOR = 4; // thinking at the end of a line or after ':'
 const NEIGHBOURS = 'qwertyuiopasdfghjklzxcvbnm';
 const SCRAMBLE = { a: 'q', e: 'w', i: 'r', o: 't', u: 'y', s: 'd', t: 'f' };
 const GLITCH = 'xyz1!#';
@@ -144,7 +147,7 @@ const GLITCH = 'xyz1!#';
 // How long the next action takes: a pause to think at the end of a line.
 function stepCost(plan, charMs) {
   const prev = plan.insert[plan.next - 1];
-  return prev === '\n' || prev === ':' ? charMs * 4 : charMs;
+  return prev === '\n' || prev === ':' ? charMs * PAUSE_FACTOR : charMs;
 }
 
 // One keystroke. Returns 'done' once the bot considers its answer finished.
@@ -179,6 +182,6 @@ function typingStep(plan, { accuracy, effects, random }) {
 const progressOf = plan => (plan.insert.length ? Math.min(100, (correctLength(plan) / plan.insert.length) * 100) : 100);
 
 module.exports = {
-  MUTATIONS, candidateAnswers, buildBank, warmBank, readyBank, bankFailed, chooseAnswer, gradedFromBank,
+  MUTATIONS, PAUSE_FACTOR, candidateAnswers, buildBank, warmBank, readyBank, bankFailed, chooseAnswer, gradedFromBank,
   typingPlan, typingStep, stepCost, draftOf, progressOf, correctLength,
 };

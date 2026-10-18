@@ -46,6 +46,7 @@ async function botMatch(t, { bots = 1 } = {}) {
   // time advances by `ms` for the ticker and the finalizer alike.
   const elapse = async ms => {
     await f.db.query('UPDATE arcade_rooms SET phase_deadline = phase_deadline - make_interval(secs => ?)', [ms / 1000]);
+    await f.db.query('UPDATE arcade_participants SET submitted_at = submitted_at - make_interval(secs => ?) WHERE submitted_at IS NOT NULL', [ms / 1000]);
     const [bots] = await f.db.query("SELECT user_name, bot_state FROM arcade_participants WHERE participant_kind = 'bot'");
     for (const { user_name, bot_state: s } of bots) {
       for (const key of ['lastProgress', 'finishedAt', 'lastUse']) if (typeof s[key] === 'number') s[key] -= ms;
@@ -318,4 +319,92 @@ test('added bots use a different persona until every persona is in the room', as
   }
   const [rows] = await db.query("SELECT bot_profile FROM arcade_participants WHERE participant_kind = 'bot'");
   assert.equal(new Set(rows.map(r => r.bot_profile)).size, profiles.length);
+});
+
+// ---- Bots that write real answers (ADR 0005) -------------------------------
+const { warmRoundAnswers } = require('../arcade/bot-ticker');
+const SUM_TO_N = {
+  test_kind: 'function',
+  test_cases: [{ args: [3], expected: 6 }, { args: [1], expected: 1 }, { args: [0], expected: 0 }, { args: [4], expected: 10 }],
+  starter_code: 'def sum_to_n(n):\n    total = 0\n    for i in range(1, n + 1):\n        # TODO: add i\n        pass\n    return total',
+  solution_code: 'def sum_to_n(n):\n    total = 0\n    for i in range(1, n + 1):\n        total += i\n    return total',
+};
+let nextTaskId = 9100;
+
+async function codingBotMatch(t, options) {
+  const f = await botMatch(t, options);
+  const taskId = nextTaskId++; // the answer-bank cache is per process, keyed by task id
+  await f.db.query('CREATE TABLE problems (problem_id integer PRIMARY KEY, test_kind text, test_cases jsonb, solution_code text, starter_code text)');
+  await f.db.query('CREATE TABLE problem_modes (problem_id integer, mode text, entry_id integer)');
+  await f.db.query('INSERT INTO problems VALUES (1, ?, ?, ?, ?)', [SUM_TO_N.test_kind, JSON.stringify(SUM_TO_N.test_cases), SUM_TO_N.solution_code, SUM_TO_N.starter_code]);
+  await f.db.query("INSERT INTO problem_modes VALUES (1, 'arcade', ?)", [taskId]);
+  await f.db.query("UPDATE arcade_rooms SET difficulty = 'hard', round_task_ids = ?", [JSON.stringify([taskId, taskId, taskId, taskId])]);
+  await warmRoundAnswers(f.db, [taskId]);
+  const bot = async name => (await f.db.query('SELECT * FROM arcade_participants WHERE user_name = ?', [name]))[0][0];
+  return { ...f, taskId, bot };
+}
+
+test('a bot types a real answer, submits it itself and is scored by the real grader', async t => {
+  const f = await codingBotMatch(t);
+  await f.roundAt('ROUND_2', 0);
+  await f.setBot(f.botName, {});
+  await f.tick();
+  assert.equal((await f.bot(f.botName)).has_submitted, 0);
+  // Mid-way the draft is a real, partly typed answer that a submitted player may watch.
+  await f.elapse(4000);
+  await f.tick();
+  const draft = (await f.bot(f.botName)).draft_code;
+  assert.ok(draft.startsWith('def sum_to_n(n):') && draft !== SUM_TO_N.starter_code, draft);
+  await f.call('/api/arcade/rooms/1/submit-round', { body: { match_id: f.matchId, round_num: 2, code: 'print(1)' } });
+  const watched = (await f.call(`/api/arcade/rooms/1/code/${f.botName}`)).body;
+  assert.equal(watched.is_bot, true);
+  assert.equal(typeof watched.code, 'string');
+  await f.elapse(40000);
+  await f.tick();
+  const sent = await f.bot(f.botName);
+  assert.equal(sent.has_submitted, 1);
+  // Hard band at random()=0 aims for 45%: the bank's 2-of-4 mistake, "total = i".
+  assert.equal(sent.submitted_code, SUM_TO_N.solution_code.replace('total += i', 'total = i'));
+  await f.expire();
+  await f.tick();
+  // 2/4 cases = 50 test points, quality 50 (hard band minimum), plus time earned by those cases.
+  const score = await f.scoreOf(f.botName);
+  assert.ok(score > 100 && score < 150, `score ${score}`);
+});
+
+test('an ink-fogged bot sends the same real answer later and scores less than its twin', async t => {
+  const f = await codingBotMatch(t, { bots: 2 });
+  const [fogged, clear] = f.botNames;
+  await f.roundAt('ROUND_2', 0);
+  await f.db.query("UPDATE arcade_participants SET bot_state = '{}' WHERE participant_kind = 'bot'");
+  await f.tick();
+  // elapse() moves the round, not wall-clock expiries: lift the fog by hand
+  // after fifteen simulated seconds.
+  await f.attackBot(fogged, 'inkFog', 600000);
+  for (let i = 0; i < 5; i++) { await f.elapse(3000); await f.tick(); }
+  await f.attackBot(fogged, null);
+  for (let i = 0; i < 12; i++) { await f.elapse(3000); await f.tick(); }
+  const [a, b] = [await f.bot(fogged), await f.bot(clear)];
+  assert.equal(a.submitted_code, b.submitted_code);
+  assert.ok(new Date(a.submitted_at) > new Date(b.submitted_at));
+  await f.expire();
+  await f.tick();
+  assert.ok(await f.scoreOf(fogged) < await f.scoreOf(clear));
+});
+
+test('under Glitch and Backspace Lock a bot cannot clean its draft and is graded on what it typed', async t => {
+  const f = await codingBotMatch(t);
+  await f.roundAt('ROUND_2', 0);
+  await f.setBot(f.botName, {});
+  await f.tick();
+  const effects = ['typoGenerator', 'backspaceLock'].map(type => ({ type, phase: 'ROUND_2', expiresAt: Date.now() + 600000, instance_id: randomUUID(), attacker: 'alice' }));
+  await f.db.query('UPDATE arcade_shop_states SET attack_effects = ? WHERE user_name = ?', [JSON.stringify(effects), f.botName]);
+  for (let i = 0; i < 6; i++) { await f.elapse(5000); await f.tick(); }
+  const sent = await f.bot(f.botName);
+  assert.equal(sent.has_submitted, 1);
+  assert.match(sent.submitted_code, /x/);
+  await f.expire();
+  await f.tick();
+  // The glitched answer does not compile, so only the rolled quality counts.
+  assert.equal(await f.scoreOf(f.botName), 50);
 });
