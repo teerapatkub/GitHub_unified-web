@@ -10,16 +10,14 @@
 // bot typing, the mutation rules or botSkillByDifficulty should keep each row
 // within about 10% of the "before" column unless the change is meant to.
 //
-// Quality comes from the Arcade code judge (ADR 0006), scaled by the tests
-// passed, as in phase-finalizer.js: Gemini when GEMINI_CODE_JUDGE_API_KEY/MODEL
-// are in server/.env (about 9 calls per problem, spaced by the free quota, so
-// several minutes), otherwise the local score.
+// Quality is measured the way rounds are scored (code-metrics.js, ADR 0007),
+// scaled by the tests passed, as in phase-finalizer.js. No model is called.
 require('dotenv').config({ path: require('path').join(__dirname, '../../.env'), quiet: true });
 const { Client } = require('pg');
 const config = require('../../../shared/arcadeConfig.json');
 const profiles = require('../../../shared/arcadeBotProfiles.json');
 const coder = require('../../arcade/bot-coder');
-const { arcadeCodeJudgeFromEnv } = require('../../arcade/code-judge');
+const { createArcadeCodeJudge } = require('../../arcade/code-judge');
 
 // Mean unattacked bot round score under the progress-bar scoring (Monte Carlo
 // in project_logs/2026-10-18/0440-arcade-debuffs-cost-bots-points.md, 3 cases).
@@ -62,12 +60,11 @@ function simulateRound(bank, profile, skill, random) {
     FROM problem_modes m JOIN problems p ON p.problem_id = m.problem_id WHERE m.mode = 'arcade'`);
   await c.end();
   const banks = {};
-  const judge = arcadeCodeJudgeFromEnv();
-  console.log(`quality: ${judge.enabled ? `Gemini ${judge.model}` : 'local score (no Gemini key)'}`);
+  const judge = createArcadeCodeJudge();
   for (const row of rows) {
     const bank = await coder.buildBank(row);
     await Promise.all(bank.map(async answer => {
-      answer.quality = await judge.judge({ taskId: row.entry_id, problem: row, code: answer.code, verdict: answer.verdict, priority: 'bot' });
+      answer.quality = await judge.judge({ taskId: row.entry_id, problem: row, code: answer.code });
     }));
     (banks[row.difficulty] ??= []).push(bank);
   }

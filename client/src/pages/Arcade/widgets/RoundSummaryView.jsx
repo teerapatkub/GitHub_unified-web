@@ -29,7 +29,17 @@ export default function RoundSummaryView({ roundSummary, timeLeft, t }) {
                 </span>
               )}
             </div>
-            <span className="text-emerald-600 font-mono text-xs font-bold">🪙 +{entry.cashGain}</span>
+            <span className="flex flex-col items-end">
+              <span className="text-emerald-600 font-mono text-xs font-bold">🪙 +{entry.cashGain}</span>
+              {/* Where the money came from (server/arcade/round-cash.js): the
+                  comeback part is what lets the player behind afford an item. */}
+              {entry.cashParts && (
+                <span className="mt-0.5 text-[10px] font-semibold text-slate-400">
+                  {t('cashBase')} {entry.cashParts.base} · {t('cashRank')} +{entry.cashParts.rank}
+                  {entry.cashParts.comeback > 0 && <span className="text-sky-600"> · {t('cashComeback')} +{entry.cashParts.comeback}</span>}
+                </span>
+              )}
+            </span>
           </div>
         ))}
       </div>

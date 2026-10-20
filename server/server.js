@@ -5720,15 +5720,16 @@ const callCodeJudgeChat = async ({ messages, systemInstruction = '', temperature
     return String(completion?.choices?.[0]?.message?.content || '').trim();
 };
 
-// Arcade's code judge: Gemini when GEMINI_CODE_JUDGE_API_KEY/MODEL are set,
-// otherwise a local score; one instance shared by submissions, the round
-// finalizer and the bots' answer banks (arcade/code-judge.js, ADR 0006).
+// Arcade's code judge: quality is always measured locally (ADR 0007); Gemini,
+// when GEMINI_CODE_JUDGE_API_KEY/MODEL are set, only writes post-match advice.
+// One instance shared by submissions, the round finalizer and the bots' answer
+// banks (arcade/code-judge.js).
 {
     const { arcadeCodeJudgeFromEnv, installArcadeCodeJudge } = require('./arcade/code-judge');
     const arcadeJudge = arcadeCodeJudgeFromEnv();
     installArcadeCodeJudge(arcadeJudge);
-    if (arcadeJudge.enabled) console.log(`✅ ตัวตรวจโค้ด Arcade: Gemini ${arcadeJudge.model}`);
-    else console.warn('ℹ️  ตัวตรวจโค้ด Arcade ด้วย Gemini ปิดอยู่ (GEMINI_CODE_JUDGE_API_KEY/MODEL ว่าง) - ให้คะแนนในเครื่องแทน');
+    if (arcadeJudge.enabled) console.log(`✅ คำแนะนำหลังแมตช์ Arcade: Gemini ${arcadeJudge.model} (คะแนนวัดในเครื่อง)`);
+    else console.warn('ℹ️  คำแนะนำหลังแมตช์ Arcade ใช้ผลตรวจในเครื่อง (GEMINI_CODE_JUDGE_API_KEY/MODEL ว่าง)');
 }
 
 // Every match now draws its own problems instead of always serving the same

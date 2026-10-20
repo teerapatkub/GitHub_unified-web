@@ -83,8 +83,8 @@ function warmBank(key, loadProblem) {
     const pending = Promise.resolve().then(loadProblem).then(async problem => {
       if (!problem) throw new Error('problem not found');
       const bank = await buildBank(problem);
-      // Bots type as soon as the tests are graded; the code judge scores the
-      // answers' quality behind them, after any player waiting for it.
+      // Bots type as soon as the tests are graded; each answer's quality is
+      // measured behind them (code-metrics.js).
       bank.qualityReady = judgeBank(key, problem, bank);
       return bank;
     });
@@ -97,16 +97,16 @@ function warmBank(key, loadProblem) {
 }
 
 // Each answer in the bank gets the same quality verdict a player sending that
-// code would get (ADR 0006). Shared cache, so this happens once per process.
+// code would get (ADR 0007). Shared cache, so this happens once per process.
 function judgeBank(key, problem, bank) {
   const judge = arcadeCodeJudge();
   return Promise.all(bank.map(async answer => {
-    answer.quality = await judge.judge({ taskId: key, problem, code: answer.code, verdict: answer.verdict, priority: 'bot' });
+    answer.quality = await judge.judge({ taskId: key, problem, code: answer.code });
   })).catch(error => { console.error(`Arcade bot answer quality ${key} failed:`, error.message); });
 }
 
 // The quality verdict of the answer a bot set out to type. Waits briefly for
-// the judge; if it is still busy, the answer is scored locally instead.
+// the measurement; if it is somehow not done, the answer is scored locally.
 async function answerQuality(key, answerId, waitMs = 3000) {
   const bank = readyBank(key);
   const answer = bank?.find(a => a.id === answerId);

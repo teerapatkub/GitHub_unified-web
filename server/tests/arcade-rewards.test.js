@@ -42,7 +42,7 @@ test('wallet, career statistics and match completion roll back together before a
   assert.deepEqual((await call('/api/arcade/players/alice/stats')).body.stats,
     { user_name: 'alice', matches_played: 1, wins: 1, best_rank: 1, total_score: 500, total_cash_earned: 500 });
   assert.deepEqual((await call('/api/arcade/players/bob/stats')).body.stats,
-    { user_name: 'bob', matches_played: 1, wins: 0, best_rank: 2, total_score: 100, total_cash_earned: 400 });
+    { user_name: 'bob', matches_played: 1, wins: 0, best_rank: 2, total_score: 100, total_cash_earned: 500 });
 });
 
 test('final standings include bots and break tied scores consistently without paying bots', async t => {

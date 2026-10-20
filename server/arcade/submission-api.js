@@ -1,22 +1,19 @@
 // Both writes use the authenticated player and the same room/participant locks.
 // Grading is still performed by the server when the round closes.
 const { verifiedMultiplier } = require('./self-effects');
-const { gradeSubmission } = require('../problemGrader');
 const { arcadeCodeJudge } = require('./code-judge');
 const { loadArcadeProblem, roundTaskIdOf } = require('./round-problem');
 
-// Start judging an answer's quality the moment it is sent, outside every
-// transaction, so the verdict is usually cached before the round closes and
-// settling it never waits on the model (ADR 0006). Best effort: if this
-// fails, the round finalizer judges the answer itself.
+// Measure an answer's quality the moment it is sent, outside every
+// transaction, so the verdict is cached before the round closes (ADR 0007).
+// Best effort: if this fails, the round finalizer measures it itself.
 function startJudging(db, room, roundNum, code) {
   const taskId = roundTaskIdOf(room, roundNum);
   if (taskId === undefined) return;
   (async () => {
     const problem = await loadArcadeProblem(db, taskId);
     if (!problem) return;
-    const verdict = await gradeSubmission({ problem, code });
-    await arcadeCodeJudge().judge({ taskId, problem, code: code.slice(0, 4000), verdict, priority: 'player' });
+    await arcadeCodeJudge().judge({ taskId, problem, code: code.slice(0, 4000) });
   })().catch(error => console.error('Arcade early judging failed:', error.message));
 }
 function installArcadeSubmissions(app, db) {

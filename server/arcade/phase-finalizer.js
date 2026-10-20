@@ -6,13 +6,15 @@ const { settleArcadeRewards } = require('./match-rewards');
 const coder = require('./bot-coder');
 const { arcadeCodeJudge, heuristicCodeQualityScore } = require('./code-judge');
 const { loadArcadeProblem } = require('./round-problem');
+const { roundCashFor } = require('./round-cash');
 
-// How long settling a round waits for a player's quality verdict. Judging
-// starts the moment they submit (submission-api.js), so this is only reached
-// when the model is slow or the quota queue is long; the local score is used.
-const JUDGE_WAIT_MS = 12000;
+// A safety net only: quality is measured locally (code-metrics.js, ADR 0007)
+// in well under a second, and usually before the round ends, because it
+// starts the moment an answer is sent (submission-api.js). It is reached only
+// if Python hangs; the local score is used then.
+const JUDGE_WAIT_MS = 6000;
 
-// The quality leg of a round score (ADR 0006). An untouched starter is worth
+// The quality leg of a round score (ADR 0006, 0007). An untouched starter is worth
 // nothing, and well-written code that does not work is worth at most half:
 // beautiful wrong answers must not outscore plain right ones.
 function qualityFor(judged, passRatio) {
@@ -49,7 +51,6 @@ function arcadePhaseDurations(room) {
 // (Round 1 is a free look — nobody's cut until Round 2, matching the client's
 // existing 5→5→3→2→1 pattern).
 const ARCADE_ELIMINATE_COUNT = { 1: 0, 2: 2, 3: 1, 4: 1 };
-const ARCADE_RANK_CASH_REWARDS = [500, 400, 300, 200, 100];
 // Real test-case counts per round's fixed task (client's TASK_TEST_CASES) —
 // only used to scale a bot's synthetic round score onto the same range a
 // human's real passCount could reach. Round 4 pulls its count live from
@@ -215,8 +216,11 @@ function createArcadePhaseFinalizer({ db, judgeArcadeCode = args => arcadeCodeJu
           room.difficulty || 'default', room.round_duration_mode || 'standard',
           p.user_name, roundNum, g.code.slice(0, 20000),
           g.passCount, g.totalCount, g.quality, g.timeUsed, g.scoreMultiplier, g.roundScore,
-          g.judged.rubric ? JSON.stringify({ ...g.judged.rubric, runtimeRatio: g.judged.runtimeRatio ?? null }) : null,
-          g.judged.reason || null, g.judged.feedback || null, g.judged.source || null]
+          g.judged.rubric ? JSON.stringify(g.judged.rubric) : null,
+          // Measured findings live in the rubric; quality_feedback is left for
+          // the post-match advice (room-api.js), except for an answer that
+          // explains itself, such as an untouched starter.
+          g.judged.reason || null, g.judged.source === 'metrics' ? null : g.judged.feedback || null, g.judged.source || null]
       );
     }
 
@@ -300,19 +304,10 @@ function createArcadePhaseFinalizer({ db, judgeArcadeCode = args => arcadeCodeJu
         return { participant: p, roundScore };
       }));
 
-      // Rank this round's performance only (not cumulative) to pay out coins.
+      // Rank this round's performance only (not cumulative) for the summary.
       roundResults.sort((a, b) => b.roundScore - a.roundScore);
-      for (let i = 0; i < roundResults.length; i++) {
-        const cashGain = ARCADE_RANK_CASH_REWARDS[i] || 0;
-        const { participant, roundScore } = roundResults[i];
-        await db.query(
-          `UPDATE arcade_participants SET score = score + ?, cash = cash + ?, has_submitted = 0, pending_round_score = NULL, submitted_code = NULL, submitted_at = NULL, score_multiplier_active = 0, draft_code = NULL, draft_updated_at = NULL WHERE id = ?`,
-          [roundScore, cashGain, participant.id]
-        );
-      }
 
-      // Cumulative-score elimination — recompute standings from the fresh
-      // totals just written above so a round's own score counts toward
+      // Cumulative-score elimination: a round's own score counts toward
       // whether its owner survives it.
       const eliminatedNames = new Set();
       if (safeEliminateCount > 0) {
@@ -321,20 +316,40 @@ function createArcadePhaseFinalizer({ db, judgeArcadeCode = args => arcadeCodeJu
           newScore: participant.score + roundScore
         }));
         cumulative.sort((a, b) => a.newScore - b.newScore);
-        for (const p of cumulative.slice(0, safeEliminateCount)) {
-          eliminatedNames.add(p.user_name);
-          await db.query(`UPDATE arcade_participants SET is_eliminated = 1 WHERE room_id = ? AND user_name = ?`, [roomId, p.user_name]);
-        }
+        for (const p of cumulative.slice(0, safeEliminateCount)) eliminatedNames.add(p.user_name);
+      }
+
+      // Shop money: a base for everyone, a smaller bonus for this round's
+      // rank, and a comeback bonus for the lowest totals still in the match
+      // (round-cash.js), worked out after the cut so it goes to survivors.
+      const cash = roundCashFor(roundResults.map(({ participant, roundScore }) => ({
+        name: participant.user_name, roundScore,
+        totalScore: participant.score + roundScore,
+        eliminated: eliminatedNames.has(participant.user_name),
+      })));
+
+      for (const { participant, roundScore } of roundResults) {
+        await db.query(
+          `UPDATE arcade_participants SET score = score + ?, cash = cash + ?, has_submitted = 0, pending_round_score = NULL, submitted_code = NULL, submitted_at = NULL, score_multiplier_active = 0, draft_code = NULL, draft_updated_at = NULL WHERE id = ?`,
+          [roundScore, cash.get(participant.user_name).total, participant.id]
+        );
+      }
+      for (const name of eliminatedNames) {
+        await db.query(`UPDATE arcade_participants SET is_eliminated = 1 WHERE room_id = ? AND user_name = ?`, [roomId, name]);
       }
 
       const summary = {
         roundNum,
-        entries: roundResults.map(({ participant }, i) => ({
-          name: participant.user_name,
-          rank: i + 1,
-          cashGain: ARCADE_RANK_CASH_REWARDS[i] || 0,
-          eliminated: eliminatedNames.has(participant.user_name)
-        }))
+        entries: roundResults.map(({ participant }, i) => {
+          const { total, ...cashParts } = cash.get(participant.user_name);
+          return {
+            name: participant.user_name,
+            rank: i + 1,
+            cashGain: total,
+            cashParts,
+            eliminated: eliminatedNames.has(participant.user_name)
+          };
+        })
       };
 
       // A small room (as few as 2 players) can reach a sole survivor

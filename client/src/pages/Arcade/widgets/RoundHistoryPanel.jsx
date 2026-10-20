@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { API_BASE } from '../../../config/api.js';
 
 // Phase 8.3 — "review your code" panel on the RESULT screen. Shows what this
 // player submitted each round, with the same three-part breakdown the round
-// score is actually made of (test cases / AI-judged quality / time), so the
+// score is actually made of (test cases / measured quality / time), so the
 // number they were given is explainable rather than mysterious.
 //
 // Only ever contains the viewing player's own rounds — the endpoint behind it
@@ -65,18 +66,21 @@ export default function RoundHistoryPanel({ history, t }) {
   );
 }
 
-// What the code judge said about this answer (server/arcade/code-judge.js,
-// ADR 0006): time, efficiency and standards, why, and what to try next.
-// Rounds settled before the judge kept this have none of it, and show nothing.
+// How this answer's quality was scored (server/arcade/code-metrics.js,
+// ADR 0007): time, efficiency and standards measured against the reference
+// answer, each lost point with the line that lost it, then a few sentences of
+// advice that load afterwards (from Gemini when it is set up). Rounds settled
+// before the review existed have none of it, and show nothing.
 const RUBRIC = [['time', 'rubricTime'], ['efficiency', 'rubricEfficiency'], ['standard', 'rubricStandard']];
-// Flagged and starter answers already explain themselves in the advice.
 const SOURCE_NOTE = { fallback: 'sourceFallback' };
 
 function QualityReview({ row, t }) {
   const rubric = row.quality_rubric;
   const note = SOURCE_NOTE[row.quality_source];
   if (!rubric && !row.quality_feedback && !note) return null;
-  const ratio = Number(rubric?.runtimeRatio);
+  const ratio = Number(rubric?.stepRatio);
+  const lang = t('findingLang') === 'en' ? 'en' : 'th';
+  const findings = rubric?.findings || [];
 
   return (
     <section className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600" aria-label={t('qualityReviewTitle')}>
@@ -104,13 +108,22 @@ function QualityReview({ row, t }) {
         </dl>
       )}
 
-      {row.quality_reason && <p className="mt-3 italic text-slate-500">{row.quality_reason}</p>}
-
-      {row.quality_feedback && (
-        <div className="mt-3 rounded-xl border border-sky-100 bg-white p-3">
-          <p className="text-[11px] font-black text-sky-700">{t('feedbackLabel')}</p>
-          <p className="mt-1 leading-relaxed text-slate-700">{row.quality_feedback}</p>
+      {findings.length > 0 && (
+        <div className="mt-3">
+          <p className="text-[11px] font-black text-slate-500">{t('findingsLabel')}</p>
+          <ul className="mt-1 space-y-1">
+            {findings.map((finding, index) => (
+              <li key={index} className="flex gap-2 leading-relaxed">
+                <span className="shrink-0 font-mono text-[10px] text-slate-400">{finding.line ? `${t('lineShort')} ${finding.line}` : '•'}</span>
+                <span className="text-slate-700">{finding[lang] || finding.th}</span>
+              </li>
+            ))}
+          </ul>
         </div>
+      )}
+
+      {row.history_id ? <Advice row={row} t={t} /> : row.quality_feedback && (
+        <AdviceBox label={t('feedbackLabel')} text={row.quality_feedback} />
       )}
 
       {note && <p className="mt-3 inline-block rounded-lg bg-amber-50 px-2.5 py-1 font-bold text-amber-800">{t(note)}</p>}
@@ -119,4 +132,50 @@ function QualityReview({ row, t }) {
       )}
     </section>
   );
+}
+
+function AdviceBox({ label, text }) {
+  return (
+    <div className="mt-3 rounded-xl border border-sky-100 bg-white p-3">
+      <p className="text-[11px] font-black text-sky-700">{label}</p>
+      <p className="mt-1 leading-relaxed text-slate-700">{text}</p>
+    </div>
+  );
+}
+
+// Advice is asked for when the round is opened, never while scoring: it is
+// written after the match (server: POST /api/arcade/history/:id/advice) and
+// kept, so each round costs the model at most one call. The model can take
+// 10-15 seconds; one request per round is shared by every panel that asks.
+const adviceRequests = new Map();
+const requestAdvice = (historyId) => {
+  if (!adviceRequests.has(historyId)) {
+    adviceRequests.set(historyId, fetch(`${API_BASE}/api/arcade/history/${historyId}/advice`, { method: 'POST' })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body) => {
+        if (!body) adviceRequests.delete(historyId); // e.g. the match is still on: ask again later
+        return { text: body?.advice || '', source: body?.source || 'metrics' };
+      })
+      .catch(() => { adviceRequests.delete(historyId); return { text: '', source: 'metrics' }; }));
+  }
+  return adviceRequests.get(historyId);
+};
+
+function Advice({ row, t }) {
+  const [advice, setAdvice] = useState(() => (row.quality_feedback
+    ? { text: row.quality_feedback, source: row.quality_source === 'starter' ? 'metrics' : 'ai' } : null));
+
+  useEffect(() => {
+    if (advice) return undefined;
+    let cancelled = false;
+    // Nothing to say, or not available yet: stop waiting rather than spin.
+    requestAdvice(row.history_id).then((next) => { if (!cancelled) setAdvice(next); });
+    return () => { cancelled = true; };
+  }, [advice, row.history_id]);
+
+  if (!advice) {
+    return <p className="mt-3 animate-pulse text-[11px] font-bold text-sky-600">{t('adviceLoading')}</p>;
+  }
+  if (!advice.text) return null;
+  return <AdviceBox label={advice.source === 'ai' ? t('adviceFromAi') : t('adviceFromMetrics')} text={advice.text} />;
 }

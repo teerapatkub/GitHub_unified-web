@@ -150,7 +150,9 @@ test('bot multiplier is consumed server-side and doubles only its activation rou
   await f.db.query('UPDATE arcade_participants SET is_eliminated = 0');
   await f.finishBot(f.botName, 0);
   await settleDueArcadeRooms({db:f.db,random:()=>0,judgeArcadeCode:async()=>({score:0})});
-  assert.equal((await f.room()).participants.find(p=>p.user_name===f.botName).score,339);
+  // Round 3's problem has 2 cases; the default band now starts at 20%, which
+  // rounds to no passes, so only quality 35 is added - and no multiplier.
+  assert.equal((await f.room()).participants.find(p=>p.user_name===f.botName).score,239);
 });
 
 test('bot AOE is shared by both players and retry after a database fault has no partial effects', async t => {
@@ -368,9 +370,10 @@ test('a bot types a real answer, submits it itself and is scored by the real gra
   assert.equal(sent.submitted_code, SUM_TO_N.solution_code.replace('total += i', 'total = i'));
   await f.expire();
   await f.tick();
-  // 2/4 cases = 50 test points, quality 50 (hard band minimum), plus time earned by those cases.
+  // 2/4 cases = 50 test points; quality is the answer measured against the
+  // reference (ADR 0007), scaled by 0.5 + 0.5 x 2/4; plus time earned by those cases.
   const score = await f.scoreOf(f.botName);
-  assert.ok(score > 100 && score < 150, `score ${score}`);
+  assert.ok(score > 100 && score < 200, `score ${score}`);
 });
 
 test('an ink-fogged bot sends the same real answer later and scores less than its twin', async t => {
@@ -407,8 +410,9 @@ test('under Glitch and Backspace Lock a bot cannot clean its draft and is graded
   await f.expire();
   await f.tick();
   // The glitched answer does not compile, so only quality counts, and only
-  // half of it: the answer's judged 70 (scored locally in tests) becomes 35.
-  assert.equal(await f.scoreOf(f.botName), 35);
+  // half of it: the answer it set out to type measures 100 against the
+  // reference (ADR 0007) and becomes 50.
+  assert.equal(await f.scoreOf(f.botName), 50);
 });
 
 // ---- Shopping and attacking with a plan ------------------------------------
@@ -490,27 +494,23 @@ test('a bot that gives up keeps the scaffold until the deadline instead of sendi
   assert.equal(await f.scoreOf(f.botName), 25);
 });
 
-// ---- Bots are judged by the same code judge as players (ADR 0006) ----------
-test('a bot answer bank is scored by the installed code judge, and the scaffold is worth nothing', async t => {
+// ---- Bots are measured like players (ADR 0007) ------------------------------
+test('a bot answer bank is measured like player answers, with no model call, and the scaffold is worth nothing', async t => {
   const judgeModule = require('../arcade/code-judge');
   const { readyBank, answerQuality } = require('../arcade/bot-coder');
   const previous = judgeModule.arcadeCodeJudge();
-  const priorities = [];
+  const calls = [];
   judgeModule.installArcadeCodeJudge(judgeModule.createArcadeCodeJudge({
-    model: 'fake', rpm: 6000,
-    generate: async ({ prompt }) => {
-      priorities.push(prompt);
-      return JSON.stringify({ time: 90, efficiency: 80, standard: 70, reason: 'ดี', feedback: 'ลองเช็กขอบเขตของ range' });
-    },
+    model: 'fake', generate: async args => { calls.push(args); return 'advice'; },
   }));
   t.after(() => judgeModule.installArcadeCodeJudge(previous));
   const f = await codingBotMatch(t);
   const bank = readyBank(f.taskId);
   await bank.qualityReady;
   const solution = bank.find(answer => answer.id === 'solution');
-  assert.deepEqual([solution.quality.score, solution.quality.source], [80, 'ai']);
-  assert.ok(bank.filter(a => a.id.startsWith('mistake-')).every(a => a.quality.source === 'ai'));
+  assert.deepEqual([solution.quality.score, solution.quality.source], [100, 'metrics']);
+  assert.ok(bank.filter(a => a.id.startsWith('mistake-')).every(a => a.quality.source === 'metrics'));
   assert.equal(bank.find(a => a.id === 'starter').quality.source, 'starter');
-  assert.equal(priorities.length, bank.length - 1, 'the scaffold costs no call');
-  assert.equal((await answerQuality(f.taskId, 'solution')).score, 80);
+  assert.equal(calls.length, 0, 'scoring never asks the model');
+  assert.equal((await answerQuality(f.taskId, 'solution')).score, 100);
 });

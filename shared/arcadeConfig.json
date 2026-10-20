@@ -47,6 +47,12 @@
     "flatAmount": 300,
     "taxPercent": 0.2
   },
+  "roundCash": {
+    "_comment": "Shop money paid after each round (server/arcade/round-cash.js). base: everyone, enough for one item. rankBonus: by this round's score, highest first. comebackBonus: by total score among those still in, lowest first; the leader never gets it.",
+    "base": 300,
+    "rankBonus": [200, 140, 90, 40, 0],
+    "comebackBonus": [250, 150, 50]
+  },
   "maxPlayers": {
     "min": 2,
     "max": 5
@@ -71,26 +77,26 @@
   "_botSkillComment": "How strong the synthesized bot opponents are, per room difficulty. Bot scores used to come from one fixed band regardless of the room, so choosing an easy room made the problems easier but left the opposition exactly as strong - an easy room was not actually easier to survive. 'medium' reproduces that original band exactly, so any change in behaviour is attributable to the room's own setting. passMin/passSpread are the fraction of test cases a bot passes; qualityMin/qualitySpread are its code-quality score out of 100.",
   "botSkillByDifficulty": {
     "easy": {
-      "passMin": 0.1,
-      "passSpread": 0.45,
+      "passMin": 0.05,
+      "passSpread": 0.38,
       "qualityMin": 25,
       "qualitySpread": 40
     },
     "default": {
-      "passMin": 0.25,
+      "passMin": 0.2,
       "passSpread": 0.55,
       "qualityMin": 35,
       "qualitySpread": 45
     },
     "medium": {
-      "passMin": 0.35,
+      "passMin": 0.3,
       "passSpread": 0.65,
       "qualityMin": 40,
       "qualitySpread": 50
     },
     "hard": {
-      "passMin": 0.55,
-      "passSpread": 0.45,
+      "passMin": 0.45,
+      "passSpread": 0.55,
       "qualityMin": 50,
       "qualitySpread": 50
     }

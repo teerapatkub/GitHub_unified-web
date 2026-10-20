@@ -1,5 +1,9 @@
 // Room polling and membership responses contain public gameplay state only.
 const { rematchRoster } = require('./match-api');
+const { gradeSubmission } = require('../problemGrader');
+const { arcadeCodeJudge } = require('./code-judge');
+const { summarise } = require('./code-metrics');
+const { loadArcadeProblem } = require('./round-problem');
 function publicParticipants(rows) {
   const fields = ['id', 'room_id', 'match_id', 'user_name', 'is_host', 'score', 'cash',
     'participant_kind', 'bot_profile', 'is_eliminated', 'joined_at', 'last_seen', 'has_submitted', 'coins_awarded'];
@@ -131,7 +135,7 @@ function installArcadeRoomReads(app, db) {
       const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 10));
 
       const [rows] = await db.query(
-        `SELECT h.match_id, h.room_id, h.room_code, h.room_name, h.difficulty, h.round_duration_mode,
+        `SELECT h.id AS history_id, h.match_id, h.room_id, h.room_code, h.room_name, h.difficulty, h.round_duration_mode,
             h.round_num, h.code, h.pass_count, h.total_count, h.quality_score, h.time_used_seconds,
             h.score_multiplier, h.round_score, h.match_ended_at,
             h.quality_rubric, h.quality_reason, h.quality_feedback, h.quality_source,
@@ -168,7 +172,7 @@ function installArcadeRoomReads(app, db) {
         const match = byMatch.get(row.match_id);
         match.total_score += row.round_score || 0;
         match.rounds.push({
-          round_num: row.round_num, code: row.code,
+          history_id: row.history_id, round_num: row.round_num, code: row.code,
           pass_count: row.pass_count, total_count: row.total_count,
           quality_score: row.quality_score, time_used_seconds: row.time_used_seconds,
           score_multiplier: row.score_multiplier,
@@ -192,8 +196,8 @@ function installArcadeRoomReads(app, db) {
       if (!userName) return res.status(400).json({ error: 'ต้องระบุชื่อผู้เล่น' });
 
       const [rows] = await db.query(
-        `SELECT round_num, code, pass_count, total_count, quality_score, time_used_seconds,
-          score_multiplier, round_score,
+        `SELECT id AS history_id, round_num, code, pass_count, total_count, quality_score, time_used_seconds,
+          score_multiplier, round_score, match_ended_at,
           quality_rubric, quality_reason, quality_feedback, quality_source
         FROM arcade_round_history
         WHERE room_id = ? AND user_name = ?
@@ -205,6 +209,53 @@ function installArcadeRoomReads(app, db) {
     } catch (err) {
       console.error('❌ GET /api/arcade/rooms/:id/round-history error:', err.message);
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // A few sentences of advice on one finished round (ADR 0007). Written by
+  // Gemini once and kept in quality_feedback; it never changes a score. Only
+  // the round's own player may ask, and only after the match is over, so the
+  // advice cannot coach anyone mid-match. Without a model, or when it fails,
+  // the answer is the measured findings and nothing is stored, so it can be
+  // tried again later.
+  // One model call per round even when the panel asks twice at once.
+  const adviceInFlight = new Map();
+  app.post('/api/arcade/history/:historyId/advice', async (req, res) => {
+    const historyId = Number(req.params.historyId);
+    if (!Number.isSafeInteger(historyId) || historyId <= 0) return res.status(400).json({ error: 'รหัสรอบไม่ถูกต้อง' });
+    try {
+      const [[row]] = await db.query(
+        `SELECT h.id, h.user_name, h.round_num, h.code, h.match_ended_at, h.quality_rubric, h.quality_reason,
+            h.quality_feedback, h.quality_source, m.round_task_ids
+         FROM arcade_round_history h LEFT JOIN arcade_matches m ON m.match_id = h.match_id
+         WHERE h.id = ?`, [historyId]);
+      if (!row || row.user_name !== req.player.username) return res.status(403).json({ error: 'ดูได้เฉพาะรอบของคุณ' });
+      if (!row.match_ended_at) return res.status(409).json({ error: 'ดูคำแนะนำได้หลังจบแมตช์' });
+      if (row.quality_feedback) return res.json({ advice: row.quality_feedback, source: row.quality_source === 'starter' ? 'metrics' : 'ai' });
+
+      const findings = row.quality_rubric?.findings || [];
+      const judged = { rubric: row.quality_rubric, reason: row.quality_reason, feedback: summarise(findings).feedback };
+      const taskId = Array.isArray(row.round_task_ids) ? row.round_task_ids[row.round_num - 1] : undefined;
+      const problem = await loadArcadeProblem(db, taskId);
+      if (!row.quality_rubric) return res.json({ advice: judged.feedback || judged.reason || '', source: 'metrics' });
+
+      // A match from before round_task_ids was kept has no problem to show the
+      // model; the code and the findings still say enough.
+      if (!adviceInFlight.has(historyId)) {
+        adviceInFlight.set(historyId, (async () => {
+          const verdict = problem ? await gradeSubmission({ problem, code: row.code || '' }) : null;
+          const advice = await arcadeCodeJudge().advise({ problem, code: row.code || '', verdict, judged });
+          if (advice.source === 'ai') {
+            await db.query('UPDATE arcade_round_history SET quality_feedback = ? WHERE id = ? AND quality_feedback IS NULL', [advice.text, historyId]);
+          }
+          return advice;
+        })().finally(() => adviceInFlight.delete(historyId)));
+      }
+      const advice = await adviceInFlight.get(historyId);
+      res.json({ advice: advice.text, source: advice.source });
+    } catch (err) {
+      console.error('❌ POST /api/arcade/history/:id/advice error:', err.message);
+      res.status(500).json({ error: 'โหลดคำแนะนำไม่สำเร็จ' });
     }
   });
 }

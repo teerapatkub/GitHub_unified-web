@@ -13,8 +13,11 @@ test('concurrent workers and a repeated stale tick settle a round only once', as
   await workers[0](room);
   const state = (await call('/api/arcade/rooms/1')).body;
   assert.equal(state.room.phase, 'SUMMARY_1');
-  assert.deepEqual(state.participants.map(p => p.cash).sort((a, b) => b - a), [500, 400]);
+  // Nobody submitted: a tie, so both get the base and the top rank bonus once
+  // (server/arcade/round-cash.js).
+  assert.deepEqual(state.participants.map(p => p.cash).sort((a, b) => b - a), [500, 500]);
   assert.equal(state.room.last_round_summary.entries.length, 2);
+  assert.deepEqual(state.room.last_round_summary.entries[0].cashParts, { base: 300, rank: 200, comeback: 0 });
 });
 
 test('a database failure leaves answers and round results intact for a complete retry', async t => {
@@ -87,7 +90,8 @@ test('score, cash, elimination, history and final phase commit together after a 
   assert.equal(after.room.phase, 'RESULT');
   assert.equal(after.room.phase_deadline, null);
   assert.equal(after.room.current_round, 2);
-  assert.deepEqual(after.participants.map(p => [p.user_name, p.score, p.cash, p.is_eliminated]), [['alice', 600, 500, 0], ['bob', 0, 400, 1]]);
+  // bob is cut: the base, no rank bonus as last of two, and no comeback bonus.
+  assert.deepEqual(after.participants.map(p => [p.user_name, p.score, p.cash, p.is_eliminated]), [['alice', 600, 500, 0], ['bob', 0, 300, 1]]);
   assert.deepEqual(after.room.last_round_summary.entries.map(e => [e.name, e.eliminated]), [['alice', false], ['bob', true]]);
   const history = (await call('/api/arcade/rooms/1/round-history')).body.history;
   assert.equal(history.length, 1);
@@ -141,7 +145,7 @@ test('a persistently failing room does not stop another due room from advancing'
   assert.equal((await call('/api/arcade/rooms/1')).body.room.phase, 'ROUND_1');
   const second = (await call('/api/arcade/rooms/2')).body;
   assert.equal(second.room.phase, 'SUMMARY_1');
-  assert.deepEqual(second.participants.map(p => p.cash).sort((a, b) => b - a), [500, 400]);
+  assert.deepEqual(second.participants.map(p => p.cash).sort((a, b) => b - a), [500, 500]);
 });
 
 test('phase deadlines follow the database clock when the app clock drifts', async t => {
