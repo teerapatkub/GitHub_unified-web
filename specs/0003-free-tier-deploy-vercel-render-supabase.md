@@ -2,6 +2,10 @@
 
 สถานะ: `ready-for-agent`
 
+> **แทนที่บางส่วน 2026-10-21 โดย [ADR 0008](../docs/adr/0008-one-render-service-and-a-fresh-production-project.md):**
+> ไม่ใช้ Vercel แล้ว Render บริการเดียวเสิร์ฟทั้งหน้าเว็บและ API ส่วน production ใช้ Supabase project ใหม่ (Singapore) และ project เดิมเป็นฐานทดสอบ
+> ใช้ repo ใหม่แบบ private ที่มี commit เดียวแทนการล้างประวัติ (D01) และส่งอีเมลด้วย Gmail SMTP แทน Brevo ขั้นตอนอยู่ที่ [`docs/deploy-render.md`](../docs/deploy-render.md)
+
 > **แก้ 2026-10-16:**
 > - ผู้ใช้เปลี่ยนจาก "Supabase project ใหม่แบบฐานว่างที่ Singapore" เป็น **ใช้ project เดิมต่อ** (region ap-northeast-1 Tokyo) ส่วน Render ยังใช้ Singapore ซึ่งใกล้ที่สุด
 > - ล้างบัญชีทดสอบแล้ว เหลือผู้เล่น 128, 129, 141, 142 (`project_logs/2026-10-16/1920-prune-old-project-accounts.md`)
