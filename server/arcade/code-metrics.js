@@ -94,9 +94,22 @@ function scoreQuality(answer, reference) {
   const findings = [];
   const note = (criterion, line, th, en) => findings.push({ criterion, line: line || null, th, en });
 
+  const nothing = () => ({ score: 0, rubric: { time: 0, efficiency: 0, standard: 0, stepRatio: null, findings }, ...summarise(findings) });
+  if (answer?.tampered?.length) {
+    // Reaching into the probe is how a time score would be faked; it scores
+    // nothing rather than whatever the tampering produced.
+    const first = answer.tampered[0];
+    note('time', first.line || null, `พบโค้ดที่พยายามแก้ไขตัววัด (${first.name}) จึงไม่ให้คะแนนคุณภาพ`,
+      `code that tampers with the measurement (${first.name}); no quality points`);
+    return nothing();
+  }
+  if (answer?.timedOut) {
+    note('time', null, 'ทำงานนานเกินกำหนด จึงวัดไม่ได้', 'ran too long to be measured');
+    return nothing();
+  }
   if (!answer?.ok || answer.error?.startsWith('SyntaxError')) {
     note('time', null, 'โค้ดรันไม่ได้ จึงวัดไม่ได้', 'the code does not run, so nothing could be measured');
-    return { score: 0, rubric: { time: 0, efficiency: 0, standard: 0, stepRatio: null, findings }, ...summarise(findings) };
+    return nothing();
   }
 
   // time

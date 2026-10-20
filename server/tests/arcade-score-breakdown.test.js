@@ -66,7 +66,8 @@ test('result and match history expose the persisted score breakdown, multiplier 
 
   // ---- advice after the match (ADR 0007) ----
   const advice = id => call(`/api/arcade/history/${id}/advice`, { body: {} });
-  assert.equal((await call(`/api/arcade/history/${historyId}/advice`, { user: 'bob', body: {} })).status, 403, 'not your round');
+  assert.equal((await call(`/api/arcade/history/${historyId}/advice`, { user: 'bob', body: {} })).status, 404, 'someone else\'s round looks like no round');
+  assert.equal((await call('/api/arcade/history/999999/advice', { body: {} })).status, 404);
   // No model configured: the measured findings are the advice, and nothing is stored.
   assert.deepEqual((await advice(historyId)).body, { advice: 'บรรทัด 1: ชื่อ myX ควรเป็น snake_case', source: 'metrics' });
 
@@ -81,6 +82,10 @@ test('result and match history expose the persisted score breakdown, multiplier 
   assert.deepEqual((await advice(historyId)).body, { advice: 'ลองตั้งชื่อตัวแปรให้สื่อความหมายมากขึ้น', source: 'ai' });
   assert.equal(asked.length, 1, 'written once, then kept');
   assert.match(asked[0].prompt, /line 1: ชื่อ myX/);
+
+  // A legacy row whose stored text was a fixed penalty message, not the model's.
+  await db.query("UPDATE arcade_round_history SET quality_source = 'flagged', quality_feedback = 'พบข้อความที่พยายามสั่งตัวตรวจ' WHERE id = ?", [historyId]);
+  assert.deepEqual((await advice(historyId)).body, { advice: 'พบข้อความที่พยายามสั่งตัวตรวจ', source: 'metrics' });
 
   await db.query('UPDATE arcade_round_history SET match_ended_at = NULL, quality_feedback = NULL WHERE id = ?', [historyId]);
   assert.equal((await advice(historyId)).status, 409, 'no advice while the match is still on');

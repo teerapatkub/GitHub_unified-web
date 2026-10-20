@@ -161,9 +161,10 @@ const requestAdvice = (historyId) => {
   return adviceRequests.get(historyId);
 };
 
+// The server decides whether stored text came from the model; asking it is
+// quick once the advice exists, so the panel never guesses from the row.
 function Advice({ row, t }) {
-  const [advice, setAdvice] = useState(() => (row.quality_feedback
-    ? { text: row.quality_feedback, source: row.quality_source === 'starter' ? 'metrics' : 'ai' } : null));
+  const [advice, setAdvice] = useState(null);
 
   useEffect(() => {
     if (advice) return undefined;

@@ -14,12 +14,19 @@ import ast
 import base64
 import io
 import json
+import os
 import re
 import sys
 import tokenize
 
 DATA = json.loads(base64.b64decode(__PAYLOAD).decode("utf-8"))  # noqa: F821
+del __PAYLOAD  # noqa: F821
 CODE = DATA["code"]
+# The player's code runs in this process, so nothing it could reach may decide
+# its score. The result marker and the step count live only in closures, the
+# result goes straight to file descriptor 1, and code that reaches for the
+# probe's machinery is refused before it runs (see tampering()).
+_write_result = (lambda marker, write: (lambda text: write(1, (marker + text + "\n").encode("utf-8"))))(DATA.pop("marker"), os.write)
 FILENAME = "<player>"
 STEP_CAP = 2_000_000
 REPEATED_CALLS = {"sorted", "sort", "count", "index", "remove", "insert"}
@@ -39,22 +46,33 @@ class StepCap(Exception):
     pass
 
 
-steps = 0
+def make_tracer():
+    count = [0]
 
+    def tracer(frame, event, arg):
+        if frame.f_code.co_filename != FILENAME:
+            return None
 
-def tracer(frame, event, arg):
-    if frame.f_code.co_filename != FILENAME:
-        return None
+        def local(frame, event, arg):
+            if event == "line":
+                count[0] += 1
+                if count[0] > STEP_CAP:
+                    raise StepCap()
+            return local
 
-    def local(frame, event, arg):
-        global steps
-        if event == "line":
-            steps += 1
-            if steps > STEP_CAP:
-                raise StepCap()
         return local
 
-    return local
+    return tracer, (lambda: count[0])
+
+
+tracer, steps_taken = make_tracer()
+tracer_switched_off = [False]
+
+
+def still_traced():
+    # A run that turned the tracer off would look almost free.
+    if sys.gettrace() is not tracer:
+        tracer_switched_off[0] = True
 
 
 def run_cases(compiled):
@@ -67,6 +85,7 @@ def run_cases(compiled):
             sys.settrace(tracer)
             try:
                 exec(compiled, namespace)
+                still_traced()
             finally:
                 sys.settrace(None)
             target = namespace.get(DATA.get("function") or "")
@@ -74,6 +93,7 @@ def run_cases(compiled):
                 sys.settrace(tracer)
                 try:
                     target(*case.get("args", []))
+                    still_traced()
                 except StepCap:
                     raise
                 except BaseException:
@@ -87,6 +107,7 @@ def run_cases(compiled):
                 sys.settrace(tracer)
                 try:
                     exec(compiled, {"__name__": "__main__"})
+                    still_traced()
                 except StepCap:
                     raise
                 except SystemExit:
@@ -101,32 +122,93 @@ def run_cases(compiled):
 
 
 # ---------------------------------------------------------------- reading ---
-LOOPS = (ast.For, ast.While, ast.AsyncFor, ast.comprehension)
+COMPREHENSIONS = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
+STATEMENT_LOOPS = (ast.For, ast.AsyncFor, ast.While)
 
 
 def loop_depth(node, depth=0):
+    """How deeply loops nest. A comprehension with two `for` clauses is two
+    levels, like the two nested for statements it stands for."""
     deepest = depth
     for child in ast.iter_child_nodes(node):
-        inner = depth + 1 if isinstance(child, LOOPS) else depth
+        if isinstance(child, STATEMENT_LOOPS):
+            inner = depth + 1
+        elif isinstance(child, COMPREHENSIONS):
+            inner = depth + len(child.generators)
+        else:
+            inner = depth
         deepest = max(deepest, loop_depth(child, inner))
     return deepest
 
 
 def repeated_work(tree):
-    """Calls that redo a whole pass over the data, made inside a loop."""
+    """Calls that redo a whole pass over the data, made inside a loop.
+
+    What a for statement iterates over is evaluated once, before the loop, so
+    `for x in sorted(items):` sorts once and is not repeated work; the same
+    holds for a comprehension's first `in`. A while loop's condition, the
+    body, and later comprehension clauses run on every pass."""
     found = []
 
+    def call_name(node):
+        func = node.func
+        return func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else None
+
     def visit(node, in_loop):
-        if isinstance(node, ast.Call) and in_loop:
-            func = node.func
-            name = func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else None
-            if name in REPEATED_CALLS:
-                found.append({"name": name, "line": node.lineno})
+        if isinstance(node, ast.Call) and in_loop and call_name(node) in REPEATED_CALLS:
+            found.append({"name": call_name(node), "line": node.lineno})
+        if isinstance(node, (ast.For, ast.AsyncFor)):
+            visit(node.iter, in_loop)
+            for child in [node.target, *node.body, *node.orelse]:
+                visit(child, True)
+            return
+        if isinstance(node, ast.While):
+            for child in [node.test, *node.body, *node.orelse]:
+                visit(child, True)
+            return
+        if isinstance(node, COMPREHENSIONS):
+            first, *rest = node.generators
+            visit(first.iter, in_loop)
+            for child in [first.target, *first.ifs, *rest]:
+                visit(child, True)
+            for child in ([node.key, node.value] if isinstance(node, ast.DictComp) else [node.elt]):
+                visit(child, True)
+            return
         for child in ast.iter_child_nodes(node):
-            loop_body = in_loop or isinstance(node, LOOPS) or isinstance(node, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp))
-            visit(child, loop_body)
+            visit(child, in_loop)
 
     visit(tree, False)
+    return found
+
+
+# Names that only matter to code reaching into the probe that measures it:
+# switching the tracer off, walking frames or closures to the counter, or
+# replacing what the probe itself uses. A beginner's answer never needs them.
+TAMPER_NAMES = {
+    "settrace", "setprofile", "gettrace", "_getframe", "__main__", "__builtins__", "builtins",
+    "gc", "inspect", "ctypes", "_exit", "f_globals", "f_locals", "f_back", "f_trace", "tb_frame",
+    "__globals__", "__closure__", "cell_contents", "__code__", "modules",
+}
+
+
+def tampering(tree):
+    found = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            names = [node.id]
+        elif isinstance(node, ast.Attribute):
+            names = [node.attr]
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            names = [alias.name.split(".")[0] for alias in node.names]
+            if getattr(node, "module", None):
+                names.append(node.module.split(".")[0])
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            names = [node.value]
+        else:
+            names = []
+        for name in names:
+            if name in TAMPER_NAMES:
+                found.append({"name": name, "line": getattr(node, "lineno", 0)})
     return found
 
 
@@ -208,13 +290,18 @@ def style_findings(tree):
 
 
 def main():
-    result = {"ok": False, "error": "", "steps": 0, "capped": False, "raised": 0,
+    result = {"ok": False, "error": "", "steps": 0, "capped": False, "raised": 0, "tampered": [],
               "loop_depth": 0, "repeated": [], "answer_lines": 0, "style": []}
     try:
         tree = ast.parse(CODE)
         compiled = compile(CODE, FILENAME, "exec")
     except SyntaxError as error:
         result["error"] = f"SyntaxError: line {error.lineno}"
+        return result
+    result["tampered"] = tampering(tree)
+    if result["tampered"]:
+        # Refused, not run: running it is how it would cheat.
+        result["ok"] = True
         return result
     result["loop_depth"] = loop_depth(tree)
     result["repeated"] = repeated_work(tree)
@@ -228,9 +315,11 @@ def main():
     except BaseException as error:  # the module itself failed to run
         result["error"] = type(error).__name__
         result["raised"] = len(DATA["cases"])
-    result["steps"] = steps
+    result["steps"] = steps_taken()
+    if tracer_switched_off[0]:
+        result["tampered"].append({"name": "settrace", "line": 0})
     result["ok"] = True
     return result
 
 
-print(DATA["marker"] + json.dumps(main()))
+_write_result(json.dumps(main()))

@@ -229,15 +229,21 @@ function installArcadeRoomReads(app, db) {
             h.quality_feedback, h.quality_source, m.round_task_ids
          FROM arcade_round_history h LEFT JOIN arcade_matches m ON m.match_id = h.match_id
          WHERE h.id = ?`, [historyId]);
-      if (!row || row.user_name !== req.player.username) return res.status(403).json({ error: 'ดูได้เฉพาะรอบของคุณ' });
+      // Someone else's round and no round look the same: ids are not a way to
+      // find out who played what.
+      if (!row || row.user_name !== req.player.username) return res.status(404).json({ error: 'ไม่พบรอบนี้' });
       if (!row.match_ended_at) return res.status(409).json({ error: 'ดูคำแนะนำได้หลังจบแมตช์' });
-      if (row.quality_feedback) return res.json({ advice: row.quality_feedback, source: row.quality_source === 'starter' ? 'metrics' : 'ai' });
+      // Only rows scored by measurement (or by the Gemini judge before it,
+      // ADR 0006) ever get model-written text here; an untouched starter, a
+      // flagged answer or a fallback keeps the server's own fixed message.
+      const storedSource = ['metrics', 'ai'].includes(row.quality_source) ? 'ai' : 'metrics';
+      if (row.quality_feedback) return res.json({ advice: row.quality_feedback, source: storedSource });
 
       const findings = row.quality_rubric?.findings || [];
       const judged = { rubric: row.quality_rubric, reason: row.quality_reason, feedback: summarise(findings).feedback };
+      if (!row.quality_rubric) return res.json({ advice: judged.feedback || judged.reason || '', source: 'metrics' });
       const taskId = Array.isArray(row.round_task_ids) ? row.round_task_ids[row.round_num - 1] : undefined;
       const problem = await loadArcadeProblem(db, taskId);
-      if (!row.quality_rubric) return res.json({ advice: judged.feedback || judged.reason || '', source: 'metrics' });
 
       // A match from before round_task_ids was kept has no problem to show the
       // model; the code and the findings still say enough.

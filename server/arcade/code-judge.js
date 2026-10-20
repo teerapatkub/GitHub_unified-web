@@ -197,10 +197,17 @@ function createArcadeCodeJudge({
     while (cache.size > cacheSize) cache.delete(cache.keys().next().value);
   };
 
-  // The reference answer, measured once per problem.
+  // The reference answer, measured once per problem. Only a good measurement
+  // is kept: a reference that timed out would make every answer to the task
+  // look many times slower than it, for as long as the process lives.
   function referenceProbe(taskId, problem) {
     if (!references.has(taskId)) {
-      const pending = measure({ problem, code: problem?.solution_code || '' });
+      const pending = Promise.resolve().then(() => measure({ problem, code: problem?.solution_code || '' })).then(reference => {
+        if (!reference?.ok || reference.tampered?.length || !(Number(reference.steps) > 0)) {
+          throw new Error(`reference answer of task ${taskId} could not be measured${reference?.error ? `: ${reference.error}` : ''}`);
+        }
+        return reference;
+      });
       references.set(taskId, pending.catch(error => { references.delete(taskId); throw error; }));
     }
     return references.get(taskId);
@@ -208,7 +215,11 @@ function createArcadeCodeJudge({
 
   async function measureUncached({ taskId, problem, code }) {
     try {
-      const [answer, reference] = await Promise.all([measure({ problem, code }), referenceProbe(taskId, problem)]);
+      // The reference first: if even it cannot be measured (Python missing or
+      // overloaded), no answer can be, and the answer's own timeout would
+      // otherwise read as its fault.
+      const reference = await referenceProbe(taskId, problem);
+      const answer = await measure({ problem, code });
       return { ...metrics.scoreQuality(answer, reference), source: 'metrics' };
     } catch (error) {
       // Python itself unavailable: an honest local number, not a guess.

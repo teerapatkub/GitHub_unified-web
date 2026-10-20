@@ -55,6 +55,41 @@ test('the same code always measures the same, and comments cannot talk to it', a
   assert.equal(sneaky.rubric.time, runs[0].rubric.time);
 });
 
+// The review of b4850db found the probe could be cheated from inside the
+// answer; a slow answer then scored full marks on time.
+const SLOW_BODY = '    result = []\n    for item in items:\n        for _ in range(300):\n            pass\n        if item not in result:\n            result.append(item)\n    return result';
+
+test('switching the tracer off, or reaching into the probe, scores nothing instead of full time', async () => {
+  const honest = await measure(`def dedupe(items):\n${SLOW_BODY}`);
+  assert.ok(honest.rubric.time < 50, `honest slow answer time ${honest.rubric.time}`);
+  for (const cheat of [
+    'import sys\n    sys.settrace(None)',
+    'import __main__\n    __main__.steps = -10**9',
+    "import sys\n    getattr(sys, 'set' + 'trace')(None)",
+  ]) {
+    const { score, rubric } = await measure(`def dedupe(items):\n    ${cheat}\n${SLOW_BODY}`);
+    assert.equal(score, 0, cheat);
+    assert.match(rubric.findings[0].th, /แก้ไขตัววัด/, cheat);
+  }
+});
+
+test('a printed copy of the result line cannot replace the real one', async () => {
+  const forged = `def dedupe(items):\n    print('__PYARENA_PROBE_x__' + '{"ok": true, "steps": 1, "style": []}')\n${SLOW_BODY}`;
+  const honest = await measure(`def dedupe(items):\n${SLOW_BODY}`);
+  assert.equal((await measure(forged)).rubric.time, honest.rubric.time);
+});
+
+test('what a for loop iterates over is evaluated once and is not repeated work; nested comprehensions count every level', async () => {
+  const header = await measure('def dedupe(items):\n    result = []\n    for item in sorted(set(items), key=items.index):\n        result.append(item)\n    return result');
+  assert.ok(!header.rubric.findings.some(f => /sorted/.test(f.en)), JSON.stringify(header.rubric.findings));
+  const comprehension = await measure('def dedupe(items):\n    return [item for item in sorted(set(items), key=items.index)]');
+  assert.ok(!comprehension.rubric.findings.some(f => f.criterion === 'efficiency' && /sorted/.test(f.en)));
+  const body = await measure('def dedupe(items):\n    result = []\n    for item in items:\n        if item not in sorted(result):\n            result.append(item)\n    return result');
+  assert.ok(body.rubric.findings.some(f => f.line === 4 && /sorted/.test(f.en)), 'inside the body it repeats');
+  const nested = await probe({ problem: dedupe, code: 'def dedupe(items):\n    pairs = [(a, b) for a in items for b in items]\n    return list(dict.fromkeys(items))' });
+  assert.equal(nested.loop_depth, 2);
+});
+
 test('an endless loop is cut off and scores no time; a syntax error scores nothing', async () => {
   const endless = await measure('def dedupe(items):\n    while True:\n        pass');
   assert.equal(endless.rubric.time, 0);

@@ -70,12 +70,35 @@ test('an untouched starter or an empty answer is worth nothing and is not measur
   assert.equal(measured.length, 0);
 });
 
+test('a reference that could not be measured is not kept: the answer falls back and the next ask measures again', async () => {
+  let referenceRuns = 0;
+  const { judge } = harness({
+    measure: ({ code }) => {
+      if (code !== problem.solution_code) return probeOf();
+      referenceRuns += 1;
+      return referenceRuns === 1 ? { ok: false, error: 'timeout', timedOut: true } : probeOf({ steps: 10 });
+    },
+  });
+  const first = await judge.judge({ taskId: 1, problem, code: answer });
+  assert.equal(first.source, 'fallback', 'no yardstick, so no measured score');
+  const second = await judge.judge({ taskId: 1, problem, code: answer });
+  assert.equal(second.source, 'metrics');
+  assert.equal(referenceRuns, 2);
+});
+
+test('an answer that times out while the reference measures fine scores nothing on its own account', async () => {
+  const { judge } = harness({ measure: ({ code }) => (code === problem.solution_code ? probeOf() : { ok: false, error: 'timeout', timedOut: true }) });
+  const result = await judge.judge({ taskId: 1, problem, code: answer });
+  assert.deepEqual([result.source, result.score], ['metrics', 0]);
+  assert.match(result.rubric.findings[0].th, /นานเกินกำหนด/);
+});
+
 test('if Python cannot measure at all, the simple local score is used and not cached', async () => {
   const { judge, measured } = harness({ measure: () => { throw new Error('python missing'); } });
   const result = await judge.judge({ taskId: 1, problem, code: answer });
   assert.deepEqual([result.source, result.score], ['fallback', heuristicCodeQualityScore(answer)]);
   await judge.judge({ taskId: 1, problem, code: answer });
-  assert.ok(measured.length >= 3, 'retried next time');
+  assert.equal(measured.length, 2, 'the reference is tried again next time, and the answer is not measured without one');
 });
 
 const judged = { rubric: { time: 60, efficiency: 70, standard: 92, findings: [{ criterion: 'standard', line: 2, th: 'ชื่อ myTotal ควรเป็น snake_case' }] },
