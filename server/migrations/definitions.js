@@ -1,5 +1,6 @@
 const { defineMigration } = require('./index');
 const {
+  ARCADE_QUALITY_BREAKDOWN_VERSION,
   APPLICATION_SCHEMA_VERSION,
   AUTH_PROVISIONING_VERSION,
   CORE_SCHEMA_VERSION,
@@ -47,7 +48,15 @@ const createTutorialsSeenMigration = (up, signature) => defineMigration({
   up,
 });
 
+const createArcadeQualityBreakdownMigration = (up, signature) => defineMigration({
+  version: ARCADE_QUALITY_BREAKDOWN_VERSION,
+  name: 'arcade_round_history_quality_breakdown',
+  signature: signatureFor(up, signature),
+  up,
+});
+
 module.exports = {
+  createArcadeQualityBreakdownMigration,
   createApplicationSchemaMigration,
   createAuthProvisioningMigration,
   createCoreSchemaMigration,

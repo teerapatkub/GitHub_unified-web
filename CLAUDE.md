@@ -234,12 +234,13 @@ view `exercises`, `mini_game_exercises`, `multiplayer_challenges` เพิ่�
 | ใช้ทำอะไร | ฟังก์ชัน | ตั้งค่าที่ |
 |---|---|---|
 | แชทบอท Lumi + สร้างโจทย์ฝึก | `callAiChat()` | `NVIDIA_API_KEY`, `NVIDIA_AI_MODEL` |
-| ตรวจคุณภาพโค้ดใน Arcade | `judgeCodeQuality()` | `NVIDIA_CODE_JUDGE_API_KEY`, `NVIDIA_CODE_JUDGE_MODEL` |
-| ให้คะแนนคำตอบใน Competitive Arena | `reviewCompetitiveSubmissionWithAI()` | ใช้ชุดเดียวกับตัวตรวจโค้ด ผ่าน `callCodeJudgeChat()` |
+| ตรวจคุณภาพโค้ดใน Arcade (เวลา / ประสิทธิภาพ / มาตรฐาน) | `server/arcade/code-judge.js` (Gemini) | `GEMINI_CODE_JUDGE_API_KEY`, `GEMINI_CODE_JUDGE_MODEL`, `GEMINI_CODE_JUDGE_RPM` |
+| ให้คะแนนคำตอบใน Competitive Arena | `reviewCompetitiveSubmissionWithAI()` ผ่าน `callCodeJudgeChat()` | `NVIDIA_CODE_JUDGE_API_KEY`, `NVIDIA_CODE_JUDGE_MODEL` |
 
-**สองแถวล่างใช้คีย์และโมเดลเดียวกัน** (ย้ายมาเมื่อ 2026-08-25) เพราะทั้งคู่คือการตรวจโค้ด
-ในแมตช์ที่กำลังเล่นอยู่ ส่วนแถวบนแยกขาดจากสองแถวล่างเสมอ
-**ถ้าปล่อยคีย์หรือชื่อโมเดลของตัวตรวจว่าง ทั้งสองที่จะให้คะแนนในเครื่องแทนโดยไม่ส่งโค้ดออกนอกเครื่อง**
+**Arcade ย้ายไปใช้ Gemini เมื่อ 2026-10-20** (ADR 0006) มีคีย์และโควตาของตัวเอง ส่วน Competitive ยังใช้ NVIDIA
+ทั้งสามแถวแยกขาดจากกันเสมอ
+**ถ้าปล่อยคีย์หรือชื่อโมเดลของตัวตรวจว่าง ที่นั้นจะให้คะแนนในเครื่องแทนโดยไม่ส่งโค้ดออกนอกเครื่อง**
+ตัวตรวจของ Arcade ให้คะแนนเฉพาะคุณภาพ ความถูกต้องยังตัดสินด้วยเทสจริง (`problemGrader.js`) และความเร็วในการส่งยังเป็น `timeScore` ของ server
 
 **ห้ามชี้ตัวตรวจโค้ดไปที่โมเดลเดียวกับแชทบอท** — ตัวตรวจทำงานทุกครั้งที่จบรอบของทุกแมตช์
 ที่กำลังเล่นอยู่ และทุกครั้งที่มีคนส่งคำตอบในโหมดแข่ง โควตาโทเคนของมันไม่ใช่ที่ว่างให้งานอื่นมาใช้ร่วม

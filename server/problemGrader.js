@@ -73,16 +73,19 @@ const buildFunctionHarness = (code, functionName, cases, marker = MARKER) => {
     return [
         String(code || ''),
         '',
-        'import json as __json, base64 as __b64',
+        'import json as __json, base64 as __b64, time as __time',
         `__cases = __json.loads(__b64.b64decode("${b64}").decode("utf-8"))`,
         '__results = []',
         'for __case in __cases:',
+        '    __start = __time.perf_counter()',
         '    try:',
         `        __actual = ${functionName}(*__case["args"])`,
+        '        __ms = (__time.perf_counter() - __start) * 1000',
         '        __results.append({"ok": bool(__actual == __case["expected"]),',
-        '                          "actual": repr(__actual), "error": ""})',
+        '                          "actual": repr(__actual), "error": "", "ms": __ms})',
         '    except Exception as __exc:',
-        '        __results.append({"ok": False, "actual": "", "error": type(__exc).__name__ + ": " + str(__exc)})',
+        '        __results.append({"ok": False, "actual": "", "error": type(__exc).__name__ + ": " + str(__exc),',
+        '                          "ms": (__time.perf_counter() - __start) * 1000})',
         `print("${marker}" + __json.dumps(__results))`,
         '',
     ].join('\n');
@@ -138,12 +141,19 @@ async function gradeFunctionProblem({ problem, code, timeoutMs }) {
             hint: explained.message,
             errorLine: explained.line,
             errorKind: explained.kind,
+            // Time inside the call only, measured by Python itself.
+            ms: Number(parsed[i]?.ms) || 0,
         };
     });
 
     const passed = results.filter((r) => r.passed).length;
-    return { passed, total: results.length, allPassed: passed === results.length, results, error: '' };
+    return { passed, total: results.length, allPassed: passed === results.length, results, error: '', runtimeMs: totalMs(results) };
 }
+
+// How long the cases took to run, added up. Nothing here decides pass or
+// fail; the Arcade code judge compares it with the reference answer's time
+// (arcade/code-judge.js).
+const totalMs = (results) => results.reduce((sum, r) => sum + (Number(r.ms) || 0), 0);
 
 // Python's input(prompt) writes the prompt to stdout before reading. Every
 // stored expected output in this project is the answer WITHOUT those prompts -
@@ -201,6 +211,7 @@ async function gradeStdioProblem({ problem, code, timeoutMs, files = {} }) {
 
         let best = null;
         for (const expected of accepted) {
+            const started = process.hrtime.bigint();
             const outcome = await runPythonCase({
                 code: RUN_WITH_INPUT_PATCHED,
                 files: { ...files, 'solution.py': String(code || '') },
@@ -215,7 +226,9 @@ async function gradeStdioProblem({ problem, code, timeoutMs, files = {} }) {
             const hasForbiddenOutput = forbidden.some((item) => item && actualText.includes(normalizeOutput(String(item)).replace(/\s+/g, ' ')));
             const passed = (c.match_mode === 'contains'
                 ? !outcome.error && Boolean(matchesPhrase) : outcome.passed) && !hasForbiddenOutput;
-            const candidate = { ...outcome, passed };
+            // Wall-clock per process, so it includes starting Python: only
+            // meaningful compared with another run on the same machine.
+            const candidate = { ...outcome, passed, ms: Number(process.hrtime.bigint() - started) / 1e6 };
             if (passed) { best = candidate; break; }
             if (!best) best = candidate;
         }
@@ -231,11 +244,12 @@ async function gradeStdioProblem({ problem, code, timeoutMs, files = {} }) {
             hint: explained.message,
             errorLine: explained.line,
             errorKind: explained.kind,
+            ms: best.ms,
         });
     }
 
     const passed = results.filter((r) => r.passed).length;
-    return { passed, total: results.length, allPassed: passed === results.length, results, error: '' };
+    return { passed, total: results.length, allPassed: passed === results.length, results, error: '', runtimeMs: totalMs(results) };
 }
 
 /**

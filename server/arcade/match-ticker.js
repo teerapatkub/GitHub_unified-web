@@ -1,8 +1,9 @@
 const { tickArcadeBots } = require('./bot-ticker');
 const { createArcadePhaseFinalizer } = require('./phase-finalizer');
 
-async function settleDueArcadeRooms({ db, judgeCodeQuality, afterMatchSettled, random }) {
-  const finalize = createArcadePhaseFinalizer({ db, judgeCodeQuality, random });
+// judgeArcadeCode is for tests; the server uses the installed code judge.
+async function settleDueArcadeRooms({ db, judgeArcadeCode, afterMatchSettled, random }) {
+  const finalize = createArcadePhaseFinalizer({ db, ...(judgeArcadeCode ? { judgeArcadeCode } : {}), random });
   const [rooms] = await db.query(
     `SELECT * FROM arcade_rooms WHERE status = 'PLAYING' AND phase NOT IN ('LOBBY', 'RESULT') AND phase_deadline IS NOT NULL AND phase_deadline <= CURRENT_TIMESTAMP ORDER BY room_id`
   );

@@ -134,6 +134,7 @@ function installArcadeRoomReads(app, db) {
         `SELECT h.match_id, h.room_id, h.room_code, h.room_name, h.difficulty, h.round_duration_mode,
             h.round_num, h.code, h.pass_count, h.total_count, h.quality_score, h.time_used_seconds,
             h.score_multiplier, h.round_score, h.match_ended_at,
+            h.quality_rubric, h.quality_reason, h.quality_feedback, h.quality_source,
             rr.final_rank, COALESCE(rr.coins, 0) AS coins_awarded
         FROM arcade_round_history h
         LEFT JOIN arcade_reward_receipts rr ON rr.match_id = h.match_id AND rr.user_name = h.user_name
@@ -171,7 +172,9 @@ function installArcadeRoomReads(app, db) {
           pass_count: row.pass_count, total_count: row.total_count,
           quality_score: row.quality_score, time_used_seconds: row.time_used_seconds,
           score_multiplier: row.score_multiplier,
-          round_score: row.round_score
+          round_score: row.round_score,
+          quality_rubric: row.quality_rubric, quality_reason: row.quality_reason,
+          quality_feedback: row.quality_feedback, quality_source: row.quality_source
         });
       }
 
@@ -190,7 +193,8 @@ function installArcadeRoomReads(app, db) {
 
       const [rows] = await db.query(
         `SELECT round_num, code, pass_count, total_count, quality_score, time_used_seconds,
-          score_multiplier, round_score
+          score_multiplier, round_score,
+          quality_rubric, quality_reason, quality_feedback, quality_source
         FROM arcade_round_history
         WHERE room_id = ? AND user_name = ?
          AND match_id = COALESCE(?, (SELECT current_match_id FROM arcade_rooms WHERE room_id = ?))

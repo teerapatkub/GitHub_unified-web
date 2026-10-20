@@ -89,8 +89,8 @@
       "qualitySpread": 50
     },
     "hard": {
-      "passMin": 0.45,
-      "passSpread": 0.55,
+      "passMin": 0.55,
+      "passSpread": 0.45,
       "qualityMin": 50,
       "qualitySpread": 50
     }

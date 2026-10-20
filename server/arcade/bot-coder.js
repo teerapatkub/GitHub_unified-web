@@ -11,6 +11,7 @@
 // corrupt what it types. The text it has typed so far is a real draft other
 // players can watch once they have submitted.
 const { gradeSubmission } = require('../problemGrader');
+const { arcadeCodeJudge, heuristicCodeQualityScore } = require('./code-judge');
 
 // Text rules that turn a correct line into a plausible wrong one.
 const MUTATIONS = [
@@ -58,7 +59,7 @@ const banks = new Map();
 async function buildBank(problem) {
   const graded = async (id, code) => {
     const verdict = await gradeSubmission({ problem, code });
-    return { id, code, passed: verdict.passed, total: verdict.total };
+    return { id, code, passed: verdict.passed, total: verdict.total, verdict };
   };
   const solution = await graded('solution', lines(problem.solution_code).join('\n'));
   if (!solution.total || solution.passed !== solution.total) throw new Error('reference answer does not pass its own tests');
@@ -79,9 +80,13 @@ async function buildBank(problem) {
 // Load and grade a problem's bank once; later calls share the same promise.
 function warmBank(key, loadProblem) {
   if (!banks.has(key)) {
-    const pending = Promise.resolve().then(loadProblem).then(problem => {
+    const pending = Promise.resolve().then(loadProblem).then(async problem => {
       if (!problem) throw new Error('problem not found');
-      return buildBank(problem);
+      const bank = await buildBank(problem);
+      // Bots type as soon as the tests are graded; the code judge scores the
+      // answers' quality behind them, after any player waiting for it.
+      bank.qualityReady = judgeBank(key, problem, bank);
+      return bank;
     });
     const entry = { ready: null, failed: false, promise: pending };
     entry.promise = pending.then(bank => { entry.ready = bank; return bank; },
@@ -89,6 +94,29 @@ function warmBank(key, loadProblem) {
     banks.set(key, entry);
   }
   return banks.get(key).promise;
+}
+
+// Each answer in the bank gets the same quality verdict a player sending that
+// code would get (ADR 0006). Shared cache, so this happens once per process.
+function judgeBank(key, problem, bank) {
+  const judge = arcadeCodeJudge();
+  return Promise.all(bank.map(async answer => {
+    answer.quality = await judge.judge({ taskId: key, problem, code: answer.code, verdict: answer.verdict, priority: 'bot' });
+  })).catch(error => { console.error(`Arcade bot answer quality ${key} failed:`, error.message); });
+}
+
+// The quality verdict of the answer a bot set out to type. Waits briefly for
+// the judge; if it is still busy, the answer is scored locally instead.
+async function answerQuality(key, answerId, waitMs = 3000) {
+  const bank = readyBank(key);
+  const answer = bank?.find(a => a.id === answerId);
+  if (!answer) return null;
+  if (!answer.quality && bank.qualityReady) {
+    let timer;
+    await Promise.race([bank.qualityReady, new Promise(resolve => { timer = setTimeout(resolve, waitMs); })]);
+    clearTimeout(timer);
+  }
+  return answer.quality || { score: heuristicCodeQualityScore(answer.code), rubric: null, reason: '', feedback: '', source: 'fallback' };
 }
 
 // Synchronous: a ticker holding a room lock must never wait on Python.
@@ -186,5 +214,6 @@ const progressOf = plan => (plan.insert.length ? Math.min(100, (correctLength(pl
 
 module.exports = {
   MUTATIONS, PAUSE_FACTOR, candidateAnswers, buildBank, warmBank, readyBank, bankFailed, chooseAnswer, gradedFromBank,
+  answerQuality,
   typingPlan, typingStep, stepCost, draftOf, progressOf, correctLength,
 };

@@ -9,11 +9,17 @@
 // room difficulty next to the progress-bar scoring it replaced. A change to
 // bot typing, the mutation rules or botSkillByDifficulty should keep each row
 // within about 10% of the "before" column unless the change is meant to.
+//
+// Quality comes from the Arcade code judge (ADR 0006), scaled by the tests
+// passed, as in phase-finalizer.js: Gemini when GEMINI_CODE_JUDGE_API_KEY/MODEL
+// are in server/.env (about 9 calls per problem, spaced by the free quota, so
+// several minutes), otherwise the local score.
 require('dotenv').config({ path: require('path').join(__dirname, '../../.env'), quiet: true });
 const { Client } = require('pg');
 const config = require('../../../shared/arcadeConfig.json');
 const profiles = require('../../../shared/arcadeBotProfiles.json');
 const coder = require('../../arcade/bot-coder');
+const { arcadeCodeJudgeFromEnv } = require('../../arcade/code-judge');
 
 // Mean unattacked bot round score under the progress-bar scoring (Monte Carlo
 // in project_logs/2026-10-18/0440-arcade-debuffs-cost-bots-points.md, 3 cases).
@@ -41,7 +47,9 @@ function simulateRound(bank, profile, skill, random) {
   // A typo left in the answer means it is not the banked code; count it as failing.
   const graded = bank.find(a => a.code === code);
   const passRatio = graded ? graded.passed / graded.total : 0;
-  const quality = skill.qualityMin + Math.floor(random() * skill.qualitySpread);
+  // A typo left in the draft is judged as the answer the bot meant to type.
+  const judged = answer.quality;
+  const quality = !judged || judged.source === 'starter' ? 0 : Math.round(judged.score * (0.5 + 0.5 * passRatio));
   const timeUsed = finished ? Math.min(ROUND_SECONDS, elapsed / 1000) : ROUND_SECONDS;
   return { score: passRatio * 100 + quality + passRatio * ((ROUND_SECONDS - timeUsed) / ROUND_SECONDS) * 100, finished, typo: finished && !graded };
 }
@@ -50,11 +58,22 @@ function simulateRound(bank, profile, skill, random) {
   const rounds = Number(process.argv[2]) || 4000;
   const c = new Client({ connectionString: process.env.DATABASE_URL });
   await c.connect();
-  const { rows } = await c.query(`SELECT m.entry_id, m.difficulty, p.test_kind, p.test_cases, p.solution_code, p.starter_code
+  const { rows } = await c.query(`SELECT m.entry_id, m.difficulty, p.title_th, p.desc_th, p.test_kind, p.test_cases, p.solution_code, p.starter_code
     FROM problem_modes m JOIN problems p ON p.problem_id = m.problem_id WHERE m.mode = 'arcade'`);
   await c.end();
   const banks = {};
-  for (const row of rows) (banks[row.difficulty] ??= []).push(await coder.buildBank(row));
+  const judge = arcadeCodeJudgeFromEnv();
+  console.log(`quality: ${judge.enabled ? `Gemini ${judge.model}` : 'local score (no Gemini key)'}`);
+  for (const row of rows) {
+    const bank = await coder.buildBank(row);
+    await Promise.all(bank.map(async answer => {
+      answer.quality = await judge.judge({ taskId: row.entry_id, problem: row, code: answer.code, verdict: answer.verdict, priority: 'bot' });
+    }));
+    (banks[row.difficulty] ??= []).push(bank);
+  }
+  const sources = {};
+  for (const answer of Object.values(banks).flat(2)) sources[answer.quality.source] = (sources[answer.quality.source] || 0) + 1;
+  console.log('judged answers by source:', sources);
   const random = Math.random;
   console.log('difficulty  before  after   change  finished  sent-with-typo');
   for (const difficulty of Object.keys(BEFORE)) {

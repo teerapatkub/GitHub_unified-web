@@ -6,6 +6,7 @@ const { activeAttackEffects } = require('./attacks');
 const { useOwnedItem } = require('./use-item');
 const { readPhaseClock } = require('./phase-clock');
 const coder = require('./bot-coder');
+const { loadArcadeProblem } = require('./round-problem');
 
 // ---- Shopping and attacking with a plan --------------------------------------
 //
@@ -150,13 +151,6 @@ const roundTaskId = room => {
   const round = Number(String(room.phase).split('_')[1]);
   return ids && Number.isInteger(round) ? ids[round - 1] : undefined;
 };
-
-async function loadArcadeProblem(db, taskId) {
-  const [rows] = await db.query(`SELECT p.test_kind, p.test_cases, p.solution_code, p.starter_code
-    FROM problem_modes m JOIN problems p ON p.problem_id = m.problem_id
-    WHERE m.mode = 'arcade' AND m.entry_id = ?`, [taskId]);
-  return rows?.[0] || null;
-}
 
 // Start grading every drawn problem's answer bank, Round 1 first. Never awaited
 // under a room lock: a bot simply keeps reading the problem until it is ready.

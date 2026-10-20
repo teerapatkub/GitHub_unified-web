@@ -46,7 +46,7 @@ test('only an owned activated multiplier doubles the settled score, regardless o
   await db.query("UPDATE arcade_rooms SET phase_deadline = clock_timestamp() - INTERVAL '1 second'");
   const room = (await call('/api/arcade/rooms/1')).body.room;
   // Only the optional external quality judge is substituted; settlement and history are real.
-  await createArcadePhaseFinalizer({ db, judgeCodeQuality: async () => ({ score: 40 }) })(room);
+  await createArcadePhaseFinalizer({ db, judgeArcadeCode: async () => ({ score: 80 }) /* no tests: half, 40 */ })(room);
   const alice = (await call('/api/arcade/rooms/1/round-history')).body.history[0];
   const bob = (await call('/api/arcade/rooms/1/round-history', { user: 'bob' })).body.history[0];
   assert.equal(alice.round_score, 80);
@@ -63,7 +63,7 @@ test('round buffs expire without refresh extending them and cannot multiply a la
   assert.deepEqual((await read()).body.selfEffects, []);
   await call('/api/arcade/rooms/1/submit-round', { body: { match_id: matchId, round_num: 3, code: 'print(7)', score_multiplier_active: true } });
   await db.query("UPDATE arcade_rooms SET phase_deadline = clock_timestamp() - INTERVAL '1 second'");
-  await createArcadePhaseFinalizer({ db, judgeCodeQuality: async () => ({ score: 40 }) })((await call('/api/arcade/rooms/1')).body.room);
+  await createArcadePhaseFinalizer({ db, judgeArcadeCode: async () => ({ score: 80 }) /* no tests: half, 40 */ })((await call('/api/arcade/rooms/1')).body.room);
   assert.equal((await call('/api/arcade/rooms/1/round-history')).body.history[0].round_score, 40);
 });
 
@@ -161,7 +161,7 @@ test('concurrent activation and submission settle according to the first accepte
   assert.equal(submitted.status, 200);
   assert.ok([200, 409].includes(used.status));
   await db.query("UPDATE arcade_rooms SET phase_deadline = clock_timestamp() - INTERVAL '1 second'");
-  await createArcadePhaseFinalizer({ db, judgeCodeQuality: async () => ({ score: 40 }) })((await call('/api/arcade/rooms/1')).body.room);
+  await createArcadePhaseFinalizer({ db, judgeArcadeCode: async () => ({ score: 80 }) /* no tests: half, 40 */ })((await call('/api/arcade/rooms/1')).body.room);
   const score = (await call('/api/arcade/rooms/1/round-history')).body.history[0].round_score;
   assert.equal(score, used.status === 200 ? 80 : 40);
 });

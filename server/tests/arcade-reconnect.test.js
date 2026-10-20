@@ -25,7 +25,7 @@ test('a new round returns its own identity and cannot recover an earlier round d
   const matchId = (await call('/api/arcade/rooms/1/start', { body: {} })).body.match_id;
   await call('/api/arcade/rooms/1/code-draft', { body: { match_id: matchId, round_num: 1, code: '# round one' } });
   await db.query("UPDATE arcade_rooms SET phase_deadline = clock_timestamp() - INTERVAL '1 second'");
-  await require('../arcade/match-ticker').settleDueArcadeRooms({ db, judgeCodeQuality: async () => ({ score: 0 }) });
+  await require('../arcade/match-ticker').settleDueArcadeRooms({ db, judgeArcadeCode: async () => ({ score: 0 }) });
   const code = (await call('/api/arcade/rooms/1/code/alice')).body;
   assert.equal(code.phase, 'SUMMARY_1');
   assert.equal(code.has_saved_code, false);

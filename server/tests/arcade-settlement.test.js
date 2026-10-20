@@ -24,7 +24,7 @@ test('a database failure leaves answers and round results intact for a complete 
   await db.query("UPDATE arcade_rooms SET phase_deadline = CURRENT_TIMESTAMP - INTERVAL '1 second'");
   const room = (await call('/api/arcade/rooms/1')).body.room;
   // The optional remote quality service is a system boundary. Correctness still uses the real grader.
-  const finalize = createArcadePhaseFinalizer({ db, judgeCodeQuality: async () => ({ score: 0 }) });
+  const finalize = createArcadePhaseFinalizer({ db, judgeArcadeCode: async () => ({ score: 0 }) });
   await db.query(`CREATE FUNCTION reject_history() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'history unavailable'; END $$`);
   await db.query('CREATE TRIGGER fail_history BEFORE INSERT ON arcade_round_history FOR EACH ROW EXECUTE FUNCTION reject_history()');
   await assert.rejects(finalize(room), /history unavailable/);
@@ -47,7 +47,7 @@ test('a grading service exception preserves the submitted answer instead of sett
   await call('/api/arcade/rooms/1/submit-round', { body: { match_id: matchId, round_num: 1, code: 'print(7)' } });
   await db.query("UPDATE arcade_rooms SET phase_deadline = CURRENT_TIMESTAMP - INTERVAL '1 second'");
   const room = (await call('/api/arcade/rooms/1')).body.room;
-  const finalize = createArcadePhaseFinalizer({ db, judgeCodeQuality: async () => { throw new Error('grader unavailable'); } });
+  const finalize = createArcadePhaseFinalizer({ db, judgeArcadeCode: async () => { throw new Error('grader unavailable'); } });
   await assert.rejects(finalize(room), /grader unavailable/);
   const state = (await call('/api/arcade/rooms/1')).body;
   assert.equal(state.room.phase, 'ROUND_1');
@@ -59,9 +59,9 @@ test('a grading service exception preserves the submitted answer instead of sett
 test('score, cash, elimination, history and final phase commit together after a failed final write', async t => {
   const { db, call } = await arcadeFixture(t);
   const matchId = (await call('/api/arcade/rooms/1/start', { body: {} })).body.match_id;
-  await db.query(`CREATE TABLE problems (problem_id integer PRIMARY KEY, test_kind text, test_cases jsonb, solution_code text, starter_code text)`);
+  await db.query(`CREATE TABLE problems (problem_id integer PRIMARY KEY, title_th text, desc_th text, test_kind text, test_cases jsonb, solution_code text, starter_code text)`);
   await db.query(`CREATE TABLE problem_modes (problem_id integer, mode text, entry_id integer)`);
-  await db.query(`INSERT INTO problems VALUES (1, 'stdio', '[{"input":"","expected":"7"}]', 'print(7)', '')`);
+  await db.query(`INSERT INTO problems (problem_id, test_kind, test_cases, solution_code, starter_code) VALUES (1, 'stdio', '[{"input":"","expected":"7"}]', 'print(7)', '')`);
   await db.query("INSERT INTO problem_modes VALUES (1, 'arcade', 1)");
   await db.query('ALTER TABLE arcade_tasks ADD COLUMN IF NOT EXISTS test_cases jsonb');
   await db.query(`INSERT INTO arcade_tasks (task_id, test_cases) VALUES (1, '[{"input":"","expected":"7"}]')`);
@@ -72,7 +72,7 @@ test('score, cash, elimination, history and final phase commit together after a 
   const room = (await call('/api/arcade/rooms/1')).body.room;
   await db.query(`CREATE FUNCTION reject_result() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.phase = 'RESULT' THEN RAISE EXCEPTION 'phase write failed'; END IF; RETURN NEW; END $$`);
   await db.query('CREATE TRIGGER fail_result BEFORE UPDATE ON arcade_rooms FOR EACH ROW EXECUTE FUNCTION reject_result()');
-  const finalize = createArcadePhaseFinalizer({ db, judgeCodeQuality: async () => ({ score: 0 }) });
+  const finalize = createArcadePhaseFinalizer({ db, judgeArcadeCode: async () => ({ score: 0 }) });
   await assert.rejects(finalize(room), /phase write failed/);
   const before = (await call('/api/arcade/rooms/1')).body;
   assert.equal(before.room.phase, 'ROUND_2');
@@ -147,7 +147,7 @@ test('a persistently failing room does not stop another due room from advancing'
 test('phase deadlines follow the database clock when the app clock drifts', async t => {
   const { phaseDurations } = require('../../shared/arcadeConfig.json');
   const { db, call } = await arcadeFixture(t);
-  const finalize = createArcadePhaseFinalizer({ db, judgeCodeQuality: async () => ({ score: 0 }) });
+  const finalize = createArcadePhaseFinalizer({ db, judgeArcadeCode: async () => ({ score: 0 }) });
   const realNow = Date.now;
   // Every open/closed decision reads the database clock, so a deadline taken
   // from the app server's clock would stretch or cut each phase by however far

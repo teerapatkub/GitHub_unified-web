@@ -24,7 +24,7 @@ async function botMatch(t, { bots = 1 } = {}) {
   const botName = botNames[0];
   const matchId = (await f.call('/api/arcade/rooms/1/start', { body: {} })).body.match_id;
   await f.db.query("UPDATE arcade_participants SET cash = 5000, bot_profile = CASE WHEN participant_kind = 'bot' THEN 'bot_pyninja' END");
-  const tick = () => settleDueArcadeRooms({ db: f.db, random: () => 0, judgeCodeQuality: async () => ({ score: 0 }) });
+  const tick = () => settleDueArcadeRooms({ db: f.db, random: () => 0, judgeArcadeCode: async () => ({ score: 0 }) });
   const room = async () => (await f.call('/api/arcade/rooms/1')).body;
   const read = async (user = 'alice') => (await f.call(`/api/arcade/rooms/1/shop?match_id=${matchId}`, { user })).body;
   const phase = name => f.db.query('UPDATE arcade_rooms SET phase = ?, phase_deadline = clock_timestamp() + INTERVAL \'5 minutes\'', [name]);
@@ -105,7 +105,8 @@ test('Bot_ human answers are graded and receive normal wallet rewards', async t 
   await db.query("UPDATE arcade_rooms SET phase = 'ROUND_2'");
   await call('/api/arcade/rooms/1/submit-round', { body: { match_id: matchId, round_num: 2, code: '# human answer' } });
   await db.query("UPDATE arcade_rooms SET phase_deadline = clock_timestamp() - INTERVAL '1 second'");
-  await settleDueArcadeRooms({ db, judgeCodeQuality: async () => ({ score: 17 }) });
+  // No test ran, so quality is half the judge's 34 (ADR 0006).
+  await settleDueArcadeRooms({ db, judgeArcadeCode: async () => ({ score: 34 }) });
   assert.equal((await call('/api/arcade/rooms/1')).body.participants.find(p => p.user_name === 'Bot_alice').score, 17);
   assert.equal((await call('/api/auth/me')).body.virtual_currency, 50);
   assert.equal((await call('/api/arcade/players/Bot_alice/history')).body.matches[0].rounds[0].code, '# human answer');
@@ -143,12 +144,12 @@ test('bot multiplier is consumed server-side and doubles only its activation rou
   // 3 cases gives 1 pass, quality 35, and a bar that filled the instant the
   // round opened earns time 33.33 = 102; owned multiplier makes 204.
   await f.finishBot(f.botName, 0);
-  await settleDueArcadeRooms({db:f.db,random:()=>0,judgeCodeQuality:async()=>({score:0})});
+  await settleDueArcadeRooms({db:f.db,random:()=>0,judgeArcadeCode:async()=>({score:0})});
   assert.equal((await f.room()).participants.find(p=>p.user_name===f.botName).score,204);
   await f.db.query("UPDATE arcade_rooms SET phase = 'ROUND_3', phase_deadline = clock_timestamp() - INTERVAL '1 second'");
   await f.db.query('UPDATE arcade_participants SET is_eliminated = 0');
   await f.finishBot(f.botName, 0);
-  await settleDueArcadeRooms({db:f.db,random:()=>0,judgeCodeQuality:async()=>({score:0})});
+  await settleDueArcadeRooms({db:f.db,random:()=>0,judgeArcadeCode:async()=>({score:0})});
   assert.equal((await f.room()).participants.find(p=>p.user_name===f.botName).score,339);
 });
 
@@ -218,7 +219,7 @@ test('bot progress survives worker restart and freezes while a real attack is ac
 // Fog and Freeze pause a bot's bar. Its round score is read from that bar:
 // speed points come from the moment it reached 100%, and a bar that never got
 // there passes only its share of the cases and earns no speed points.
-const settleRound = f => settleDueArcadeRooms({ db: f.db, random: () => 0, judgeCodeQuality: async () => ({ score: 0 }) });
+const settleRound = f => settleDueArcadeRooms({ db: f.db, random: () => 0, judgeArcadeCode: async () => ({ score: 0 }) });
 
 test('an ink-fogged bot finishes later and scores less than an identical unattacked bot', async t => {
   const f = await botMatch(t, { bots: 2 });
@@ -257,7 +258,7 @@ test('a bot frozen until the deadline is scored on the share of its bar it fille
   await f.tick();
   assert.equal((await f.room()).participants.find(p => p.user_name === frozen).bot_progress, 50);
   await f.expire();
-  await settleDueArcadeRooms({ db: f.db, random: () => 0.99, judgeCodeQuality: async () => ({ score: 0 }) });
+  await settleDueArcadeRooms({ db: f.db, random: () => 0.99, judgeArcadeCode: async () => ({ score: 0 }) });
   // Skill roll 0.99 on default: 79% of 3 cases and quality 79. Finished at the
   // halfway mark: 2 cases (66.67) + 79 + 2/3 x 1/2 = 33.33 -> 179. Half a bar:
   // round(3 x 0.79 x 0.5) = 1 case (33.33) + 79 + no speed points -> 112.
@@ -334,9 +335,9 @@ let nextTaskId = 9100;
 async function codingBotMatch(t, options) {
   const f = await botMatch(t, options);
   const taskId = nextTaskId++; // the answer-bank cache is per process, keyed by task id
-  await f.db.query('CREATE TABLE problems (problem_id integer PRIMARY KEY, test_kind text, test_cases jsonb, solution_code text, starter_code text)');
+  await f.db.query('CREATE TABLE problems (problem_id integer PRIMARY KEY, title_th text, desc_th text, test_kind text, test_cases jsonb, solution_code text, starter_code text)');
   await f.db.query('CREATE TABLE problem_modes (problem_id integer, mode text, entry_id integer)');
-  await f.db.query('INSERT INTO problems VALUES (1, ?, ?, ?, ?)', [SUM_TO_N.test_kind, JSON.stringify(SUM_TO_N.test_cases), SUM_TO_N.solution_code, SUM_TO_N.starter_code]);
+  await f.db.query('INSERT INTO problems (problem_id, test_kind, test_cases, solution_code, starter_code) VALUES (1, ?, ?, ?, ?)', [SUM_TO_N.test_kind, JSON.stringify(SUM_TO_N.test_cases), SUM_TO_N.solution_code, SUM_TO_N.starter_code]);
   await f.db.query("INSERT INTO problem_modes VALUES (1, 'arcade', ?)", [taskId]);
   await f.db.query("UPDATE arcade_rooms SET difficulty = 'hard', round_task_ids = ?", [JSON.stringify([taskId, taskId, taskId, taskId])]);
   await warmRoundAnswers(f.db, [taskId]);
@@ -405,8 +406,9 @@ test('under Glitch and Backspace Lock a bot cannot clean its draft and is graded
   assert.match(sent.submitted_code, /x/);
   await f.expire();
   await f.tick();
-  // The glitched answer does not compile, so only the rolled quality counts.
-  assert.equal(await f.scoreOf(f.botName), 50);
+  // The glitched answer does not compile, so only quality counts, and only
+  // half of it: the answer's judged 70 (scored locally in tests) becomes 35.
+  assert.equal(await f.scoreOf(f.botName), 35);
 });
 
 // ---- Shopping and attacking with a plan ------------------------------------
@@ -483,6 +485,32 @@ test('a bot that gives up keeps the scaffold until the deadline instead of sendi
   assert.equal((await f.bot(f.botName)).has_submitted, 0);
   await f.expire();
   await f.tick();
-  // The scaffold passes 1 of 4 cases: 25 test points + 50 quality, and no speed points.
-  assert.equal(await f.scoreOf(f.botName), 75);
+  // The scaffold passes 1 of 4 cases: 25 test points, and an unchanged
+  // scaffold earns no quality and no speed points.
+  assert.equal(await f.scoreOf(f.botName), 25);
+});
+
+// ---- Bots are judged by the same code judge as players (ADR 0006) ----------
+test('a bot answer bank is scored by the installed code judge, and the scaffold is worth nothing', async t => {
+  const judgeModule = require('../arcade/code-judge');
+  const { readyBank, answerQuality } = require('../arcade/bot-coder');
+  const previous = judgeModule.arcadeCodeJudge();
+  const priorities = [];
+  judgeModule.installArcadeCodeJudge(judgeModule.createArcadeCodeJudge({
+    model: 'fake', rpm: 6000,
+    generate: async ({ prompt }) => {
+      priorities.push(prompt);
+      return JSON.stringify({ time: 90, efficiency: 80, standard: 70, reason: 'ดี', feedback: 'ลองเช็กขอบเขตของ range' });
+    },
+  }));
+  t.after(() => judgeModule.installArcadeCodeJudge(previous));
+  const f = await codingBotMatch(t);
+  const bank = readyBank(f.taskId);
+  await bank.qualityReady;
+  const solution = bank.find(answer => answer.id === 'solution');
+  assert.deepEqual([solution.quality.score, solution.quality.source], [80, 'ai']);
+  assert.ok(bank.filter(a => a.id.startsWith('mistake-')).every(a => a.quality.source === 'ai'));
+  assert.equal(bank.find(a => a.id === 'starter').quality.source, 'starter');
+  assert.equal(priorities.length, bank.length - 1, 'the scaffold costs no call');
+  assert.equal((await answerQuality(f.taskId, 'solution')).score, 80);
 });

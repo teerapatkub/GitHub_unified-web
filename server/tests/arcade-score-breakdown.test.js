@@ -25,7 +25,11 @@ test('result and match history expose the persisted score breakdown, multiplier 
   const room = (await call('/api/arcade/rooms/1')).body.room;
   await createArcadePhaseFinalizer({
     db,
-    judgeCodeQuality: async () => ({ score: 40 })
+    // Nothing ran a test (0/0), so the judge's 80 counts half: quality 40.
+    judgeArcadeCode: async () => ({
+      score: 80, rubric: { time: 70, efficiency: 80, standard: 90 }, runtimeRatio: 1.5,
+      reason: 'อ่านง่าย', feedback: 'ลองตั้งชื่อตัวแปรให้สื่อความหมาย', source: 'ai',
+    })
   })(room);
 
   const current = (await call(`/api/arcade/rooms/1/round-history?match_id=${matchId}`)).body.history;
@@ -41,6 +45,11 @@ test('result and match history expose the persisted score breakdown, multiplier 
     },
     { passCount: 0, totalCount: 0, qualityScore: 40, timeUsedSeconds: 30, scoreMultiplier: 2, roundScore: 80 }
   );
+  // What the code judge said is kept for the round-history panel (ADR 0006).
+  assert.deepEqual(
+    { rubric: current[0].quality_rubric, reason: current[0].quality_reason, feedback: current[0].quality_feedback, source: current[0].quality_source },
+    { rubric: { time: 70, efficiency: 80, standard: 90, runtimeRatio: 1.5 }, reason: 'อ่านง่าย', feedback: 'ลองตั้งชื่อตัวแปรให้สื่อความหมาย', source: 'ai' }
+  );
 
   const history = (await call('/api/arcade/players/alice/history')).body.matches;
   const match = history.find(entry => entry.match_id === matchId);
@@ -48,4 +57,6 @@ test('result and match history expose the persisted score breakdown, multiplier 
   assert.equal(match.final_rank, 1);
   assert.equal(match.coins_awarded, 50);
   assert.equal(match.rounds[0].score_multiplier, 2);
+  assert.equal(match.rounds[0].quality_feedback, 'ลองตั้งชื่อตัวแปรให้สื่อความหมาย');
+  assert.equal(match.rounds[0].quality_source, 'ai');
 });

@@ -115,7 +115,7 @@ test('twenty authenticated players finish four isolated rooms, retry safely, and
   const settle = () => settleDueArcadeRooms({
     db,
     random: () => 0.5,
-    judgeCodeQuality: async code => ({ score: Number(/score (\d+)/.exec(code)?.[1] || 20) })
+    judgeArcadeCode: async ({ code }) => ({ score: Number(/score (\d+)/.exec(code)?.[1] || 20) })
   });
 
   for (let round = 1; round <= 4; round++) {

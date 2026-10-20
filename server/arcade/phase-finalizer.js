@@ -4,6 +4,29 @@ const { readPhaseClock } = require('./phase-clock');
 const { gradeSubmission } = require('../problemGrader');
 const { settleArcadeRewards } = require('./match-rewards');
 const coder = require('./bot-coder');
+const { arcadeCodeJudge, heuristicCodeQualityScore } = require('./code-judge');
+const { loadArcadeProblem } = require('./round-problem');
+
+// How long settling a round waits for a player's quality verdict. Judging
+// starts the moment they submit (submission-api.js), so this is only reached
+// when the model is slow or the quota queue is long; the local score is used.
+const JUDGE_WAIT_MS = 12000;
+
+// The quality leg of a round score (ADR 0006). An untouched starter is worth
+// nothing, and well-written code that does not work is worth at most half:
+// beautiful wrong answers must not outscore plain right ones.
+function qualityFor(judged, passRatio) {
+  if (!judged || judged.source === 'starter') return 0;
+  return Math.round(Number(judged.score || 0) * (0.5 + 0.5 * passRatio));
+}
+
+function withDeadline(promise, ms, fallback) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise(resolve => { timer = setTimeout(() => resolve(fallback()), ms); }),
+  ]).finally(() => clearTimeout(timer));
+}
 
 const ARCADE_PHASE_DURATIONS = arcadeConfig.phaseDurations;
 const ARCADE_QUICK_PHASE_DURATIONS = arcadeConfig.quickModePhaseDurations;
@@ -92,33 +115,28 @@ function botRoundBar(botState, phase, roundStartMs, roundDuration) {
 }
 
 
-function createArcadePhaseFinalizer({ db, judgeCodeQuality, random = Math.random }) {
+function createArcadePhaseFinalizer({ db, judgeArcadeCode = args => arcadeCodeJudge().judge(args), random = Math.random }) {
   async function loadRoundProblem(room, roundNum, db) {
     const drawn = Array.isArray(room.round_task_ids) ? room.round_task_ids : null;
     const taskId = drawn ? drawn[roundNum - 1] : undefined;
     if (taskId === undefined) return { taskId, problem: null };
-    const [rows] = await db.query(
-      `SELECT p.test_kind, p.test_cases, p.solution_code, p.starter_code
-       FROM problem_modes m JOIN problems p ON p.problem_id = m.problem_id
-       WHERE m.mode = 'arcade' AND m.entry_id = ?`,
-      [taskId]
-    );
-    return { taskId, problem: rows?.[0] || null };
+    return { taskId, problem: await loadArcadeProblem(db, taskId) };
   }
 
   // A bot that typed a real answer this round (bot-ticker.js) is graded like a
   // player: the real grader on what it submitted - or on its unfinished draft
   // if the round ran out, as a player's draft is auto-submitted - and time from
-  // when it sent it. Its quality score is still rolled from the room's band:
-  // the AI judge's quota belongs to the players (CLAUDE.md).
+  // when it sent it. Its quality is the code judge's verdict on the answer it
+  // set out to type, judged once per answer bank (ADR 0006); a typo left in
+  // the draft costs it tests, not a fresh judge call.
   async function gradeBotAnswer({ p, taskId, problem, roundDuration, room, phaseClock, db }) {
     const submitted = Number(p.has_submitted) === 1;
     const code = (submitted ? p.submitted_code : p.draft_code) || '';
     const banked = coder.gradedFromBank(taskId, code);
     const verdict = banked || await gradeSubmission({ problem, code });
     const passRatio = verdict.total ? verdict.passed / verdict.total : 0;
-    const skill = arcadeConfig.botSkillByDifficulty[room.difficulty] || arcadeConfig.botSkillByDifficulty.default;
-    const quality = skill.qualityMin + Math.floor(random() * skill.qualitySpread);
+    const judged = await coder.answerQuality(taskId, p.bot_state.answerId);
+    const quality = qualityFor(judged, passRatio);
     const elapsed = Number(p.submitted_elapsed_seconds);
     const timeUsed = submitted && Number.isFinite(elapsed) ? Math.max(0, Math.min(roundDuration, elapsed)) : roundDuration;
     const timeScore = passRatio * ((roundDuration - timeUsed) / roundDuration) * 100;
@@ -128,7 +146,7 @@ function createArcadePhaseFinalizer({ db, judgeCodeQuality, random = Math.random
     return Math.round((passRatio * 100 + quality + timeScore) * (multiplied ? 2 : 1));
   }
 
-  async function gradeArcadeRoundSubmissions({ room, roundNum, participants, roundDuration, db, problem }) {
+  async function gradeArcadeRoundSubmissions({ room, roundNum, participants, roundDuration, db, problem, taskId }) {
     const graded = new Map();
     const humans = (participants || []).filter(
       (p) => p.participant_kind === 'human' && p.has_submitted && typeof p.submitted_code === 'string'
@@ -142,17 +160,24 @@ function createArcadePhaseFinalizer({ db, judgeCodeQuality, random = Math.random
       const code = p.submitted_code || '';
       let passCount = 0;
       let totalCount = 0;
+      let verdict = null;
 
       if (problem) {
-        const verdict = await gradeSubmission({ problem, code });
+        verdict = await gradeSubmission({ problem, code });
         passCount = verdict.passed;
         totalCount = verdict.total;
       }
+      const passRatio = totalCount === 0 ? 0 : passCount / totalCount;
 
-      // judgeCodeQuality already supplies its established local fallback when
-      // the remote service is unavailable. Unexpected failures abort the round.
-      const judged = await judgeCodeQuality(code.slice(0, 4000));
-      const quality = Number(judged?.score || 0);
+      // Usually already decided: judging started when the answer was sent.
+      // The judge has its own local fallback; unexpected failures abort the
+      // round so the ticker retries it.
+      const judged = await withDeadline(
+        judgeArcadeCode({ taskId, problem, code: code.slice(0, 4000), verdict, priority: 'player' }),
+        JUDGE_WAIT_MS,
+        () => ({ score: heuristicCodeQualityScore(code), rubric: null, reason: '', feedback: '', source: 'fallback' }),
+      );
+      const quality = qualityFor(judged, passRatio);
 
       // PostgreSQL TIMESTAMP values have no zone. Comparing two of them in
       // the database avoids interpreting submitted_at in the Node host's
@@ -162,7 +187,6 @@ function createArcadePhaseFinalizer({ db, judgeCodeQuality, random = Math.random
         ? Math.max(0, Math.min(roundDuration, Math.round(elapsedSeconds)))
         : roundDuration;
 
-      const passRatio = totalCount === 0 ? 0 : passCount / totalCount;
       const testScore = passRatio * 100;
       // Speed only counts for work that actually runs, the same rule the
       // browser used: paying the time leg flat rewarded submitting an
@@ -173,7 +197,7 @@ function createArcadePhaseFinalizer({ db, judgeCodeQuality, random = Math.random
 
       graded.set(p.id, {
         roundScore: Math.max(0, Math.min(arcadeConfig.maxSubmittableRoundScore, Math.round(roundScore))),
-        passCount, totalCount, quality: Math.round(quality), timeUsed, scoreMultiplier, code,
+        passCount, totalCount, quality, timeUsed, scoreMultiplier, code, judged,
       });
     }));
 
@@ -184,12 +208,15 @@ function createArcadePhaseFinalizer({ db, judgeCodeQuality, random = Math.random
       await db.query(
         `INSERT INTO arcade_round_history
           (match_id, room_id, room_code, room_name, difficulty, round_duration_mode, user_name, round_num,
-           code, pass_count, total_count, quality_score, time_used_seconds, score_multiplier, round_score)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           code, pass_count, total_count, quality_score, time_used_seconds, score_multiplier, round_score,
+           quality_rubric, quality_reason, quality_feedback, quality_source)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [room.current_match_id, room.room_id, room.room_code, room.room_name,
           room.difficulty || 'default', room.round_duration_mode || 'standard',
           p.user_name, roundNum, g.code.slice(0, 20000),
-          g.passCount, g.totalCount, g.quality, g.timeUsed, g.scoreMultiplier, g.roundScore]
+          g.passCount, g.totalCount, g.quality, g.timeUsed, g.scoreMultiplier, g.roundScore,
+          g.judged.rubric ? JSON.stringify({ ...g.judged.rubric, runtimeRatio: g.judged.runtimeRatio ?? null }) : null,
+          g.judged.reason || null, g.judged.feedback || null, g.judged.source || null]
       );
     }
 
@@ -254,7 +281,7 @@ function createArcadePhaseFinalizer({ db, judgeCodeQuality, random = Math.random
       // read pending_round_score - a number the browser had computed and sent.
       const { taskId, problem } = await loadRoundProblem(room, roundNum, db);
       const graded = await gradeArcadeRoundSubmissions({
-        room, roundNum, participants: alive, roundDuration, db, problem,
+        room, roundNum, participants: alive, roundDuration, db, problem, taskId,
       });
 
       const phaseClock = await readPhaseClock(db, roomId);

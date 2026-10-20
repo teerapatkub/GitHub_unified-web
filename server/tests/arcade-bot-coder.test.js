@@ -21,7 +21,9 @@ test('mistakes are made only in the lines a player writes, never in the given sc
 
 test('the bank grades the answer, the scaffold and each mistake with the real grader', async () => {
   const bank = await coder.buildBank(problem);
-  assert.deepEqual(bank[0], { id: 'solution', code: problem.solution_code, passed: 4, total: 4 });
+  const { verdict, ...solution } = bank[0];
+  assert.deepEqual(solution, { id: 'solution', code: problem.solution_code, passed: 4, total: 4 });
+  assert.ok(Number.isFinite(verdict.runtimeMs), 'kept for the code judge');
   assert.ok(bank.length >= 2);
   for (const answer of bank.slice(1)) assert.ok(answer.passed < answer.total, answer.code);
   assert.ok(bank.some(answer => answer.id === 'starter'));

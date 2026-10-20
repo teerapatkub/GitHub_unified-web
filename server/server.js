@@ -733,9 +733,9 @@ app.post('/api/ai/chat', async (req, res) => {
 // ==========================================
 
 // The chatbot model - Lumi (/api/ai/chat) and the exercise/challenge generator.
-// Deliberately NOT the same client as judgeCodeQuality()'s further down: that one
-// grades Arcade round code, is on its own key and model, and must not move when
-// the chatbot's does.
+// Deliberately NOT the same client as callCodeJudgeChat()'s further down: that one
+// grades Competitive Arena code, is on its own key and model, and must not move
+// when the chatbot's does. (Arcade's judge is Gemini, arcade/code-judge.js.)
 //
 // Both the key and the model name come from .env. The key used to be hard-coded
 // here as a fallback, which put a live credential in the repo, and the model was
@@ -3523,8 +3523,8 @@ const reviewCompetitiveSubmissionWithAI = async ({ challenge, code, testCases, t
 
     try {
         // Judged by the code-judge model, not the chatbot's. This is code
-        // grading inside a live ranked match, the same job as Arcade's
-        // judgeCodeQuality(), so it belongs on that key and model - see the AI
+        // grading inside a live ranked match, so it belongs on the code-judge
+        // key and model rather than the chatbot's - see the AI
         // Models table in CLAUDE.md. (Defined further down the file; that is
         // fine because this only runs on a request, long after module load.)
         const rawText = await callCodeJudgeChat({
@@ -5650,51 +5650,22 @@ function clampArcadeMaxPlayers(raw, fallback) {
     return Math.min(max, Math.max(min, Number.isFinite(parsed) ? parsed : fallback));
 }
 
-// Deterministic backup scorer for code quality, used when the AI judge is
-// unavailable (no API key, timeout, request error) so judging a round never
-// blocks on AI. Rewards short lines and some comments/docstring, penalizes
-// very long lines. Score 0-100.
-function heuristicCodeQualityScore(code) {
-    const lines = String(code || '').split('\n');
-    const codeLines = lines.filter(l => l.trim().length > 0);
-    if (codeLines.length === 0) return 0;
-
-    const avgLen = codeLines.reduce((sum, l) => sum + l.length, 0) / codeLines.length;
-    const longLineRatio = codeLines.filter(l => l.length > 79).length / codeLines.length;
-    const hasComment = /#|"""|'''/.test(code);
-
-    let score = 70;
-    score -= Math.max(0, avgLen - 40) * 0.5;
-    score -= longLineRatio * 30;
-    score += hasComment ? 10 : 0;
-
-    return Math.max(0, Math.min(100, Math.round(score)));
-}
-
-// NVIDIA-hosted judge for Arcade round code quality (beauty/readability AND
-// efficiency combined into one score), kept entirely separate from
-// callAiChat()/NVIDIA_API_KEY above (the Lumi chatbot and the AI task
-// generator) — this uses its own dedicated API key and
-// model since it deliberately judges a different thing (competitive code
-// quality, not general chat). Always resolves (never throws) so a round can
-// never get stuck waiting on this — falls back to the heuristic scorer above
-// on any missing key, timeout, or API error. Runs non-streaming with
-// extended thinking off: this sits in a live match's round-finalize path, so
-// a fast, deterministic JSON answer matters more than the reasoning trace a
-// streaming/thinking response would add.
+// NVIDIA-hosted judge for Competitive Arena submissions, kept entirely
+// separate from callAiChat()/NVIDIA_API_KEY above (the Lumi chatbot and the AI
+// task generator) - its own dedicated API key and model, since it judges a
+// different thing (competitive code quality, not general chat). Runs
+// non-streaming with extended thinking off: this sits in a live match, so a
+// fast, deterministic JSON answer matters more than a reasoning trace.
+//
+// Arcade no longer uses this: its rounds are judged by Gemini through
+// arcade/code-judge.js (ADR 0006), with its own key and quota.
 //
 // The key and the model name both come from .env. The model name used to be
 // hard-coded here, which meant this could not be pointed elsewhere or turned
 // off without editing code - and CLAUDE.md already required model names to live
 // in .env for exactly this reason. Leaving either value empty disables the AI
-// path entirely: both callers fall back to scoring in-process, and no player's
-// code leaves the machine.
-//
-// TWO callers share this client and this budget: judgeCodeQuality() below
-// (Arcade round code) and reviewCompetitiveSubmissionWithAI() further up
-// (Competitive Arena submissions). Both are code judging, both run inside a
-// live match, and both are deliberately kept off the chatbot's key and model -
-// see the AI Models table in CLAUDE.md.
+// path entirely: Competitive Arena falls back to scoring in-process, and no
+// player's code leaves the machine. See the AI Models table in CLAUDE.md.
 const NVIDIA_CODE_JUDGE_MODEL = String(process.env.NVIDIA_CODE_JUDGE_MODEL || '').trim();
 const NVIDIA_CODE_JUDGE_KEY = String(process.env.NVIDIA_CODE_JUDGE_API_KEY || '').trim();
 
@@ -5703,7 +5674,7 @@ const nvidiaCodeJudgeClient = (NVIDIA_CODE_JUDGE_KEY && NVIDIA_CODE_JUDGE_MODEL)
     : null;
 
 if (!nvidiaCodeJudgeClient) {
-    console.warn('ℹ️  ตัวตรวจโค้ดด้วย AI ปิดอยู่ (NVIDIA_CODE_JUDGE_API_KEY/MODEL ว่าง) - Arcade และโหมดแข่งจะให้คะแนนในเครื่องแทน');
+    console.warn('ℹ️  ตัวตรวจโค้ดด้วย AI ปิดอยู่ (NVIDIA_CODE_JUDGE_API_KEY/MODEL ว่าง) - โหมด Competitive จะให้คะแนนในเครื่องแทน');
 } else {
     console.log(`✅ ตัวตรวจโค้ดด้วย AI: ${NVIDIA_CODE_JUDGE_MODEL}`);
 }
@@ -5749,27 +5720,15 @@ const callCodeJudgeChat = async ({ messages, systemInstruction = '', temperature
     return String(completion?.choices?.[0]?.message?.content || '').trim();
 };
 
-async function judgeCodeQuality(code) {
-    if (!nvidiaCodeJudgeClient) {
-        return { score: heuristicCodeQualityScore(code), source: 'fallback' };
-    }
-    try {
-        const text = await callCodeJudgeChat({
-            systemInstruction: 'You are a strict but fair code reviewer grading Python code for a coding competition. Judge BOTH readability/beauty (naming, structure, consistency, comments) AND efficiency (algorithmic complexity, unnecessary work) combined into one score — never judge correctness. If the code is empty, only a stub (e.g. just "pass"), or otherwise has nothing substantive to evaluate, score it low (0-10). Respond with ONLY a JSON object, no markdown: {"score": <integer 0-100>, "reason": "<one short sentence in Thai>"}',
-            messages: [{ role: 'user', content: code || '' }],
-            temperature: 0.3,
-            maxTokens: 300,
-            timeoutMs: 8000,
-        });
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : text);
-        const score = Math.max(0, Math.min(100, Math.round(Number(parsed.score))));
-        if (Number.isNaN(score)) throw new Error('Invalid score from NVIDIA judge response');
-        return { score, reason: parsed.reason, source: 'ai' };
-    } catch (err) {
-        console.error('⚠️ NVIDIA code-quality judge failed, using fallback:', err.message);
-        return { score: heuristicCodeQualityScore(code), source: 'fallback' };
-    }
+// Arcade's code judge: Gemini when GEMINI_CODE_JUDGE_API_KEY/MODEL are set,
+// otherwise a local score; one instance shared by submissions, the round
+// finalizer and the bots' answer banks (arcade/code-judge.js, ADR 0006).
+{
+    const { arcadeCodeJudgeFromEnv, installArcadeCodeJudge } = require('./arcade/code-judge');
+    const arcadeJudge = arcadeCodeJudgeFromEnv();
+    installArcadeCodeJudge(arcadeJudge);
+    if (arcadeJudge.enabled) console.log(`✅ ตัวตรวจโค้ด Arcade: Gemini ${arcadeJudge.model}`);
+    else console.warn('ℹ️  ตัวตรวจโค้ด Arcade ด้วย Gemini ปิดอยู่ (GEMINI_CODE_JUDGE_API_KEY/MODEL ว่าง) - ให้คะแนนในเครื่องแทน');
 }
 
 // Every match now draws its own problems instead of always serving the same
@@ -5809,7 +5768,7 @@ const { settleDueArcadeRooms } = require('./arcade/match-ticker');
 // the scheduler's backoff handler.
 async function tickArcadeMatches() {
   if (!db.arcadeReady) return;
-  const failures = await settleDueArcadeRooms({ db, judgeCodeQuality, afterMatchSettled: evaluateArcadeAchievements });
+  const failures = await settleDueArcadeRooms({ db, afterMatchSettled: evaluateArcadeAchievements });
   for (const { roomId, error } of failures) {
     console.error('Arcade phase settlement failed for room ' + roomId + ':', describeError(error));
   }
@@ -7293,6 +7252,7 @@ const {
   createAuthProvisioningMigration,
   createDataApiSecurityMigration,
   createTutorialsSeenMigration,
+  createArcadeQualityBreakdownMigration,
 } = require('./migrations/definitions');
 const { applyDataApiSecurity } = require('./security/data-api-security');
 const authProvisioningSchemaSql = fs.readFileSync(
@@ -7348,6 +7308,11 @@ const applicationMigrations = [
   createTutorialsSeenMigration(
     () => require('./tutorials').migrateTutorialsSeen(db),
     require('./tutorials').migrateTutorialsSeen.toString(),
+  ),
+  // The code judge's verdict per round answer (arcade/code-judge.js, ADR 0006).
+  createArcadeQualityBreakdownMigration(
+    () => require('./arcade/migrate-quality-breakdown').migrateArcadeQualityBreakdown(db),
+    require('./arcade/migrate-quality-breakdown').migrateArcadeQualityBreakdown.toString(),
   ),
 ];
 
