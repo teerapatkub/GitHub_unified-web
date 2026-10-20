@@ -305,8 +305,11 @@ def main():
         return result
     result["loop_depth"] = loop_depth(tree)
     result["repeated"] = repeated_work(tree)
-    result["answer_lines"] = sum(1 for n in range(1, len(code_lines) + 1)
-                                 if written_by_player(n) and not code_lines[n - 1].strip().startswith("#"))
+    # Every code line, starter included: the reference is measured the same
+    # way, so a starter shared by both cancels out. Counting only lines that
+    # differ from the starter made a reference that reuses the scaffold look
+    # two lines long (found in the 2026-10-21 hard playtest).
+    result["answer_lines"] = sum(1 for line in code_lines if line.strip() and not line.strip().startswith("#"))
     result["style"] = style_findings(tree)
     try:
         result["raised"] = run_cases(compiled)

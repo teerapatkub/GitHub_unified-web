@@ -30,6 +30,15 @@ test('an O(n^2) answer loses time and efficiency, and says where', async () => {
   assert.ok(rubric.findings.some(f => f.criterion === 'efficiency' && /ลูปซ้อน 2 ชั้น/.test(f.th)));
 });
 
+test('a plain loop against a one-line reference is not called too long; a much longer answer is', () => {
+  const reference = { ok: true, steps: 10, loop_depth: 1, repeated: [], answer_lines: 1, style: [], raised: 0, tampered: [] };
+  const plain = scoreQuality({ ...reference, answer_lines: 4 }, reference);
+  assert.equal(plain.rubric.efficiency, 100);
+  const sprawling = scoreQuality({ ...reference, answer_lines: 9 }, reference);
+  assert.equal(sprawling.rubric.efficiency, 90);
+  assert.match(sprawling.rubric.findings[0].th, /เขียน 9 บรรทัด/);
+});
+
 test('a whole-list call repeated in a loop costs efficiency, with its line', async () => {
   const code = 'def dedupe(items):\n    result = []\n    for i in range(len(items)):\n        if items.index(items[i]) == i:\n            result.append(items[i])\n    return result';
   const { rubric } = await measure(code);

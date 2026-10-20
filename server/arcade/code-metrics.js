@@ -31,7 +31,11 @@ const RULES = {
   efficiencyPerExtraLoopLevel: 30,
   efficiencyPerRepeatedCall: 10,
   efficiencyRepeatedCap: 40,
+  // Long only when both far longer than the reference and several lines more:
+  // a plain four-line loop against a one-line reference is not wasted work
+  // (found in the 2026-10-21 medium playtest).
   efficiencyLongAnswerRatio: 2.5,
+  efficiencyLongAnswerExtraLines: 6,
   efficiencyLongAnswer: 10,
   standardPerFinding: 8,
 };
@@ -143,7 +147,9 @@ function scoreQuality(answer, reference) {
       `${call.name}() inside a loop goes over the whole data every time`);
   }
   const referenceLines = Math.max(1, Number(reference?.answer_lines) || 1);
-  if ((answer.answer_lines || 0) > referenceLines * RULES.efficiencyLongAnswerRatio) {
+  const answerLines = answer.answer_lines || 0;
+  if (answerLines > referenceLines * RULES.efficiencyLongAnswerRatio
+    && answerLines - referenceLines >= RULES.efficiencyLongAnswerExtraLines) {
     efficiency -= RULES.efficiencyLongAnswer;
     note('efficiency', null, `เขียน ${answer.answer_lines} บรรทัด เฉลยใช้ ${referenceLines}`,
       `${answer.answer_lines} lines; the reference uses ${referenceLines}`);
