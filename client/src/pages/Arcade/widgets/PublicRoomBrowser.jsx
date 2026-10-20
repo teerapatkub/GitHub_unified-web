@@ -32,7 +32,7 @@ export default function PublicRoomBrowser({
 
         <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
           {/* Quick Search Input Form */}
-          <form onSubmit={handleSearchJoin} className="mode-entry-room-search flex items-center gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-200">
+          <form onSubmit={handleSearchJoin} data-tour="arcade-search" className="mode-entry-room-search flex items-center gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-200">
             <input
               type="text"
               aria-label={t('searchCodePlaceholder')}
@@ -51,6 +51,7 @@ export default function PublicRoomBrowser({
 
           <button
             onClick={() => setShowCreateModal(true)}
+            data-tour="arcade-create"
             className="mode-entry-button mode-entry-button--primary"
           >
             <span>{t('createRoomBtn')}</span>
@@ -59,7 +60,7 @@ export default function PublicRoomBrowser({
       </div>
 
       {/* Rooms Grid */}
-      <div className="space-y-3">
+      <div className="space-y-3" data-tour="arcade-rooms">
         <div className="flex justify-between items-center px-2">
           <span className="text-xs font-black text-slate-400 uppercase tracking-widest">
             {t('openRoomsLabel')} ({roomsLoaded ? rooms.length : '…'} {t('roomsUnit')})

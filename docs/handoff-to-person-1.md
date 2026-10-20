@@ -433,3 +433,21 @@ Fixed undefined LESSON_PASS_PERCENT using POST_PASS_RATIO * 100. Read-only route
 - route `/login` ไม่ redirect ระหว่างกลับจาก Google (`leavesLoginPage()` ใน `client/src/auth/route-access.js`) เพื่อให้ `FriendLogin` เรียก `completeOAuthSignIn()` ได้ทุกครั้ง ไม่ใช่แค่ครั้งแรกที่ผูกบัญชี
 - `<img>` รูปโปรไฟล์ทุกจุดใส่ `referrerPolicy="no-referrer"` — โฮสต์รูปของ Google (`lh3.googleusercontent.com`) ปฏิเสธคำขอที่มี Referer รูปจึงขึ้นเป็นรูปเสีย ถ้าเพิ่มจุดแสดงรูปโปรไฟล์ใหม่ให้ใส่ด้วย
 - รายละเอียดใน project_logs/2026-10-16/2104-google-picture-for-bound-players.md
+
+## 2026-10-20 — บทแนะนำผู้ใช้ใหม่ (Lumi) แตะ `ModeEntryHeader.jsx`, `App.jsx` และ `CompetitiveArena.jsx` ของ Person 2
+
+- `ModeEntryHeader.jsx` เพิ่ม `data-tour="..."` ที่แบรนด์, แท็บโหมดทั้ง 3, เหรียญ, ภาษา, ร้านค้า, อันดับ และโปรไฟล์
+  - เพิ่มปุ่ม `?` (`data-tour="tour-help"`) ท้ายแถบ กดแล้วเปิดบทแนะนำของหน้าที่อยู่
+- `App.jsx` วาง `<TourHost tourId="app-overview">` ใต้ header
+  - เปิดเองครั้งแรกที่เข้า `/learn` หลังทำแบบสำรวจเสร็จ
+- `CompetitiveArena.jsx` (Person 2): ใส่ `data-tour` แค่ 5 จุด (`competitive-intro`, `-scoring`, `-post`, `-card`, `-mailbox`) และวาง `<TourHost tourId="competitive-feed">`
+  - ไม่ได้แก้ logic ใดๆ
+- ระบบใหม่: `components/tour/GuidedTour.jsx` (สปอตไลต์), `TourHost.jsx`, `data/appTour.js` (เนื้อหา), `utils/tourLayout.js`
+- server จำไว้ใน `users.tutorials_seen` (migration ใหม่ `202610200001`) ผ่าน `POST /api/user/tutorials/:id/seen`
+
+**ถ้าเจ้าของไฟล์ย้ายหรือเปลี่ยนชื่อปุ่ม** ให้ย้าย `data-tour` ตามไปด้วย
+- ถ้าหาเป้าไม่เจอ ขั้นนั้นจะถูกข้ามเงียบๆ ไม่ error
+
+**เสนอ (Person 1):** บทสอน 6 ชุดเดิมใน `data/webTutorials.js` (`WebTutorialModal`) ย้ายมาใช้ `GuidedTour` ได้
+- เพิ่ม tour ใน `data/appTour.js` แล้ววาง `<TourHost>` ในหน้านั้น จะได้สปอตไลต์ชี้จุดจริง
+- ปัจจุบัน modal เดิมยังแสดง selector ดิบ `ส่วนที่แนะนำ: [data-tour=...]` ให้ผู้ใช้เห็นอยู่

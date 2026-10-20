@@ -20,7 +20,7 @@ export default function PlayerStatsCard({ stats, playerName, t }) {
   ];
 
   return (
-    <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+    <div data-tour="arcade-stats" className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
       <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between gap-4">
         <div>
           <h3 className="text-sm font-black text-slate-800">{t('statsCardTitle')}</h3>

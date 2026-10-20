@@ -1474,7 +1474,7 @@ app.get('/api/user/profile/:userId', async (req, res) => {
         const [rows] = await db.execute(
             `SELECT u.user_id, u.username, u.email, u.role, u.level, u.xp, u.virtual_currency,
                     u.equipped_mouse_effect_id, u.equipped_theme_id, u.equipped_profile_frame_id,
-                    u.avatar_url, u.avatar_source,
+                    u.avatar_url, u.avatar_source, u.tutorials_seen,
                     COALESCE(item.effects, '[]') AS mouse_effect_data,
                     theme.name AS theme_name, theme.asset_url AS theme_asset_url, theme.preview_image AS theme_preview_image,
                     frame.asset_url AS profile_asset_url, frame.preview_image AS profile_preview_image
@@ -1506,6 +1506,7 @@ app.get('/api/user/profile/:userId', async (req, res) => {
             virtual_currency: Number(user.virtual_currency || 0),
             streak_days: streakDays,
             avatar: resolveAvatar(user),
+            tutorials_seen: Array.isArray(user.tutorials_seen) ? user.tutorials_seen : [],
         });
     } catch (error) {
         console.error('❌ /api/user/profile error:', error.message);
@@ -5987,6 +5988,7 @@ const { installArcadeMatchStart } = require('./arcade/match-api');
 installArcadeMatchStart(app, db);
 
 require('./arcade/submission-api').installArcadeSubmissions(app, db);
+require('./tutorials').installTutorials(app, db);
 
 require('./arcade/shop-api').installArcadeShop(app, db);
 
@@ -7290,6 +7292,7 @@ const {
   createApplicationSchemaMigration,
   createAuthProvisioningMigration,
   createDataApiSecurityMigration,
+  createTutorialsSeenMigration,
 } = require('./migrations/definitions');
 const { applyDataApiSecurity } = require('./security/data-api-security');
 const authProvisioningSchemaSql = fs.readFileSync(
@@ -7339,6 +7342,12 @@ const applicationMigrations = [
       }
     },
     authProvisioningSchemaSql,
+  ),
+  // First-run tours an account has finished or skipped (server/tutorials.js).
+  // Its own migration: the applied ones above are checksummed and must not change.
+  createTutorialsSeenMigration(
+    () => require('./tutorials').migrateTutorialsSeen(db),
+    require('./tutorials').migrateTutorialsSeen.toString(),
   ),
 ];
 

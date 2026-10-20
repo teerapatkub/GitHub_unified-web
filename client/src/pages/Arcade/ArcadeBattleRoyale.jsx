@@ -27,6 +27,7 @@ import useProgression from './hooks/useProgression.js';
 import useChat from './hooks/useChat.js';
 import CreateRoomModal from './widgets/CreateRoomModal.jsx';
 import RoomSettingsModal from './widgets/RoomSettingsModal.jsx';
+import TourHost from '../../components/tour/TourHost.jsx';
 import PasswordPromptModal from './widgets/PasswordPromptModal.jsx';
 import GlossaryModal from './widgets/GlossaryModal.jsx';
 import NotificationStack from './widgets/NotificationStack.jsx';
@@ -582,7 +583,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
           if (path !== '/matchmaking') requestHeaderAction(() => navigate(path));
         }}
       >
-        <button type="button" className="mode-entry-button" onClick={() => setShowGlossary(true)} aria-label={t('itemGlossary')} title={t('itemGlossary')}>
+        <button type="button" className="mode-entry-button" data-tour="arcade-glossary" onClick={() => setShowGlossary(true)} aria-label={t('itemGlossary')} title={t('itemGlossary')}>
           <BookOpen aria-hidden="true" /><span className="app-action-label">{t('itemGlossary')}</span>
         </button>
         {playerState.eliminated && <span className="text-xs font-bold text-rose-600">{t('spectatorMode')}</span>}
@@ -601,6 +602,10 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
       {/* 2. BODY CONTENT */}
       <div data-mode-transition-content className="flex-1 relative overflow-hidden">
         
+        {/* Lumi's Arcade tour, on the room browser only - never inside a room
+            or a match, where it would cover the clock. */}
+        <TourHost tourId="arcade-lobby" user={propUser} autoStart={isModeEntry && statsLoaded && historyLoaded && roomsLoaded} />
+
         {/* GLOSSARY OVERLAY */}
         <GlossaryModal show={showGlossary} onClose={() => setShowGlossary(false)} items={SHOP_ITEMS} t={t} />
 

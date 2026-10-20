@@ -8,6 +8,7 @@ import { TheInfiniteGrid } from './components/ui/the-infinite-grid';
 import { NavBar } from './components/ui/tubelight-navbar';
 import MouseEffectLayer from './components/MouseEffectLayer';
 import ModeEntryHeader from './components/ModeEntryHeader';
+import TourHost from './components/tour/TourHost';
 import useModeTransition from './hooks/useModeTransition';
 import { currentPlayer, signOut, isOAuthReturn, isRecovery } from './auth/session';
 import { getSupabaseClient } from './supabaseClient.js';
@@ -393,6 +394,13 @@ function AppContent() {
       <TheInfiniteGrid>
         {!hideNavbar && !isSimulationMode && (
           <ModeEntryHeader mode={isLearningRoute ? 'learn' : undefined} user={user} onLogout={handleLogout} />
+        )}
+
+        {/* Lumi's menu-bar tour: opens by itself on a new player's first visit
+            to /learn, and from the header's "?" on any page without its own.
+            Keyed by route so moving to another page ends it unrecorded. */}
+        {user && !hideNavbar && (
+          <TourHost key={location.pathname} tourId="app-overview" user={user} autoStart={location.pathname === '/learn'} fallback />
         )}
 
         {isLearningRoute && !hideNavbar && !isCodingWorkspace && (

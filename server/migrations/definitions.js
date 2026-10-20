@@ -4,6 +4,7 @@ const {
   AUTH_PROVISIONING_VERSION,
   CORE_SCHEMA_VERSION,
   DATA_API_SECURITY_VERSION,
+  TUTORIALS_SEEN_VERSION,
 } = require('./versions');
 
 const signatureFor = (up, supplemental = '') => [
@@ -39,9 +40,17 @@ const createAuthProvisioningMigration = (up, signature) => defineMigration({
   up,
 });
 
+const createTutorialsSeenMigration = (up, signature) => defineMigration({
+  version: TUTORIALS_SEEN_VERSION,
+  name: 'users_tutorials_seen',
+  signature: signatureFor(up, signature),
+  up,
+});
+
 module.exports = {
   createApplicationSchemaMigration,
   createAuthProvisioningMigration,
   createCoreSchemaMigration,
   createDataApiSecurityMigration,
+  createTutorialsSeenMigration,
 };

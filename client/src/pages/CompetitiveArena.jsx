@@ -29,6 +29,7 @@ import { motion as Motion, AnimatePresence } from 'framer-motion';
 import Editor from '@monaco-editor/react';
 import { requestJson } from '../config/api-client.js';
 import ModeEntryHeader from '../components/ModeEntryHeader';
+import TourHost from '../components/tour/TourHost.jsx';
 import SkeletonLoading from '../components/ui/Skeleton.jsx';
 
 const arenaFallbacks = {
@@ -736,14 +737,14 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
     <div className={`${!isEditorOpen ? 'mode-entry mode-entry--competitive ' : ''}min-h-screen bg-pysim-surface text-slate-800 flex flex-col font-sans antialiased overflow-x-hidden relative`}>
       
       <ModeEntryHeader mode="competitive" user={user} onLogout={onLogout}>
-        <button type="button" className="mode-entry-button relative" onClick={() => setMailboxOpen(true)} aria-label={`${t('arena.mailboxTitle')} (${unreadCount})`} title={t('arena.mailboxTitle')}>
+        <button type="button" className="mode-entry-button relative" data-tour="competitive-mailbox" onClick={() => setMailboxOpen(true)} aria-label={`${t('arena.mailboxTitle')} (${unreadCount})`} title={t('arena.mailboxTitle')}>
           <Mail aria-hidden="true" /><span className="app-action-label">{t('arena.mailboxTitle')}</span>
           {unreadCount > 0 && <span className="absolute -right-1 -top-1 rounded-full bg-rose-600 px-1.5 text-[10px] text-white">{unreadCount}</span>}
         </button>
       </ModeEntryHeader>
 
       <div data-mode-transition-content className="mode-entry-intro mx-auto mb-6 flex w-full max-w-6xl flex-wrap items-center justify-between gap-4 px-4">
-        <div className="flex items-center gap-3 rounded-2xl border border-blue-100 bg-white px-4 py-3 shadow-sm">
+        <div data-tour="competitive-intro" className="flex items-center gap-3 rounded-2xl border border-blue-100 bg-white px-4 py-3 shadow-sm">
           <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white">
             <Trophy className="h-5 w-5" />
           </span>
@@ -753,7 +754,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
           </div>
         </div>
 
-        <div className={`${!isEditorOpen ? 'flex flex-wrap' : 'grid grid-cols-3'} gap-2 text-[10px] font-black uppercase text-slate-500`}>
+        <div data-tour="competitive-scoring" className={`${!isEditorOpen ? 'flex flex-wrap' : 'grid grid-cols-3'} gap-2 text-[10px] font-black uppercase text-slate-500`}>
           {scoringRubric.map((item) => {
             const Icon = item.icon;
             return (
@@ -766,6 +767,10 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
         </div>
       </div>
 
+      {/* Lumi's first-visit tour (Person 3, docs/handoff-to-person-1.md); kept
+          off while the editor drawer is open. */}
+      <TourHost tourId="competitive-feed" user={user} autoStart={!isEditorOpen && feedLoaded} />
+
       {/* 2. BODY CONTENT (SPLIT-SCREEN DRAWER LAYOUT) */}
       <div data-mode-transition-content className="mode-entry-feed max-w-6xl mx-auto w-full flex-1 flex relative px-4">
         
@@ -774,7 +779,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
           <div className="w-full space-y-6">
             
             {/* POST CHALLENGE BOX (like Facebook write post) */}
-            <div className="mode-entry-card bg-white border border-slate-200 rounded-3xl p-5 shadow-sm">
+            <div data-tour="competitive-post" className="mode-entry-card bg-white border border-slate-200 rounded-3xl p-5 shadow-sm">
               <div className="flex items-center space-x-3 mb-4">
                 <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center">
                   <User className="h-4 w-4 text-slate-400" />
@@ -1025,7 +1030,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                 const scopeMeta = getChallengeScopeMeta(c);
                 const ScopeIcon = scopeMeta?.icon;
                 return (
-                  <div key={c.challenge_id} className="mode-entry-card bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden hover:border-slate-300 transition-colors">
+                  <div key={c.challenge_id} data-tour="competitive-card" className="mode-entry-card bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden hover:border-slate-300 transition-colors">
                     
                     {/* Post Author header */}
                     <div className="p-5 flex justify-between items-center border-b border-slate-100">

@@ -23,7 +23,7 @@ export default function PastMatchesPanel({ matches, t }) {
   };
 
   return (
-    <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+    <div data-tour="arcade-history" className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
       <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-2">
         <History className="h-4 w-4 text-slate-400" />
         <div>
