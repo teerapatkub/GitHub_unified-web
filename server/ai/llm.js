@@ -2,9 +2,8 @@
 //
 // The model runs on our own machine: Ollama's OpenAI-compatible endpoint at
 // LLM_BASE_URL (Spec 0004 - the project must run its own model rather than call
-// a provider with an API key). Lumi and the exercise generator use it today;
-// the Competitive judge, Arcade advice and the translation script move here in
-// the tickets that follow.
+// a provider with an API key). Lumi, the exercise generator, Competitive advice
+// and Arcade's post-match advice use it; the translation script follows.
 //
 // Each job names its own model in .env (LLM_CHAT_MODEL, LLM_JUDGE_MODEL,
 // LLM_ADVICE_MODEL) so they can be split onto different models later without a
@@ -90,7 +89,12 @@ function createLlmCaller({ baseURL, model, timeoutMs = DEFAULT_TIMEOUT_MS, job =
       }
     } catch (error) {
       const status = error?.status || error?.response?.status;
-      throw new Error(`Local model "${modelName}" for ${job} failed${status ? ` (HTTP ${status})` : ''}: ${error?.message || 'unknown error'}`);
+      // The status travels with the error: a caller that can wait (Arcade
+      // advice) retries a busy model (503 when Ollama's queue is full).
+      throw Object.assign(
+        new Error(`Local model "${modelName}" for ${job} failed${status ? ` (HTTP ${status})` : ''}: ${error?.message || 'unknown error'}`),
+        { status },
+      );
     }
 
     const reply = withoutThinking(String(completion?.choices?.[0]?.message?.content || ''));

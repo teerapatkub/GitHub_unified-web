@@ -75,4 +75,20 @@ async function startServer(t, { url, env = {} }) {
   return { call, userId: ready.userId, logs: () => output };
 }
 
-module.exports = { createTestDatabase, startServer };
+// The usual setup of a local-model test: a fake Ollama, a throwaway database,
+// the server booted with `envFor(ollama)`, and a pool on that database for
+// seeding and reading back.
+async function startServerWithFakeOllama(t, { prefix, envFor }) {
+  const { startFakeOllama } = require('./fake-ollama');
+  const ollama = await startFakeOllama();
+  t.after(() => ollama.close());
+  const url = await createTestDatabase(t, prefix);
+  const server = await startServer(t, { url, env: envFor(ollama) });
+  const db = new Pool({ connectionString: url, ssl: false });
+  // The database is dropped WITH (FORCE) at teardown, which ends idle clients.
+  db.on('error', () => {});
+  t.after(() => db.end());
+  return { ollama, server, db };
+}
+
+module.exports = { createTestDatabase, startServer, startServerWithFakeOllama };

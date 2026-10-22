@@ -130,10 +130,10 @@ test('without a model, on failure, or with text aimed at the judge, the advice i
   assert.equal(sneaky.prompts.length, 0);
 });
 
-test('a 429 on advice waits out the delay Gemini names, then succeeds', async () => {
+test('a busy model (503 queue full) on advice is asked once more after a pause, then succeeds', async () => {
   const { judge, prompts } = harness({
     generate: (args, call) => {
-      if (call === 1) throw Object.assign(new Error('{"error":{"status":"RESOURCE_EXHAUSTED","details":[{"retryDelay":"7s"}]}}'), { status: 429 });
+      if (call === 1) throw Object.assign(new Error('Local model failed (HTTP 503): server busy'), { status: 503 });
       return 'ok';
     },
   });

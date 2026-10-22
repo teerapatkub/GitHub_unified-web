@@ -5622,16 +5622,16 @@ function clampArcadeMaxPlayers(raw, fallback) {
 }
 
 
-// Arcade's code judge: quality is always measured locally (ADR 0007); Gemini,
-// when GEMINI_CODE_JUDGE_API_KEY/MODEL are set, only writes post-match advice.
+// Arcade's code judge: quality is always measured locally (ADR 0007); the local
+// model, when LLM_BASE_URL/LLM_ADVICE_MODEL are set, only writes post-match advice.
 // One instance shared by submissions, the round finalizer and the bots' answer
 // banks (arcade/code-judge.js).
 {
     const { arcadeCodeJudgeFromEnv, installArcadeCodeJudge } = require('./arcade/code-judge');
     const arcadeJudge = arcadeCodeJudgeFromEnv();
     installArcadeCodeJudge(arcadeJudge);
-    if (arcadeJudge.enabled) console.log(`✅ คำแนะนำหลังแมตช์ Arcade: Gemini ${arcadeJudge.model} (คะแนนวัดในเครื่อง)`);
-    else console.warn('ℹ️  คำแนะนำหลังแมตช์ Arcade ใช้ผลตรวจในเครื่อง (GEMINI_CODE_JUDGE_API_KEY/MODEL ว่าง)');
+    if (arcadeJudge.enabled) console.log(`✅ คำแนะนำหลังแมตช์ Arcade ใช้โมเดลในเครื่อง: ${arcadeJudge.model} (คะแนนวัดในเครื่อง)`);
+    else console.warn('ℹ️  LLM_BASE_URL/LLM_ADVICE_MODEL ว่าง - คำแนะนำหลังแมตช์ Arcade ใช้ผลตรวจในเครื่องแทน');
 }
 
 // Every match now draws its own problems instead of always serving the same

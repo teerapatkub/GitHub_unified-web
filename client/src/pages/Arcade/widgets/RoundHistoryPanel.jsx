@@ -69,7 +69,7 @@ export default function RoundHistoryPanel({ history, t }) {
 // How this answer's quality was scored (server/arcade/code-metrics.js,
 // ADR 0007): time, efficiency and standards measured against the reference
 // answer, each lost point with the line that lost it, then a few sentences of
-// advice that load afterwards (from Gemini when it is set up). Rounds settled
+// advice that load afterwards (from the local model when it is set up). Rounds settled
 // before the review existed have none of it, and show nothing.
 const RUBRIC = [['time', 'rubricTime'], ['efficiency', 'rubricEfficiency'], ['standard', 'rubricStandard']];
 const SOURCE_NOTE = { fallback: 'sourceFallback' };

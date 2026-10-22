@@ -234,14 +234,14 @@ view `exercises`, `mini_game_exercises`, `multiplayer_challenges` เพิ่�
 | ใช้ทำอะไร | ฟังก์ชัน | ตั้งค่าที่ |
 |---|---|---|
 | แชทบอท Lumi + สร้างโจทย์ฝึก | `callAiChat()` → `server/ai/llm.js` (Ollama ในเครื่อง, Spec 0004) | `LLM_BASE_URL`, `LLM_CHAT_MODEL`, `LLM_TIMEOUT_MS` |
-| คำแนะนำหลังแมตช์ใน Arcade (ไม่มีผลต่อคะแนน) | `advise()` ใน `server/arcade/code-judge.js` (Gemini) | `GEMINI_CODE_JUDGE_API_KEY`, `GEMINI_CODE_JUDGE_MODEL`, `GEMINI_CODE_JUDGE_RPM` |
+| คำแนะนำหลังแมตช์ใน Arcade (ไม่มีผลต่อคะแนน) | `advise()` ใน `server/arcade/code-judge.js` → `server/ai/llm.js` (Ollama ในเครื่อง) | `LLM_BASE_URL`, `LLM_ADVICE_MODEL`, `LLM_ADVICE_RPM` |
 | คำแนะนำคำตอบที่ไม่ผ่านใน Competitive Arena (ไม่มีผลต่อคะแนน) | `adviseOnFailedCompetitiveSubmission()` → `server/ai/llm.js` (Ollama ในเครื่อง) | `LLM_BASE_URL`, `LLM_JUDGE_MODEL` |
 
 **คะแนนคุณภาพโค้ดของ Arcade ไม่ได้มาจาก AI** (ADR 0007): `server/arcade/code-metrics.js` + `quality-probe.py`
 วัดเวลา (จำนวนบรรทัดที่รันจริงเทียบเฉลย) ประสิทธิภาพ (ลูปซ้อน, การวนซ้ำในลูป) และมาตรฐาน (PEP 8) ในเครื่อง
 ได้ผลในไม่ถึงวินาที โค้ดเดิมได้คะแนนเดิมเสมอ **ห้ามเอาโมเดลกลับเข้าไปในเส้นทางให้คะแนน** — Gemini ตอบช้า 13–14 วินาที
 (วัดเมื่อ 2026-10-20) และโควตาฟรีหมดง่าย ทำให้ในรอบเดียวกันมีคนได้คะแนนจาก AI และคนได้คะแนนสำรอง
-Gemini ใช้แค่เขียนคำแนะนำหลังจบแมตช์ **Competitive ใช้หลักเดียวกันตั้งแต่ 2026-10-22**: คะแนน รางวัล และการอนุมัติมาจาก rubric และผลเทสในเครื่อง (`scoreCompetitiveSubmission`) โมเดลในเครื่องเขียนแค่คำแนะนำ ทั้งสามแถวตั้งชื่อโมเดลแยกกันเสมอ
+โมเดลในเครื่องใช้แค่เขียนคำแนะนำหลังจบแมตช์ (เดิมเป็น Gemini จนถึง 2026-10-22) **Competitive ใช้หลักเดียวกันตั้งแต่ 2026-10-22**: คะแนน รางวัล และการอนุมัติมาจาก rubric และผลเทสในเครื่อง (`scoreCompetitiveSubmission`) โมเดลในเครื่องเขียนแค่คำแนะนำ ทั้งสามแถวตั้งชื่อโมเดลแยกกันเสมอ
 **ถ้าปล่อยคีย์หรือชื่อโมเดลว่าง ที่นั้นจะใช้ผลในเครื่องแทนโดยไม่ส่งโค้ดออกนอกเครื่อง**
 ถ้าเปลี่ยนกฎการวัด ให้รัน `node scripts/arcade-tests/quality-calibration.js` (เฉลยทั้ง 40 ข้อต้องได้ 95+ ทุกเกณฑ์) และ `npm run sim:bots`
 

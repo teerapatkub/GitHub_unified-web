@@ -8,12 +8,14 @@
 // and every lost point names its line. No model sits between a round ending
 // and its summary, and nothing a player writes in a comment can talk to it.
 //
-// Gemini is kept for one thing only: writing a few sentences of advice on a
-// round, in Thai, after the match is over (advise(), room-api.js). It never
-// changes a score. A rate limiter spaces those calls by GEMINI_CODE_JUDGE_RPM;
-// without a key, or when the call fails, the measured findings are the advice.
+// A language model is used for one thing only: writing a few sentences of
+// advice on a round, in Thai, after the match is over (advise(), room-api.js).
+// It never changes a score. It is the local model (Ollama, Spec 0004) named by
+// LLM_ADVICE_MODEL; a rate limiter spaces the calls by LLM_ADVICE_RPM. Without a
+// model, or when the call fails, the measured findings are the advice.
 const crypto = require('node:crypto');
 const metrics = require('./code-metrics');
+const { createLlmCaller, llmSettingsFromEnv } = require('../ai/llm');
 
 const { CRITERIA } = metrics;
 
@@ -95,55 +97,22 @@ function createLimiter({ rpm, now, sleep }) {
   };
 }
 
-const isRateLimit = error => Number(error?.status) === 429 || /\b429\b|RESOURCE_EXHAUSTED|quota/i.test(String(error?.message || ''));
-
-// Gemini says how long to back off ("retryDelay": "23s"); default 20s.
-function retryDelayMs(error) {
-  const match = /retryDelay"?\s*:?\s*"?(\d+(?:\.\d+)?)s/i.exec(String(error?.message || ''));
-  return match ? Number(match[1]) * 1000 : 20000;
-}
+// The local model is busy: Ollama answers 503 when its request queue is full
+// (and a proxy in front of it may answer 429). Worth one more try after a
+// short pause; anything else falls straight back to the measured findings.
+const isBusy = error => [429, 503].includes(Number(error?.status));
+const BUSY_RETRY_MS = 5000;
 
 // The real model. Kept apart so tests can pass a fake `generate`.
-// A few sentences are all that is wanted; thinking only adds latency and
-// spends the free quota. Gemini 2.x turns it off with a zero budget, Gemini 3+
-// rejects that and takes a level instead (checked 2026-10-20).
-const leastThinking = model => (/^gemini-2\./.test(model) ? { thinkingBudget: 0 } : { thinkingLevel: 'MINIMAL' });
-
-function geminiGenerator({ apiKey, model, timeoutMs = 10000 }) {
-  const { GoogleGenAI } = require('@google/genai');
-  const ai = new GoogleGenAI({ apiKey });
-  let thinkingConfig = leastThinking(model);
-  const call = async (prompt, systemInstruction) => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const response = await ai.models.generateContent({
-        model,
-        contents: prompt,
-        config: {
-          systemInstruction,
-          temperature: 0,
-          ...(thinkingConfig ? { thinkingConfig } : {}),
-          maxOutputTokens: 300,
-          abortSignal: controller.signal,
-        },
-      });
-      return response.text;
-    } finally {
-      clearTimeout(timer);
-    }
-  };
-  return async ({ systemInstruction, prompt }) => {
-    try {
-      return await call(prompt, systemInstruction);
-    } catch (error) {
-      // A model that does not know the thinking setting answers 400; ask
-      // again without it, and stop sending it.
-      if (Number(error?.status) !== 400 || !thinkingConfig) throw error;
-      thinkingConfig = null;
-      return call(prompt, systemInstruction);
-    }
-  };
+// A few sentences are all that is wanted, so the answer is kept short.
+function llmGenerator({ baseURL, model, timeoutMs }) {
+  const llm = createLlmCaller({ baseURL, model, timeoutMs, job: 'advice' });
+  return ({ systemInstruction, prompt }) => llm.call({
+    systemInstruction,
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0,
+    maxTokens: 300,
+  });
 }
 
 const ADVICE_INSTRUCTION = [
@@ -184,7 +153,6 @@ function createArcadeCodeJudge({
   now = Date.now,
   sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
   cacheSize = 2000,
-  maxRetryWaitMs = 30000,
   log = console,
 } = {}) {
   const limiter = createLimiter({ rpm, now, sleep });
@@ -263,11 +231,11 @@ function createArcadeCodeJudge({
         const text = String(await limiter.schedule('player', () => generate({ systemInstruction: ADVICE_INSTRUCTION, prompt })) || '').trim();
         if (text) return { text: text.slice(0, 600), source: 'ai' };
       } catch (error) {
-        if (attempt === 1 || !isRateLimit(error) || retryDelayMs(error) > maxRetryWaitMs) {
+        if (attempt === 1 || !isBusy(error)) {
           log.error?.(`⚠️ Arcade advice fell back to the measured findings: ${error.message}`);
           return measured;
         }
-        limiter.pauseUntil(now() + retryDelayMs(error));
+        limiter.pauseUntil(now() + BUSY_RETRY_MS);
       }
     }
     return measured;
@@ -284,14 +252,16 @@ const installArcadeCodeJudge = judge => { installed = judge; };
 const arcadeCodeJudge = () => installed;
 
 function arcadeCodeJudgeFromEnv(env = process.env) {
-  const apiKey = String(env.GEMINI_CODE_JUDGE_API_KEY || '').trim();
-  const model = String(env.GEMINI_CODE_JUDGE_MODEL || '').trim();
-  const rpm = Number(env.GEMINI_CODE_JUDGE_RPM) || 10;
-  if (!apiKey || !model) return createArcadeCodeJudge({ rpm });
-  // Measured 2026-10-20: 13-14 s for a one-sentence answer on the free tier.
-  // Advice is fetched after the match and blocks no one, so it may take that
-  // long - which is also why the model is kept out of scoring (ADR 0007).
-  return createArcadeCodeJudge({ generate: geminiGenerator({ apiKey, model, timeoutMs: 30000 }), model, rpm });
+  const { baseURL, timeoutMs } = llmSettingsFromEnv(env);
+  const model = String(env.LLM_ADVICE_MODEL || '').trim();
+  // Spaces advice calls apart (they do not wait on Lumi's): a burst of history
+  // clicks reaches the model as a trickle instead of one long queue.
+  const rpm = Number(env.LLM_ADVICE_RPM) || 10;
+  if (!baseURL || !model) return createArcadeCodeJudge({ rpm });
+  // Advice is fetched after the match and blocks no one, so it may take the
+  // full LLM_TIMEOUT_MS - which is also why the model is kept out of scoring
+  // (ADR 0007).
+  return createArcadeCodeJudge({ generate: llmGenerator({ baseURL, model, timeoutMs }), model, rpm });
 }
 
 module.exports = {

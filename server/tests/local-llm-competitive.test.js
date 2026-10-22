@@ -4,9 +4,7 @@
 // Ollama and driven through accept + submit, the endpoints the arena page calls.
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { Pool } = require('pg');
-const { startFakeOllama } = require('./helpers/fake-ollama');
-const { createTestDatabase, startServer } = require('./helpers/start-server');
+const { startServerWithFakeOllama } = require('./helpers/start-server');
 
 const JUDGE_MODEL = 'scb10x/typhoon2.1-gemma3-4b';
 // Upper-cases one word. print(input()) passes only the first case.
@@ -23,21 +21,15 @@ const RIGHT = 'word = input()\nprint(word.upper())';
 const review = fields => ({ content: JSON.stringify({ correctness: 0, complexity: 0, cleanCode: 0, approved: false, feedback: '', ...fields }) });
 
 test('Competitive scores and pays by the rubric whatever the model says', { timeout: 600_000 }, async t => {
-  const ollama = await startFakeOllama();
-  t.after(() => ollama.close());
-  const url = await createTestDatabase(t, 'pyarena_comp');
-  const server = await startServer(t, {
-    url,
-    env: {
-      LLM_BASE_URL: ollama.baseURL,
+  const { ollama, server, db } = await startServerWithFakeOllama(t, {
+    prefix: 'pyarena_comp',
+    envFor: o => ({
+      LLM_BASE_URL: o.baseURL,
       LLM_CHAT_MODEL: 'scb10x/typhoon2.5-qwen3-4b',
       LLM_JUDGE_MODEL: JUDGE_MODEL,
       LLM_TIMEOUT_MS: '1500',
-    },
+    }),
   });
-  const db = new Pool({ connectionString: url, ssl: false });
-  db.on('error', () => {});
-  t.after(() => db.end());
   // The arena is behind level 10, and only an admin may post a challenge.
   await db.query("UPDATE users SET level = 10, role = 'admin' WHERE user_id = $1", [server.userId]);
 

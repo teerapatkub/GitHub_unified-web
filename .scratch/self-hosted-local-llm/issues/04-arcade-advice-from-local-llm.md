@@ -15,13 +15,13 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done except the test:arcade/sim:bots line (2026-10-22, see project_logs/2026-10-22/1943-ticket-04-arcade-advice-from-local-llm.md)
 
-- [ ] judge ของ Arcade สร้างคำแนะนำผ่านโมดูลตัวเรียก LLM และไม่มีโค้ดของ Gemini เหลือ
-- [ ] เทสของ judge Arcade ที่มีอยู่ปรับให้ใช้ generator ใหม่ แล้วผ่าน
-- [ ] เทสผ่าน Ollama ปลอม ยิง endpoint คำแนะนำของประวัติรอบจริง:
-  - [ ] ตัวปลอมตอบสำเร็จ → ได้ข้อความจากตัวปลอม
-  - [ ] ตัวปลอมล้มเหลว → ได้ผลวัด
-  - [ ] ขอซ้ำ → ได้ค่าที่เก็บไว้ และตัวปลอมไม่ถูกเรียกอีก
-- [ ] `npm run test:arcade`, calibration (40/40 ได้ 95+) และ `npm run sim:bots` ผ่าน
-- [ ] เล่นทดสอบ Arcade 1 แมตช์บน dev server แล้วประวัติรอบโหลดคำแนะนำได้
+- [x] judge ของ Arcade สร้างคำแนะนำผ่านโมดูลตัวเรียก LLM และไม่มีโค้ดของ Gemini เหลือ
+- [x] เทสของ judge Arcade ที่มีอยู่ปรับให้ใช้ generator ใหม่ แล้วผ่าน
+- [x] เทสผ่าน Ollama ปลอม ยิง endpoint คำแนะนำของประวัติรอบจริง:
+  - [x] ตัวปลอมตอบสำเร็จ → ได้ข้อความจากตัวปลอม
+  - [x] ตัวปลอมล้มเหลว → ได้ผลวัด
+  - [x] ขอซ้ำ → ได้ค่าที่เก็บไว้ และตัวปลอมไม่ถูกเรียกอีก
+- [ ] `npm run test:arcade`, calibration (40/40 ได้ 95+) และ `npm run sim:bots` ผ่าน  ← calibration 40/40 ผ่าน; test:arcade 4/8 ผ่าน อีก 4 ตก 401 (สคริปต์ไม่ส่ง token, มีมาก่อน); sim:bots ตกเพราะ test_cases ในฐานทดสอบเสีย (มีมาก่อน, HEAD ก็ตก)
+- [x] เล่นทดสอบ Arcade 1 แมตช์บน dev server แล้วประวัติรอบโหลดคำแนะนำได้

@@ -213,7 +213,7 @@ function installArcadeRoomReads(app, db) {
   });
 
   // A few sentences of advice on one finished round (ADR 0007). Written by
-  // Gemini once and kept in quality_feedback; it never changes a score. Only
+  // the local model once and kept in quality_feedback; it never changes a score. Only
   // the round's own player may ask, and only after the match is over, so the
   // advice cannot coach anyone mid-match. Without a model, or when it fails,
   // the answer is the measured findings and nothing is stored, so it can be
@@ -233,7 +233,7 @@ function installArcadeRoomReads(app, db) {
       // find out who played what.
       if (!row || row.user_name !== req.player.username) return res.status(404).json({ error: 'ไม่พบรอบนี้' });
       if (!row.match_ended_at) return res.status(409).json({ error: 'ดูคำแนะนำได้หลังจบแมตช์' });
-      // Only rows scored by measurement (or by the Gemini judge before it,
+      // Only rows scored by measurement (or by the model judge before it,
       // ADR 0006) ever get model-written text here; an untouched starter, a
       // flagged answer or a fallback keeps the server's own fixed message.
       const storedSource = ['metrics', 'ai'].includes(row.quality_source) ? 'ai' : 'metrics';
