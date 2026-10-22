@@ -27,4 +27,4 @@ field ที่หน้า Competitive ใช้อยู่ต้องคง�
   - [x] ตัวปลอมล้มเหลวหรือ timeout → feedback มาจาก rubric
 - [x] หน้า Competitive ยังแสดงผลได้เหมือนเดิม ตรวจผ่าน dev server
 - [x] บันทึกส่งต่อให้ Person 2 ใน handoff doc ว่าคะแนนเปลี่ยนไปมาจากไหน และทำไม
-- [x] `npm test` ของ server และ `npm run test:submit` ผ่าน
+- [ ] `npm test` ของ server และ `npm run test:submit` ผ่าน  ← `npm test` ผ่าน (73 + 194); `test:submit` ใน checkout นี้ยังเป็นสคริปต์เดิมที่ไม่ส่ง token ตัวที่แก้แล้วอยู่ branch `claude/gifted-mestorf-d08410` (f068c70) ยังไม่ merge
