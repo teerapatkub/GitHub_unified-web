@@ -23,5 +23,5 @@
   - [x] ตัวปลอมตอบสำเร็จ → ได้ข้อความจากตัวปลอม
   - [x] ตัวปลอมล้มเหลว → ได้ผลวัด
   - [x] ขอซ้ำ → ได้ค่าที่เก็บไว้ และตัวปลอมไม่ถูกเรียกอีก
-- [ ] `npm run test:arcade`, calibration (40/40 ได้ 95+) และ `npm run sim:bots` ผ่าน  ← calibration 40/40 ผ่าน; test:arcade 4/8 ผ่าน อีก 4 ตก 401 (สคริปต์ไม่ส่ง token, มีมาก่อน); sim:bots ตกเพราะ test_cases ในฐานทดสอบเสีย (มีมาก่อน, HEAD ก็ตก)
+- [ ] `npm run test:arcade`, calibration (40/40 ได้ 95+) และ `npm run sim:bots` ผ่าน  ← test:arcade ผ่านครบหลัง merge d267aca + แก้ EPIPE (2026-10-22 20:19); calibration 40/40; sim:bots ยังตกเพราะ test_cases ในฐานทดสอบเสีย (มีมาก่อน รอรันสคริปต์ซ่อม)
 - [x] เล่นทดสอบ Arcade 1 แมตช์บน dev server แล้วประวัติรอบโหลดคำแนะนำได้

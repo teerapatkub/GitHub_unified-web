@@ -164,6 +164,12 @@ const runPythonScript = ({ code, input = '', timeoutMs = 4000, files = {}, mainF
         });
     });
 
+    // A program that exits without reading all of its input (`exit()`, or a
+    // crash on line 1) closes the pipe while the input is still being written.
+    // That surfaces as an 'error' event on stdin (EPIPE / EOF) - asynchronous,
+    // so the try/catch below never sees it - and an unhandled 'error' event
+    // ends the whole server. The close handler already reports the result.
+    child.stdin.on('error', () => {});
     try {
         child.stdin.write(String(input || ''));
         if (!String(input || '').endsWith('\n')) child.stdin.write('\n');

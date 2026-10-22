@@ -68,17 +68,25 @@ async function startServer(t, { url, env = {}, players = [], backgroundJobs = fa
     child.on('exit', code => { clearTimeout(timer); reject(new Error(`server exited with ${code}:\n${output}`)); });
   });
 
+  let exitCode = null;
+  child.on('exit', code => { exitCode = code; });
   const callAs = token => async (route, { method = 'POST', body } = {}) => {
-    const response = await fetch(`http://127.0.0.1:${ready.port}${route}`, {
-      method,
-      // x-pyarena-request is what the real client sends on every write (CSRF guard).
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        'Content-Type': 'application/json',
-        'x-pyarena-request': '1',
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    let response;
+    try {
+      response = await fetch(`http://127.0.0.1:${ready.port}${route}`, {
+        method,
+        // x-pyarena-request is what the real client sends on every write (CSRF guard).
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          'Content-Type': 'application/json',
+          'x-pyarena-request': '1',
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+    } catch (error) {
+      // A bare "fetch failed" says nothing; the server's own last words do.
+      throw new Error(`${method} ${route} failed (${error.cause?.code || error.message}); server ${exitCode === null ? 'still running' : `exited with ${exitCode}`}:\n${output.slice(-3000)}`);
+    }
     return { status: response.status, body: await response.json().catch(() => null) };
   };
   const signedIn = Object.fromEntries(Object.entries(ready.players || {})
