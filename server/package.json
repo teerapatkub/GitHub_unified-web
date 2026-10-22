@@ -2,7 +2,7 @@
   "scripts": {
     "lint": "eslint --max-warnings=30 server.js arcade auth runtime security",
     "pretest": "node --test tests/production-environment.test.js tests/production-auth-settings.test.js tests/data-api-security.test.js tests/health-routes.test.js tests/asset-uploads.test.js tests/avatar.test.js tests/arcade-public-task.test.js tests/arcade-bot-coder.test.js tests/arcade-code-judge.test.js tests/arcade-code-metrics.test.js tests/promotion-exam.test.js tests/placement.test.js",
-    "test": "node --test --test-concurrency=1 tests/auth.test.js tests/oauth-sign-in.test.js tests/promotion-exam-http.test.js tests/placement-http.test.js tests/admin-principal.test.js tests/rematch-roster.test.js tests/migrations-startup.test.js tests/arcade-restart-readiness.test.js tests/arcade-room-api.test.js tests/arcade-matches.test.js tests/arcade-membership.test.js tests/arcade-score-breakdown.test.js tests/arcade-submissions.test.js tests/arcade-settlement.test.js tests/arcade-rewards.test.js tests/arcade-shop.test.js tests/arcade-self-items.test.js tests/arcade-attacks.test.js tests/arcade-bots.test.js tests/arcade-reconnect.test.js tests/arcade-acceptance.test.js tests/tutorials-seen.test.js tests/local-llm-chat.test.js tests/local-llm-practice-tasks.test.js",
+    "test": "node --test --test-concurrency=1 tests/auth.test.js tests/oauth-sign-in.test.js tests/promotion-exam-http.test.js tests/placement-http.test.js tests/admin-principal.test.js tests/rematch-roster.test.js tests/migrations-startup.test.js tests/arcade-restart-readiness.test.js tests/arcade-room-api.test.js tests/arcade-matches.test.js tests/arcade-membership.test.js tests/arcade-score-breakdown.test.js tests/arcade-submissions.test.js tests/arcade-settlement.test.js tests/arcade-rewards.test.js tests/arcade-shop.test.js tests/arcade-self-items.test.js tests/arcade-attacks.test.js tests/arcade-bots.test.js tests/arcade-reconnect.test.js tests/arcade-acceptance.test.js tests/tutorials-seen.test.js tests/local-llm-chat.test.js tests/local-llm-practice-tasks.test.js tests/submit-integrity.test.js",
     "test:migrations": "node --test tests/migrations-startup.test.js",
     "test:migrations:postgres": "node --test tests/migrations-postgres.test.js",
     "test:data-api:http": "node --test tests/data-api-http.test.js",
@@ -33,7 +33,7 @@
     "test:achievements": "node scripts/achievements-test.js",
     "test:problems": "node scripts/problems-parity-check.js",
     "test:grader": "node scripts/grader-test.js",
-    "test:submit": "node scripts/submit-integrity-test.js",
+    "test:submit": "node --test tests/submit-integrity.test.js",
     "mark:gradable": "node scripts/mark-auto-gradable.js",
     "test:bilingual": "node scripts/bilingual-check.js",
     "check:time": "node scripts/timestamp-check.js",
