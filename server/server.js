@@ -8,6 +8,7 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const OpenAI = require('openai');
+const { createLlmCaller, llmSettingsFromEnv } = require('./ai/llm');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -733,84 +734,24 @@ app.post('/api/ai/chat', async (req, res) => {
 // ==========================================
 
 // The chatbot model - Lumi (/api/ai/chat) and the exercise/challenge generator.
-// Deliberately NOT the same client as callCodeJudgeChat()'s further down: that one
-// grades Competitive Arena code, is on its own key and model, and must not move
-// when the chatbot's does. (Arcade's judge is Gemini, arcade/code-judge.js.)
-//
-// Both the key and the model name come from .env. The key used to be hard-coded
-// here as a fallback, which put a live credential in the repo, and the model was
-// a constant, which is why NVIDIA retiring `z-ai/glm-5.2` (HTTP 410 Gone) could
-// only be answered by editing code. Swapping models is now a one-line .env edit.
-const NVIDIA_AI_API_KEY = String(process.env.NVIDIA_API_KEY || process.env.NVIDIA_GLM_API_KEY || '').trim();
-const NVIDIA_AI_MODEL = String(process.env.NVIDIA_AI_MODEL || 'deepseek-ai/deepseek-v4-flash-0731').trim();
-// A chat reply sits on a user's critical path, so it fails fast rather than
-// leaving somebody watching a spinner - the caller's own fallback beats a long
-// wait. Retries are off: the SDK retries timeouts too, so a model that hangs
-// rather than erroring would cost the caller two full timeouts instead of one.
-const NVIDIA_AI_TIMEOUT_MS = Number(process.env.NVIDIA_AI_TIMEOUT_MS || 45000);
+// A model running on our own machine (Ollama at LLM_BASE_URL, Spec 0004), not a
+// provider's API: the advisor's rule is no AI keys. The model name comes from
+// LLM_CHAT_MODEL; the Competitive and Arcade jobs name their own models, so this
+// one can move without them moving with it. Leaving either value empty turns the
+// chatbot off, and every caller below already falls back without it.
+const chatLlm = createLlmCaller({ ...llmSettingsFromEnv(), model: process.env.LLM_CHAT_MODEL, job: 'chat' });
 
-const aiChatClient = NVIDIA_AI_API_KEY
-    ? new OpenAI({
-        apiKey: NVIDIA_AI_API_KEY,
-        baseURL: 'https://integrate.api.nvidia.com/v1',
-        maxRetries: 0,
-        timeout: NVIDIA_AI_TIMEOUT_MS,
-    })
-    : null;
-
-if (!NVIDIA_AI_API_KEY) {
-    console.warn('\u26a0\ufe0f NVIDIA_API_KEY is not set - Lumi chat and AI task generation will use their built-in fallbacks.');
+if (chatLlm.enabled) {
+    console.log(`✅ Lumi และการสร้างโจทย์ใช้โมเดลในเครื่อง: ${chatLlm.model} (${chatLlm.baseURL})`);
+} else {
+    console.warn('\u26a0\ufe0f LLM_BASE_URL/LLM_CHAT_MODEL ว่าง - Lumi และการสร้างโจทย์จะใช้คำตอบสำรองในเครื่องแทน');
 }
 
-// Callers already passed temperature/maxTokens/thinking before this rewrite, but
-// the old body ignored all three and sent its own fixed values, so asking for a
-// short deterministic answer silently got a long creative one.
-const callAiChat = async ({ messages, systemInstruction = '', temperature = 1, maxTokens = 4096, thinking = false }) => {
-    if (!aiChatClient) {
-        throw new Error('NVIDIA_API_KEY is not set, so no AI model is configured');
-    }
-
-    const apiMessages = [];
-    if (systemInstruction) {
-        apiMessages.push({ role: 'system', content: systemInstruction });
-    }
-    for (const message of (Array.isArray(messages) ? messages : [])) {
-        apiMessages.push({ role: message?.role || 'user', content: String(message?.content ?? '') });
-    }
-    if (apiMessages.length === 0) {
-        throw new Error('callAiChat was given no messages to send');
-    }
-
-    let completion;
-    try {
-        completion = await aiChatClient.chat.completions.create({
-            model: NVIDIA_AI_MODEL,
-            messages: apiMessages,
-            temperature,
-            top_p: 0.95,
-            max_tokens: maxTokens,
-            chat_template_kwargs: { thinking: Boolean(thinking) },
-            stream: false,
-        });
-    } catch (error) {
-        // The bare SDK message ("Request failed with status code 410") never named
-        // the model that was gone, which is what made the retirement hard to spot.
-        const status = error?.status || error?.response?.status;
-        const detail = error?.response?.data?.detail || error?.message || 'unknown error';
-        throw new Error(`AI model "${NVIDIA_AI_MODEL}" failed${status ? ` (HTTP ${status})` : ''}: ${detail}`);
-    }
-
-    // Reasoning models split their output: the visible answer is in `content`,
-    // the scratch work in `reasoning_content`. Only the answer is returned -
-    // showing a learner the model's private deliberation would confuse them, and
-    // for the task generator it would break JSON parsing outright.
-    const reply = String(completion?.choices?.[0]?.message?.content || '').trim();
-    if (!reply) {
-        const finish = completion?.choices?.[0]?.finish_reason;
-        throw new Error(`AI model "${NVIDIA_AI_MODEL}" returned an empty reply${finish ? ` (finish_reason: ${finish})` : ''}`);
-    }
-    return reply;
-};
+// Callers still pass `thinking`; a local model's thinking is stripped from the
+// reply instead (ai/llm.js), so it is accepted and ignored here.
+const callAiChat = async ({ messages, systemInstruction = '', temperature = 1, maxTokens = 4096 }) => (
+    chatLlm.call({ messages, systemInstruction, temperature, maxTokens })
+);
 
 
 const normalizePlayerLevel = (level) => {
@@ -5650,9 +5591,9 @@ function clampArcadeMaxPlayers(raw, fallback) {
     return Math.min(max, Math.max(min, Number.isFinite(parsed) ? parsed : fallback));
 }
 
-// NVIDIA-hosted judge for Competitive Arena submissions, kept entirely
-// separate from callAiChat()/NVIDIA_API_KEY above (the Lumi chatbot and the AI
-// task generator) - its own dedicated API key and model, since it judges a
+// NVIDIA-hosted judge for Competitive Arena submissions (moves to the local
+// model in Spec 0004 ticket 03), kept separate from callAiChat() above (the
+// Lumi chatbot and the AI task generator) - its own dedicated API key and model, since it judges a
 // different thing (competitive code quality, not general chat). Runs
 // non-streaming with extended thinking off: this sits in a live match, so a
 // fast, deterministic JSON answer matters more than a reasoning trace.

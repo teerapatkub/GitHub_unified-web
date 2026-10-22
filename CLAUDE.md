@@ -233,7 +233,7 @@ view `exercises`, `mini_game_exercises`, `multiplayer_challenges` เพิ่�
 
 | ใช้ทำอะไร | ฟังก์ชัน | ตั้งค่าที่ |
 |---|---|---|
-| แชทบอท Lumi + สร้างโจทย์ฝึก | `callAiChat()` | `NVIDIA_API_KEY`, `NVIDIA_AI_MODEL` |
+| แชทบอท Lumi + สร้างโจทย์ฝึก | `callAiChat()` → `server/ai/llm.js` (Ollama ในเครื่อง, Spec 0004) | `LLM_BASE_URL`, `LLM_CHAT_MODEL`, `LLM_TIMEOUT_MS` |
 | คำแนะนำหลังแมตช์ใน Arcade (ไม่มีผลต่อคะแนน) | `advise()` ใน `server/arcade/code-judge.js` (Gemini) | `GEMINI_CODE_JUDGE_API_KEY`, `GEMINI_CODE_JUDGE_MODEL`, `GEMINI_CODE_JUDGE_RPM` |
 | ให้คะแนนคำตอบใน Competitive Arena | `reviewCompetitiveSubmissionWithAI()` ผ่าน `callCodeJudgeChat()` | `NVIDIA_CODE_JUDGE_API_KEY`, `NVIDIA_CODE_JUDGE_MODEL` |
 

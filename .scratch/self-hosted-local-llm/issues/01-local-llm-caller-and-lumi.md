@@ -16,15 +16,15 @@ ticket นี้สร้าง seam เดียวที่ ticket อื่�
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done (2026-10-22, see project_logs/2026-10-22/1719-ticket-01-local-llm-caller-and-lumi.md)
 
-- [ ] โมดูลตัวเรียก LLM:
+- [x] โมดูลตัวเรียก LLM:
   - คืนตัวเรียกที่มี shape เดียวกับ `callAiChat` เดิม
   - throw ทันทีเมื่อ `LLM_BASE_URL` หรือชื่อโมเดลว่าง
-- [ ] `callAiChat` ใช้โมดูลนี้ และไม่มีที่อยู่ของ NVIDIA ถูกเขียนตายไว้ในส่วนนี้แล้ว
-- [ ] ปิดโหมดคิดของ Qwen3 โดยใช้วิธีที่ Ollama รองรับ ส่วนพารามิเตอร์เฉพาะของ NVIDIA ต้องไม่ถูกส่งไปแล้ว
-- [ ] มี Ollama ปลอมสำหรับเทส และ helper บูต server ที่ชี้ไปหาตัวปลอม
-- [ ] เทส: endpoint แชทของ Lumi ได้ข้อความจากตัวปลอม และตัวปลอมเห็นชื่อโมเดลจาก `LLM_CHAT_MODEL`
-- [ ] เทส: ตัวปลอมตอบ 5xx หรือช้าเกิน timeout แล้ว Lumi ตอบข้อความสุภาพ ไม่ใช่หน้า error
-- [ ] เทส: ไม่ตั้ง `LLM_BASE_URL` แล้ว server ยังบูตได้ และตัวปลอมไม่ได้รับ request เลย
-- [ ] `npm test` ของ server ผ่าน
+- [x] `callAiChat` ใช้โมดูลนี้ และไม่มีที่อยู่ของ NVIDIA ถูกเขียนตายไว้ในส่วนนี้แล้ว
+- [x] ปิดโหมดคิดของ Qwen3 โดยใช้วิธีที่ Ollama รองรับ ส่วนพารามิเตอร์เฉพาะของ NVIDIA ต้องไม่ถูกส่งไปแล้ว
+- [x] มี Ollama ปลอมสำหรับเทส และ helper บูต server ที่ชี้ไปหาตัวปลอม
+- [x] เทส: endpoint แชทของ Lumi ได้ข้อความจากตัวปลอม และตัวปลอมเห็นชื่อโมเดลจาก `LLM_CHAT_MODEL`
+- [x] เทส: ตัวปลอมตอบ 5xx หรือช้าเกิน timeout แล้ว Lumi ตอบข้อความสุภาพ ไม่ใช่หน้า error
+- [x] เทส: ไม่ตั้ง `LLM_BASE_URL` แล้ว server ยังบูตได้ และตัวปลอมไม่ได้รับ request เลย
+- [x] `npm test` ของ server ผ่าน

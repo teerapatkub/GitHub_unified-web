@@ -1,10 +1,9 @@
 const assert = require('node:assert/strict');
-const crypto = require('node:crypto');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const test = require('node:test');
-const { Pool } = require('pg');
+const { createTestDatabase } = require('./helpers/start-server');
 
 const run = promisify(execFile);
 const databaseUrl = String(process.env.TEST_DATABASE_URL || '').trim();
@@ -34,37 +33,15 @@ const boot = async (url) => {
 };
 
 test('Arcade stays available when the server restarts on an already-migrated database', { timeout: 600_000 }, async (t) => {
-  // A database of its own, so this test neither needs nor disturbs an empty
-  // public schema in TEST_DATABASE_URL (tests/migrations-postgres.test.js).
-  const databaseName = `pyarena_restart_${crypto.randomBytes(6).toString('hex')}_test`;
-  const admin = new Pool({ connectionString: databaseUrl, ssl: false });
-  await admin.query(`CREATE DATABASE ${databaseName}`);
-  await admin.query(`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
-        CREATE ROLE anon NOLOGIN;
-      END IF;
-      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
-        CREATE ROLE authenticated NOLOGIN;
-      END IF;
-    END
-    $$
-  `);
-  t.after(async () => {
-    await admin.query(`DROP DATABASE IF EXISTS ${databaseName} WITH (FORCE)`);
-    await admin.end();
-  });
-  const url = new URL(databaseUrl);
-  url.pathname = `/${databaseName}`;
+  const url = await createTestDatabase(t, 'pyarena_restart');
 
-  const first = await boot(url.toString());
+  const first = await boot(url);
   assert.equal(first.coreAppliedBeforeBoot, false, 'the first boot must run the core migration');
   assert.equal(first.migrationsReady, true);
   assert.equal(first.arcadeReady, true);
   assert.equal(first.roomsStatus, 200, JSON.stringify(first.roomsBody));
 
-  const second = await boot(url.toString());
+  const second = await boot(url);
   assert.equal(second.coreAppliedBeforeBoot, true, 'the second boot must find the core migration already applied');
   assert.equal(second.migrationsReady, true);
   assert.notEqual(second.roomsStatus, 503, JSON.stringify(second.roomsBody));
