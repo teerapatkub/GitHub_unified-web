@@ -10,7 +10,7 @@
 
 **Blocked by:** 01
 
-**Status:** done except `test:submit` (2026-10-22, see project_logs/2026-10-22/1733-ticket-02-practice-problems-from-local-llm.md)
+**Status:** done (2026-10-22, see project_logs/2026-10-22/1733-ticket-02-practice-problems-from-local-llm.md)
 
 - [x] การสร้างโจทย์ฝึกเรียกผ่านโมดูลตัวเรียก LLM ด้วย `LLM_CHAT_MODEL` และขอ JSON mode
 - [x] เทสผ่าน Ollama ปลอม:
@@ -19,4 +19,4 @@
   - [x] JSON ผิดรูป เช่น ไม่มี test case → ได้โจทย์สำรอง
   - [x] timeout → ได้โจทย์สำรอง
 - [x] ไม่ตั้ง `LLM_BASE_URL` แล้วได้โจทย์สำรอง
-- [ ] `npm test` ของ server, `npm run test:grader` และ `npm run test:submit` ผ่าน  ← test:grader ผ่าน; test:submit ตกเพราะสคริปต์ไม่ส่ง token (มีมาก่อน ticket นี้)
+- [x] `npm test` ของ server, `npm run test:grader` และ `npm run test:submit` ผ่าน  ← ผ่านหลัง merge f068c70 (1a1614f): test:submit 7/7, npm test 73 + 201
