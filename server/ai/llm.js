@@ -59,7 +59,10 @@ function createLlmCaller({ baseURL, model, timeoutMs = DEFAULT_TIMEOUT_MS, job =
     : null;
   let thinkingSwitch = NO_THINKING;
 
-  const call = async ({ messages, systemInstruction = '', temperature = 0.7, maxTokens = 2048, json = false } = {}) => {
+  // `timeoutMs` shortens the wait for one call below the caller-wide default
+  // (never lengthens it),
+  // for a job whose answer is optional and must not hold a response back.
+  const call = async ({ messages, systemInstruction = '', temperature = 0.7, maxTokens = 2048, json = false, timeoutMs: callTimeoutMs } = {}) => {
     if (!client) {
       throw new Error(`No local model is configured for ${job} (set LLM_BASE_URL and its model in .env)`);
     }
@@ -74,7 +77,7 @@ function createLlmCaller({ baseURL, model, timeoutMs = DEFAULT_TIMEOUT_MS, job =
       ...thinkingSwitch,
       ...(json ? { response_format: { type: 'json_object' } } : {}),
       stream: false,
-    });
+    }, callTimeoutMs ? { timeout: Math.min(callTimeoutMs, timeoutMs) } : undefined);
 
     let completion;
     try {

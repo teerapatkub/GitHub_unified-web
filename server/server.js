@@ -7,7 +7,6 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
-const OpenAI = require('openai');
 const { createLlmCaller, llmSettingsFromEnv } = require('./ai/llm');
 const fs = require('fs');
 const path = require('path');
@@ -2732,15 +2731,11 @@ app.get('/api/verify-email/:token', async (req, res) => {
 
 // One deliberate change from their source: the AI review below calls our
 
-// callCodeJudgeChat() rather than their callNvidiaChat(). Theirs fell back to a
+// local model (adviseOnFailedCompetitiveSubmission) rather than their callNvidiaChat(). Theirs fell back to a
 
-// key written into the file; ours reads key and model from .env. It was moved
+// key written into the file. Since Spec 0004 it asks the local model for
 
-// onto the code-judge model on 2026-08-25 - grading a submission in a ranked
-
-// match is the same job as Arcade's code judging, and neither belongs on the
-
-// chatbot's budget.
+// advice only, and the score comes from the rubric.
 
 // ===========================================================================
 
@@ -3358,8 +3353,6 @@ const buildCompetitivePerfectTestScore = ({ challenge, testResult, acceptedAt = 
     };
 };
 
-const COMPETITIVE_AI_REWARD_THRESHOLD = 70;
-
 // The Competitive Arena used to carry its own copy of normalizeOutput,
 // resolvePythonBin and runPythonCase, written before the merge. Two copies of
 // "spawn python, feed stdin, kill it after N seconds" is how this project ended
@@ -3459,46 +3452,54 @@ const scoreCompetitiveSubmission = ({ code = '', testCases = [], acceptedAt = nu
     };
 };
 
-const parseCompetitiveAiReview = ({ rawText, fallbackScore, testResult }) => {
-    const jsonText = extractFirstJsonBlock(rawText);
-    const parsed = safeJsonParse(jsonText, null);
-    if (!parsed || typeof parsed !== 'object') {
-        throw new Error('AI review response is not valid JSON');
-    }
-
-    const allTestsPassed = Number(testResult?.total || 0) > 0
-        ? Number(testResult?.passed || 0) === Number(testResult?.total || 0)
-        : false;
-    const maxCorrectness = Number(testResult?.total || 0) > 0
-        ? (Number(testResult?.passed || 0) / Number(testResult?.total || 1)) * 50
-        : 50;
-    const correctness = clampScore(Math.min(Number(parsed.correctness ?? fallbackScore.breakdown.correctness), maxCorrectness), 0, 50);
-    const complexity = clampScore(Number(parsed.complexity ?? fallbackScore.breakdown.complexity), 0, 20);
-    const cleanCode = clampScore(Number(parsed.cleanCode ?? fallbackScore.breakdown.cleanCode), 0, 30);
-    const speedBonus = clampScore(fallbackScore.breakdown.speedBonus || 0, 0, 3);
-    const score = clampScore(correctness + complexity + cleanCode + speedBonus, 0, 100);
-    const parsedApproved = parsed.approved === true || String(parsed.approved).toLowerCase() === 'true';
-    const aiApproved = parsedApproved && allTestsPassed && score >= COMPETITIVE_AI_REWARD_THRESHOLD;
-
-    return {
-        score,
-        passedCases: Number(testResult?.passed || fallbackScore.passedCases || 0),
-        totalCases: Number(testResult?.total || fallbackScore.totalCases || 0),
-        breakdown: {
-            correctness,
-            complexity,
-            cleanCode,
-            speedBonus,
-            elapsedSeconds: fallbackScore.breakdown.elapsedSeconds,
-            aiReviewed: true,
-            aiApproved,
-            aiVerdict: aiApproved ? 'approved' : 'needs_fix',
-        },
-        feedback: String(parsed.feedback || fallbackScore.feedback || '').slice(0, 1200),
-    };
+// Only the advice is taken from the model's answer. Everything that decides
+// the result - score, breakdown, approval, and so the reward - was already
+// settled by the rubric and the test results (ADR 0007's rule, now for
+// Competitive too): a small local model scores the same code differently from
+// one run to the next, and a reward must not depend on that.
+const parseCompetitiveAdvice = (rawText) => {
+    const parsed = safeJsonParse(extractFirstJsonBlock(rawText), null);
+    const advice = String(parsed?.feedback || '').trim();
+    if (!advice) throw new Error('advice response has no feedback text');
+    return advice.slice(0, 1200);
 };
 
-const reviewCompetitiveSubmissionWithAI = async ({ challenge, code, testCases, testResult, fallbackScore }) => {
+// The local model's Competitive Arena job: advice on an answer that failed at
+// least one test. (An answer that passes them all is scored by
+// buildCompetitivePerfectTestScore and gets no advice - there is nothing to fix.)
+//
+// The verdict on such an answer is already fixed by the rubric: not approved,
+// so no reward and no creator bonus, whether or not the model answers. The
+// breakdown keeps the field names CompetitiveArena.jsx reads; `aiReviewed` now
+// only says whether the model wrote the advice.
+//
+// Its own model name, LLM_JUDGE_MODEL, kept apart from the chatbot's so the two
+// can be split without a code change; empty turns it off and the rubric's own
+// feedback is shown instead, so no player's code leaves the machine.
+const judgeLlm = createLlmCaller({ ...llmSettingsFromEnv(), model: process.env.LLM_JUDGE_MODEL, job: 'judge' });
+
+if (judgeLlm.enabled) {
+    console.log(`✅ คำแนะนำโหมด Competitive ใช้โมเดลในเครื่อง: ${judgeLlm.model} (คะแนนมาจาก rubric)`);
+} else {
+    console.warn('ℹ️  LLM_BASE_URL/LLM_JUDGE_MODEL ว่าง - โหมด Competitive ให้คำแนะนำจาก rubric ในเครื่องแทน');
+}
+
+// The score is ready before the model is asked; the player only waits this long
+// for the advice on top of it, then gets the rubric's own feedback instead.
+const COMPETITIVE_ADVICE_TIMEOUT_MS = 12000;
+
+const adviseOnFailedCompetitiveSubmission = async ({ challenge, code, testCases, testResult, rubricScore }) => {
+    const withAdvice = (feedback, fromModel) => ({
+        ...rubricScore,
+        breakdown: {
+            ...rubricScore.breakdown,
+            aiReviewed: fromModel,
+            aiApproved: false,
+            aiVerdict: fromModel ? 'needs_fix' : 'fallback',
+            ...(fromModel ? {} : { aiUnavailable: true }),
+        },
+        feedback,
+    });
     const visibleCases = normalizeCompetitiveTestCases(testCases).slice(0, 6);
     const testSummary = {
         passed: Number(testResult?.passed || 0),
@@ -3513,23 +3514,14 @@ const reviewCompetitiveSubmissionWithAI = async ({ challenge, code, testCases, t
     };
 
     try {
-        // Judged by the code-judge model, not the chatbot's. This is code
-        // grading inside a live ranked match, so it belongs on the code-judge
-        // key and model rather than the chatbot's - see the AI
-        // Models table in CLAUDE.md. (Defined further down the file; that is
-        // fine because this only runs on a request, long after module load.)
-        const rawText = await callCodeJudgeChat({
+        const rawText = await judgeLlm.call({
             messages: [
                 {
                     role: 'system',
-                    content: `You are a strict Python code reviewer for a Thai coding challenge game.
-Return ONLY valid JSON. Do not use markdown.
-Score with this rubric:
-- correctness: 0-50, must respect provided test results and cannot ignore failing tests.
-- complexity: 0-20, judge time/space complexity and whether the approach fits the problem.
-- cleanCode: 0-30, judge readability, simplicity, naming, and risky code.
-approved must be true only when the solution satisfies the prompt, passes all tests, and is safe to reward.
-JSON shape: {"correctness":0,"complexity":0,"cleanCode":0,"approved":false,"feedback":"short Thai feedback"}`
+                    content: `You are a friendly Python tutor for a Thai coding challenge game.
+The learner's code failed some of the tests shown in testSummary. Explain in Thai, in 2-4 short sentences,
+what is most likely wrong and how to fix it. Do not give a score. Do not write the full solution.
+Return ONLY valid JSON: {"feedback":"short Thai advice"}`
                 },
                 {
                     role: 'user',
@@ -3544,27 +3536,15 @@ JSON shape: {"correctness":0,"complexity":0,"cleanCode":0,"approved":false,"feed
                 }
             ],
             temperature: 0.2,
-            maxTokens: 1200,
-            thinking: false,
-            // Longer than Arcade's 8s: a competitive submission is graded once
-            // when the player submits, not while a 60-second round is closing.
-            timeoutMs: 30000,
+            maxTokens: 400,
+            json: true,
+            timeoutMs: COMPETITIVE_ADVICE_TIMEOUT_MS,
         });
 
-        return parseCompetitiveAiReview({ rawText, fallbackScore, testResult });
+        return withAdvice(parseCompetitiveAdvice(rawText), true);
     } catch (error) {
-        console.error('Competitive AI review failed:', error.response?.data || error.message || error);
-        return {
-            ...fallbackScore,
-            breakdown: {
-                ...fallbackScore.breakdown,
-                aiReviewed: false,
-                aiApproved: Number(testResult?.total || 0) > 0 && Number(testResult?.passed || 0) === Number(testResult?.total || 0),
-                aiVerdict: 'fallback',
-                aiUnavailable: true,
-            },
-            feedback: `${fallbackScore.feedback} AI review is temporarily unavailable, so this score used automated test results and local rubric fallback.`,
-        };
+        console.error('Competitive advice from the local model failed, using the rubric\'s own:', error.message || error);
+        return withAdvice(rubricScore.feedback, false);
     }
 };
 
@@ -3573,9 +3553,10 @@ const calculateCompetitiveSolverReward = (challenge, scored) => {
     const reward = Number(challenge?.reward || 0);
     const score = Number(scored?.score || 0);
     if (!reward || !score) return 0;
-    if (scored?.breakdown?.aiReviewed) {
-        return scored?.breakdown?.aiApproved ? reward : 0;
-    }
+    // Only an answer that passed every test is approved (see
+    // adviseOnFailedCompetitiveSubmission); it is paid in proportion to its
+    // time-adjusted score. Nothing a model says reaches this.
+    if (scored?.breakdown?.aiApproved === false) return 0;
     return Math.max(0, Math.round((reward * score) / 100));
 };
 
@@ -3605,17 +3586,16 @@ const sendCompetitiveResultMail = async ({ challenge, userId, scored, testResult
     const rewardCoins = timedOut ? 0 : calculateCompetitiveSolverReward(challenge, scored);
     const passed = Number(testResult?.passed || scored?.passedCases || 0);
     const total = Number(testResult?.total || scored?.totalCases || 0);
-    const aiReviewed = Boolean(scored?.breakdown?.aiReviewed);
-    const aiApproved = Boolean(scored?.breakdown?.aiApproved);
+    const approved = scored?.breakdown?.aiApproved !== false;
     const title = timedOut
         ? `สรุปโจทย์ไม่สำเร็จ: ${challenge.title}`
-        : aiReviewed && !aiApproved
-            ? `AI ตรวจแล้วต้องแก้ไข: ${challenge.title}`
+        : !approved
+            ? `ยังไม่ผ่านเกณฑ์รับรางวัล: ${challenge.title}`
         : `สรุปโจทย์สำเร็จ: ${challenge.title}`;
     const content = timedOut
         ? `คุณทำโจทย์ "${challenge.title}" ไม่ทันเวลาที่กำหนด จึงได้รับคะแนน 0 และรางวัล 0 เหรียญ`
-        : aiReviewed && !aiApproved
-            ? `AI ตรวจโค้ดโจทย์ "${challenge.title}" แล้ว คะแนนรวม ${scored.score}/100 ผ่าน test cases ${passed}/${total} ยังไม่ผ่านเกณฑ์รับรางวัล จึงได้รับ 0 เหรียญ\n\nFeedback: ${scored.feedback}`
+        : !approved
+            ? `ตรวจโค้ดโจทย์ "${challenge.title}" แล้ว คะแนนรวม ${scored.score}/100 ผ่าน test cases ${passed}/${total} ยังไม่ผ่านเกณฑ์รับรางวัล (ต้องผ่าน test cases ครบ) จึงได้รับ 0 เหรียญ\n\nคำแนะนำ: ${scored.feedback}`
         : `คุณส่งโจทย์ "${challenge.title}" แล้ว คะแนนรวม ${scored.score}/100 ผ่าน test cases ${passed}/${total} ได้รับรางวัล ${rewardCoins} เหรียญ`;
 
     await createCompetitiveMailbox({
@@ -4479,12 +4459,12 @@ app.post('/api/competitive/challenges/:id/submit', async (req, res) => {
             ? preliminaryScore
             : allTestsPassed
                 ? preliminaryScore
-            : await reviewCompetitiveSubmissionWithAI({
+            : await adviseOnFailedCompetitiveSubmission({
                 challenge: challenges[0],
                 code,
                 testCases: parsedTestCases,
                 testResult,
-                fallbackScore: preliminaryScore,
+                rubricScore: preliminaryScore,
             });
         const breakdownJson = JSON.stringify(scored.breakdown);
         const feedbackJson = JSON.stringify({ review: scored.feedback });
@@ -4538,7 +4518,7 @@ app.post('/api/competitive/challenges/:id/submit', async (req, res) => {
             timedOut,
         });
 
-        if (!timedOut && (!scored.breakdown?.aiReviewed || scored.breakdown?.aiApproved)) {
+        if (!timedOut && scored.breakdown?.aiApproved !== false) {
             creatorBonusCoins = await sendCompetitiveCreatorBonusMail({
                 challenge: challenges[0],
                 solverUserId: userId,
@@ -5641,75 +5621,6 @@ function clampArcadeMaxPlayers(raw, fallback) {
     return Math.min(max, Math.max(min, Number.isFinite(parsed) ? parsed : fallback));
 }
 
-// NVIDIA-hosted judge for Competitive Arena submissions (moves to the local
-// model in Spec 0004 ticket 03), kept separate from callAiChat() above (the
-// Lumi chatbot and the AI task generator) - its own dedicated API key and model, since it judges a
-// different thing (competitive code quality, not general chat). Runs
-// non-streaming with extended thinking off: this sits in a live match, so a
-// fast, deterministic JSON answer matters more than a reasoning trace.
-//
-// Arcade no longer uses this: its rounds are judged by Gemini through
-// arcade/code-judge.js (ADR 0006), with its own key and quota.
-//
-// The key and the model name both come from .env. The model name used to be
-// hard-coded here, which meant this could not be pointed elsewhere or turned
-// off without editing code - and CLAUDE.md already required model names to live
-// in .env for exactly this reason. Leaving either value empty disables the AI
-// path entirely: Competitive Arena falls back to scoring in-process, and no
-// player's code leaves the machine. See the AI Models table in CLAUDE.md.
-const NVIDIA_CODE_JUDGE_MODEL = String(process.env.NVIDIA_CODE_JUDGE_MODEL || '').trim();
-const NVIDIA_CODE_JUDGE_KEY = String(process.env.NVIDIA_CODE_JUDGE_API_KEY || '').trim();
-
-const nvidiaCodeJudgeClient = (NVIDIA_CODE_JUDGE_KEY && NVIDIA_CODE_JUDGE_MODEL)
-    ? new OpenAI({ apiKey: NVIDIA_CODE_JUDGE_KEY, baseURL: 'https://integrate.api.nvidia.com/v1', maxRetries: 0 })
-    : null;
-
-if (!nvidiaCodeJudgeClient) {
-    console.warn('ℹ️  ตัวตรวจโค้ดด้วย AI ปิดอยู่ (NVIDIA_CODE_JUDGE_API_KEY/MODEL ว่าง) - โหมด Competitive จะให้คะแนนในเครื่องแทน');
-} else {
-    console.log(`✅ ตัวตรวจโค้ดด้วย AI: ${NVIDIA_CODE_JUDGE_MODEL}`);
-}
-
-// Same call shape as callAiChat() so a caller moves between the chatbot model
-// and the judge model by changing one word. Throws when unconfigured or on any
-// API error - every caller already has a non-AI fallback and must use it rather
-// than failing the request, because both sit in a live match's critical path.
-const callCodeJudgeChat = async ({ messages, systemInstruction = '', temperature = 0.3, maxTokens = 1200, thinking = false, timeoutMs = 8000 }) => {
-    if (!nvidiaCodeJudgeClient) {
-        throw new Error('NVIDIA_CODE_JUDGE_API_KEY/MODEL is not set, so no code-judging model is configured');
-    }
-
-    const apiMessages = [];
-    if (systemInstruction) apiMessages.push({ role: 'system', content: systemInstruction });
-    for (const message of (Array.isArray(messages) ? messages : [])) {
-        apiMessages.push({ role: message?.role || 'user', content: String(message?.content ?? '') });
-    }
-
-    let completion;
-    try {
-        completion = await nvidiaCodeJudgeClient.chat.completions.create({
-            model: NVIDIA_CODE_JUDGE_MODEL,
-            messages: apiMessages,
-            temperature,
-            top_p: 0.95,
-            max_tokens: maxTokens,
-            // Reasoning off and streaming off on purpose: this runs while a round
-            // is finalising, so a fast deterministic JSON answer beats a
-            // reasoning trace nobody reads.
-            chat_template_kwargs: { enable_thinking: Boolean(thinking) },
-            stream: false,
-        }, { timeout: timeoutMs });
-    } catch (error) {
-        const status = error?.status || error?.response?.status;
-        const detail = error?.response?.data?.detail || error?.message || 'unknown error';
-        throw new Error(`Code-judge model "${NVIDIA_CODE_JUDGE_MODEL}" failed${status ? ` (HTTP ${status})` : ''}: ${detail}`);
-    }
-
-    // Reasoning models split their answer: `content` holds the reply,
-    // `reasoning_content` the scratch work. Only the reply is returned - the
-    // scratch work would break JSON parsing outright.
-    return String(completion?.choices?.[0]?.message?.content || '').trim();
-};
 
 // Arcade's code judge: quality is always measured locally (ADR 0007); Gemini,
 // when GEMINI_CODE_JUDGE_API_KEY/MODEL are set, only writes post-match advice.

@@ -451,3 +451,13 @@ Fixed undefined LESSON_PASS_PERCENT using POST_PASS_RATIO * 100. Read-only route
 **เสนอ (Person 1):** บทสอน 6 ชุดเดิมใน `data/webTutorials.js` (`WebTutorialModal`) ย้ายมาใช้ `GuidedTour` ได้
 - เพิ่ม tour ใน `data/appTour.js` แล้ววาง `<TourHost>` ในหน้านั้น จะได้สปอตไลต์ชี้จุดจริง
 - ปัจจุบัน modal เดิมยังแสดง selector ดิบ `ส่วนที่แนะนำ: [data-tour=...]` ให้ผู้ใช้เห็นอยู่
+
+---
+
+## 2026-10-22 · Competitive: คะแนนมาจาก rubric และ LLM ในเครื่องให้แค่คำแนะนำ (ไฟล์ของ Person 2)
+
+แก้ `server/server.js` ส่วนตัวตรวจ Competitive ตาม Spec 0004 ticket 03 รายละเอียดเต็มอยู่ที่ [`handoff-to-person-2-competitive-rubric.md`](handoff-to-person-2-competitive-rubric.md)
+
+**สิ่งที่ต้องรู้ก่อน merge:** คำตอบที่ผ่านเทสไม่ครบได้ 0 เหรียญเสมอ ไม่ว่าโมเดลจะตอบหรือล่ม
+
+หน้า `CompetitiveArena.jsx` ไม่ต้องแก้

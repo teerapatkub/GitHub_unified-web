@@ -16,15 +16,15 @@ field ที่หน้า Competitive ใช้อยู่ต้องคง�
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done (2026-10-22, see project_logs/2026-10-22/1910-ticket-03-competitive-rubric-score-llm-advice.md; story 10 partly: advice wait capped at 12 s)
 
-- [ ] ตัวตรวจ Competitive เรียกผ่านโมดูลตัวเรียก LLM ด้วย `LLM_JUDGE_MODEL` และไม่ใช้ NVIDIA แล้ว
-- [ ] ตัวเลขทุกตัวในผลลัพธ์มาจาก rubric และผลเทส ไม่ใช่จาก LLM: คะแนน, breakdown, สิทธิ์รับรางวัล และจำนวนเงินรางวัล
-- [ ] เทสผ่าน Ollama ปลอม ยิง endpoint ส่งคำตอบ Competitive จริง:
-  - [ ] ตัวปลอมตอบคะแนนสูงผิดปกติ → คะแนนและรางวัลยังเท่ากับ rubric
-  - [ ] ตัวปลอมตอบคะแนนต่ำผิดปกติ → คะแนนและรางวัลยังเท่ากับ rubric
-  - [ ] ตัวปลอมตอบสำเร็จ → feedback มาจากตัวปลอม
-  - [ ] ตัวปลอมล้มเหลวหรือ timeout → feedback มาจาก rubric
-- [ ] หน้า Competitive ยังแสดงผลได้เหมือนเดิม ตรวจผ่าน dev server
-- [ ] บันทึกส่งต่อให้ Person 2 ใน handoff doc ว่าคะแนนเปลี่ยนไปมาจากไหน และทำไม
-- [ ] `npm test` ของ server และ `npm run test:submit` ผ่าน
+- [x] ตัวตรวจ Competitive เรียกผ่านโมดูลตัวเรียก LLM ด้วย `LLM_JUDGE_MODEL` และไม่ใช้ NVIDIA แล้ว
+- [x] ตัวเลขทุกตัวในผลลัพธ์มาจาก rubric และผลเทส ไม่ใช่จาก LLM: คะแนน, breakdown, สิทธิ์รับรางวัล และจำนวนเงินรางวัล
+- [x] เทสผ่าน Ollama ปลอม ยิง endpoint ส่งคำตอบ Competitive จริง:
+  - [x] ตัวปลอมตอบคะแนนสูงผิดปกติ → คะแนนและรางวัลยังเท่ากับ rubric
+  - [x] ตัวปลอมตอบคะแนนต่ำผิดปกติ → คะแนนและรางวัลยังเท่ากับ rubric
+  - [x] ตัวปลอมตอบสำเร็จ → feedback มาจากตัวปลอม
+  - [x] ตัวปลอมล้มเหลวหรือ timeout → feedback มาจาก rubric
+- [x] หน้า Competitive ยังแสดงผลได้เหมือนเดิม ตรวจผ่าน dev server
+- [x] บันทึกส่งต่อให้ Person 2 ใน handoff doc ว่าคะแนนเปลี่ยนไปมาจากไหน และทำไม
+- [x] `npm test` ของ server และ `npm run test:submit` ผ่าน
