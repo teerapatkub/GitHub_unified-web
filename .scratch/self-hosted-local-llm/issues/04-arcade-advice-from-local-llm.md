@@ -15,7 +15,7 @@
 
 **Blocked by:** 01
 
-**Status:** done except the test:arcade/sim:bots line (2026-10-22, see project_logs/2026-10-22/1943-ticket-04-arcade-advice-from-local-llm.md)
+**Status:** done (2026-10-22, see project_logs/2026-10-22/1943-ticket-04-arcade-advice-from-local-llm.md)
 
 - [x] judge ของ Arcade สร้างคำแนะนำผ่านโมดูลตัวเรียก LLM และไม่มีโค้ดของ Gemini เหลือ
 - [x] เทสของ judge Arcade ที่มีอยู่ปรับให้ใช้ generator ใหม่ แล้วผ่าน
@@ -23,5 +23,5 @@
   - [x] ตัวปลอมตอบสำเร็จ → ได้ข้อความจากตัวปลอม
   - [x] ตัวปลอมล้มเหลว → ได้ผลวัด
   - [x] ขอซ้ำ → ได้ค่าที่เก็บไว้ และตัวปลอมไม่ถูกเรียกอีก
-- [ ] `npm run test:arcade`, calibration (40/40 ได้ 95+) และ `npm run sim:bots` ผ่าน  ← test:arcade ผ่านครบหลัง merge d267aca + แก้ EPIPE (2026-10-22 20:19); calibration 40/40; sim:bots ยังตกเพราะ test_cases ในฐานทดสอบเสีย (มีมาก่อน รอรันสคริปต์ซ่อม)
+- [x] `npm run test:arcade`, calibration (40/40 ได้ 95+) และ `npm run sim:bots` ผ่าน  ← test:arcade ผ่านครบ (หลัง d267aca + 1beeb9e); calibration 40/40; sim:bots ผ่านหลังซ่อมฐานทดสอบ (2026-10-22 20:40)
 - [x] เล่นทดสอบ Arcade 1 แมตช์บน dev server แล้วประวัติรอบโหลดคำแนะนำได้
