@@ -9,9 +9,10 @@
 # every host, and therefore a decision that can wait.
 #
 #   docker build -t pysim .
-#   docker run -p 3001:3001 --env-file server/.env pysim
+#   docker run -p 3001:3001 --env-file server/.env.production.local pysim
 #
-# Or, with a database and a volume for uploads, `docker compose up`.
+# Or, with the local language model (Ollama) beside it,
+#   docker compose --env-file server/.env.production.local up -d --build
 
 # ---------------------------------------------------------------- build stage
 # The front end is built here and only its output is copied forward, so none of

@@ -1,32 +1,74 @@
-# The whole system, runnable with one command, on any machine with Docker.
+# The whole system on one machine we run ourselves (Spec 0004): the app (API +
+# built front end + the Python that grades answers) and a local language model
+# (Ollama). The database, sign-in and file storage stay on Supabase.
 #
-#   docker compose --env-file server/.env up --build
-#   → http://localhost:3001
+#   docker compose --env-file server/.env.production.local up -d --build
+#   (with an NVIDIA GPU, add: -f docker-compose.yml -f docker-compose.gpu.yml)
+#   → http://127.0.0.1:3001 on this machine only
 #
-# Deliberately not tied to a hosting provider. Whoever deploys this picks the
-# host later; what this file guarantees is that the pieces fit together the same
-# way wherever that turns out to be.
+# Every setting comes from that one env file, which git never tracks: Supabase
+# (DATABASE_URL, SUPABASE_URL, SUPABASE_SECRET_KEY, SUPABASE_PUBLISHABLE_KEY),
+# the public address (PUBLIC_BASE_URL, AUTH_ALLOWED_ORIGINS) and the models
+# (LLM_CHAT_MODEL, LLM_JUDGE_MODEL, LLM_ADVICE_MODEL). Compose fills in the build
+# arguments and the values below from --env-file, and the app reads the whole
+# file through env_file. To use another file (a test database, say), set
+# PYARENA_ENV_FILE to it AND pass the same path as --env-file, or the app and
+# the build will be configured from two different files.
+#
+# Never run `docker compose config` without --quiet: it prints every secret in
+# the env file.
 
 services:
-  db:
-    image: postgres:18-alpine
-    environment:
-      POSTGRES_USER: ${PGUSER:-postgres}
-      POSTGRES_PASSWORD: ${PGPASSWORD:-postgres}
-      POSTGRES_DB: ${PGDATABASE:-postgres}
+  ollama:
+    image: ollama/ollama:0.30.0
     volumes:
-      # Mounted at /var/lib/postgresql, NOT .../data. Postgres 18 puts its data
-      # in a versioned subdirectory of this path so that a future major-version
-      # upgrade can run pg_upgrade across both; mounting the old .../data path
-      # makes the 18 image refuse to start.
-      - pysim-db:/var/lib/postgresql
-    # The API creates and seeds every table it needs on boot, so it must not
-    # start talking to a database that is still coming up.
+      # Models are a few GB; they are pulled once and outlive the container.
+      - ollama-models:/root/.ollama
+    environment:
+      # One answer at a time: a 4 GB GPU holds one 4B model with one context.
+      # Further requests wait in Ollama's queue (503 once it is full).
+      OLLAMA_NUM_PARALLEL: "1"
+      # Keep the model loaded: loading it again costs 50-90 s.
+      OLLAMA_KEEP_ALIVE: "-1"
+      OLLAMA_CONTEXT_LENGTH: "4096"
+      # An 8-bit context cache (needs flash attention) halves its memory. On a
+      # 4 GB laptop GPU under Windows the 4B model still runs ~30% on the CPU
+      # (3.4-3.5 GB against ~3.2 GB free); warm it answers at ~14 tokens/s
+      # (measured 2026-10-22).
+      OLLAMA_FLASH_ATTENTION: "1"
+      OLLAMA_KV_CACHE_TYPE: q8_0
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${PGUSER:-postgres}"]
+      test: ["CMD", "ollama", "list"]
       interval: 5s
       timeout: 5s
-      retries: 20
+      retries: 30
+    restart: unless-stopped
+
+  # Pulls every model the env file names, loads the chat model into memory, and
+  # exits. Loading takes 50-90 s on a 4 GB laptop GPU; a player's first question
+  # should not be the one that pays for it. A job whose model is left empty is
+  # switched off and skipped here. A load that fails or hangs gives up after
+  # five minutes without holding the app back: the app then answers with its
+  # local fallbacks until the model is up.
+  ollama-pull:
+    image: ollama/ollama:0.30.0
+    depends_on:
+      ollama:
+        condition: service_healthy
+    # Only the model names - not the env file, which holds the database password.
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      LLM_CHAT_MODEL: ${LLM_CHAT_MODEL-}
+      LLM_JUDGE_MODEL: ${LLM_JUDGE_MODEL-}
+      LLM_ADVICE_MODEL: ${LLM_ADVICE_MODEL-}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        for model in "$$LLM_CHAT_MODEL" "$$LLM_JUDGE_MODEL" "$$LLM_ADVICE_MODEL"; do
+          [ -z "$$model" ] || ollama pull "$$model" || exit 1
+        done
+        [ -z "$$LLM_CHAT_MODEL" ] || timeout 300 ollama run "$$LLM_CHAT_MODEL" "ok" > /dev/null || true
+    restart: "no"
 
   uploads-init:
     image: busybox:1.37.0
@@ -43,54 +85,39 @@ services:
         # Empty on purpose: the API serves the front end, so the browser talks
         # to the same origin it loaded the page from.
         VITE_API_BASE_URL: ""
-        # Public browser configuration is intentionally embedded at build time.
-        # Run compose with `--env-file server/.env` so these substitutions are
-        # available without copying server secrets into the image.
+        # Public browser configuration is embedded at build time, so these
+        # come from the compose --env-file, never from a file in the image.
         VITE_SUPABASE_URL: ${SUPABASE_URL:?Set SUPABASE_URL in the compose env file}
         VITE_SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY:?Set SUPABASE_PUBLISHABLE_KEY in the compose env file}
     depends_on:
-      db:
-        condition: service_healthy
+      ollama-pull:
+        condition: service_completed_successfully
       uploads-init:
         condition: service_completed_successfully
-    # Keys and mail credentials come from server/.env, which is not in the
-    # image and not in git.
-    #
-    # To use a hosted database (Supabase, Neon, RDS) instead of the `db` service
-    # above, put DATABASE_URL in server/.env: it is not named in the environment
-    # block below, so it is not overridden, and the app prefers it over the PG*
-    # variables. The `db` service can then be dropped from this file along with
-    # the depends_on above it. See docs/deploy.md.
     env_file:
-      - server/.env
+      - ${PYARENA_ENV_FILE:-server/.env.production.local}
     environment:
       PORT: 3001
-      PGHOST: db
-      PGPORT: 5432
-      PGUSER: ${PGUSER:-postgres}
-      PGPASSWORD: ${PGPASSWORD:-postgres}
-      PGDATABASE: ${PGDATABASE:-postgres}
       UPLOADS_DIR: /data/uploads
-      # Supabase Storage bucket for admin uploads (lesson media, cosmetic art).
       ASSET_STORAGE_BUCKET: ${ASSET_STORAGE_BUCKET:-uploads}
-      # The address this deployment answers on from outside. Only links that
-      # leave the process need it - the email verification link, which cannot
-      # be relative because it is opened days later from a mail client.
-      #
+      # The Ollama service by default. Set LLM_BASE_URL= (empty) in the env file
+      # to run with every AI job off.
+      LLM_BASE_URL: ${LLM_BASE_URL-http://ollama:11434/v1}
       # Required, with no default: the image runs with NODE_ENV=production,
       # whose startup check accepts only an exact public HTTPS origin (no
-      # localhost, no path). A localhost default would let `up` succeed and
-      # the app then refuse to boot. AUTH_ALLOWED_ORIGINS must include it too.
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?Set PUBLIC_BASE_URL to the public HTTPS origin, e.g. https://play.example.com}
-      CLIENT_URL: ${PUBLIC_BASE_URL:?Set PUBLIC_BASE_URL to the public HTTPS origin, e.g. https://play.example.com}
+      # localhost, no path). AUTH_ALLOWED_ORIGINS must include it too.
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?Set PUBLIC_BASE_URL to the public HTTPS origin}
+      CLIENT_URL: ${PUBLIC_BASE_URL:?Set PUBLIC_BASE_URL to the public HTTPS origin}
     ports:
-      - "${PORT:-3001}:3001"
+      # This machine only. Players come in through the public way in (Tailscale
+      # Funnel or the university's reverse proxy), never straight to this port.
+      - "127.0.0.1:${PORT:-3001}:3001"
     volumes:
-      # Uploaded files outlive the container. Without this, every redeploy
-      # would delete every profile picture in the system.
+      # Admin uploads go to Supabase Storage; this volume is the app's local
+      # upload directory (UPLOADS_DIR), which production still requires.
       - pysim-uploads:/data/uploads
     restart: unless-stopped
 
 volumes:
-  pysim-db:
+  ollama-models:
   pysim-uploads:

@@ -1,0 +1,18 @@
+# Gives Ollama the machine's NVIDIA GPU. Used on top of docker-compose.yml:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml \
+#     --env-file server/.env.production.local up -d --build
+#
+# Needs the NVIDIA driver on the host (on Windows: Docker Desktop with the WSL2
+# backend). A machine without a GPU - a university VM, say - runs
+# docker-compose.yml alone and Ollama answers on the CPU: on this laptop's
+# i5-12500H a short Lumi answer took 11-13 s instead of 4-7 s (2026-10-22).
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
