@@ -3,17 +3,19 @@
 // Supabase probe and background jobs, with one probe player signed in.
 
 // Player auth verifies bearer tokens with Supabase. Stand in for that one
-// external call so the probe signs in without a network: `token` belongs to the
-// fixed Auth user `authUser`. Must run before server.js is required.
-function stubSupabaseAuth({ token, authUser }) {
+// external call so probe players sign in without a network: each `token`
+// belongs to the fixed Auth user `authUser` given with it. Must run before
+// server.js is required.
+function stubSupabaseAuth(...subjects) {
+  const authUsers = new Map(subjects.map(({ token, authUser }) => [token, authUser]));
   const supabaseModule = require.resolve('@supabase/supabase-js');
   const realSupabase = require(supabaseModule);
   require.cache[supabaseModule].exports = {
     ...realSupabase,
     createClient: (...args) => {
       const client = realSupabase.createClient(...args);
-      client.auth.getUser = async (given) => (given === token
-        ? { data: { user: { id: authUser, email_confirmed_at: '2026-10-16T00:00:00Z' } }, error: null }
+      client.auth.getUser = async (given) => (authUsers.has(given)
+        ? { data: { user: { id: authUsers.get(given), email_confirmed_at: '2026-10-16T00:00:00Z' } }, error: null }
         : { data: {}, error: new Error('invalid token') });
       return client;
     },

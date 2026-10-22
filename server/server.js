@@ -7319,5 +7319,6 @@ module.exports = {
     applicationMigrations,
     checkReadiness,
     prepareApplication,
+    startBackgroundJobs,
     startupState,
 };

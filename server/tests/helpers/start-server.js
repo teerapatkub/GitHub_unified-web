@@ -35,8 +35,11 @@ async function createTestDatabase(t, prefix = 'pyarena_boot') {
 }
 
 // Boots server.js against `url` with `env` layered on top, and resolves once it
-// listens. Returns `call(path, {method, body})` signed in as a probe player.
-async function startServer(t, { url, env = {} }) {
+// listens. Returns `call(path, {method, body})` signed in as a probe player,
+// plus `players[name].call` for each of `players` signed in beside it and
+// `anonymous` for a request with no token at all. `backgroundJobs` starts the
+// Arcade match tick, which a test needs for any round to close.
+async function startServer(t, { url, env = {}, players = [], backgroundJobs = false }) {
   const child = spawn(process.execPath, [path.join(__dirname, 'server-boot.js')], {
     cwd: path.join(__dirname, '..', '..'),
     env: {
@@ -45,6 +48,8 @@ async function startServer(t, { url, env = {} }) {
       PGSSLMODE: process.env.TEST_DATABASE_SSLMODE || 'disable',
       SUPABASE_URL: process.env.SUPABASE_URL || 'https://example.supabase.co',
       SUPABASE_SECRET_KEY: process.env.SUPABASE_SECRET_KEY || 'sb_secret_server_boot_test_only',
+      SERVER_BOOT_PLAYERS: JSON.stringify(players),
+      SERVER_BOOT_BACKGROUND_JOBS: backgroundJobs ? '1' : '',
       ...env,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -63,16 +68,29 @@ async function startServer(t, { url, env = {} }) {
     child.on('exit', code => { clearTimeout(timer); reject(new Error(`server exited with ${code}:\n${output}`)); });
   });
 
-  const call = async (route, { method = 'POST', body } = {}) => {
+  const callAs = token => async (route, { method = 'POST', body } = {}) => {
     const response = await fetch(`http://127.0.0.1:${ready.port}${route}`, {
       method,
       // x-pyarena-request is what the real client sends on every write (CSRF guard).
-      headers: { Authorization: `Bearer ${ready.token}`, 'Content-Type': 'application/json', 'x-pyarena-request': '1' },
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        'Content-Type': 'application/json',
+        'x-pyarena-request': '1',
+      },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     return { status: response.status, body: await response.json().catch(() => null) };
   };
-  return { call, userId: ready.userId, logs: () => output };
+  const signedIn = Object.fromEntries(Object.entries(ready.players || {})
+    .map(([name, { token, userId }]) => [name, { call: callAs(token), userId }]));
+  return {
+    call: callAs(ready.token),
+    userId: ready.userId,
+    username: ready.username,
+    players: signedIn,
+    anonymous: callAs(null),
+    logs: () => output,
+  };
 }
 
 // The usual setup of a local-model test: a fake Ollama, a throwaway database,
