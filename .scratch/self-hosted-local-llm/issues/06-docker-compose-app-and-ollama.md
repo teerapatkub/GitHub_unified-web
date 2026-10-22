@@ -24,7 +24,7 @@ env ทั้งหมดของ deploy อยู่ในไฟล์เด�
 
 **Blocked by:** 01
 
-**Status:** done except 100% GPU (2026-10-22, see project_logs/2026-10-22/2130-ticket-06-docker-compose-app-and-ollama.md)
+**Status:** done except 100% GPU, LAN check from another machine, image-safety script on Linux (2026-10-22, see project_logs/2026-10-22/2130-ticket-06-docker-compose-app-and-ollama.md)
 
 - [x] ติดตั้งและเปิด Docker Desktop (WSL2) บนเครื่องนี้ แล้วรัน container ที่เห็น GPU ได้ หรือบันทึกเหตุผลที่ต้องถอยไปรัน Ollama นอก Docker
 - [x] compose ไม่มี service Postgres และ app ใช้ `DATABASE_URL` ของ Supabase
@@ -33,5 +33,5 @@ env ทั้งหมดของ deploy อยู่ในไฟล์เด�
 - [x] ใน container ของ app ตัวเรียก LLM ไปถึง Ollama ได้: Lumi ตอบจากโมเดลจริง
 - [ ] `ollama ps` แสดงว่าโมเดลอยู่บน GPU 100%  ← 32%/68% CPU/GPU: VRAM ว่าง ~3.2 GiB < 3.4-3.5 GB ส่งให้ ticket 07 เลือกโมเดล
 - [x] รันด้วยไฟล์หลักไฟล์เดียว (ไม่มี GPU) แล้วยังบูตได้
-- [x] พอร์ต app ไม่เปิดออกนอกเครื่อง: ตรวจจากเครื่องอื่นในวงเดียวกันแล้วเข้าไม่ได้  ← ผูก 127.0.0.1 และ LAN IP ของเครื่องนี้ถูกปฏิเสธ ยังไม่ได้ลองจากเครื่องอื่นจริง
-- [x] security check ของ image (`container-image-safety`) ยังผ่าน  ← สคริปต์รันบน Windows ไม่ได้ (symlink) ตรวจเทียบเท่าใน image แล้วผ่าน; ตัวสคริปต์รันใน CI
+- [ ] พอร์ต app ไม่เปิดออกนอกเครื่อง: ตรวจจากเครื่องอื่นในวงเดียวกันแล้วเข้าไม่ได้  ← ผูก 127.0.0.1 และ LAN IP ของเครื่องนี้ถูกปฏิเสธ ยังไม่ได้ลองจากเครื่องอื่นจริง
+- [ ] security check ของ image (`container-image-safety`) ยังผ่าน  ← สคริปต์รันบน Windows ไม่ได้ (symlink) ตรวจเทียบเท่าใน image แล้วผ่าน; ตัวสคริปต์รันใน CI
