@@ -43,6 +43,7 @@ async function seedProbePlayer(db, { username, authUser }) {
     'INSERT INTO player_auth_identities (user_id, auth_user_id, email) VALUES (?, ?, ?) ON CONFLICT DO NOTHING',
     [player.user_id, authUser, email],
   );
+  return Number(player.user_id);
 }
 
 module.exports = { stubSupabaseAuth, bootMigrated, seedProbePlayer };

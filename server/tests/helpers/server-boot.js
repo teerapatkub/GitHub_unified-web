@@ -10,10 +10,10 @@ stubSupabaseAuth({ token: PROBE_TOKEN, authUser: PROBE_AUTH_USER });
 
 const main = async () => {
   const { db, app } = await bootMigrated();
-  await seedProbePlayer(db, { username: 'boot_probe', authUser: PROBE_AUTH_USER });
+  const userId = await seedProbePlayer(db, { username: 'boot_probe', authUser: PROBE_AUTH_USER });
   const server = http.createServer(app);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-  process.stdout.write(`${JSON.stringify({ port: server.address().port, token: PROBE_TOKEN })}\n`);
+  process.stdout.write(`${JSON.stringify({ port: server.address().port, token: PROBE_TOKEN, userId })}\n`);
 };
 
 main().catch((error) => {

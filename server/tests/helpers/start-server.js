@@ -72,7 +72,7 @@ async function startServer(t, { url, env = {} }) {
     });
     return { status: response.status, body: await response.json().catch(() => null) };
   };
-  return { call, logs: () => output };
+  return { call, userId: ready.userId, logs: () => output };
 }
 
 module.exports = { createTestDatabase, startServer };

@@ -749,8 +749,8 @@ if (chatLlm.enabled) {
 
 // Callers still pass `thinking`; a local model's thinking is stripped from the
 // reply instead (ai/llm.js), so it is accepted and ignored here.
-const callAiChat = async ({ messages, systemInstruction = '', temperature = 1, maxTokens = 4096 }) => (
-    chatLlm.call({ messages, systemInstruction, temperature, maxTokens })
+const callAiChat = async ({ messages, systemInstruction = '', temperature = 1, maxTokens = 4096, json = false }) => (
+    chatLlm.call({ messages, systemInstruction, temperature, maxTokens, json })
 );
 
 
@@ -1050,6 +1050,9 @@ const getLearningModeConfig = (mode = 'exercise') => {
         sectionLabel: 'Exercise',
         subtitle: 'Debug Lab',
         accent: 'blue',
+        // A Debug Lab hands the learner broken code to fix, so its starter must
+        // fail at least one test; a Hard Challenge starts from comments.
+        starterMustFail: true,
         rewardXpRange: [90, 180],
         rewardCoinsRange: [20, 60],
     };
@@ -1163,6 +1166,55 @@ const normalizeGeneratedLearningTask = (task, mode = 'exercise', level = 1) => {
     };
 };
 
+// A small local model writes plausible-looking problems with wrong expected
+// output often enough that nothing it writes may reach a learner unchecked. The
+// model sends its own solution with the problem, and the problem is only kept
+// when that solution passes every test case through the real grader - and, for
+// a Debug Lab, when the buggy starter does not (otherwise there is nothing to
+// fix). Any missing field rejects the whole problem rather than patching it with
+// pieces of the built-in one, which used to pair a generated title with
+// unrelated built-in test cases. The solution is dropped after checking: it is
+// never stored with the task or sent to the browser.
+// The one shape a practice task's tests are graded in, both when a generated
+// task is checked here and when a learner submits (/api/learning/ai-task/submit).
+const learningTaskProblem = (testCases) => ({ test_kind: 'stdio', test_cases: testCases, is_auto_gradable: 1 });
+
+const verifyGeneratedLearningTask = async (task, config) => {
+    const nonEmpty = (value) => typeof value === 'string' && value.trim() !== '';
+    const instructions = Array.isArray(task?.instructions) ? task.instructions.filter(nonEmpty) : [];
+    const testCases = Array.isArray(task?.testCases)
+        ? task.testCases
+            .filter((test) => test && test.expected != null && String(test.expected).trim() !== '')
+            .map((test) => ({ input: String(test.input ?? ''), expected: String(test.expected) }))
+        : [];
+    if (!nonEmpty(task?.title) || instructions.length === 0 || typeof task?.starterCode !== 'string' || !nonEmpty(task?.solutionCode)) {
+        throw new Error('generated task is missing its title, instructions, starter code or solution');
+    }
+    if (testCases.length < 3) {
+        throw new Error(`generated task has ${testCases.length} usable test cases, expected at least 3`);
+    }
+    // The page shows at most five; checking the same five that get stored.
+    const keptCases = testCases.slice(0, 5);
+
+    const problem = learningTaskProblem(keptCases);
+    const solved = await judgeLearnerSubmission({ problem, code: task.solutionCode });
+    if (!solved.accepted) {
+        throw new Error(`generated solution fails its own test cases (${solved.passedCount ?? 0}/${solved.totalCount ?? keptCases.length})`);
+    }
+    if (config.starterMustFail && (await judgeLearnerSubmission({ problem, code: task.starterCode })).accepted) {
+        throw new Error('generated Debug Lab starter already passes every test, so there is nothing to fix');
+    }
+
+    // The example shown on the page must be one the solution was checked
+    // against; anything else the model wrote there is replaced by the first test.
+    const proposed = task.example && typeof task.example === 'object' ? task.example : {};
+    const matchesATest = keptCases.some((test) => test.input === String(proposed.input ?? '') && test.expected === String(proposed.output ?? ''));
+    const example = matchesATest
+        ? { input: String(proposed.input), output: String(proposed.output) }
+        : { input: keptCases[0].input, output: keptCases[0].expected };
+    return { ...task, solutionCode: undefined, instructions, testCases: keptCases, example };
+};
+
 const generateLearningTaskWithAI = async ({ mode = 'exercise', level = 1 }) => {
     const config = getLearningModeConfig(mode);
     const descriptiveLevel = normalizePlayerLevel(level);
@@ -1177,6 +1229,7 @@ Return ONLY valid JSON with this exact structure:
   "instructions": ["step 1", "step 2"],
   "example": { "input": "sample input", "output": "sample output" },
   "starterCode": "# only comments or a very small scaffold, do not solve it",
+  "solutionCode": "a complete correct solution that reads stdin and prints exactly the expected output",
   "testCases": [
     { "input": "sample input", "expected": "exact expected output" }
   ],
@@ -1188,7 +1241,7 @@ Rules:
 - The task must be solvable in one Python file.
 - Use beginner/intermediate/advanced Python topics based on level.
 - Generate 3 or 4 test cases.
-- The expected outputs must be exact strings.
+- The expected outputs must be exact strings, exactly what solutionCode prints for that input.
 - Do not include markdown fences.
 - Do not use external libraries.
 `
@@ -1202,6 +1255,7 @@ Return ONLY valid JSON with this exact structure:
   "instructions": ["step 1", "step 2"],
   "example": { "input": "sample input", "output": "sample output" },
   "starterCode": "buggy python code that should almost work but contains 1-3 real mistakes",
+  "solutionCode": "the same code with the mistakes fixed",
   "testCases": [
     { "input": "sample input", "expected": "exact expected output" }
   ],
@@ -1213,7 +1267,7 @@ Rules:
 - The starterCode MUST be intentionally buggy.
 - The player should fix the existing code instead of writing a totally unrelated solution.
 - Generate 3 or 4 test cases.
-- The expected outputs must be exact strings.
+- The expected outputs must be exact strings, exactly what solutionCode prints for that input.
 - Do not include markdown fences.
 - Do not use external libraries.
 `;
@@ -1223,7 +1277,7 @@ Rules:
             messages: [{ role: 'user', content: prompt }],
             temperature: 0.8,
             maxTokens: 2200,
-            thinking: false,
+            json: true,
         });
 
         const jsonBlock = extractFirstJsonBlock(rawText);
@@ -1232,7 +1286,7 @@ Rules:
             throw new Error('AI task response is not valid JSON');
         }
 
-        return normalizeGeneratedLearningTask(parsed, mode, level);
+        return normalizeGeneratedLearningTask(await verifyGeneratedLearningTask(parsed, config), mode, level);
     } catch (error) {
         // Never fatal: a built-in task is a far better outcome for the learner
         // than an error screen, so the endpoint keeps working while the model is down.
@@ -2024,11 +2078,7 @@ app.post('/api/learning/ai-task/submit', async (req, res) => {
     }
 
     const gradedVerdict = await judgeLearnerSubmission({
-        problem: {
-            test_kind: 'stdio',
-            test_cases: safeJsonParse(preTaskRows[0].test_cases_json, []),
-            is_auto_gradable: 1,
-        },
+        problem: learningTaskProblem(safeJsonParse(preTaskRows[0].test_cases_json, [])),
         code,
     });
     if (!gradedVerdict.accepted) {
