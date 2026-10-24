@@ -33,6 +33,26 @@ test('Lumi answers through the local model, and falls back politely when it fail
     assert.equal(sent.body.reasoning_effort, 'none', 'thinking must be switched off, not just hidden');
   });
 
+  // Measured 2026-10-25 on the 4 GB laptop GPU (~13 tokens/s): asked for no
+  // length, the model wrote 600+ tokens and 8 of 10 questions hit the timeout.
+  await t.test('Lumi is asked for a short answer, in one system message', async () => {
+    for (const messages of [
+      [{ role: 'user', content: 'for loop คืออะไร' }],
+      [{ role: 'system', content: 'โจทย์: ทักทาย' }, { role: 'user', content: 'ผิดตรงไหน' }],
+    ]) {
+      ollama.reset();
+      ollama.respond(() => ({ content: 'สั้นๆ' }));
+      await server.call('/api/ai/chat', { body: { messages } });
+      const [sent] = ollama.chatRequests();
+      assert.ok(sent.body.max_tokens <= 500, `max_tokens ${sent.body.max_tokens}`);
+      const systems = sent.body.messages.filter(m => m.role === 'system');
+      assert.equal(systems.length, 1, 'a chat template takes one system message');
+      assert.equal(sent.body.messages[0].role, 'system');
+      assert.match(systems[0].content, /สั้น/);
+      if (messages[0].role === 'system') assert.match(systems[0].content, /โจทย์: ทักทาย/);
+    }
+  });
+
   await t.test('a server that rejects the thinking switch is asked again without it, once', async () => {
     ollama.reset();
     ollama.respond(request => (request.body.reasoning_effort

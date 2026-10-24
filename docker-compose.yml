@@ -2,9 +2,16 @@
 # built front end + the Python that grades answers) and a local language model
 # (Ollama). The database, sign-in and file storage stay on Supabase.
 #
-#   docker compose --env-file server/.env.production.local up -d --build
+#   docker compose --env-file server/.env.production.local build
+#   docker compose --env-file server/.env.production.local up -d
 #   (with an NVIDIA GPU, add: -f docker-compose.yml -f docker-compose.gpu.yml)
 #   → http://127.0.0.1:3001 on this machine only
+#
+# Build first, then start. With `up --build` the image build (npm, Vite) runs
+# while the model loads and warms up, and part of the model runs on the CPU, so
+# the first answers took 45-54 s instead of 5-15 s (measured 2026-10-22 and
+# 2026-10-25; with nothing else running the first answer took 6.5 s even from
+# a cold disk cache).
 #
 # Every setting comes from that one env file, which git never tracks: Supabase
 # (DATABASE_URL, SUPABASE_URL, SUPABASE_SECRET_KEY, SUPABASE_PUBLISHABLE_KEY),

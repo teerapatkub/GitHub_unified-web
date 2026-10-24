@@ -1,7 +1,15 @@
 # Gives Ollama the machine's NVIDIA GPU. Used on top of docker-compose.yml:
 #
 #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml \
-#     --env-file server/.env.production.local up -d --build
+#     --env-file server/.env.production.local build
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml \
+#     --env-file server/.env.production.local up -d
+#   (build first - see the header of docker-compose.yml)
+#
+# Both Typhoon models were tried on this laptop's RTX 3050 Ti 4 GB (2026-10-25):
+# typhoon2.5-qwen3-4b runs 68% on the GPU (Windows leaves ~3.2 GiB of 4), and
+# typhoon2.1-gemma3-4b does not load on Ollama 0.30.0 at all (its chat template
+# fails to parse) and would fit only 20 of 35 layers anyway.
 #
 # Needs the NVIDIA driver on the host (on Windows: Docker Desktop with the WSL2
 # backend). A machine without a GPU - a university VM, say - runs

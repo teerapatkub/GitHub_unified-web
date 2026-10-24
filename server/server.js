@@ -711,13 +711,27 @@ const _miniGameModuleCache = new Map();
 
 // ==========================================
 // AI routes
+// Lumi runs on a 4 GB laptop GPU at ~13 tokens/s (2026-10-25). Asked for no
+// length, the model wrote 600+ tokens and 8 of 10 questions ran into
+// LLM_TIMEOUT_MS, so the answer is asked to be short and capped. The rule joins
+// the page's own system message: a chat template takes only one.
+const LUMI_LENGTH_RULE = 'ตอบเป็นภาษาไทย สั้น กระชับ ไม่เกิน 5 บรรทัด ยกตัวอย่างโค้ดได้ไม่เกิน 5 บรรทัด';
+const LUMI_MAX_TOKENS = 400;
+const withLumiLengthRule = (messages) => {
+    const list = Array.isArray(messages) ? messages : [];
+    if (list[0]?.role === 'system') {
+        return [{ ...list[0], content: `${list[0].content}\n${LUMI_LENGTH_RULE}` }, ...list.slice(1)];
+    }
+    return [{ role: 'system', content: `คุณคือ Lumi ผู้ช่วยสอน Python สำหรับผู้เริ่มต้น\n${LUMI_LENGTH_RULE}` }, ...list];
+};
+
 app.post('/api/ai/chat', async (req, res) => {
     const { messages } = req.body;
     try {
         const reply = await callAiChat({
-            messages,
+            messages: withLumiLengthRule(messages),
             temperature: 0.7,
-            maxTokens: 2048,
+            maxTokens: LUMI_MAX_TOKENS,
             thinking: false
         });
         return res.json({ reply });
