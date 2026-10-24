@@ -3,15 +3,23 @@ const path = require('node:path');
 const nodemailer = require('nodemailer');
 const { buildProductionAuthSettings, matchesAppliedAuthSettings } = require('../auth/productionSettings');
 
-require('dotenv').config({ path: path.join(__dirname, '../.env'), quiet: true });
+// The same env file docker compose gives the app (PYARENA_ENV_FILE, relative to
+// the repository root), so this configures the project the app will run on.
+// Not server/.env: that one points at the test project.
+const envFile = path.resolve(__dirname, '../..', process.env.PYARENA_ENV_FILE || 'server/.env.production.local');
+require('dotenv').config({ path: envFile, quiet: true });
 require('dotenv').config({ path: path.join(__dirname, '../.supabase-management.env'), quiet: true, override: true });
+// Compose sets the app's CLIENT_URL from PUBLIC_BASE_URL; do the same here.
+process.env.CLIENT_URL ||= process.env.PUBLIC_BASE_URL;
 
 async function main() {
   const args = new Set(process.argv.slice(2));
   if ([...args].some((arg) => !['--check', '--verify-smtp', '--apply'].includes(arg)) || args.size > 1) {
     throw new Error('Use --check, --verify-smtp, or --apply');
   }
+  console.log(`Env file: ${path.relative(path.resolve(__dirname, '../..'), envFile)}`);
   const settings = buildProductionAuthSettings(process.env);
+  console.log(`Supabase project: ${settings.projectRef}`);
   console.log('Production Auth configuration is valid.');
   console.log(`Site URL: ${settings.siteUrl}`);
   console.log(`Exact callback URLs: ${settings.redirectUrls.join(', ')}`);

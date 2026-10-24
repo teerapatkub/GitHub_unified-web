@@ -6,6 +6,7 @@
 #   docker compose --env-file server/.env.production.local up -d
 #   (with an NVIDIA GPU, add: -f docker-compose.yml -f docker-compose.gpu.yml)
 #   → http://127.0.0.1:3001 on this machine only
+#   (open to everyone through Tailscale Funnel: add -f docker-compose.funnel.yml)
 #
 # Build first, then start. With `up --build` the image build (npm, Vite) runs
 # while the model loads and warms up, and part of the model runs on the CPU, so

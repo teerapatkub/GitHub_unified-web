@@ -58,6 +58,10 @@ test('production runtime rejects missing values and management credentials', () 
   assert.throws(() => validateRuntimeEnvironment({
     ...validRuntime(), AUTH_GOOGLE_CLIENT_SECRET: 'google-setup-only',
   }), /AUTH_GOOGLE_CLIENT_SECRET is forbidden/);
+  // The Tailscale key belongs in server/.tailscale.env, read by that container only.
+  assert.throws(() => validateRuntimeEnvironment({
+    ...validRuntime(), TS_AUTHKEY: 'tskey-auth-setup-only',
+  }), /TS_AUTHKEY is forbidden/);
 });
 
 test('production runtime requires its public origin in the CORS allowlist', () => {

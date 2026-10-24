@@ -56,3 +56,4 @@ Thumbs.db
 # text and must never reach the repository.
 .env.backup*
 *.env.backup*
+/server/.tailscale.env

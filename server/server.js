@@ -34,8 +34,10 @@ const {
 } = require('./runtime/startup');
 const { createSupabaseAuthCheck } = require('./runtime/readiness');
 const { validateRuntimeEnvironment } = require('./runtime/environment');
+const { trustProxySetting } = require('./runtime/proxy');
 
 const app = express();
+app.set('trust proxy', trustProxySetting(process.env));
 const startupState = createStartupState();
 installStartupGate(app, startupState);
 // Probes must answer before any auth middleware: orchestrators call them

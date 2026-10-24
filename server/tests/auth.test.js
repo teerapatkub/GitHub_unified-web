@@ -4,6 +4,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const { installAuth } = require('../auth');
 const { actorMatches, accountEnabled, normalizeEmail } = require('../auth/policy');
+const { trustProxySetting } = require('../runtime/proxy');
 
 async function fixture(t, {
   mapped = true,
@@ -17,6 +18,7 @@ async function fixture(t, {
   failProvisioningUpdateOnce = false,
   failCompensatedUpdateOnce = false,
   env,
+  trustProxy,
 } = {}) {
   const user = { user_id: 42, username: 'learner', email: 'learner@example.com', role, level: 10, xp: 3400, virtual_currency: 500, password_hash: await bcrypt.hash('OldPass1!', 4) };
   const state = {
@@ -164,6 +166,7 @@ async function fixture(t, {
     },
   } };
   const app = express(); app.use(express.json());
+  if (trustProxy !== undefined) app.set('trust proxy', trustProxySetting({ TRUST_PROXY: trustProxy }));
   const auth = installAuth(app, db, admin, env || { AUTH_ALLOWED_ORIGINS: 'http://localhost:5174' }, { createPublicClient: () => publicClient });
   app.post('/api/shop/buy', (req, res) => res.json({ user_id: req.player.user_id }));
   app.post('/api/profile/:id/avatar', (req, res) => res.json({ ok: true }));
@@ -383,6 +386,31 @@ test('same-origin deployment accepts its own backend origin when the allowlist i
   const response = await call('/api/auth/sign-up', {}, { Origin: 'http://localhost:3001' });
   assert.equal(response.status, 400);
   assert.equal((await call('/api/auth/sign-up', {}, { Origin: 'https://attacker.example' })).status, 403);
+});
+// Behind Tailscale Funnel (or any reverse proxy) every request reaches the app
+// from the proxy's address. Without trusting it, a whole class signing in at
+// once shares one rate-limit bucket.
+const signInFrom = (call, address) => call('/api/auth/sign-in', {}, { 'X-Forwarded-For': address });
+test('behind one trusted proxy, sign-in is rate limited per player, not per proxy', async t => {
+  const { call } = await fixture(t, { trustProxy: '1' });
+  for (let i = 0; i < 45; i++) assert.notEqual((await signInFrom(call, `203.0.113.${i + 1}`)).status, 429);
+  let last;
+  for (let i = 0; i < 41; i++) last = await signInFrom(call, '198.51.100.7');
+  assert.equal(last.status, 429);
+});
+test('without TRUST_PROXY a forged X-Forwarded-For cannot dodge the rate limit', async t => {
+  const { call } = await fixture(t);
+  let last;
+  for (let i = 0; i < 41; i++) last = await signInFrom(call, `203.0.113.${i + 1}`);
+  assert.equal(last.status, 429);
+});
+test('TRUST_PROXY takes a hop count and nothing else', () => {
+  assert.equal(trustProxySetting({}), false);
+  assert.equal(trustProxySetting({ TRUST_PROXY: '' }), false);
+  assert.equal(trustProxySetting({ TRUST_PROXY: '1' }), 1);
+  for (const bad of ['true', 'yes', '-1', '1.5', 'loopback']) {
+    assert.throws(() => trustProxySetting({ TRUST_PROXY: bad }), /TRUST_PROXY/);
+  }
 });
 test('actor policy distinguishes actor from target and rejects spoofing', () => {
   const user = { user_id: 42, username: 'learner' };

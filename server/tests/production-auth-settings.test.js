@@ -67,3 +67,30 @@ test('Google sign-in is enabled through Supabase only with both setup-only crede
   assert.throws(() => buildProductionAuthSettings({ ...valid(), AUTH_GOOGLE_CLIENT_ID: '123-abc.apps.googleusercontent.com' }), /AUTH_GOOGLE_CLIENT_SECRET/);
   assert.throws(() => buildProductionAuthSettings({ ...valid(), AUTH_GOOGLE_CLIENT_ID: 'not-a-client-id', AUTH_GOOGLE_CLIENT_SECRET: 's' }), /AUTH_GOOGLE_CLIENT_ID/);
 });
+
+// The setup script once read server/.env, which points at the test project, so
+// --apply would have rewritten the wrong project's Auth. It reads the same env
+// file as docker compose (PYARENA_ENV_FILE, from the repository root).
+test('the Auth setup script configures the project in the compose env file', async t => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const { execFile } = require('node:child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pyarena-auth-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const envFile = path.join(dir, 'compose.env');
+  fs.writeFileSync(envFile, [
+    'SUPABASE_URL=https://prodref.supabase.co',
+    'PUBLIC_BASE_URL=https://pyarena.example.ts.net',
+    'AUTH_ALLOWED_ORIGINS=https://pyarena.example.ts.net',
+  ].join('\n'));
+  const { AUTH_SMTP_HOST, AUTH_SMTP_PORT, AUTH_SMTP_USER, AUTH_SMTP_PASS, AUTH_SMTP_SENDER } = valid();
+  const run = () => new Promise(resolve => execFile(process.execPath, [path.join(__dirname, '../scripts/configure-supabase-auth.js'), '--check'], {
+    env: { PATH: process.env.PATH, SYSTEMROOT: process.env.SYSTEMROOT, PYARENA_ENV_FILE: envFile, AUTH_SMTP_HOST, AUTH_SMTP_PORT, AUTH_SMTP_USER, AUTH_SMTP_PASS, AUTH_SMTP_SENDER },
+  }, (error, stdout, stderr) => resolve({ code: error ? error.code : 0, stdout, stderr })));
+  const result = await run();
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /Supabase project: prodref\b/);
+  // CLIENT_URL is filled from PUBLIC_BASE_URL, as compose does for the app.
+  assert.match(result.stdout, /Site URL: https:\/\/pyarena\.example\.ts\.net/);
+});

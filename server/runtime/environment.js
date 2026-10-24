@@ -90,6 +90,9 @@ const validateRuntimeEnvironment = (env = process.env) => {
   if (value(env, 'AUTH_SMTP_PASS')) {
     throw new Error('AUTH_SMTP_PASS is forbidden in the application runtime');
   }
+  if (value(env, 'TS_AUTHKEY')) {
+    throw new Error('TS_AUTHKEY is forbidden in the application runtime');
+  }
   if (value(env, 'AUTH_GOOGLE_CLIENT_SECRET')) {
     throw new Error('AUTH_GOOGLE_CLIENT_SECRET is forbidden in the application runtime');
   }

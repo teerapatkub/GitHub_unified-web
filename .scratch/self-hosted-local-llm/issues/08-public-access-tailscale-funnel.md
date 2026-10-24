@@ -20,10 +20,10 @@
 
 **Blocked by:** 06
 
-**Status:** ready-for-agent
+**Status:** ส่วนของโค้ดเสร็จแล้ว (2026-10-25) รอผู้ใช้ตั้งค่าบัญชี Tailscale / Supabase / Google — ดู `project_logs/2026-10-25/0348-ticket-08-tailscale-funnel.md`
 
 - [ ] ถามอาจารย์แล้วว่าใช้ Tailscale Funnel เป็นทางเข้าชั่วคราวได้ และบันทึกคำตอบไว้
-- [ ] service `tailscale` อยู่ใน compose
+- [x] service `tailscale` อยู่ใน compose (`docker-compose.funnel.yml`)
 - [ ] restart เครื่องแล้ว URL ts.net ยังเหมือนเดิม
 - [ ] `PUBLIC_BASE_URL`, `CLIENT_URL` และ `AUTH_ALLOWED_ORIGINS` เป็น URL ts.net แล้ว server ผ่านการตรวจ production ตอนบูต
 - [ ] ผู้ใช้รันสคริปต์ตั้งค่า Auth ครบทั้ง `--check`, `--verify-smtp` และ `--apply`

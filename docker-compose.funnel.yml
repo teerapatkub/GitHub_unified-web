@@ -1,0 +1,56 @@
+# The public way in while the university's own address is not ready (Spec 0004,
+# ticket 08): Tailscale Funnel gives this machine a fixed HTTPS address,
+# https://<TS_HOSTNAME>.<tailnet>.ts.net, without opening any port on the
+# machine or on the KKU network. Used on top of docker-compose.yml (and
+# docker-compose.gpu.yml when there is a GPU):
+#
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml \
+#     -f docker-compose.funnel.yml --env-file server/.env.production.local build
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml \
+#     -f docker-compose.funnel.yml --env-file server/.env.production.local up -d
+#
+# Once, in the Tailscale admin console: turn on HTTPS certificates and Funnel,
+# then put a one-off auth key in server/.tailscale.env (see the .example next
+# to it) for the first start. The machine's identity is kept in the
+# tailscale-state volume, so the address survives restarts; delete the key
+# file after the first start. Turn off key expiry for this machine in the admin
+# console, or it drops off the tailnet (and the address stops answering) after
+# 180 days. Removing the volume registers a new machine, which may get a
+# different name (pyarena-1).
+#
+# PUBLIC_BASE_URL and AUTH_ALLOWED_ORIGINS in the env file must be that
+# https://...ts.net origin. To move to a kku.ac.th address later, change those
+# two, run server/scripts/configure-supabase-auth.js --apply again, and start
+# without this file.
+services:
+  tailscale:
+    image: tailscale/tailscale:v1.90.9
+    hostname: ${TS_HOSTNAME:-pyarena}
+    env_file:
+      # Only the auth key, and only until the machine has joined.
+      - path: server/.tailscale.env
+        required: false
+    environment:
+      TS_HOSTNAME: ${TS_HOSTNAME:-pyarena}
+      TS_STATE_DIR: /var/lib/tailscale
+      # Funnel 443 → http://app:3001, see the file. ${TS_CERT_DOMAIN} in it is
+      # filled in by the container with this machine's ts.net name.
+      TS_SERVE_CONFIG: /config/serve.json
+      # No /dev/net/tun or extra privileges: the proxy only has to reach the app
+      # on the compose network, never route the host's traffic.
+      TS_USERSPACE: "true"
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - ./deploy/tailscale/serve.json:/config/serve.json:ro
+    depends_on:
+      - app
+    restart: unless-stopped
+
+  app:
+    environment:
+      # Every player now arrives through the Funnel proxy; trust that one hop
+      # for their address, or a whole class signing in shares one rate limit.
+      TRUST_PROXY: "1"
+
+volumes:
+  tailscale-state:
