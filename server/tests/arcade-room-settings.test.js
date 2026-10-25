@@ -66,6 +66,26 @@ test('max_players cannot drop below the people already in the room', async t => 
   assert.equal(after.max_players, 3);
 });
 
+// Spec 0005 ticket 07 (A8): the lobby showed "0 / 5" with no host for 2–4 s
+// because create answered without anyone in the room.
+test('creating a room answers with the host already seated', async t => {
+  const { call, db } = await arcadeFixture(t);
+  await call('/api/arcade/rooms/1/leave', { body: { user_name: 'alice' } });
+  const created = await call('/api/arcade/rooms/create', {
+    body: { host_name: 'alice', room_name: 'Fresh', round_duration_mode: 'quick', difficulty: 'easy', password: 'pw1' },
+  });
+  assert.equal(created.status, 200);
+  assert.equal(created.body.room.max_players, 5);
+  assert.equal(created.body.room.round_duration_mode, 'quick');
+  assert.equal(created.body.room.difficulty, 'easy');
+  assert.equal(created.body.room.is_password_protected, true);
+  assert.equal(Object.hasOwn(created.body.room, 'password'), false);
+  assert.deepEqual(created.body.participants.map(p => [p.user_name, p.is_host]), [['alice', 1]]);
+  const [[row]] = await db.query('SELECT room_id, password FROM arcade_rooms WHERE room_code = ?', [created.body.room.room_code]);
+  assert.equal(row.room_id, created.body.room.room_id);
+  assert.match(row.password, /^\$2[aby]\$10\$/);
+});
+
 test('only the host can change settings', async t => {
   const { call } = await arcadeFixture(t);
   const res = await call('/api/arcade/rooms/1/settings', { user: 'bob', body: { host_name: 'bob', clear_password: true } });

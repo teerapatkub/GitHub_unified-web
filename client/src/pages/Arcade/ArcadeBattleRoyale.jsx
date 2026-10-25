@@ -49,6 +49,8 @@ import { requestJson } from '../../config/api-client.js';
 import SkeletonLoading from '../../components/ui/Skeleton.jsx';
 import { parseUtcTimestamp, PHASES, TASKS, SHOP_ITEMS, BOT_NAMES, AUTO_SUBMIT_LEAD_SECONDS,
          AUTO_SUBMIT_WARN_SECONDS, ROUND_TIMES, phaseDurationsFor } from './constants.js';
+import { isSpectating } from './spectatorView.js';
+import { resultCoinBreakdown } from './resultReward.js';
 
 export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
   const { i18n } = useTranslation();
@@ -172,6 +174,8 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
   // hooks would create a circular hook-to-hook dependency.
   const [currentRoom, setCurrentRoom] = useState(null);
   const [roomParticipants, setRoomParticipants] = useState([]);
+  // This player's receipt for the match on screen (coins + achievements), from the room poll.
+  const [viewerReward, setViewerReward] = useState(null);
   // The polling effects below key off this primitive rather than the
   // `currentRoom` object itself. Each poll calls setCurrentRoom(data.room)
   // with a freshly-parsed object, so depending on the object meant the poll's
@@ -222,7 +226,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
   } = useChat({ playerName: playerState.name, roomId, phase, notify, t, API_BASE });
 
   const {
-    rooms, roomsLoaded, roomsError, fetchRooms,
+    rooms, roomsLoaded, roomsError, fetchRooms, restoringRoom,
     showCreateModal, setShowCreateModal, createForm, setCreateForm,
     searchCode, setSearchCode, joinPasswordPrompt, setJoinPasswordPrompt,
     inputPassword, setInputPassword, showSettingsModal, setShowSettingsModal,
@@ -326,6 +330,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
 
         setCurrentRoom(data.room);
         setRoomParticipants(view.participants);
+        setViewerReward(data.viewer_reward ?? null);
 
         // Scores, money and bot progress are shared server state.
         const others = (data.participants || []).filter(p => p.user_name !== playerState.name);
@@ -586,7 +591,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
         <button type="button" className="mode-entry-button" data-tour="arcade-glossary" onClick={() => setShowGlossary(true)} aria-label={t('itemGlossary')} title={t('itemGlossary')}>
           <BookOpen aria-hidden="true" /><span className="app-action-label">{t('itemGlossary')}</span>
         </button>
-        {playerState.eliminated && <span className="text-xs font-bold text-rose-600">{t('spectatorMode')}</span>}
+        {isSpectating({ phase, eliminated: playerState.eliminated }) && <span className="text-xs font-bold text-rose-600">{t('spectatorMode')}</span>}
       </ModeEntryHeader>
 
       {shopRetryNeeded && (
@@ -622,7 +627,11 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
           <div className={isModeEntry ? "h-full w-full overflow-y-auto px-4 py-8 sm:px-6 max-w-7xl mx-auto space-y-6" : "h-full w-full overflow-y-auto p-6 max-w-6xl mx-auto space-y-6"}>
             
             {/* VIEW A: NO ROOM JOINED -> PUBLIC ROOM BROWSER */}
-            {!currentRoom ? (
+            {!currentRoom && restoringRoom ? (
+              <div role="status" className="py-24 text-center text-sm font-bold text-slate-600">
+                {t('reconnectingToMatch')}
+              </div>
+            ) : !currentRoom ? (
               <>
               {/* Phase 8.3 — career card above the room list */}
               {statsLoaded ? <PlayerStatsCard stats={playerStats} playerName={playerState.name} t={t} /> : <SkeletonLoading variant="cards" label="กำลังโหลดสถิติ Arcade..." />}
@@ -764,6 +773,17 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 bg-slate-100 px-3 py-1 rounded-full">
               ⭐ {playerState.score} {t('ptsUnit')}
             </span>
+            {/* Bug A4: an eliminated player used to be stuck here until the
+                match ended. Leaving now forfeits only the end-of-match reward;
+                the rounds already played stay in their history. */}
+            <button
+              type="button"
+              onClick={handleLeaveRoom}
+              className="mt-2 px-5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-white text-sm font-black"
+            >
+              {t('leaveWhileEliminatedBtn')}
+            </button>
+            <p className="text-xs text-slate-600">{t('leaveWhileEliminatedNote')}</p>
             </div>
           </div>
         )}
@@ -868,9 +888,10 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
                 and get the explanation instead of a silent zero. */}
             {(() => {
               const myRow = roomParticipants.find(p => p.user_name === playerState.name);
-              const coins = Number(myRow?.coins_awarded || 0);
+              const { matchCoins, achievements, total: coins } = resultCoinBreakdown(viewerReward, myRow);
               return (
-                <div className="w-full bg-white rounded-3xl shadow-sm border border-slate-200 p-6 flex items-center justify-between gap-4">
+                <div className="w-full bg-white rounded-3xl shadow-sm border border-slate-200 p-6 space-y-4">
+                <div className="flex items-center justify-between gap-4">
                   <div className="flex items-center gap-4 text-left">
                     <div className="p-3 bg-amber-50 rounded-2xl text-amber-500 shrink-0">
                       <Coins className="h-7 w-7" />
@@ -885,6 +906,19 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
                   <div className="text-3xl font-black text-amber-500 whitespace-nowrap">
                     +{coins} <span className="text-sm font-bold text-slate-400">{t('coinsUnit')}</span>
                   </div>
+                </div>
+                {achievements.length > 0 && (
+                  <ul className="border-t border-slate-100 pt-3 space-y-1.5 text-sm">
+                    <li className="flex justify-between gap-3 text-slate-700">
+                      <span>{t('coinsFromMatch')}</span><b>+{matchCoins}</b>
+                    </li>
+                    {achievements.map(a => (
+                      <li key={a.name} className="flex justify-between gap-3 text-slate-700">
+                        <span>🏆 {t('coinsFromAchievement').replace('{{name}}', a.name)}</span><b>+{a.reward}</b>
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 </div>
               );
             })()}

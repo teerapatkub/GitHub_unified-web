@@ -1,5 +1,6 @@
 const { defineMigration } = require('./index');
 const {
+  ARCADE_ACHIEVEMENT_REWARDS_VERSION,
   ARCADE_QUALITY_BREAKDOWN_VERSION,
   APPLICATION_SCHEMA_VERSION,
   AUTH_PROVISIONING_VERSION,
@@ -55,7 +56,15 @@ const createArcadeQualityBreakdownMigration = (up, signature) => defineMigration
   up,
 });
 
+const createArcadeAchievementRewardsMigration = (up, signature) => defineMigration({
+  version: ARCADE_ACHIEVEMENT_REWARDS_VERSION,
+  name: 'arcade_receipt_achievement_rewards',
+  signature: signatureFor(up, signature),
+  up,
+});
+
 module.exports = {
+  createArcadeAchievementRewardsMigration,
   createArcadeQualityBreakdownMigration,
   createApplicationSchemaMigration,
   createAuthProvisioningMigration,

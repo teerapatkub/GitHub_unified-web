@@ -62,8 +62,19 @@ function installArcadeRoomReads(app, db) {
       const viewer = participants.find(participant => participant.user_name === userName && participant.participant_kind === 'human');
       const viewerPendingChoice = roomSafe.status === 'WAITING' && roomSafe.phase === 'LOBBY'
         && Boolean(previousMatchEndedAt) && viewer?.match_id === roomSafe.current_match_id;
+      // The viewer's own payout for the match on screen: match coins plus what
+      // the achievement check paid (null until that check has run).
+      let viewerReward = null;
+      if (userName && roomSafe.current_match_id) {
+        const [[receipt]] = await db.query(
+          'SELECT coins, achievement_rewards FROM arcade_reward_receipts WHERE match_id = ? AND user_name = ?',
+          [roomSafe.current_match_id, userName]
+        );
+        if (receipt) viewerReward = { coins: receipt.coins, achievements: receipt.achievement_rewards ?? null };
+      }
       res.json({
         success: true, room: roomSafe, serverNow: new Date(serverNow).getTime(),
+        viewer_reward: viewerReward,
         participants: publicParticipants(lobbyParticipants),
         viewer_pending_choice: viewerPendingChoice,
         viewer_participant: viewerPendingChoice ? publicParticipants([viewer])[0] : null

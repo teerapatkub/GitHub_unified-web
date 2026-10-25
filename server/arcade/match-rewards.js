@@ -46,4 +46,16 @@ async function settleArcadeRewards(connection, room) {
   await connection.query('UPDATE arcade_round_history SET match_ended_at = CURRENT_TIMESTAMP WHERE match_id = ? AND match_ended_at IS NULL', [room.current_match_id]);
 }
 
-module.exports = { settleArcadeRewards };
+// Stores what the post-match achievement check paid, beside the match coins,
+// so the result screen can show the whole amount the account received (A10).
+// Only the first check for a match is kept: achievements unlock once, so a
+// retried tick would otherwise overwrite the real list with [].
+async function recordArcadeAchievementRewards(db, matchId, userId, unlocked) {
+  const rewards = (unlocked || []).map(({ code, name, reward }) => ({ code, name, reward: Number(reward) || 0 }));
+  await db.query(
+    'UPDATE arcade_reward_receipts SET achievement_rewards = ? WHERE match_id = ? AND user_id = ? AND achievement_rewards IS NULL',
+    [JSON.stringify(rewards), matchId, userId]
+  );
+}
+
+module.exports = { settleArcadeRewards, recordArcadeAchievementRewards };

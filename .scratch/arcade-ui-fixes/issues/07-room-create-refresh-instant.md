@@ -11,10 +11,10 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done (2026-10-26, see project_logs/2026-10-26/ — Arcade phase 1 log)
 
-- [ ] เทส client (logic ล้วน): ค่าในฟอร์มหลัง reset เท่ากับค่าตอนเปิดฟอร์มครั้งแรกทุกช่อง
-- [ ] ทดสอบผ่าน dev server: หลังสร้างห้อง หน้าแรกที่เห็นมีชื่อหัวห้องและ 1/5
-- [ ] ทดสอบผ่าน dev server: รีเฟรชระหว่างรอบแล้วกลับเข้าแมตช์ได้ โดยไม่เห็นรายการห้องก่อน
-- [ ] ดู network request ขณะอยู่ในห้อง 30 วินาที ต้องไม่มี `GET /api/arcade/rooms` (ยกเว้นคำขอข้อมูลของห้องตัวเอง)
-- [ ] `npm run test:arcade` ผ่าน รวมถึง `arcade-reconnect.test.js`
+- [x] เทส client (logic ล้วน): ค่าในฟอร์มหลัง reset เท่ากับค่าตอนเปิดฟอร์มครั้งแรกทุกช่อง
+- [x] ทดสอบผ่าน dev server: หลังสร้างห้อง หน้าแรกที่เห็นมีชื่อหัวห้องและ 1/5
+- [x] ทดสอบผ่าน dev server: รีเฟรชระหว่างรอบแล้วกลับเข้าแมตช์ได้ โดยไม่เห็นรายการห้องก่อน
+- [x] ดู network request ขณะอยู่ในห้อง 30 วินาที ต้องไม่มี `GET /api/arcade/rooms` (ยกเว้นคำขอข้อมูลของห้องตัวเอง)
+- [x] `npm run test:arcade` ผ่าน รวมถึง `arcade-reconnect.test.js`

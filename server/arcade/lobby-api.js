@@ -21,7 +21,70 @@ async function previousMatchFor(executor, room) {
   return match || null;
 }
 
+function generateRoomCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = 'ARC-';
+  for (let i = 0; i < 4; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
+
 function installArcadeLobbyRoutes(app, db, sanitizeName) {
+  // The response carries the host's participant row so the lobby can show the
+  // host and "1 / N" immediately instead of "0 / N" until the first poll (A8).
+  app.post('/api/arcade/rooms/create', async (req, res) => {
+    try {
+      const { room_name: roomName, password, max_players: maxPlayers = 5, host_name: hostName, round_duration_mode: roundDurationMode, difficulty } = req.body || {};
+      if (!roomName || !hostName) {
+        return res.status(400).json({ error: 'กรุณาระบุชื่อห้องและชื่อผู้สร้างห้อง' });
+      }
+      const cleanRoomName = sanitizeName(roomName, 60);
+      const cleanHostName = sanitizeName(hostName, 24);
+      if (!cleanRoomName || !cleanHostName) {
+        return res.status(400).json({ error: 'ชื่อห้องหรือชื่อผู้สร้างห้องไม่ถูกต้อง' });
+      }
+      const maxPlayersNum = clampArcadeMaxPlayers(maxPlayers, 5);
+      // Phase 8.4 — validated against the whitelists in shared/arcadeConfig.json
+      // rather than trusted, since both end up in the room row that drives
+      // match pacing and task selection for everyone in it.
+      const durationMode = arcadeConfig.roundDurationModes.includes(roundDurationMode) ? roundDurationMode : 'standard';
+      const roomDifficulty = arcadeConfig.difficulties.includes(difficulty) ? difficulty : 'default';
+      const roomCode = generateRoomCode();
+      const pwdValue = (typeof password === 'string' && password.trim()) ? await bcrypt.hash(password.trim(), 10) : null;
+
+      const [insertResult] = await db.query(
+        `INSERT INTO arcade_rooms (room_code, room_name, host_name, password, max_players, status, round_duration_mode, difficulty)
+         VALUES (?, ?, ?, ?, ?, 'WAITING', ?, ?) RETURNING room_id`,
+        [roomCode, cleanRoomName, cleanHostName, pwdValue, maxPlayersNum, durationMode, roomDifficulty]
+      );
+      const roomId = insertResult[0]?.room_id || insertResult.insertId;
+
+      await db.query('INSERT INTO arcade_participants (room_id, user_name, is_host) VALUES (?, ?, 1)', [roomId, cleanHostName]);
+      const [participants] = await db.query('SELECT * FROM arcade_participants WHERE room_id = ? ORDER BY joined_at, id', [roomId]);
+
+      res.json({
+        success: true,
+        room: {
+          room_id: roomId,
+          room_code: roomCode,
+          room_name: cleanRoomName,
+          host_name: cleanHostName,
+          max_players: maxPlayersNum,
+          round_duration_mode: durationMode,
+          difficulty: roomDifficulty,
+          status: 'WAITING',
+          phase: 'LOBBY',
+          is_password_protected: Boolean(pwdValue)
+        },
+        participants: publicParticipants(participants)
+      });
+    } catch (err) {
+      console.error('❌ POST /api/arcade/rooms/create error:', err.message);
+      res.status(500).json({ error: 'สร้างห้องไม่สำเร็จ กรุณาลองอีกครั้ง' });
+    }
+  });
+
   app.get('/api/arcade/rooms', async (req, res) => {
     try {
       const [rooms] = await db.query(

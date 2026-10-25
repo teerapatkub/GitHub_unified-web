@@ -21,7 +21,7 @@ async function arcadeFixture(t, { beforeMigration, beforeShopMigration } = {}) {
     const query = async (sql, args = []) => {
       let i = 0;
       const result = await client.query(sql.replace(/\?/g, () => `$${++i}`), args);
-      return result.command === 'SELECT' ? [result.rows, result] : [{ affectedRows: result.rowCount, insertId: Number(result.rows?.[0]?.match_id || 0) }, result];
+      return result.command === 'SELECT' ? [result.rows, result] : [{ affectedRows: result.rowCount, insertId: Number(result.rows?.[0]?.match_id || result.rows?.[0]?.room_id || 0) }, result];
     };
     return { query, execute: query, beginTransaction: () => client.query('BEGIN'), commit: () => client.query('COMMIT'), rollback: () => client.query('ROLLBACK'), release: () => client.release() };
   };
@@ -42,6 +42,7 @@ async function arcadeFixture(t, { beforeMigration, beforeShopMigration } = {}) {
   if (beforeMigration) await beforeMigration(db);
   await migrateArcadeMatches(db);
   await require('../../arcade/migrate-rewards').migrateArcadeRewards(db);
+  await require('../../arcade/migrate-achievement-rewards').migrateArcadeAchievementRewards(db);
   if (beforeShopMigration) await beforeShopMigration(db);
   await require('../../arcade/migrate-shop').migrateArcadeShop(db);
   await require('../../arcade/migrate-self-effects').migrateArcadeSelfEffects(db);

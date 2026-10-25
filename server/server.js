@@ -5611,14 +5611,6 @@ app.post('/api/arcade/evaluate', (_req, res) => res.status(410).json({ error: '�
 
 // --- ARCADE ROOM MANAGEMENT ENDPOINTS ---
 
-function generateRoomCode() {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let code = 'ARC-';
-    for (let i = 0; i < 4; i++) {
-        code += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return code;
-}
 
 // Strips control characters and clamps length so player-entered room/user
 // names can't break the room browser UI or bloat the DB. React already
@@ -5628,7 +5620,6 @@ function sanitizeName(raw, maxLen) {
     return String(raw || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, maxLen);
 }
 
-const { clampArcadeMaxPlayers } = require('./arcade/lobby-api');
 
 
 // Arcade's code judge: quality is always measured locally (ADR 0007); the local
@@ -5667,9 +5658,11 @@ const { clampArcadeMaxPlayers } = require('./arcade/lobby-api');
 // Wallet and career totals already committed with RESULT. Achievement checks
 // remain a separate best-effort feature, using durable account receipts.
 async function evaluateArcadeAchievements(matchId) {
+  const { recordArcadeAchievementRewards } = require('./arcade/match-rewards');
   const [players] = await db.query('SELECT user_id, user_name FROM arcade_reward_receipts WHERE match_id = ? ORDER BY user_id', [matchId]);
   for (const player of players) {
-    await evaluateAchievements(player.user_id, player.user_name);
+    const unlocked = await evaluateAchievements(player.user_id, player.user_name);
+    await recordArcadeAchievementRewards(db, matchId, player.user_id, unlocked);
   }
 }
 
@@ -5769,59 +5762,7 @@ require('./arcade/bot-api').installArcadeBots(app, db);
 
 require('./arcade/lobby-api').installArcadeLobbyRoutes(app, db, sanitizeName);
 
-// 2. Create new room
-app.post('/api/arcade/rooms/create', async (req, res) => {
-    try {
-        const { room_name, password, max_players = 5, host_name, round_duration_mode, difficulty } = req.body;
-        if (!room_name || !host_name) {
-            return res.status(400).json({ error: 'กรุณาระบุชื่อห้องและชื่อผู้สร้างห้อง' });
-        }
-        const cleanRoomName = sanitizeName(room_name, 60);
-        const cleanHostName = sanitizeName(host_name, 24);
-        if (!cleanRoomName || !cleanHostName) {
-            return res.status(400).json({ error: 'ชื่อห้องหรือชื่อผู้สร้างห้องไม่ถูกต้อง' });
-        }
-        const maxPlayersNum = clampArcadeMaxPlayers(max_players, 5);
-        // Phase 8.4 — validated against the whitelists in shared/arcadeConfig.json
-        // rather than trusted, since both end up in the room row that drives
-        // match pacing and task selection for everyone in it.
-        const durationMode = arcadeConfig.roundDurationModes.includes(round_duration_mode)
-            ? round_duration_mode : 'standard';
-        const roomDifficulty = arcadeConfig.difficulties.includes(difficulty)
-            ? difficulty : 'default';
-        const roomCode = generateRoomCode();
-        const pwdValue = (password && password.trim().length > 0) ? await bcrypt.hash(password.trim(), 10) : null;
-
-        const [insertResult] = await db.query(
-            `INSERT INTO arcade_rooms (room_code, room_name, host_name, password, max_players, status, round_duration_mode, difficulty)
-             VALUES (?, ?, ?, ?, ?, 'WAITING', ?, ?) RETURNING room_id`,
-            [roomCode, cleanRoomName, cleanHostName, pwdValue, maxPlayersNum, durationMode, roomDifficulty]
-        );
-
-        const roomId = insertResult[0]?.room_id || insertResult.insertId;
-
-        // Add host as first participant
-        await db.query(
-            `INSERT INTO arcade_participants (room_id, user_name, is_host) VALUES (?, ?, 1)`,
-            [roomId, cleanHostName]
-        );
-
-        res.json({
-            success: true,
-            room: {
-                room_id: roomId,
-                room_code: roomCode,
-                room_name: cleanRoomName,
-                host_name: cleanHostName,
-                max_players: maxPlayersNum,
-                is_password_protected: !!pwdValue
-            }
-        });
-    } catch (err) {
-        console.error('❌ POST /api/arcade/rooms/create error:', err.message);
-        res.status(500).json({ error: err.message });
-    }
-});
+// 2. Create new room: arcade/lobby-api.js
 
 const { installArcadeRoomReads, publicParticipants } = require('./arcade/room-api');
 installArcadeRoomReads(app, db);
@@ -7141,6 +7082,7 @@ const {
   createDataApiSecurityMigration,
   createTutorialsSeenMigration,
   createArcadeQualityBreakdownMigration,
+  createArcadeAchievementRewardsMigration,
 } = require('./migrations/definitions');
 const { applyDataApiSecurity } = require('./security/data-api-security');
 const authProvisioningSchemaSql = fs.readFileSync(
@@ -7201,6 +7143,11 @@ const applicationMigrations = [
   createArcadeQualityBreakdownMigration(
     () => require('./arcade/migrate-quality-breakdown').migrateArcadeQualityBreakdown(db),
     require('./arcade/migrate-quality-breakdown').migrateArcadeQualityBreakdown.toString(),
+  ),
+  // Achievement coins a match paid, shown on its result screen (Spec 0005 #08).
+  createArcadeAchievementRewardsMigration(
+    () => require('./arcade/migrate-achievement-rewards').migrateArcadeAchievementRewards(db),
+    require('./arcade/migrate-achievement-rewards').migrateArcadeAchievementRewards.toString(),
   ),
 ];
 

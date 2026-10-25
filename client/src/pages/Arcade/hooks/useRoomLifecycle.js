@@ -14,6 +14,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { PHASES } from '../constants.js';
 import { parseUtcTimestamp } from '../constants.js';
 import { roomViewForPlayer } from '../rematch-view.js';
+import { newRoomForm, hasSavedActiveRoom } from '../roomForms.js';
 
 export default function useRoomLifecycle({
   playerState, setPlayerState, notify, t, navigate, API_BASE,
@@ -25,7 +26,7 @@ export default function useRoomLifecycle({
   const [roomsLoaded, setRoomsLoaded] = useState(false);
   const [roomsError, setRoomsError] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [createForm, setCreateForm] = useState({ room_name: '', password: '', max_players: 4, round_duration_mode: 'standard', difficulty: 'default' });
+  const [createForm, setCreateForm] = useState(newRoomForm);
   const [searchCode, setSearchCode] = useState('');
   const [joinPasswordPrompt, setJoinPasswordPrompt] = useState(null);
   const [inputPassword, setInputPassword] = useState('');
@@ -42,6 +43,9 @@ export default function useRoomLifecycle({
   const activeRoomStorageKey = (userName) => `arcade_active_room_${userName}`;
   const restoreAttemptedRef = useRef(false);
   const [restoreRetry, setRestoreRetry] = useState(0);
+  // True from mount until the restore below settles, so a refresh mid-match
+  // shows "reconnecting" rather than the room list for several seconds (A8).
+  const [restoringRoom, setRestoringRoom] = useState(() => hasSavedActiveRoom(localStorage, activeRoomStorageKey(playerState.name)));
 
   // Keep localStorage in sync with whatever room this player is currently
   // in — written whenever they end up in one (create/join/restore all funnel
@@ -82,8 +86,8 @@ export default function useRoomLifecycle({
     restoreAttemptedRef.current = true;
     const key = activeRoomStorageKey(playerState.name);
     let saved;
-    try { saved = JSON.parse(localStorage.getItem(key) || 'null'); } catch { localStorage.removeItem(key); return; }
-    if (!saved?.room_id) return;
+    try { saved = JSON.parse(localStorage.getItem(key) || 'null'); } catch { localStorage.removeItem(key); setRestoringRoom(false); return; }
+    if (!saved?.room_id) { setRestoringRoom(false); return; }
     let stopped = false;
     let completed = false;
     let retryTimer;
@@ -130,9 +134,11 @@ export default function useRoomLifecycle({
           }));
 
           completed = true;
+          setRestoringRoom(false);
           notify(t('resumedActiveMatch'), "info");
         } else {
           completed = true;
+          setRestoringRoom(false);
           localStorage.removeItem(key);
         }
       } catch {
@@ -162,11 +168,15 @@ export default function useRoomLifecycle({
     }
   }, [API_BASE]);
 
+  // The public room list is only on screen in the lobby browser. Polling it
+  // from inside a room or a match was a request every 3 s that nobody saw (A11).
+  const inRoom = Boolean(currentRoom);
   useEffect(() => {
+    if (inRoom) return undefined;
     fetchRooms();
     const interval = setInterval(fetchRooms, 3000);
     return () => clearInterval(interval);
-  }, [fetchRooms]);
+  }, [fetchRooms, inRoom]);
 
   // Create Room
   const handleCreateRoom = async (e) => {
@@ -190,11 +200,14 @@ export default function useRoomLifecycle({
       });
       const data = await res.json();
       if (data.success) {
+        // The create response carries the host's participant row, so the
+        // lobby shows "1 / 5" and the host straight away instead of "0 / 5"
+        // until the first poll lands (A8).
         setCurrentRoom(data.room);
+        setRoomParticipants(data.participants || []);
         setShowCreateModal(false);
-        setCreateForm({ room_name: '', password: '', max_players: 4 });
+        setCreateForm(newRoomForm());
         notify(`สร้างห้อง "${data.room.room_name}" (รหัส: ${data.room.room_code}) สำเร็จ!`, "success");
-        fetchRooms();
       } else {
         notify(data.error || "สร้างห้องไม่สำเร็จ", "error");
       }
@@ -377,6 +390,9 @@ export default function useRoomLifecycle({
     appliedPhaseRef.current = PHASES.LOBBY;
     setCurrentRoom(null);
     setRoomParticipants([]);
+    // Per-match state goes with the room, or the next room starts out
+    // "eliminated" (bug A3).
+    setPlayerState(prev => ({ ...prev, eliminated: false, hasSubmittedThisRound: false, activeEffects: [] }));
     setPhase(PHASES.LOBBY);
     fetchRooms();
     return true;
@@ -408,6 +424,7 @@ export default function useRoomLifecycle({
     if (choice === 'LEAVE') {
       setCurrentRoom(null);
       setRoomParticipants([]);
+      setPlayerState(prev => ({ ...prev, eliminated: false, hasSubmittedThisRound: false, activeEffects: [] }));
       setPhase(PHASES.LOBBY);
       fetchRooms();
     } else {
@@ -465,7 +482,7 @@ export default function useRoomLifecycle({
   };
 
   return {
-    rooms, roomsLoaded, roomsError, fetchRooms,
+    rooms, roomsLoaded, roomsError, fetchRooms, restoringRoom,
     showCreateModal, setShowCreateModal,
     createForm, setCreateForm,
     searchCode, setSearchCode,
