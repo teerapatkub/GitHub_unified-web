@@ -774,8 +774,9 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
               ⭐ {playerState.score} {t('ptsUnit')}
             </span>
             {/* Bug A4: an eliminated player used to be stuck here until the
-                match ended. Leaving now forfeits only the end-of-match reward;
-                the rounds already played stay in their history. */}
+                match ended. Leaving forfeits the end-of-match reward, and the
+                match never gets match_ended_at, so the history page (which
+                lists finished matches only) will not show it. Say so. */}
             <button
               type="button"
               onClick={handleLeaveRoom}

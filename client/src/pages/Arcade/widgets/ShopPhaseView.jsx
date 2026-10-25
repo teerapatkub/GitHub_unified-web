@@ -28,10 +28,14 @@ export default function ShopPhaseView({
           <button
             onClick={() => rollShop()}
             disabled={shopState.busy || !shopState.ready || playerState.eliminated}
-            className="bg-white hover:bg-amber-50 border border-amber-300 text-amber-600 px-6 py-2.5 rounded-2xl font-black text-xs uppercase flex items-center gap-2 transition-all hover:scale-102 active:scale-98 shadow-sm"
+            aria-busy={shopState.busy}
+            className="bg-white hover:bg-amber-50 border border-amber-300 text-amber-700 px-6 py-2.5 rounded-2xl font-black text-xs uppercase flex items-center gap-2 transition-all hover:scale-102 active:scale-98 shadow-sm disabled:cursor-wait disabled:opacity-70"
           >
-            <RotateCcw className="h-4 w-4" />
-            <span>{t('reroll')} (🪙 {shopState.rerollCost})</span>
+            {/* A reroll round-trips through the database and can take a couple
+                of seconds; without this the button looked like it did nothing
+                (Spec 0005 #09, seen in the 2026-10-25 user test). */}
+            <RotateCcw className={`h-4 w-4 ${shopState.busy ? 'motion-safe:animate-spin' : ''}`} aria-hidden="true" />
+            <span>{shopState.busy ? t('shopWorking') : `${t('reroll')} (🪙 ${shopState.rerollCost})`}</span>
           </button>
         </div>
       </div>

@@ -6,12 +6,25 @@ const { activeAttackEffects } = require('./attacks');
 const { readPhaseClock } = require('./phase-clock');
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function drawOffers() {
-  const pool = [...config.shopItems];
+const offerKey = offers => (offers || []).map(offer => offer.id).sort().join(',');
+
+function drawOnce(catalogue) {
+  const pool = [...catalogue];
   const offers = [];
   while (offers.length < 4 && pool.length) {
     const item = pool.splice(randomInt(pool.length), 1)[0];
     offers.push({ ...item, offer_id: randomUUID(), purchased: false });
+  }
+  return offers;
+}
+
+// A paid reroll must visibly change the shop (Spec 0005 #09): redraw while the
+// result is the exact set it replaces. Bounded, so a catalogue too small to
+// change still returns.
+function drawOffers(previous = null, catalogue = config.shopItems) {
+  let offers = drawOnce(catalogue);
+  for (let tries = 0; previous && tries < 20 && offerKey(offers) === offerKey(previous); tries += 1) {
+    offers = drawOnce(catalogue);
   }
   return offers;
 }
@@ -115,7 +128,7 @@ function installArcadeShop(app, db) {
           if (player.cash < state.reroll_cost) return await reject(409, 'เงินไม่พอสุ่มร้าน');
           player.cash -= state.reroll_cost;
           state.reroll_cost = Math.min(state.reroll_cost * 2, 2147483647);
-          state.offers = drawOffers();
+          state.offers = drawOffers(state.offers);
         }
         state.revision += 1;
         await connection.query('UPDATE arcade_participants SET cash = ? WHERE id = ?', [player.cash, player.id]);
@@ -151,4 +164,4 @@ function installArcadeShop(app, db) {
   app.get('/api/arcade/rooms/:id/shop', handler);
   app.post('/api/arcade/rooms/:id/shop', handler);
 }
-module.exports = { installArcadeShop };
+module.exports = { installArcadeShop, drawOffers };
