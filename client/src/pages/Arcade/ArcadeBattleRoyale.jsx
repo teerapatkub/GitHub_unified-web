@@ -570,7 +570,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
           earlier, and this element sits above the whole match UI. */}
       {connectionLost && (
         <div className="shrink-0 bg-amber-500 text-white text-center text-xs font-black py-2 px-4 flex items-center justify-center gap-2">
-          <span className="inline-block h-2 w-2 rounded-full bg-white animate-pulse" />
+          <span className="inline-block h-2 w-2 rounded-full bg-white motion-safe:animate-pulse" />
           {t('connectionLostBanner')}
         </div>
       )}

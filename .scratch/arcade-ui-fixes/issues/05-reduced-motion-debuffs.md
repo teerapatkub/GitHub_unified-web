@@ -13,10 +13,10 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done (2026-10-26, see project_logs/2026-10-26/ — Arcade phase 1 log)
 
-- [ ] เทส client (logic ล้วน): debuff ทุกตัวมีแบบแสดงผลสองแบบ และทั้งสองแบบอยู่นานเท่ากัน
-- [ ] ทดสอบผ่าน dev server โดยเปิด reduced motion: โดน Earthquake แล้วจอไม่ขยับ แต่ยังบังการอ่านอยู่
-- [ ] ไม่มี `animate-bounce` เหลือในหน้า Arcade
-- [ ] ข้อความ debuff เป็นไทยเมื่อตั้ง UI เป็นไทย และเป็นอังกฤษเมื่อตั้ง EN
-- [ ] `typing-debuffs.test.js` และ `npm run test:arcade` ผ่าน
+- [x] เทส client (logic ล้วน): debuff ทุกตัวมีแบบแสดงผลสองแบบ และทั้งสองแบบอยู่นานเท่ากัน
+- [ ] ทดสอบผ่าน dev server โดยเปิด reduced motion: โดน Earthquake แล้วจอไม่ขยับ แต่ยังบังการอ่านอยู่ — ยังไม่ได้ทำ: browser pane เปิด reduced motion ไม่ได้ ตรวจได้แค่ว่ากฎ CSS โหลดในหน้าจริง
+- [x] ไม่มี `animate-bounce` เหลือในหน้า Arcade
+- [x] ข้อความ debuff เป็นไทยเมื่อตั้ง UI เป็นไทย และเป็นอังกฤษเมื่อตั้ง EN
+- [x] `typing-debuffs.test.js` และ `npm run test:arcade` ผ่าน

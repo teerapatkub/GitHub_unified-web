@@ -2,6 +2,9 @@ import { useState, useRef, useEffect } from 'react';
 import { Shield, AlertTriangle, ChevronDown, ChevronUp, Eye, ArrowLeft } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 import { EXAMPLE_CASES_SHOWN, pyLiteral } from '../constants.js';
+import arcadeConfig from '../../../../../shared/arcadeConfig.json';
+import { editorFrameDebuffClass, debuffOverlayText } from '../debuffVisuals.js';
+import '../arcade-effects.css';
 
 // Whether the problem card and the output panel are folded away, remembered
 // across rounds and across matches. A player who folds the problem card to get
@@ -224,7 +227,7 @@ export default function BattleRoyaleGameplayView({
                 className={`mt-3 p-3 rounded-xl text-xs font-black flex items-center gap-2 border ${
                   autoFiring
                     ? 'bg-rose-50 border-rose-200 text-rose-700'
-                    : 'bg-amber-50 border-amber-200 text-amber-800 animate-pulse'
+                    : 'bg-amber-50 border-amber-200 text-amber-800 motion-safe:animate-pulse'
                 }`}
               >
                 <AlertTriangle className="h-4 w-4 shrink-0" />
@@ -253,13 +256,13 @@ export default function BattleRoyaleGameplayView({
         <div className={`flex-1 min-h-[300px] relative rounded-3xl border-2 overflow-hidden bg-white flex flex-col shadow-sm transition-all duration-300
           ${checkEffectActive('inkFog') ? 'border-slate-800' : 'border-slate-200'}
           ${checkEffectActive('keyScrambler') || checkEffectActive('typoGenerator') || checkEffectActive('capsLockLock') ? 'border-red-500' : ''}
-          ${checkEffectActive('screenShake') ? 'animate-bounce' : ''}
+          ${editorFrameDebuffClass(checkEffectActive)}
         `}>
 
           {/* Self buffs and incoming debuffs use the same effect list. */}
           {playerState.activeEffects.length > 0 && (
             <div className={`${playerState.activeEffects.some(e => !['shield', 'scoreMultiplier', 'aiHelper'].includes(e.type)) ? 'bg-red-600' : 'bg-indigo-600'} text-white py-2 px-4 text-center font-black text-xs tracking-wider flex items-center justify-center gap-2 z-20 shrink-0`}>
-              <AlertTriangle className="h-3.5 w-3.5 animate-spin" />
+              <AlertTriangle className="h-3.5 w-3.5 motion-safe:animate-spin" aria-hidden="true" />
               <span>{t('activeEffects')} ({
                 playerState.activeEffects.map(e => {
                   const itm = SHOP_ITEMS.find(s => s.id === e.type);
@@ -367,22 +370,22 @@ export default function BattleRoyaleGameplayView({
               {/* Visual Overlay: Blackout / Fog Alert */}
               {checkEffectActive('blackout') && (
                 <div className="absolute inset-0 bg-black flex flex-col items-center justify-center z-30 select-none pointer-events-auto">
-                  <span className="text-red-500 font-mono font-bold text-lg tracking-widest animate-pulse">
-                    SYSTEM SHUTDOWN: EMP DETONATION
+                  <span role="status" className="text-red-500 font-mono font-bold text-lg tracking-widest motion-safe:animate-pulse">
+                    {debuffOverlayText('blackout', t, arcadeConfig.effectDurations).title}
                   </span>
-                  <span className="text-slate-500 text-[10px] font-mono mt-2 uppercase tracking-widest">
-                    Rebooting monitor screen...
+                  <span className="text-slate-300 text-xs font-mono mt-2">
+                    {debuffOverlayText('blackout', t, arcadeConfig.effectDurations).desc}
                   </span>
                 </div>
               )}
 
               {checkEffectActive('inkFog') && (
                 <div className="absolute inset-0 bg-slate-950/85 flex flex-col items-center justify-center z-25 text-white pointer-events-auto">
-                  <span className="text-rose-500 text-lg font-black uppercase tracking-wider animate-pulse">
-                    Screen Blurs: Ink Fog Debuff
+                  <span role="status" className="text-rose-400 text-lg font-black tracking-wider motion-safe:animate-pulse">
+                    {debuffOverlayText('inkFog', t, arcadeConfig.effectDurations).title}
                   </span>
-                  <p className="text-[10px] text-slate-400 mt-1 max-w-sm text-center">
-                    A dark ink fog is covering your screen. Wait 15 seconds for fog to clear!
+                  <p className="text-xs text-slate-300 mt-1 max-w-sm text-center">
+                    {debuffOverlayText('inkFog', t, arcadeConfig.effectDurations).desc}
                   </p>
                 </div>
               )}
@@ -465,7 +468,7 @@ export default function BattleRoyaleGameplayView({
               </span>
             )}
             {targetingItem && (
-              <span className="text-[10px] text-rose-600 font-black animate-pulse bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-full">
+              <span className="text-[10px] text-rose-600 font-black motion-safe:animate-pulse bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-full">
                 🎯 {t('pickTarget')}
               </span>
             )}
@@ -493,7 +496,7 @@ export default function BattleRoyaleGameplayView({
               </div>
 
               <div className="flex items-center space-x-2">
-                {checkEffectActive('shield') && <Shield className="h-4 w-4 text-blue-600 fill-blue-100 animate-pulse" />}
+                {checkEffectActive('shield') && <Shield className="h-4 w-4 text-blue-600 fill-blue-100 motion-safe:animate-pulse" />}
                 <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-xl">
                   ⭐ {playerState.score} {t('ptsUnit')}
                 </span>
@@ -566,7 +569,7 @@ export default function BattleRoyaleGameplayView({
                 )}
 
                 {targetingItem && !bot.eliminated && !bot.isDebuffed && (
-                  <div className="absolute inset-x-0 bottom-0 bg-rose-600 py-1 text-center text-[9px] font-black text-white uppercase tracking-wider animate-pulse select-none">
+                  <div className="absolute inset-x-0 bottom-0 bg-rose-600 py-1 text-center text-[9px] font-black text-white uppercase tracking-wider motion-safe:animate-pulse select-none">
                     ⚡ {t('clickToAttack')}
                   </div>
                 )}
@@ -601,7 +604,7 @@ export default function BattleRoyaleGameplayView({
                 onClick={() => initiateItemUse(item)}
                 disabled={!draftReady || playerState.hasSubmittedThisRound || playerState.eliminated || targetingItem || phase === PHASES.ROUND_1}
                 className={`px-4 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 transition-all shadow-sm border
-                  ${targetingItem === item ? 'bg-rose-600 text-white border-rose-600 animate-pulse' : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'}
+                  ${targetingItem === item ? 'bg-rose-600 text-white border-rose-600 motion-safe:animate-pulse' : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'}
                   disabled:opacity-40 hover:scale-105 active:scale-95
                 `}
                 title={t(item.descKey)}

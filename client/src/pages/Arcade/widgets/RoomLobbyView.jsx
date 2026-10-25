@@ -158,7 +158,7 @@ export default function RoomLobbyView({
               {t('startMatchBtn')} ({roomParticipants.length} / {currentRoom.max_players})
             </button>
           ) : (
-            <div className="px-8 py-3.5 bg-slate-100 text-slate-500 font-bold text-xs rounded-2xl border border-slate-200 animate-pulse">
+            <div className="px-8 py-3.5 bg-slate-100 text-slate-500 font-bold text-xs rounded-2xl border border-slate-200 motion-safe:animate-pulse">
               {t('waitingHostStartPrefix')} ({currentRoom.host_name}) {t('waitingHostStartSuffix')}
             </div>
           )}

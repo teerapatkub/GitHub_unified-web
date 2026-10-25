@@ -1,0 +1,39 @@
+/* Visual debuffs that move the screen (Spec 0005 ticket 05).
+ *
+ * Earthquake used Tailwind's animate-bounce, which hops the whole editor 25%
+ * of its height and ignores prefers-reduced-motion. A player who turns motion
+ * off still gets hit by the item, so the reduced variant must obstruct reading
+ * about as much for exactly as long: the effect's lifetime comes from
+ * effectDurations in shared/arcadeConfig.json either way; only the look differs.
+ */
+@keyframes arcade-shake {
+  0%, 100% { transform: translate(0, 0) rotate(0); }
+  20% { transform: translate(-6px, 3px) rotate(-0.6deg); }
+  40% { transform: translate(5px, -4px) rotate(0.5deg); }
+  60% { transform: translate(-4px, -2px) rotate(-0.4deg); }
+  80% { transform: translate(6px, 4px) rotate(0.6deg); }
+}
+
+.arcade-shake {
+  animation: arcade-shake 0.3s linear infinite;
+}
+
+@keyframes arcade-toast-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.arcade-toast-in {
+  animation: arcade-toast-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arcade-shake {
+    animation: none;
+    filter: blur(2.5px) contrast(0.85);
+  }
+
+  .arcade-toast-in {
+    animation: none;
+  }
+}

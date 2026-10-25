@@ -175,7 +175,7 @@ function Advice({ row, t }) {
   }, [advice, row.history_id]);
 
   if (!advice) {
-    return <p className="mt-3 animate-pulse text-[11px] font-bold text-sky-600">{t('adviceLoading')}</p>;
+    return <p className="mt-3 motion-safe:animate-pulse text-[11px] font-bold text-sky-600">{t('adviceLoading')}</p>;
   }
   if (!advice.text) return null;
   return <AdviceBox label={advice.source === 'ai' ? t('adviceFromAi') : t('adviceFromMetrics')} text={advice.text} />;
