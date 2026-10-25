@@ -1,4 +1,5 @@
 // Room polling and membership responses contain public gameplay state only.
+const arcadeConfig = require('../../shared/arcadeConfig.json');
 const { rematchRoster } = require('./match-api');
 const { gradeSubmission } = require('../problemGrader');
 const { arcadeCodeJudge } = require('./code-judge');
@@ -145,8 +146,37 @@ function installArcadeRoomReads(app, db) {
       const userName = req.player.username;
       if (req.params.user_name !== userName) return res.status(403).json({ error: 'ดูประวัติโค้ดได้เฉพาะบัญชีของคุณ' });
       const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 10));
+      const before = parseInt(req.query.before, 10);
 
-      const [rows] = await db.query(
+      // Paged by match in SQL (Spec 0005 #10): pick this page's match ids
+      // first, then load only their rounds. This used to fetch every round the
+      // player ever played and slice in JavaScript. Filters are whitelisted
+      // against shared/arcadeConfig.json; anything else is ignored.
+      const where = ['h.user_name = ?', 'h.match_ended_at IS NOT NULL'];
+      const args = [userName];
+      if (arcadeConfig.difficulties.includes(req.query.difficulty)) {
+        where.push('h.difficulty = ?');
+        args.push(req.query.difficulty);
+      }
+      if (arcadeConfig.roundDurationModes.includes(req.query.round_duration_mode)) {
+        where.push('h.round_duration_mode = ?');
+        args.push(req.query.round_duration_mode);
+      }
+      const [[{ total }]] = await db.query(
+        `SELECT COUNT(DISTINCT h.match_id) AS total FROM arcade_round_history h WHERE ${where.join(' AND ')}`,
+        args
+      );
+      const pageWhere = Number.isFinite(before) ? [...where, 'h.match_id < ?'] : where;
+      const pageArgs = Number.isFinite(before) ? [...args, before] : args;
+      const [idRows] = await db.query(
+        `SELECT DISTINCT h.match_id FROM arcade_round_history h WHERE ${pageWhere.join(' AND ')}
+         ORDER BY h.match_id DESC LIMIT ?`,
+        [...pageArgs, limit + 1]
+      );
+      const pageIds = idRows.slice(0, limit).map(row => row.match_id);
+      const nextBefore = idRows.length > limit ? pageIds[pageIds.length - 1] : null;
+
+      const [rows] = pageIds.length === 0 ? [[]] : await db.query(
         `SELECT h.id AS history_id, h.match_id, h.room_id, h.room_code, h.room_name, h.difficulty, h.round_duration_mode,
             h.round_num, h.code, h.pass_count, h.total_count, h.quality_score, h.time_used_seconds,
             h.score_multiplier, h.round_score, h.match_ended_at,
@@ -154,9 +184,9 @@ function installArcadeRoomReads(app, db) {
             rr.final_rank, COALESCE(rr.coins, 0) AS coins_awarded
         FROM arcade_round_history h
         LEFT JOIN arcade_reward_receipts rr ON rr.match_id = h.match_id AND rr.user_name = h.user_name
-        WHERE h.user_name = ? AND h.match_ended_at IS NOT NULL
+        WHERE h.user_name = ? AND h.match_id IN (${pageIds.map(() => '?').join(', ')})
         ORDER BY h.match_id DESC, h.round_num ASC`,
-        [userName]
+        [userName, ...pageIds]
       );
 
       // Group flat rows into matches, preserving the newest-first ordering
@@ -194,7 +224,7 @@ function installArcadeRoomReads(app, db) {
         });
       }
 
-      res.json({ success: true, matches: Array.from(byMatch.values()).slice(0, limit) });
+      res.json({ success: true, matches: Array.from(byMatch.values()), next_before: nextBefore, total_matches: Number(total) || 0 });
     } catch (err) {
       console.error('❌ GET /api/arcade/players/:user_name/history error:', err.message);
       res.status(500).json({ error: err.message });

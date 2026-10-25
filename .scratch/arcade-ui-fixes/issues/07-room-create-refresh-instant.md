@@ -11,7 +11,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** done (2026-10-26, see project_logs/2026-10-26/ — Arcade phase 1 log)
+**Status:** done (2026-10-26, see project_logs/2026-10-26/0400-tickets-04-10-arcade-phase-1.md)
 
 - [x] เทส client (logic ล้วน): ค่าในฟอร์มหลัง reset เท่ากับค่าตอนเปิดฟอร์มครั้งแรกทุกช่อง
 - [x] ทดสอบผ่าน dev server: หลังสร้างห้อง หน้าแรกที่เห็นมีชื่อหัวห้องและ 1/5

@@ -13,7 +13,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** done (2026-10-26, see project_logs/2026-10-26/ — Arcade phase 1 log)
+**Status:** done (2026-10-26, see project_logs/2026-10-26/0400-tickets-04-10-arcade-phase-1.md)
 
 - [x] เทส client (logic ล้วน): debuff ทุกตัวมีแบบแสดงผลสองแบบ และทั้งสองแบบอยู่นานเท่ากัน
 - [ ] ทดสอบผ่าน dev server โดยเปิด reduced motion: โดน Earthquake แล้วจอไม่ขยับ แต่ยังบังการอ่านอยู่ — ยังไม่ได้ทำ: browser pane เปิด reduced motion ไม่ได้ ตรวจได้แค่ว่ากฎ CSS โหลดในหน้าจริง

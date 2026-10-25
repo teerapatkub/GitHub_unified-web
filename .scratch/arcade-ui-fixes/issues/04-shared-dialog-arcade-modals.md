@@ -13,7 +13,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** done (2026-10-26, see project_logs/2026-10-26/ — Arcade phase 1 log)
+**Status:** done (2026-10-26, see project_logs/2026-10-26/0400-tickets-04-10-arcade-phase-1.md)
 
 - [x] มี component popup กลางตัวเดียว และ popup ของ Arcade ทั้ง 3 ตัวใช้ตัวนี้
 - [x] ปุ่มเลือกแบบกลุ่มมี `aria-pressed` (หรือเป็น radio group) และ label ใช้ `htmlFor`

@@ -13,7 +13,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** done (2026-10-26, see project_logs/2026-10-26/ — Arcade phase 1 log)
+**Status:** done (2026-10-26, see project_logs/2026-10-26/0400-tickets-04-10-arcade-phase-1.md)
 
 - [x] เทส HTTP: poll ของห้องตอน RESULT มี `viewer_reward` ที่มีทองของแมตช์และรายการความสำเร็จพร้อมทอง
 - [x] เทส HTTP: ตรวจความสำเร็จซ้ำแล้วไม่เขียนทับหรือซ้ำ และผู้เล่นอื่นไม่เห็นรางวัลของเรา

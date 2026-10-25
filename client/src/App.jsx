@@ -31,6 +31,7 @@ const LeaderboardPage = lazy(() => import('./pages/LeaderboardPage'));
 
 const CompetitiveArena = lazy(() => import('./pages/CompetitiveArena'));
 const ArcadeBattleRoyale = lazy(() => import('./pages/Arcade/ArcadeBattleRoyale'));
+const ArcadeHistoryPage = lazy(() => import('./pages/Arcade/ArcadeHistoryPage'));
 const ChallengePage = lazy(() => import('./pages/ChallengePage'));
 const AiTaskPage = lazy(() => import('./components/learning/AiTaskPage'));
 const PromotionExamPage = lazy(() => import('./pages/PromotionExamPage'));
@@ -496,6 +497,7 @@ function AppContent() {
                     still land, rather than renaming /online out from under ours. */}
                 <Route path="/competitive-arena" element={requireGameModeRank(<CompetitiveArena user={user} onLogout={handleLogout} onUserUpdate={syncUserToState} />)} />
                 <Route path="/matchmaking" element={requireGameModeRank(<ArcadeBattleRoyale user={user} onLogout={handleLogout} />)} />
+                <Route path="/matchmaking/history" element={requireGameModeRank(<ArcadeHistoryPage user={user} />)} />
                 <Route
                   path="/admin/dashboard"
                   element={requireAdmin(<Dashboard />)}

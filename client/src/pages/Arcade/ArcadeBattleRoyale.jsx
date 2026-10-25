@@ -214,7 +214,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
   // Phase 8.3 — read-only progression views (RESULT-screen code review + lobby
   // career card). Takes primitives rather than the currentRoom object so its
   // effects don't re-subscribe on every room-state poll.
-  const { roundHistory, playerStats, pastMatches, statsLoaded, historyLoaded, roundHistoryLoaded } = useProgression({
+  const { roundHistory, playerStats, pastMatches, pastMatchesTotal, statsLoaded, historyLoaded, roundHistoryLoaded } = useProgression({
     playerName: playerState.name, roomId, matchId: currentRoom?.current_match_id, phase, API_BASE
   });
 
@@ -633,10 +633,9 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
               </div>
             ) : !currentRoom ? (
               <>
-              {/* Phase 8.3 — career card above the room list */}
-              {statsLoaded ? <PlayerStatsCard stats={playerStats} playerName={playerState.name} t={t} /> : <SkeletonLoading variant="cards" label="กำลังโหลดสถิติ Arcade..." />}
-              {/* Step 5 — reviewable long after the room is gone */}
-              {historyLoaded ? <PastMatchesPanel matches={pastMatches} t={t} /> : <SkeletonLoading variant="list" label="กำลังโหลดประวัติ Arcade..." />}
+              {/* Spec 0005 #10: the room list comes first, then the career
+                  card and the three newest matches. A long record used to sit
+                  above "create room" and push it off the screen. */}
               <PublicRoomBrowser
                 rooms={rooms}
                 roomsLoaded={roomsLoaded}
@@ -650,6 +649,8 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
                 handleJoinRoom={handleJoinRoom}
                 t={t}
               />
+              {statsLoaded ? <PlayerStatsCard stats={playerStats} playerName={playerState.name} t={t} /> : <SkeletonLoading variant="cards" label="กำลังโหลดสถิติ Arcade..." />}
+              {historyLoaded ? <PastMatchesPanel matches={pastMatches} total={pastMatchesTotal} t={t} lang={lang} /> : <SkeletonLoading variant="list" label="กำลังโหลดประวัติ Arcade..." />}
               </>
             ) : (
               /* VIEW B: ROOM LOBBY (WAITING IN JOINED ROOM) */

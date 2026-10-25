@@ -15,6 +15,7 @@ export default function useProgression({ playerName, roomId, matchId, phase, API
   const [roundHistory, setRoundHistory] = useState([]);
   const [playerStats, setPlayerStats] = useState(null);
   const [pastMatches, setPastMatches] = useState([]);
+  const [pastMatchesTotal, setPastMatchesTotal] = useState(0);
   const [statsLoadedFor, setStatsLoadedFor] = useState('');
   const [historyLoadedFor, setHistoryLoadedFor] = useState('');
   const [roundHistoryLoadedFor, setRoundHistoryLoadedFor] = useState('');
@@ -54,9 +55,13 @@ export default function useProgression({ playerName, roomId, matchId, phase, API
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/arcade/players/${encodeURIComponent(playerName)}/history`);
+        // The lobby shows the newest three; the rest live on the history page.
+        const res = await fetch(`${API_BASE}/api/arcade/players/${encodeURIComponent(playerName)}/history?limit=3`);
         const data = await res.json();
-        if (!cancelled && data.success) setPastMatches(data.matches || []);
+        if (!cancelled && data.success) {
+          setPastMatches(data.matches || []);
+          setPastMatchesTotal(data.total_matches ?? (data.matches || []).length);
+        }
       } catch {
         // Purely a review convenience — never worth interrupting the lobby for.
       } finally {
@@ -88,7 +93,7 @@ export default function useProgression({ playerName, roomId, matchId, phase, API
   }, [phase, roomId, matchId, playerName, API_BASE]);
 
   return {
-    roundHistory, playerStats, pastMatches, fetchPlayerStats,
+    roundHistory, playerStats, pastMatches, pastMatchesTotal, fetchPlayerStats,
     statsLoaded: !playerName || statsLoadedFor === playerName,
     historyLoaded: !playerName || historyLoadedFor === playerName,
     roundHistoryLoaded: !matchId || roundHistoryLoadedFor === String(matchId),
