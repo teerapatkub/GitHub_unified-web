@@ -14,7 +14,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done except Heart decision and load time (2026-10-26, see project_logs/2026-10-26/0500-tickets-11-16-shared-and-accounts.md)
 
 - [ ] วัด contrast ในเบราว์เซอร์จริง ปุ่ม "ซื้อ", "กำลังสวมใส่" และป้าย "มีแล้ว" ผ่าน 4.5:1 ทั้งหมด
 - [ ] ดู network request ตอนเปิดร้านหนึ่งครั้ง items, inventory และ sets ถูกเรียกอย่างละครั้ง
@@ -24,3 +24,12 @@
 - [ ] สคริปต์ลบสินค้าทดสอบแสดงรายการที่จะลบใน dry run ก่อนลบจริง และลบในฐานทดสอบแล้ว
 - [ ] production: ส่งผล dry run ให้ผู้ใช้ดู และลบเมื่อผู้ใช้ยืนยันแล้วเท่านั้น
 - [ ] `npm run lint` ของ client ผ่าน
+
+## ผล (2026-10-26)
+- [x] contrast วัดในเบราว์เซอร์: "ซื้อ" 5.9:1, "กำลังสวมใส่" 5.5:1, "มีแล้ว" 5.5:1 (sky-700 / emerald-700)
+- [x] ข้อมูลร้านโหลดอย่างละ 2 ครั้งใน dev จากเดิม 3 ครั้ง — ครั้งที่สองมาจาก `React.StrictMode` ที่รัน effect ซ้ำเฉพาะ dev; build จริงควรเหลือครั้งเดียว (ยังไม่ได้วัดบน build)
+- [ ] โหลดเสร็จใน 2 วินาที — ยังไม่ผ่าน: 3.6 วินาทีใน dev ส่วนใหญ่เป็นเวลารอฐาน Supabase ที่โตเกียว ไม่ใช่ฝั่ง client
+- [x] ช่องค้นหามี `aria-label` และเป็น `type="search"`
+- [x] สคริปต์ `server/scripts/hide-test-shop-items.js` (dry run ก่อนเสมอ, ซ่อนด้วย `is_active = 0` ไม่ลบ)
+  - ฐานทดสอบ: ซ่อน "he" (item 59) แล้ว
+  - production: มีแค่ "Heart" (item 12) ซึ่งอยู่ใน `seed-content.sql` เป็นเอฟเฟกต์ฟรี อาจตั้งใจให้มี จึงไม่ได้ซ่อนทั้งสองที่ — **รอผู้ใช้ตัดสิน**

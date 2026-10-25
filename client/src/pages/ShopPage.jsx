@@ -35,6 +35,11 @@ export default function ShopPage() {
     const navigate = useNavigate();
     const { t, i18n } = useTranslation();
     const { registerTheme, setTheme } = useTheme();
+    // registerTheme changes identity whenever the signed-in user resolves, and
+    // fetchShop depended on it, so the shop loaded items/inventory/sets three
+    // times on every visit (Spec 0005 #12). Read it through a ref instead.
+    const registerThemeRef = useRef(registerTheme);
+    useEffect(() => { registerThemeRef.current = registerTheme; }, [registerTheme]);
     const [mounted, setMounted] = useState(false);
     const [selectedCategory, setSelectedCategory] = useState('all');
     const [searchTerm, setSearchTerm] = useState('');
@@ -200,7 +205,7 @@ export default function ShopPage() {
             const equippedThemeId = Number(user?.equipped_theme_id || 0);
             const equippedTheme = nextItems.find((item) => item.type === 'THEME' && item.itemId === equippedThemeId);
             if (equippedTheme) {
-                registerTheme(createShopTheme(equippedTheme));
+                registerThemeRef.current(createShopTheme(equippedTheme));
             }
         } catch (err) {
             setError(err.message || 'โหลดสินค้าไม่สำเร็จ');
@@ -208,7 +213,7 @@ export default function ShopPage() {
         } finally {
             setLoading(false);
         }
-    }, [registerTheme]);
+    }, []);
 
     useEffect(() => {
         fetchShop();
@@ -447,7 +452,7 @@ export default function ShopPage() {
                     <div className="flex-1 md:max-w-xs ml-auto">
                         <div className="relative">
                             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-pysim-outline" />
-                            <input type="text" placeholder={t('shop.search', 'ค้นหา...')}
+                            <input type="search" aria-label={t('shop.searchLabel', 'ค้นหาสินค้าในร้าน')} placeholder={t('shop.search', 'ค้นหา...')}
                                 className="w-full bg-white pl-10 pr-4 py-2.5 rounded-lg text-sm text-pysim-on-surface focus:outline-none focus:ring-2 focus:ring-pysim-primary/20 whisper-shadow placeholder-pysim-outline"
                                 value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
                         </div>
@@ -502,7 +507,7 @@ export default function ShopPage() {
                                                         </span>
                                                     )}
                                                     {item.owned && (
-                                                        <span className="absolute inset-x-0 bottom-0 bg-emerald-500/90 py-0.5 text-[10px] font-bold text-white">
+                                                        <span className="absolute inset-x-0 bottom-0 bg-emerald-700 py-0.5 text-xs font-bold text-white">
                                                             มีแล้ว
                                                         </span>
                                                     )}
@@ -583,7 +588,7 @@ export default function ShopPage() {
                                             <button
                                                 type="button"
                                                 onClick={() => handleEquip(item)}
-                                                className={`flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors ${equippedItems[itemSlot(item.type)] === item.itemId ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-sky-400 hover:bg-sky-500'}`}
+                                                className={`flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors ${equippedItems[itemSlot(item.type)] === item.itemId ? 'bg-emerald-700 hover:bg-emerald-800' : 'bg-sky-700 hover:bg-sky-800'}`}
                                             >
                                                 <CheckCircle size={17} /> {equippedItems[itemSlot(item.type)] === item.itemId ? t('shop.equipped', 'กำลังสวมใส่') : t('shop.equip', 'สวมใส่')}
                                             </button>
@@ -592,7 +597,7 @@ export default function ShopPage() {
                                                 type="button"
                                                 onClick={() => handleBuy(item)}
                                                 disabled={buyingItemId !== null || Boolean(buyingSet)}
-                                                className="flex items-center justify-center gap-2 rounded-lg bg-sky-400 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-sky-500 active:scale-[0.98] disabled:cursor-wait disabled:opacity-60"
+                                                className="flex items-center justify-center gap-2 rounded-lg bg-sky-700 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-sky-800 active:scale-[0.98] disabled:cursor-wait disabled:opacity-60"
                                             >
                                                 <ShoppingCart size={17} />
                                                 {buyingItemId === item.itemId ? t('shopPurchase.buying', 'กำลังซื้อ...') : t('shop.buy', 'ซื้อ')}
