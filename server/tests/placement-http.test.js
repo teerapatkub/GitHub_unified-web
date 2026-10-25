@@ -39,9 +39,13 @@ test('signup placement behind real Auth grades on the server and only moves a le
   // The test reaches the browser without its answer key.
   const loaded = await call('/api/advanced-validation', { user: 'passer' });
   assert.equal(loaded.status, 200);
-  assert.deepEqual(loaded.body, [
+  // Order is shuffled per load (Spec 0005 ticket 03), so compare as sets.
+  const normalised = loaded.body
+    .map(q => ({ ...q, choices: [...q.choices].sort() }))
+    .sort((a, b) => a.id - b.id);
+  assert.deepEqual(normalised, [
     { id: 1, question_text: 'len("abc")', choices: ['2', '3'] },
-    { id: 2, question_text: 'type(1.0)', choices: ['int', 'float'] },
+    { id: 2, question_text: 'type(1.0)', choices: ['float', 'int'] },
     { id: 3, question_text: '2 ** 3', choices: ['6', '8'] },
   ]);
   assert.doesNotMatch(JSON.stringify(loaded.body), /correct_answer/);

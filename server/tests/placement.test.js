@@ -75,8 +75,34 @@ test('placement questions never carry the answer key to the browser', async t =>
   const questions = await response.json();
   assert.equal(questions.length, QUESTIONS.length);
   for (const q of questions) assert.deepEqual(Object.keys(q).sort(), ['choices', 'id', 'question_text']);
-  assert.deepEqual(questions[0].choices, ['2', '3', '4']);
+  assert.deepEqual([...questions.find(q => q.id === 1).choices].sort(), ['2', '3', '4']);
   assert.doesNotMatch(JSON.stringify(questions), /correct_answer/);
+});
+
+// Spec 0005 ticket 03: the seeded test stores every correct answer as the first
+// choice, so "always tap the first one" used to pass and unlock Arcade.
+test('choices and questions come back in a fresh order each load', async t => {
+  const { base, post } = await startApp(t);
+  const firstPicks = [];
+  const questionOrders = new Set();
+  for (let i = 0; i < 20; i += 1) {
+    const questions = await (await fetch(`${base}/advanced-validation`)).json();
+    questionOrders.add(questions.map(q => q.id).join(','));
+    for (const q of questions) {
+      const seeded = QUESTIONS.find(s => s.id === q.id);
+      assert.deepEqual([...q.choices].sort(), [...seeded.choices].sort());
+    }
+    firstPicks.push(questions);
+  }
+  assert.ok(questionOrders.size > 1, 'question order never changed in 20 loads');
+
+  const sheets = firstPicks.map(questions => Object.fromEntries(questions.map(q => [String(q.id), q.choices[0]])));
+  const allFirstAreCorrect = sheets.filter(sheet => QUESTIONS.every(q => sheet[q.id] === q.correct_answer));
+  assert.ok(allFirstAreCorrect.length < sheets.length, 'the first choice was the right one on every load');
+
+  const wrongSheet = sheets.find(sheet => !QUESTIONS.every(q => sheet[q.id] === q.correct_answer));
+  const graded = await (await post('/assessment/submit', { option_id: 13, answers: wrongSheet })).json();
+  assert.ok(graded.score < QUESTIONS.length);
 });
 
 test('a client-reported score, total or level is ignored', async t => {

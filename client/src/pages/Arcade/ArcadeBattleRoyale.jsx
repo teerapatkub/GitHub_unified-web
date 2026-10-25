@@ -691,6 +691,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
               settingsForm={settingsForm}
               setSettingsForm={setSettingsForm}
               onSubmit={handleUpdateSettings}
+              occupiedSeats={roomParticipants.length}
               t={t}
             />
 

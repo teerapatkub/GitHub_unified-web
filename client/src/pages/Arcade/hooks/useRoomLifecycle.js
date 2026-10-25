@@ -30,7 +30,7 @@ export default function useRoomLifecycle({
   const [joinPasswordPrompt, setJoinPasswordPrompt] = useState(null);
   const [inputPassword, setInputPassword] = useState('');
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [settingsForm, setSettingsForm] = useState({ room_name: '', password: '', max_players: 4 });
+  const [settingsForm, setSettingsForm] = useState({ room_name: '', password: '', has_password: false, clear_password: false, max_players: 4 });
 
   // Resume-in-progress-match support: a refresh, crash, or accidental tab
   // close used to lose the match entirely — the player's own
@@ -269,11 +269,14 @@ export default function useRoomLifecycle({
       const res = await fetch(`${API_BASE}/api/arcade/rooms/${currentRoom.room_id}/settings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        // A password is sent only when the host typed one; removing it is its
+        // own explicit flag. An untouched field leaves the room as it was.
         body: JSON.stringify({
           host_name: playerState.name,
           room_name: settingsForm.room_name,
           max_players: settingsForm.max_players,
-          password: settingsForm.password
+          ...(settingsForm.password.trim() ? { password: settingsForm.password } : {}),
+          ...(settingsForm.clear_password ? { clear_password: true } : {})
         })
       });
       const data = await res.json();

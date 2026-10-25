@@ -1,4 +1,15 @@
 const express = require('express');
+const { randomInt } = require('node:crypto');
+
+// Fisher–Yates on a copy.
+const shuffled = (items) => {
+    const out = [...items];
+    for (let i = out.length - 1; i > 0; i -= 1) {
+        const j = randomInt(i + 1);
+        [out[i], out[j]] = [out[j], out[i]];
+    }
+    return out;
+};
 
 // Signup placement: the last survey question asks about prior experience, and
 // the answer either starts a new account at level 1 or opens a short placement
@@ -72,7 +83,10 @@ function createPlacementRouter(db, { evaluateAchievements = async () => [] } = {
         return Boolean(update?.affectedRows);
     };
 
-    // Prompts and choices only - never `correct_answer`.
+    // Prompts and choices only - never `correct_answer`. Shuffled on every load:
+    // the seed stores each right answer as the first choice, so a fixed order
+    // let "tap the first option ten times" pass. Grading compares choice text,
+    // so the order never affects the verdict.
     router.get('/advanced-validation', async (req, res) => {
         res.set('Cache-Control', 'no-store');
         try {
@@ -80,11 +94,11 @@ function createPlacementRouter(db, { evaluateAchievements = async () => [] } = {
             const [choices] = await db.execute(
                 'SELECT question_id, choice_text FROM advanced_validation_choices ORDER BY question_id, id',
             );
-            res.json(questions.map(q => ({
+            res.json(shuffled(questions.map(q => ({
                 id: q.id,
                 question_text: q.question_text,
-                choices: choices.filter(c => Number(c.question_id) === Number(q.id)).map(c => c.choice_text),
-            })));
+                choices: shuffled(choices.filter(c => Number(c.question_id) === Number(q.id)).map(c => c.choice_text)),
+            }))));
         } catch (err) {
             console.error('❌ GET /api/advanced-validation error:', err?.message || err);
             res.status(500).json({ error: 'โหลดแบบวัดระดับไม่สำเร็จ' });

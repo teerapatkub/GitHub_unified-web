@@ -62,9 +62,12 @@ export default function RoomLobbyView({
 
               <button
                 onClick={() => {
+                  // The room never carries its password hash; only whether it has one.
                   setSettingsForm({
                     room_name: currentRoom.room_name,
-                    password: currentRoom.password || '',
+                    password: '',
+                    has_password: Boolean(currentRoom.is_password_protected),
+                    clear_password: false,
                     max_players: currentRoom.max_players
                   });
                   setShowSettingsModal(true);

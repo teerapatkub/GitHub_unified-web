@@ -5628,14 +5628,7 @@ function sanitizeName(raw, maxLen) {
     return String(raw || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, maxLen);
 }
 
-// Clamps a requested max_players to arcadeConfig.maxPlayers' [min, max] bound
-// (shared with the client's "Max Players (2-5)" room-creation label) — used
-// by both room creation and the settings-update endpoint.
-function clampArcadeMaxPlayers(raw, fallback) {
-    const { min, max } = arcadeConfig.maxPlayers;
-    const parsed = parseInt(raw);
-    return Math.min(max, Math.max(min, Number.isFinite(parsed) ? parsed : fallback));
-}
+const { clampArcadeMaxPlayers } = require('./arcade/lobby-api');
 
 
 // Arcade's code judge: quality is always measured locally (ADR 0007); the local
@@ -5833,31 +5826,7 @@ app.post('/api/arcade/rooms/create', async (req, res) => {
 const { installArcadeRoomReads, publicParticipants } = require('./arcade/room-api');
 installArcadeRoomReads(app, db);
 
-// 5. Host updates room settings
-app.post('/api/arcade/rooms/:id/settings', async (req, res) => {
-    try {
-        const roomId = req.params.id;
-        const { host_name, room_name, max_players, password } = req.body;
-
-        const [rooms] = await db.query(`SELECT * FROM arcade_rooms WHERE room_id = ?`, [roomId]);
-        if (!rooms || rooms.length === 0) return res.status(404).json({ error: 'ไม่พบห้อง' });
-        if (rooms[0].host_name !== host_name) return res.status(403).json({ error: 'สิทธิ์เฉพาะหัวห้องเท่านั้น' });
-
-        const newName = room_name ? sanitizeName(room_name, 60) || rooms[0].room_name : rooms[0].room_name;
-        const newMax = max_players ? clampArcadeMaxPlayers(max_players, rooms[0].max_players) : rooms[0].max_players;
-        const newPwd = password !== undefined ? (password ? await bcrypt.hash(password.trim(), 10) : null) : rooms[0].password;
-
-        await db.query(
-            `UPDATE arcade_rooms SET room_name = ?, max_players = ?, password = ?, updated_at = CURRENT_TIMESTAMP WHERE room_id = ?`,
-            [newName, newMax, newPwd, roomId]
-        );
-
-        res.json({ success: true, message: 'อัปเดตการตั้งค่าห้องสำเร็จ' });
-    } catch (err) {
-        console.error('❌ POST /api/arcade/rooms/:id/settings error:', err.message);
-        res.status(500).json({ error: err.message });
-    }
-});
+// 5. Host updates room settings: arcade/lobby-api.js
 
 const { installArcadeRoomMembership, leaveArcadeRoom } = require('./arcade/room-membership');
 installArcadeRoomMembership(app, db);

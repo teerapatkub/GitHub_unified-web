@@ -54,7 +54,8 @@ function installArcadeRoomReads(app, db) {
         `SELECT * FROM arcade_participants WHERE room_id = ? ORDER BY joined_at ASC`,
         [roomId]
       );
-      const { password: _pwd, server_now: serverNow, previous_match_ended_at: previousMatchEndedAt, ...roomSafe } = rooms[0];
+      const { password: storedPassword, server_now: serverNow, previous_match_ended_at: previousMatchEndedAt, ...roomSafe } = rooms[0];
+      roomSafe.is_password_protected = Boolean(storedPassword);
       const lobbyParticipants = roomSafe.status === 'WAITING' && roomSafe.phase === 'LOBBY'
         ? rematchRoster(roomSafe, { ended_at: previousMatchEndedAt }, participants)
         : participants;

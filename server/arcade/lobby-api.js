@@ -1,6 +1,16 @@
 const bcrypt = require('bcryptjs');
+const arcadeConfig = require('../../shared/arcadeConfig.json');
 const { rematchRoster } = require('./match-api');
 const { publicParticipants } = require('./room-api');
+
+// Clamps a requested max_players to arcadeConfig.maxPlayers' [min, max] bound
+// (shared with the client's "Max Players (2-5)" room-creation label) — used
+// by both room creation and the settings-update endpoint.
+function clampArcadeMaxPlayers(raw, fallback) {
+  const { min, max } = arcadeConfig.maxPlayers;
+  const parsed = parseInt(raw);
+  return Math.min(max, Math.max(min, Number.isFinite(parsed) ? parsed : fallback));
+}
 
 async function previousMatchFor(executor, room) {
   if (!room.current_match_id) return null;
@@ -103,6 +113,43 @@ function installArcadeLobbyRoutes(app, db, sanitizeName) {
       if (connection) connection.release();
     }
   });
+
+  // Host updates room settings. The password is three-state on purpose: the
+  // client never has the stored hash to echo back, so an omitted or empty
+  // password means "keep it", and only clear_password makes the room public.
+  // Treating "" as "remove" is how saving a rename used to unlock private rooms.
+  app.post('/api/arcade/rooms/:id/settings', async (req, res) => {
+    try {
+      const { host_name: hostName, room_name: roomName, max_players: maxPlayers, password, clear_password: clearPassword } = req.body || {};
+      const [[room]] = await db.query('SELECT * FROM arcade_rooms WHERE room_id = ?', [req.params.id]);
+      if (!room) return res.status(404).json({ error: 'ไม่พบห้อง' });
+      if (room.host_name !== hostName) return res.status(403).json({ error: 'สิทธิ์เฉพาะหัวห้องเท่านั้น' });
+
+      const newName = roomName ? sanitizeName(roomName, 60) || room.room_name : room.room_name;
+      const newMax = maxPlayers ? clampArcadeMaxPlayers(maxPlayers, room.max_players) : room.max_players;
+      if (newMax < room.max_players) {
+        const [participants] = await db.query('SELECT * FROM arcade_participants WHERE room_id = ?', [room.room_id]);
+        const occupied = rematchRoster(room, await previousMatchFor(db, room), participants).length;
+        if (newMax < occupied) {
+          return res.status(409).json({ error: `ตอนนี้ในห้องมี ${occupied} คน ตั้งจำนวนผู้เล่นสูงสุดต่ำกว่านี้ไม่ได้` });
+        }
+      }
+
+      const newPassword = typeof password === 'string' && password.trim() ? password.trim() : null;
+      let storedPassword = room.password;
+      if (newPassword) storedPassword = await bcrypt.hash(newPassword, 10);
+      else if (clearPassword === true) storedPassword = null;
+
+      await db.query(
+        'UPDATE arcade_rooms SET room_name = ?, max_players = ?, password = ?, updated_at = CURRENT_TIMESTAMP WHERE room_id = ?',
+        [newName, newMax, storedPassword, room.room_id]
+      );
+      res.json({ success: true, message: 'อัปเดตการตั้งค่าห้องสำเร็จ', is_password_protected: Boolean(storedPassword) });
+    } catch (err) {
+      console.error('❌ POST /api/arcade/rooms/:id/settings error:', err.message);
+      res.status(500).json({ error: 'อัปเดตการตั้งค่าห้องไม่สำเร็จ กรุณาลองอีกครั้ง' });
+    }
+  });
 }
 
-module.exports = { installArcadeLobbyRoutes };
+module.exports = { installArcadeLobbyRoutes, clampArcadeMaxPlayers };
