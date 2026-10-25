@@ -147,7 +147,7 @@ export default function LearningPage({ onNavigate, user }) {
     <div className="mode-entry mode-entry--learn min-h-screen bg-pysim-surface pb-20">
       <HeroSection />
 
-      <main className="mx-auto flex max-w-7xl flex-col gap-8 px-4 py-8 sm:px-6 md:flex-row">
+      <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 py-8 sm:px-6 md:flex-row">
         <aside className="w-full space-y-8 md:w-72 md:shrink-0">
           <div className="mode-entry-card space-y-6 rounded-xl border border-slate-200 bg-pysim-surface-low p-6">
             <div className="flex flex-col items-center text-center">
@@ -287,7 +287,7 @@ export default function LearningPage({ onNavigate, user }) {
             })}
           </Motion.div>
         </section>
-      </main>
+      </div>
 
       {showCompleteModal && (
         <div

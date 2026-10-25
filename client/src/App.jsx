@@ -18,6 +18,7 @@ import { API_BASE } from './config/api.js';
 import { accessForRoute, leavesLoginPage, loginUrlFor, returnDestination } from './auth/route-access.js';
 import { createAuthRestorer } from './auth/restore-state.js';
 import SkeletonLoading from './components/ui/Skeleton.jsx';
+import { titleForPath } from './config/routeTitles.js';
 
 // Route components load only when visited, keeping the initial bundle small.
 const LearningPage = lazy(() => import('./pages/LearningPage'));
@@ -125,10 +126,21 @@ function SupabaseConnectionTest() {
 }
 
 
+// A <main> or a <div> with the same box, picked per route.
+function PageArea({ as = 'main', ...props }) {
+  return as === 'main' ? <main {...props} /> : <div {...props} />;
+}
+
 function AppContent() {
   const navigate = useNavigate();
   const location = useLocation();
   useModeTransition(location.pathname);
+  const { i18n: appI18n } = useTranslation();
+
+  // One title per page, in the reader's language (Spec 0005 #11).
+  useEffect(() => {
+    document.title = titleForPath(location.pathname, appI18n.language === 'en' ? 'en' : 'th');
+  }, [location.pathname, appI18n.language]);
 
   // Cached cosmetics are presentation only; access starts closed until /auth/me verifies it.
   const [user, setUser] = useState(null);
@@ -408,7 +420,9 @@ function AppContent() {
           <div className="mode-entry mode-entry-shortcuts"><BottomNavBarSimple /></div>
         )}
 
-        <div className={isAdminRoute
+        {/* The page area is the document's one <main> landmark (audit P2 #10);
+            only 2 of 11 student pages had one. Admin pages carry their own. */}
+        <PageArea as={isAdminRoute ? 'div' : 'main'} id={isAdminRoute ? undefined : 'main-content'} className={isAdminRoute
           ? 'min-h-screen bg-pysim-surface text-pysim-on-surface'
           : isSimulationMode || hideNavbar
           ? 'min-h-screen'
@@ -528,7 +542,7 @@ function AppContent() {
                 />
               </Routes>
             </Suspense>
-        </div>
+        </PageArea>
 
       </TheInfiniteGrid>
     </div>

@@ -45,13 +45,6 @@ export default function ArcadeHistoryPage({ user }) {
     }
   }, [playerName, difficulty, pace]);
 
-  // Restored on the way out: other pages do not set a title yet (ticket 11).
-  useEffect(() => {
-    const previous = document.title;
-    document.title = `${t('matchHistoryPageTitle')} · PyArena`;
-    return () => { document.title = previous; };
-  }, [t]);
-
   useEffect(() => {
     // Deferred so the state updates in load() run after the effect, not inside it.
     const timer = setTimeout(() => { load(null); }, 0);
@@ -69,7 +62,7 @@ export default function ArcadeHistoryPage({ user }) {
   ];
 
   return (
-    <main className="max-w-4xl mx-auto px-4 py-6 sm:px-6 space-y-5">
+    <div className="max-w-4xl mx-auto px-4 py-6 sm:px-6 space-y-5">
       <Link to="/matchmaking" className="inline-flex items-center gap-1.5 min-h-[40px] text-sm font-bold text-slate-700 hover:text-slate-900">
         <ArrowLeft className="h-4 w-4" aria-hidden="true" /> {t('backToArcadeLobby')}
       </Link>
@@ -136,6 +129,6 @@ export default function ArcadeHistoryPage({ user }) {
           </button>
         </div>
       )}
-    </main>
+    </div>
   );
 }

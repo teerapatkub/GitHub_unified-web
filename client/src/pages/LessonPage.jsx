@@ -422,7 +422,7 @@ export default function LessonPage({
 
   return (
     <div className="min-h-screen bg-pysim-surface text-pysim-on-surface">
-      <main className="mx-auto mt-10 max-w-4xl p-6">
+      <div className="mx-auto mt-10 max-w-4xl p-6">
         <div className="mb-6 flex items-center gap-4">
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-pysim-surface-container">
             <div
@@ -704,7 +704,7 @@ export default function LessonPage({
     </button>
   </div>
 </div>
-      </main>
+      </div>
 
       {lessonTutorial ? (
         <>
