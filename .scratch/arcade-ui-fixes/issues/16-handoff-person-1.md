@@ -16,8 +16,8 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done (2026-10-26, see project_logs/2026-10-26/0500-tickets-11-16-shared-and-accounts.md)
 
-- [ ] `docs/handoff-to-person-1.md` มีหัวข้อ Spec 0005 ครบทุกข้อข้างบน
-- [ ] ทุกข้อมีอาการ วิธีทำให้เกิดซ้ำ แหล่งหลักฐาน (user test หรือ audit) และข้อเสนอวิธีแก้
-- [ ] ticket นี้ไม่แก้ไฟล์ของ Person 1 เลย
+- [x] `docs/handoff-to-person-1.md` มีหัวข้อ Spec 0005 ครบทุกข้อข้างบน
+- [x] ทุกข้อมีอาการ วิธีทำให้เกิดซ้ำ แหล่งหลักฐาน (user test หรือ audit) และข้อเสนอวิธีแก้
+- [x] ticket นี้ไม่แก้ไฟล์ของ Person 1 เลย

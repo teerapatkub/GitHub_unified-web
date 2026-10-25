@@ -15,10 +15,10 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done except Person 1 headings (2026-10-26, see project_logs/2026-10-26/0500-tickets-11-16-shared-and-accounts.md)
 
-- [ ] ทดสอบผ่าน dev server: สลับเป็น EN แล้วรีเฟรช ยังเป็น EN และ `document.documentElement.lang` เป็น `en` พอสลับกลับเป็นไทยต้องเป็น `th`
-- [ ] ผู้ใช้ใหม่ที่ยังไม่เคยเลือกภาษาได้ภาษาไทย
-- [ ] เปิดทั้ง 11 หน้าที่ audit แล้วชื่อแท็บไม่ซ้ำกันเลย และทุกหน้ามี `main` 1 อันกับ `h1` 1 อัน (ตรวจด้วยสคริปต์ audit-page เดิม)
-- [ ] บันทึกใน `docs/handoff-to-person-1.md` ว่าแตะไฟล์กลางไฟล์ไหนบ้าง
-- [ ] `npm run lint` และ `npm test` ของ client ผ่าน
+- [x] ทดสอบผ่าน dev server: สลับเป็น EN แล้วรีเฟรช ยังเป็น EN และ `document.documentElement.lang` เป็น `en` พอสลับกลับเป็นไทยต้องเป็น `th`
+- [x] ผู้ใช้ใหม่ที่ยังไม่เคยเลือกภาษาได้ภาษาไทย (ทดสอบด้วยเบราว์เซอร์ที่ตั้งภาษา en-US)
+- [ ] เปิดทั้ง 11 หน้าที่ audit แล้วชื่อแท็บไม่ซ้ำกันเลย และทุกหน้ามี `main` 1 อันกับ `h1` 1 อัน — ชื่อแท็บและ `main` ผ่านครบ 12 หน้า; `h1`: `/learn` มี 2 และ `/lesson/1` มี 0 (ไฟล์ของ Person 1 ส่ง handoff แล้ว) ส่วนที่เหลือมี 1
+- [x] บันทึกใน `docs/handoff-to-person-1.md` ว่าแตะไฟล์กลางไฟล์ไหนบ้าง
+- [x] `npm run lint` และ `npm test` ของ client ผ่าน
