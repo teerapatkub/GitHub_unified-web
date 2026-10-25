@@ -13,15 +13,15 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done (2026-10-26, see project_logs/2026-10-26/ — Arcade phase 1 log)
 
-- [ ] มี component popup กลางตัวเดียว และ popup ของ Arcade ทั้ง 3 ตัวใช้ตัวนี้
-- [ ] ปุ่มเลือกแบบกลุ่มมี `aria-pressed` (หรือเป็น radio group) และ label ใช้ `htmlFor`
-- [ ] ทดสอบในเบราว์เซอร์จริงกับ popup ทั้ง 3 ตัว:
+- [x] มี component popup กลางตัวเดียว และ popup ของ Arcade ทั้ง 3 ตัวใช้ตัวนี้
+- [x] ปุ่มเลือกแบบกลุ่มมี `aria-pressed` (หรือเป็น radio group) และ label ใช้ `htmlFor`
+- [x] ทดสอบในเบราว์เซอร์จริงกับ popup ทั้ง 3 ตัว:
   - เปิดด้วยคีย์บอร์ดได้
   - Tab ไม่หลุดออกนอก popup
   - Escape ปิดได้
   - focus กลับไปที่ปุ่มเดิม
-- [ ] accessibility tree เห็น dialog ที่มีชื่อ และปุ่มที่เลือกอยู่มีสถานะ pressed
-- [ ] สร้างห้องและบันทึกตั้งค่าผ่าน popup ใหม่ได้เหมือนเดิม
-- [ ] `npm run lint` ของ client ผ่าน
+- [x] accessibility tree เห็น dialog ที่มีชื่อ และปุ่มที่เลือกอยู่มีสถานะ pressed
+- [x] สร้างห้องและบันทึกตั้งค่าผ่าน popup ใหม่ได้เหมือนเดิม
+- [x] `npm run lint` ของ client ผ่าน

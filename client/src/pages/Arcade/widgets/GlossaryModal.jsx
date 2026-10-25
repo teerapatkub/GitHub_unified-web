@@ -1,29 +1,26 @@
-import { motion as Motion } from 'framer-motion';
+import { useId } from 'react';
 import { HelpCircle } from 'lucide-react';
+import Dialog from '../../../components/ui/Dialog.jsx';
 
-// No AnimatePresence — see CreateRoomModal.jsx for why (its AnimatePresence
-// exit was found to sometimes never unmount, leaving an invisible
-// click-blocking backdrop). Same fix applied here preemptively since this
-// modal shares the identical structure.
+// Built on the shared Dialog (Escape closes it, focus returns to the "?" button).
+// Covers only the content area, not the header, so it stays `absolute`.
 export default function GlossaryModal({ show, onClose, items, t }) {
-  if (!show) return null;
+  const id = useId();
   return (
-        <Motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6"
-        >
-          <Motion.div
-            initial={{ scale: 0.95, y: 15 }}
-            animate={{ scale: 1, y: 0 }}
-            className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full h-[80vh] flex flex-col border border-slate-200 overflow-hidden"
+          <Dialog
+            open={show}
+            onClose={onClose}
+            titleId={`${id}-title`}
+            overlayClassName="absolute inset-0 z-50 bg-slate-900/40 backdrop-blur-sm"
+            panelMotion={{ initial: { scale: 0.95, y: 15 }, animate: { scale: 1, y: 0 } }}
+            panelClassName="bg-white rounded-3xl shadow-2xl max-w-4xl w-full h-[80vh] flex flex-col border border-slate-200 overflow-hidden"
           >
             <div className="flex justify-between items-center p-6 border-b border-slate-200 bg-slate-50">
               <div className="flex items-center space-x-2 text-rose-500 font-black">
                 <HelpCircle className="h-5 w-5" />
-                <h2 className="text-xl uppercase tracking-widest font-mono">{t('itemGlossary')}</h2>
+                <h2 id={`${id}-title`} className="text-xl uppercase tracking-widest font-mono">{t('itemGlossary')}</h2>
               </div>
-              <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-3xl font-light">&times;</button>
+              <button type="button" onClick={onClose} aria-label={t('closeDialogLabel')} className="text-slate-500 hover:text-slate-700 text-3xl font-light w-10 h-10 rounded-xl">&times;</button>
             </div>
 
             {/* flex-1 min-h-0 states outright what this needs to do: own the
@@ -53,7 +50,6 @@ export default function GlossaryModal({ show, onClose, items, t }) {
                 </div>
               ))}
             </div>
-          </Motion.div>
-        </Motion.div>
+          </Dialog>
   );
 }
