@@ -1,5 +1,6 @@
 const { defineMigration } = require('./index');
 const {
+  ACHIEVEMENT_EASY_DIFFICULTY_VERSION,
   ARCADE_ACHIEVEMENT_REWARDS_VERSION,
   ARCADE_QUALITY_BREAKDOWN_VERSION,
   APPLICATION_SCHEMA_VERSION,
@@ -63,7 +64,15 @@ const createArcadeAchievementRewardsMigration = (up, signature) => defineMigrati
   up,
 });
 
+const createAchievementEasyDifficultyMigration = (up, signature) => defineMigration({
+  version: ACHIEVEMENT_EASY_DIFFICULTY_VERSION,
+  name: 'achievements_easy_difficulty',
+  signature: signatureFor(up, signature),
+  up,
+});
+
 module.exports = {
+  createAchievementEasyDifficultyMigration,
   createArcadeAchievementRewardsMigration,
   createArcadeQualityBreakdownMigration,
   createApplicationSchemaMigration,

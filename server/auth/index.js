@@ -216,7 +216,7 @@ function installAuth(app, db, admin, env = process.env, options = {}) {
       const { error } = await publicClient().auth.resetPasswordForEmail(email, { redirectTo: redirect(req, 'recovery') });
       if (error) throw new Error('EMAIL_DELIVERY');
     }
-    return res.json({ message: 'หากบัญชีนี้เชื่อมระบบใหม่แล้ว ระบบจะส่งลิงก์ให้ หากยังไม่เคยเชื่อมและจำรหัสผ่านเดิมไม่ได้ กรุณาติดต่อผู้ดูแล' });
+    return res.json({ message: 'ถ้ามีบัญชีที่ใช้อีเมลนี้ เราส่งลิงก์ตั้งรหัสผ่านใหม่ไปให้แล้ว กรุณาเช็กกล่องจดหมาย (และโฟลเดอร์สแปม) ถ้าไม่ได้รับภายใน 10 นาที ให้ติดต่อผู้ดูแล' });
   }));
 
   const supabaseUserFor = async (req) => {

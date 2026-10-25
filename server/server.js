@@ -2475,7 +2475,7 @@ app.get(['/achievements/:userId', '/api/achievements/:userId'], async (req, res)
         LEFT JOIN user_achievements ua_me ON a.achievement_id = ua_me.achievement_id AND ua_me.user_id = ?
         LEFT JOIN shop_items ri ON ri.item_id = a.reward_item_id
         WHERE a.is_active = 1
-        ORDER BY CASE a.difficulty WHEN 'Medium' THEN 1 WHEN 'Hard' THEN 2 WHEN 'Very Hard' THEN 3 ELSE 4 END ASC, a.achievement_id ASC
+        ORDER BY CASE a.difficulty WHEN 'Easy' THEN 0 WHEN 'Medium' THEN 1 WHEN 'Hard' THEN 2 WHEN 'Very Hard' THEN 3 ELSE 4 END ASC, a.achievement_id ASC
     `;
     try {
         const [rows] = await db.execute(sql, [userId]);
@@ -7083,6 +7083,7 @@ const {
   createTutorialsSeenMigration,
   createArcadeQualityBreakdownMigration,
   createArcadeAchievementRewardsMigration,
+  createAchievementEasyDifficultyMigration,
 } = require('./migrations/definitions');
 const { applyDataApiSecurity } = require('./security/data-api-security');
 const authProvisioningSchemaSql = fs.readFileSync(
@@ -7148,6 +7149,11 @@ const applicationMigrations = [
   createArcadeAchievementRewardsMigration(
     () => require('./arcade/migrate-achievement-rewards').migrateArcadeAchievementRewards(db),
     require('./arcade/migrate-achievement-rewards').migrateArcadeAchievementRewards.toString(),
+  ),
+  // First-step achievements labelled Easy (Spec 0005 #15, U11).
+  createAchievementEasyDifficultyMigration(
+    () => require('./migrate-achievement-difficulty').migrateAchievementDifficulty(db),
+    require('fs').readFileSync(require.resolve('./migrate-achievement-difficulty'), 'utf8'),
   ),
 ];
 

@@ -83,8 +83,8 @@ export const appTours = {
         lumi: 'neutral',
         title: { th: 'โปรไฟล์ของคุณ', en: 'Your profile' },
         body: {
-          th: 'กดที่รูปเพื่อเปิดเมนู ดูโปรไฟล์ ความสำเร็จที่ปลดล็อก และออกจากระบบ ตัวเลข LV. คือเลเวลของคุณ',
-          en: 'Tap your picture to open the menu: your profile, the achievements you unlocked, and log out. LV. is your level.',
+          th: 'กดที่รูปเพื่อเปิดเมนู ดูโปรไฟล์ ความสำเร็จที่ปลดล็อก และออกจากระบบ เลเวลของคุณดูได้ในหน้าโปรไฟล์',
+          en: 'Tap your picture to open the menu: your profile, the achievements you unlocked, and log out. Your level is on your profile page.',
         },
       },
       {

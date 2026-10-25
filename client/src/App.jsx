@@ -276,10 +276,17 @@ function AppContent() {
     prewarmTasks();
 
     const interval = setInterval(() => {
-      refreshUserProfile();
-    }, 15000);
+      if (!document.hidden) refreshUserProfile();
+    }, 60000);
 
-    const onFocus = () => refreshUserProfile();
+    // Coming back to the tab is when another device may have changed coins;
+    // at most once every 10 s so focus churn does not become a poll.
+    let lastFocusRefresh = Date.now();
+    const onFocus = () => {
+      if (Date.now() - lastFocusRefresh < 10000) return;
+      lastFocusRefresh = Date.now();
+      refreshUserProfile();
+    };
     window.addEventListener('focus', onFocus);
 
     return () => {

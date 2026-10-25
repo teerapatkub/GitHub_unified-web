@@ -6,6 +6,7 @@ import { API_BASE } from '../config/api.js';
 import { getSupabaseClient } from '../supabaseClient';
 import { authRequest, acceptEmailSession, completeOAuthSignIn, currentPlayer, initializeAuth, isOAuthReturn, isRecovery, signOut, startGoogleSignIn } from '../auth/session';
 import { toast } from '../components/ui/toast.js';
+import { fetchWhenServerReady } from '../config/startupRetry.js';
 
 
 // ======================================================
@@ -232,7 +233,7 @@ export default function LoginPage({ onLoginSuccess, sessionUser }) {
 
   useEffect(() => {
     let isMounted = true;
-    fetch(`${API_BASE}/api/config/google`)
+    fetchWhenServerReady(`${API_BASE}/api/config/google`)
       .then(async (res) => {
         const data = await res.json().catch(() => ({}));
         if (isMounted) setGoogleEnabled(res.ok && Boolean(data.enabled));

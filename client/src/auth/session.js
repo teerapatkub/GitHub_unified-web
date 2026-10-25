@@ -2,6 +2,7 @@ import axios from 'axios';
 import { API_BASE } from '../config/api.js';
 import { getSupabaseClient } from '../supabaseClient.js';
 import { returnPath } from './return-path.js';
+import { fetchWhenServerReady } from '../config/startupRetry.js';
 
 const originalFetch = window.fetch.bind(window);
 const apiOrigin = new URL(API_BASE || window.location.origin, window.location.origin).origin;
@@ -138,7 +139,7 @@ export async function currentPlayer() {
     storePendingSignOut(failedProviders);
     return null;
   }
-  const response = await fetch(`${API_BASE}/api/auth/me`);
+  const response = await fetchWhenServerReady(`${API_BASE}/api/auth/me`);
   if (response.status === 401) return null;
   if (!response.ok) throw new Error('ตรวจสอบการเข้าสู่ระบบไม่ได้ กรุณาลองอีกครั้ง');
   return response.json();
