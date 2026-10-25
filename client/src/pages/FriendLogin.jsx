@@ -5,6 +5,7 @@ import SkeletonLoading from "../components/ui/Skeleton.jsx";
 import { API_BASE } from '../config/api.js';
 import { getSupabaseClient } from '../supabaseClient';
 import { authRequest, acceptEmailSession, completeOAuthSignIn, currentPlayer, initializeAuth, isOAuthReturn, isRecovery, signOut, startGoogleSignIn } from '../auth/session';
+import { toast } from '../components/ui/toast.js';
 
 
 // ======================================================
@@ -335,7 +336,7 @@ export default function LoginPage({ onLoginSuccess, sessionUser }) {
         setAssessmentQuestions(data);
         setStep("assessment");
       } else {
-        alert("ไม่พบข้อสอบในระบบ");
+        toast("ยังไม่มีแบบวัดระดับในระบบ กรุณาลองใหม่ภายหลัง");
       }
     } catch {
       setError("เชื่อมต่อ Server ไม่ได้");
@@ -366,7 +367,7 @@ export default function LoginPage({ onLoginSuccess, sessionUser }) {
       const data = await postPlacement("beginner", {});
       onLoginSuccess({ ...loggedInUser, level: data.user?.level ?? level });
     } catch (err) {
-      alert(err.message);
+      toast(err.message || "บันทึกระดับไม่สำเร็จ ลองอีกครั้ง");
     }
   };
 
@@ -380,7 +381,7 @@ export default function LoginPage({ onLoginSuccess, sessionUser }) {
       if (data.passed) onLoginSuccess({ ...loggedInUser, level: data.user.level });
       else setAssessmentResult("failed");
     } catch (err) {
-      alert(err.message);
+      toast(err.message || "บันทึกระดับไม่สำเร็จ ลองอีกครั้ง");
     } finally {
       setLoading(false);
     }

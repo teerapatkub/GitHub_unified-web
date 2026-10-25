@@ -6,11 +6,6 @@ import { assetUrl } from '../config/api.js';
 import { requestJson } from '../config/api-client.js';
 import SkeletonLoading from '../components/ui/Skeleton.jsx';
 
-const DIFFICULTY_TH = {
-    Medium: 'ปานกลาง',
-    Hard: 'ยาก',
-    'Very Hard': 'ยากมาก',
-};
 
 export default function Achievements({ user }) {
     const navigate = useNavigate();
@@ -25,7 +20,7 @@ export default function Achievements({ user }) {
     const userId = Number(user?.user_id || 0);
 
     const load = useCallback(async () => {
-        if (!userId) { setError('กรุณาเข้าสู่ระบบเพื่อดูความสำเร็จ'); setLoading(false); return; }
+        if (!userId) { setError(t('achievements.signInToView', 'กรุณาเข้าสู่ระบบเพื่อดูความสำเร็จ')); setLoading(false); return; }
         setLoading(true);
         setError('');
         try {
@@ -33,11 +28,11 @@ export default function Achievements({ user }) {
             if (!Array.isArray(data)) throw new Error('Invalid achievements response');
             setRows(data);
         } catch (err) {
-            setError(err.kind === 'unauthorized' ? 'กรุณาเข้าสู่ระบบอีกครั้ง' : 'โหลดความสำเร็จไม่สำเร็จ กรุณาลองใหม่');
+            setError(err.kind === 'unauthorized' ? t('achievements.signInAgain', 'กรุณาเข้าสู่ระบบอีกครั้ง') : t('achievements.loadFailed', 'โหลดความสำเร็จไม่สำเร็จ กรุณาลองใหม่'));
         } finally {
             setLoading(false);
         }
-    }, [userId]);
+    }, [userId, t]);
 
     useEffect(() => { load(); }, [load]);
 
@@ -63,7 +58,7 @@ export default function Achievements({ user }) {
                 </div>
 
                 {loading ? (
-                    <SkeletonLoading variant="dashboard" label="กำลังโหลดความสำเร็จ..." />
+                    <SkeletonLoading variant="dashboard" label={t('achievements.loading', 'กำลังโหลดความสำเร็จ...')} />
                 ) : error ? (
                     <div className="mx-auto max-w-md rounded-xl bg-white p-8 text-center whisper-shadow">
                         <p className="text-sm font-bold text-red-600">{error}</p>
@@ -73,15 +68,15 @@ export default function Achievements({ user }) {
                         <div className={`grid grid-cols-3 gap-4 mb-8 transition-all duration-700 delay-100 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
                             <div className="bg-white rounded-xl whisper-shadow p-5 text-center">
                                 <p className="text-3xl font-black text-pysim-primary">{unlockedCount}</p>
-                                <p className="text-xs font-bold text-pysim-outline uppercase tracking-wider mt-1">ปลดล็อกแล้ว</p>
+                                <p className="text-xs font-bold text-pysim-outline uppercase tracking-wider mt-1">{t('achievements.unlocked', 'ปลดล็อกแล้ว')}</p>
                             </div>
                             <div className="bg-white rounded-xl whisper-shadow p-5 text-center">
                                 <p className="text-3xl font-black text-pysim-on-surface">{rows.length}</p>
-                                <p className="text-xs font-bold text-pysim-outline uppercase tracking-wider mt-1">ทั้งหมด</p>
+                                <p className="text-xs font-bold text-pysim-outline uppercase tracking-wider mt-1">{t('achievements.total', 'ทั้งหมด')}</p>
                             </div>
                             <div className="bg-white rounded-xl whisper-shadow p-5 text-center">
                                 <p className="text-3xl font-black text-pysim-secondary">{percent}%</p>
-                                <p className="text-xs font-bold text-pysim-outline uppercase tracking-wider mt-1">ความคืบหน้า</p>
+                                <p className="text-xs font-bold text-pysim-outline uppercase tracking-wider mt-1">{t('achievements.progress', 'ความคืบหน้า')}</p>
                             </div>
                         </div>
 
@@ -103,7 +98,7 @@ export default function Achievements({ user }) {
                                                 <h3 className="text-lg font-bold text-pysim-on-surface">{ach.name}</h3>
                                                 {unlocked && <CheckCircle2 size={16} className="text-emerald-500" />}
                                                 <span className="rounded-full bg-pysim-surface-low px-2 py-0.5 text-[10px] font-bold text-pysim-outline">
-                                                    {DIFFICULTY_TH[ach.difficulty] || ach.difficulty}
+                                                    {t(`achievements.difficulty.${ach.difficulty}`, ach.difficulty)}
                                                 </span>
                                             </div>
                                             <p className="text-sm text-pysim-on-surface-variant">{ach.description}</p>
@@ -116,14 +111,14 @@ export default function Achievements({ user }) {
                                                 {ach.reward_item_url && (
                                                     <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-2 py-1 text-[11px] font-bold text-violet-700">
                                                         <img src={assetUrl(ach.reward_item_url)} alt="" className="h-5 w-5 rounded-full object-cover" />
-                                                        รูปพิเศษ: {ach.reward_item_name}
+                                                        {t('achievements.specialPicture', 'รูปพิเศษ')}: {ach.reward_item_name}
                                                     </span>
                                                 )}
                                             </div>
                                         </div>
 
                                         <span className={`text-sm font-bold flex-shrink-0 ${unlocked ? 'text-emerald-600' : 'text-pysim-outline'}`}>
-                                            {unlocked ? 'สำเร็จ' : 'ยังไม่ปลดล็อก'}
+                                            {unlocked ? t('achievements.done', 'สำเร็จ') : t('achievements.locked', 'ยังไม่ปลดล็อก')}
                                         </span>
                                     </div>
                                 );

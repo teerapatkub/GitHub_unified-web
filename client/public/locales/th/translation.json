@@ -127,9 +127,24 @@
   },
   "achievements": {
     "title": "ความสำเร็จของคุณ",
-    "locked": "ยังไม่ปลดล็อค",
-    "back": "กลับสู่หน้าหลัก",
-    "progress": "ความคืบหน้า"
+    "locked": "ยังไม่ปลดล็อก",
+    "back": "กลับหน้าหลัก",
+    "progress": "ความคืบหน้า",
+    "subtitle": "เส้นทางความสำเร็จของคุณ",
+    "signInToView": "กรุณาเข้าสู่ระบบเพื่อดูความสำเร็จ",
+    "signInAgain": "กรุณาเข้าสู่ระบบอีกครั้ง",
+    "loadFailed": "โหลดความสำเร็จไม่สำเร็จ กรุณาลองใหม่",
+    "loading": "กำลังโหลดความสำเร็จ...",
+    "unlocked": "ปลดล็อกแล้ว",
+    "total": "ทั้งหมด",
+    "specialPicture": "รูปพิเศษ",
+    "done": "สำเร็จ",
+    "difficulty": {
+      "Easy": "ง่าย",
+      "Medium": "ปานกลาง",
+      "Hard": "ยาก",
+      "Very Hard": "ยากมาก"
+    }
   },
   "arena": {
     "backToHub": "กลับไปหน้าหลัก",
@@ -187,5 +202,199 @@
     "comments": "ความคิดเห็น",
     "writeComment": "เขียนความคิดเห็น...",
     "commentPost": "ส่ง"
+  },
+  "shop": {
+    "title": "ร้านค้า",
+    "subtitle": "ปรับแต่งประสบการณ์ของคุณ",
+    "search": "ค้นหา...",
+    "searchLabel": "ค้นหาสินค้าในร้าน",
+    "categories": {
+      "all": "ทั้งหมด",
+      "themes": "ธีม",
+      "avatars": "อวาตาร์",
+      "effects": "เอฟเฟกต์"
+    },
+    "loadFailed": "โหลดสินค้าไม่สำเร็จ",
+    "signInToBuy": "กรุณาเข้าสู่ระบบก่อนซื้อสินค้า",
+    "buyFailed": "ซื้อสินค้าไม่สำเร็จ",
+    "buySetFailed": "ซื้อเซ็ตไม่สำเร็จ",
+    "connectionFailed": "เชื่อมต่อร้านค้าไม่สำเร็จ",
+    "equipFailed": "สวมใส่ไม่สำเร็จ ลองอีกครั้ง",
+    "unequipFailed": "ถอดออกไม่สำเร็จ ลองอีกครั้ง",
+    "setsTitle": "เซ็ตธีม",
+    "setsSubtitle": "ซื้อยกเซ็ตถูกกว่าเลือกทีละชิ้น",
+    "save": "ประหยัด",
+    "owned": "มีแล้ว",
+    "coins": "เหรียญ",
+    "separately": "แยกชิ้น",
+    "ownedDeducted": "หักส่วนที่มีแล้ว {{count}} ชิ้นออก",
+    "setComplete": "มีครบแล้ว",
+    "buying": "กำลังซื้อ...",
+    "buySet": "ซื้อยกเซ็ต",
+    "loading": "กำลังโหลดสินค้า...",
+    "equipped": "กำลังสวมใส่",
+    "equip": "สวมใส่",
+    "buy": "ซื้อ",
+    "unequip": "ถอดออก",
+    "back": "กลับหน้าหลัก"
+  },
+  "leaderboard": {
+    "title": "ตารางเกียรติยศ",
+    "back": "กลับไปหน้าหลัก",
+    "refresh": "รีเฟรช",
+    "loading": "กำลังโหลดตารางอันดับ...",
+    "loadFailed": "โหลดตารางอันดับไม่สำเร็จ ลองใหม่อีกครั้ง",
+    "topThree": "สามอันดับแรก",
+    "topPlayers": "ผู้เล่นระดับท็อป",
+    "nextRanks": "อันดับถัดไป",
+    "rank": "อันดับ {{rank}}",
+    "you": " (คุณ)",
+    "viewProfile": "ดูโปรไฟล์",
+    "viewProfileOf": "ดูโปรไฟล์ของ {{name}}",
+    "viewProfileOfRank": "ดูโปรไฟล์ของ {{name}} อันดับ {{rank}}",
+    "levelCoins": "เลเวล {{level}} · 🪙 {{coins}}",
+    "minMatches": " (ขั้นต่ำ {{count}} แมตช์)",
+    "boards": {
+      "xp": {
+        "tab": "XP รวม",
+        "title": "สะสม XP มากที่สุด",
+        "subtitle": "นับ XP จากทุกโหมดรวมกัน ทั้งบทเรียน แบบฝึกหัด และการแข่ง",
+        "empty": "ยังไม่มีใครเก็บ XP ได้เลย ลองเรียนบทแรกแล้วกลับมาดูใหม่"
+      },
+      "level": {
+        "tab": "เลเวล",
+        "title": "เลเวลสูงที่สุด",
+        "subtitle": "เลเวลเพิ่มขึ้นทุกครั้งที่ XP เต็มหลอด",
+        "format": "เลเวล {{value}}",
+        "empty": "ยังไม่มีผู้เล่นในตาราง"
+      },
+      "arcade_winrate": {
+        "tab": "อัตราชนะ Arcade",
+        "title": "อัตราชนะ Arcade สูงที่สุด",
+        "subtitle": "นับเฉพาะคนที่เล่นครบตามจำนวนแมตช์ขั้นต่ำ เพื่อไม่ให้ชนะครั้งเดียวแล้วขึ้นอันดับหนึ่ง",
+        "detail": "ชนะ {{wins}} จาก {{matches}} แมตช์",
+        "empty": "ยังไม่มีใครเล่น Arcade ครบตามจำนวนแมตช์ขั้นต่ำ"
+      },
+      "competitive": {
+        "tab": "โจทย์ Competitive",
+        "title": "ทำโจทย์ Competitive Arena ได้มากที่สุด",
+        "subtitle": "นับจำนวนโจทย์ที่ไม่ซ้ำกัน ส่งข้อเดิมซ้ำไม่ได้นับเพิ่ม",
+        "format": "{{value}} ข้อ",
+        "empty": "ยังไม่มีใครส่งคำตอบในโหมด Competitive Arena"
+      },
+      "coins": {
+        "tab": "เหรียญ",
+        "title": "มีเหรียญมากที่สุด",
+        "subtitle": "เหรียญที่ถืออยู่ตอนนี้ ไม่ใช่ยอดที่หามาได้ทั้งหมด — ซื้อของแล้วตัวเลขนี้จะลดลง",
+        "empty": "ยังไม่มีใครมีเหรียญ"
+      },
+      "cosmetics": {
+        "tab": "ไอเทมตกแต่ง",
+        "title": "ครอบครองไอเทมตกแต่งมากที่สุด",
+        "subtitle": "นับชิ้นที่ซื้อไว้ในคลังจริง ทั้งธีม กรอบโปรไฟล์ และเอฟเฟกต์เมาส์",
+        "format": "{{value}} ชิ้น",
+        "empty": "ยังไม่มีใครซื้อไอเทมตกแต่งเลย"
+      }
+    }
+  },
+  "profile": {
+    "tier": {
+      "Beginner": "ผู้เริ่มต้น",
+      "Intermediate": "ระดับกลาง",
+      "Advanced": "ระดับสูง"
+    },
+    "status": {
+      "done": "เรียนจบแล้ว",
+      "in_progress": "กำลังเรียน",
+      "not_started": "ยังไม่เริ่ม"
+    },
+    "errors": {
+      "signInToView": "กรุณาเข้าสู่ระบบเพื่อดูโปรไฟล์",
+      "notFound": "ไม่พบผู้ใช้คนนี้",
+      "signInAgain": "กรุณาเข้าสู่ระบบอีกครั้ง",
+      "loadFailed": "โหลดโปรไฟล์ไม่สำเร็จ",
+      "competitiveFailed": "โหลดประวัติ Competitive ไม่สำเร็จ",
+      "showcaseMax": "เลือกได้สูงสุด {{max}} รายการ",
+      "saveFailed": "บันทึกไม่สำเร็จ",
+      "resetPictureFailed": "รีเซ็ตรูปไม่สำเร็จ",
+      "selectPictureFailed": "เลือกรูปไม่สำเร็จ"
+    },
+    "loading": "กำลังโหลดโปรไฟล์...",
+    "backToLessons": "กลับหน้าบทเรียน",
+    "back": "ย้อนกลับ",
+    "admin": "แอดมิน",
+    "memberSince": "สมาชิกตั้งแต่ {{date}}",
+    "level": "เลเวล {{level}}",
+    "coins": "{{count}} ทอง",
+    "streak": "ต่อเนื่อง {{days}} วัน",
+    "xpTotal": "{{xp}} XP สะสม",
+    "cosmeticsInUse": "ของตกแต่งที่กำลังใช้",
+    "themeLabel": "ธีม: {{name}}",
+    "frameLabel": "กรอบโปรไฟล์: {{name}}",
+    "effectLabel": "เอฟเฟกต์เมาส์: {{name}}",
+    "defaultTheme": "ค่าเริ่มต้น",
+    "notWorn": "ไม่ได้สวมใส่",
+    "effectHint": "ลองเลื่อนเมาส์ คลิก หรือดับเบิลคลิกในหน้าโปรไฟล์เพื่อดูเอฟเฟกต์",
+    "stats": {
+      "lessonsDone": "บทเรียนที่จบ",
+      "lessonsInProgress": "กำลังเรียนอยู่ {{count}} บท",
+      "exercisesPassed": "แบบฝึกหัดที่ผ่าน",
+      "overallProgress": "ความคืบหน้ารวม {{percent}}%",
+      "arcadePlayed": "เล่น Arcade",
+      "winsLosses": "ชนะ {{wins}} · แพ้ {{losses}}",
+      "winRate": "อัตราการชนะ",
+      "bestRank": "อันดับดีที่สุด #{{rank}}",
+      "noStats": "ยังไม่มีสถิติ"
+    },
+    "current": {
+      "title": "กำลังเรียน",
+      "preTest": "แบบทดสอบก่อนเรียน {{score}}",
+      "postTest": "หลังเรียน {{score}}",
+      "notTaken": "ยังไม่ทำ",
+      "exercises": "แบบฝึกหัด {{passed}}/{{total}}",
+      "continue": "เรียนต่อ"
+    },
+    "modules": {
+      "title": "ความคืบหน้าตามหมวด",
+      "lessons": "{{done}}/{{total}} บท · {{percent}}%"
+    },
+    "history": {
+      "arcade": "ประวัติ Arcade",
+      "competitive": "ประวัติ Competitive",
+      "noArcade": "ยังไม่มีแมตช์ที่เล่นจบ",
+      "room": "ห้อง",
+      "problem": "โจทย์",
+      "difficulty": "ระดับ",
+      "score": "คะแนน",
+      "tests": "เทสต์",
+      "when": "เมื่อ",
+      "arcadeTotals": "คะแนนสะสมทั้งหมด {{score}} · Survival Cash สะสม {{cash}}",
+      "loadingCompetitive": "กำลังโหลดประวัติ Competitive...",
+      "retry": "ลองใหม่",
+      "noCompetitive": "ยังไม่มีประวัติการแข่ง Competitive"
+    },
+    "lessons": {
+      "title": "บทเรียนทั้งหมด",
+      "hideNotStarted": "ซ่อนบทที่ยังไม่เริ่ม",
+      "showAll": "แสดงทั้งหมด ({{count}} บท)",
+      "none": "ยังไม่ได้เริ่มบทเรียนไหนเลย",
+      "exercises": "แบบฝึกหัด {{passed}}/{{total}}"
+    },
+    "achievements": {
+      "title": "ความสำเร็จ",
+      "unlockedOf": "ปลดล็อกแล้ว {{unlocked}} / {{total}}",
+      "choose": "เลือกที่จะโชว์",
+      "pickLimit": "เลือกได้สูงสุด {{max}} รายการ — เลือกแล้ว {{count}}",
+      "showAt": "โชว์เป็นลำดับที่ {{n}}",
+      "tapToPick": "แตะเพื่อเลือก",
+      "saving": "กำลังบันทึก...",
+      "save": "บันทึก",
+      "cancel": "ยกเลิก",
+      "clear": "ล้างที่เลือก",
+      "unlockedOn": "ปลดล็อก {{date}}",
+      "none": "ยังไม่ได้ปลดล็อกความสำเร็จใดเลย",
+      "viewAll": "ดูความสำเร็จทั้งหมด {{count}} รายการ",
+      "reward": "รางวัล {{reward}} · {{difficulty}}"
+    }
   }
 }

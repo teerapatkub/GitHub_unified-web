@@ -4,6 +4,7 @@ import { Trophy, ArrowLeft, RefreshCw, Crown, Medal, ChevronRight } from 'lucide
 import { assetUrl } from '../config/api.js';
 import { loadLeaderboard } from './leaderboard-data.js';
 import SkeletonLoading from '../components/ui/Skeleton.jsx';
+import { useTranslation } from 'react-i18next';
 
 // The learner-facing leaderboard, with links to each player's public profile.
 //
@@ -43,22 +44,22 @@ const PODIUM_STYLES = {
   },
 };
 
-function playerDetail(board, row) {
-  return board.detail?.(row) || `เลเวล ${row.level} · 🪙 ${row.coins}`;
+function playerDetail(board, row, lb) {
+  return board.detail?.(row) || lb('levelCoins', { level: row.level, coins: row.coins });
 }
 
-function PodiumCard({ row, board, isMe }) {
+function PodiumCard({ row, board, isMe, lb }) {
   const style = PODIUM_STYLES[row.rank];
   const Card = row.user_id ? Link : 'div';
 
   return (
     <Card
       {...(row.user_id ? { to: `/profile/${row.user_id}` } : {})}
-      aria-label={row.user_id ? `ดูโปรไฟล์ของ ${row.username} อันดับ ${row.rank}` : undefined}
+      aria-label={row.user_id ? lb('viewProfileOfRank', { name: row.username, rank: row.rank }) : undefined}
       className={`group relative flex min-w-0 flex-col items-center rounded-3xl border-2 px-4 pb-5 pt-6 text-center transition-all duration-200 hover:-translate-y-1 hover:shadow-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pysim-primary ${style.order} ${style.card}`}
     >
       <span className={`absolute -top-3 rounded-full px-4 py-1 text-xs font-black shadow-sm ${style.badge}`}>
-        อันดับ {row.rank}
+        {lb('rank', { rank: row.rank })}
       </span>
       {row.rank === 1
         ? <Crown size={30} className={`mb-4 ${style.icon}`} aria-hidden="true" />
@@ -69,83 +70,54 @@ function PodiumCard({ row, board, isMe }) {
           : <span aria-hidden="true">{row.username?.slice(0, 1).toUpperCase() || '?'}</span>}
       </div>
       <span className={`max-w-full truncate text-base font-black ${isMe ? 'text-pysim-primary' : 'text-pysim-on-surface'}`}>
-        {row.username}{isMe ? ' (คุณ)' : ''}
+        {row.username}{isMe ? lb('you') : ''}
       </span>
-      <span className="mt-1 min-h-8 text-xs leading-4 text-pysim-on-surface-variant">{playerDetail(board, row)}</span>
+      <span className="mt-1 min-h-8 text-xs leading-4 text-pysim-on-surface-variant">{playerDetail(board, row, lb)}</span>
       <span className={`mt-4 rounded-full px-4 py-2 text-sm font-black ${style.metric}`}>
         {board.format(row)}
       </span>
       {row.user_id && (
         <span className="mt-4 inline-flex items-center gap-1 text-xs font-bold text-pysim-primary group-hover:underline">
-          ดูโปรไฟล์ <ChevronRight size={14} aria-hidden="true" />
+          {lb('viewProfile')} <ChevronRight size={14} aria-hidden="true" />
         </span>
       )}
     </Card>
   );
 }
 
-const BOARDS = [
+// Board text comes from the locale files (Spec 0005 #13); the page was Thai
+// even in English mode. `lb` is t() bound to the leaderboard namespace.
+const BOARD_DEFS = [
+    { key: 'xp', tone: 'text-emerald-600', format: (row) => `${row.metric.toLocaleString()} XP` },
+    { key: 'level', tone: 'text-indigo-600', format: (row, lb) => lb('boards.level.format', { value: row.metric }) },
     {
-        key: 'xp',
-        tab: 'XP รวม',
-        title: 'สะสม XP มากที่สุด',
-        subtitle: 'นับ XP จากทุกโหมดรวมกัน ทั้งบทเรียน แบบฝึกหัด และการแข่ง',
-        format: (row) => `${row.metric.toLocaleString()} XP`,
-        tone: 'text-emerald-600',
-        empty: 'ยังไม่มีใครเก็บ XP ได้เลย ลองเรียนบทแรกแล้วกลับมาดูใหม่',
-    },
-    {
-        key: 'level',
-        tab: 'เลเวล',
-        title: 'เลเวลสูงที่สุด',
-        subtitle: 'เลเวลเพิ่มขึ้นทุกครั้งที่ XP เต็มหลอด',
-        format: (row) => `เลเวล ${row.metric}`,
-        tone: 'text-indigo-600',
-        empty: 'ยังไม่มีผู้เล่นในตาราง',
-    },
-    {
-        key: 'arcade_winrate',
-        tab: 'อัตราชนะ Arcade',
-        title: 'อัตราชนะ Arcade สูงที่สุด',
-        subtitle: 'นับเฉพาะคนที่เล่นครบตามจำนวนแมตช์ขั้นต่ำ เพื่อไม่ให้ชนะครั้งเดียวแล้วขึ้นอันดับหนึ่ง',
-        format: (row) => `${row.metric}%`,
-        detail: (row) => (row.metric_detail
-            ? `ชนะ ${row.metric_detail.wins} จาก ${row.metric_detail.matches} แมตช์`
+        key: 'arcade_winrate', tone: 'text-rose-600', format: (row) => `${row.metric}%`,
+        detail: (row, lb) => (row.metric_detail
+            ? lb('boards.arcade_winrate.detail', { wins: row.metric_detail.wins, matches: row.metric_detail.matches })
             : null),
-        tone: 'text-rose-600',
-        empty: 'ยังไม่มีใครเล่น Arcade ครบตามจำนวนแมตช์ขั้นต่ำ',
     },
-    {
-        key: 'competitive',
-        tab: 'โจทย์ Competitive',
-        title: 'ทำโจทย์ Competitive Arena ได้มากที่สุด',
-        subtitle: 'นับจำนวนโจทย์ที่ไม่ซ้ำกัน ส่งข้อเดิมซ้ำไม่ได้นับเพิ่ม',
-        format: (row) => `${row.metric} ข้อ`,
-        tone: 'text-blue-600',
-        empty: 'ยังไม่มีใครส่งคำตอบในโหมด Competitive Arena',
-    },
-    {
-        key: 'coins',
-        tab: 'เหรียญ',
-        title: 'มีเหรียญมากที่สุด',
-        subtitle: 'เหรียญที่ถืออยู่ตอนนี้ ไม่ใช่ยอดที่หามาได้ทั้งหมด — ซื้อของแล้วตัวเลขนี้จะลดลง',
-        format: (row) => `🪙 ${row.metric.toLocaleString()}`,
-        tone: 'text-amber-600',
-        empty: 'ยังไม่มีใครมีเหรียญ',
-    },
-    {
-        key: 'cosmetics',
-        tab: 'ไอเทมตกแต่ง',
-        title: 'ครอบครองไอเทมตกแต่งมากที่สุด',
-        subtitle: 'นับชิ้นที่ซื้อไว้ในคลังจริง ทั้งธีม กรอบโปรไฟล์ และเอฟเฟกต์เมาส์',
-        format: (row) => `${row.metric} ชิ้น`,
-        tone: 'text-purple-600',
-        empty: 'ยังไม่มีใครซื้อไอเทมตกแต่งเลย',
-    },
+    { key: 'competitive', tone: 'text-blue-600', format: (row, lb) => lb('boards.competitive.format', { value: row.metric }) },
+    { key: 'coins', tone: 'text-amber-600', format: (row) => `🪙 ${row.metric.toLocaleString()}` },
+    { key: 'cosmetics', tone: 'text-purple-600', format: (row, lb) => lb('boards.cosmetics.format', { value: row.metric }) },
 ];
+
+function boardsFor(lb) {
+    return BOARD_DEFS.map((def) => ({
+        ...def,
+        tab: lb(`boards.${def.key}.tab`),
+        title: lb(`boards.${def.key}.title`),
+        subtitle: lb(`boards.${def.key}.subtitle`),
+        empty: lb(`boards.${def.key}.empty`),
+        format: (row) => def.format(row, lb),
+        detail: def.detail ? (row) => def.detail(row, lb) : undefined,
+    }));
+}
 
 export default function LeaderboardPage({ user }) {
     const navigate = useNavigate();
+    const { t } = useTranslation();
+    const lb = useCallback((key, options) => t(`leaderboard.${key}`, options), [t]);
+    const BOARDS = boardsFor(lb);
     const [boardKey, setBoardKey] = useState('xp');
     const [rows, setRows] = useState([]);
     const [minMatches, setMinMatches] = useState(null);
@@ -171,10 +143,10 @@ export default function LeaderboardPage({ user }) {
         })
         .catch((loadError) => {
             if (request !== requestId.current) return;
-            setError(loadError.message || 'โหลดตารางอันดับไม่สำเร็จ ลองใหม่อีกครั้ง');
+            setError(loadError.message || lb('loadFailed'));
             setLoading(false);
         });
-    }, []);
+    }, [lb]);
 
     useEffect(() => { fetchRows(boardKey); }, [boardKey, fetchRows]);
 
@@ -203,7 +175,7 @@ export default function LeaderboardPage({ user }) {
                     onClick={() => navigate('/learn')}
                     className="mb-6 inline-flex items-center gap-2 text-sm font-bold text-pysim-on-surface-variant hover:text-pysim-on-surface"
                 >
-                    <ArrowLeft size={16} /> กลับไปหน้าหลัก
+                    <ArrowLeft size={16} /> {lb('back')}
                 </button>
 
                 <div className="flex items-center justify-between gap-4 mb-5">
@@ -212,7 +184,7 @@ export default function LeaderboardPage({ user }) {
                             <Trophy size={20} className="text-white" />
                         </div>
                         <div>
-                            <h1 className="text-3xl font-black text-pysim-on-surface tracking-tight">ตารางเกียรติยศ</h1>
+                            <h1 className="text-3xl font-black text-pysim-on-surface tracking-tight">{lb('title')}</h1>
                             <p className="text-sm text-pysim-on-surface-variant">{board.title}</p>
                         </div>
                     </div>
@@ -221,7 +193,7 @@ export default function LeaderboardPage({ user }) {
                         onClick={reload}
                         className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
                     >
-                        <RefreshCw size={14} /> รีเฟรช
+                        <RefreshCw size={14} /> {lb('refresh')}
                     </button>
                 </div>
 
@@ -245,12 +217,12 @@ export default function LeaderboardPage({ user }) {
                 <p className="text-[11px] text-pysim-on-surface-variant mb-4 leading-relaxed">
                     {board.subtitle}
                     {board.key === 'arcade_winrate' && minMatches
-                        ? ` (ขั้นต่ำ ${minMatches} แมตช์)`
+                        ? lb('minMatches', { count: minMatches })
                         : ''}
                 </p>
 
                 {loading && (
-                    <SkeletonLoading variant="list" label="กำลังโหลดตารางอันดับ..." />
+                    <SkeletonLoading variant="list" label={lb('loading')} />
                 )}
 
                 {!loading && error && (
@@ -265,10 +237,10 @@ export default function LeaderboardPage({ user }) {
 
                 {!loading && !error && rows.length > 0 && (
                   <>
-                    <section aria-label="สามอันดับแรก" className="mb-9 pt-4">
+                    <section aria-label={lb('topThree')} className="mb-9 pt-4">
                       <div className="mb-6 flex items-center gap-2 text-pysim-on-surface">
                         <Trophy size={18} className="text-amber-600" aria-hidden="true" />
-                        <h2 className="text-lg font-black">ผู้เล่นระดับท็อป</h2>
+                        <h2 className="text-lg font-black">{lb('topPlayers')}</h2>
                       </div>
                       <div className="grid gap-5 md:grid-cols-3 md:items-end">
                         {rows.filter((row) => row.rank <= 3).map((row) => (
@@ -277,13 +249,14 @@ export default function LeaderboardPage({ user }) {
                             row={row}
                             board={board}
                             isMe={Boolean(myName && row.username === myName)}
+                            lb={lb}
                           />
                         ))}
                       </div>
                     </section>
                     {rows.length > 3 && (
-                      <section aria-label="อันดับถัดไป">
-                        <h2 className="mb-3 text-sm font-black text-pysim-on-surface-variant">อันดับถัดไป</h2>
+                      <section aria-label={lb('nextRanks')}>
+                        <h2 className="mb-3 text-sm font-black text-pysim-on-surface-variant">{lb('nextRanks')}</h2>
                         <div className="bg-white rounded-xl whisper-shadow overflow-hidden">
                           {rows.filter((row) => row.rank > 3).map((row) => {
                             const isMe = myName && row.username === myName;
@@ -291,7 +264,7 @@ export default function LeaderboardPage({ user }) {
                             return (
                               <Row
                                 to={row.user_id ? `/profile/${row.user_id}` : undefined}
-                                aria-label={row.user_id ? `ดูโปรไฟล์ของ ${row.username}` : undefined}
+                                aria-label={row.user_id ? lb('viewProfileOf', { name: row.username }) : undefined}
                                 key={`${boardKey}-${row.rank}`}
                                 className={`flex items-center gap-3 px-3 sm:px-5 py-4 border-b border-slate-100 last:border-0 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-600
                                   ${isMe ? 'bg-pysim-primary/5' : ''}`}
@@ -311,10 +284,10 @@ export default function LeaderboardPage({ user }) {
 
                                 <div className="flex-1 min-w-0">
                                   <span className={`block truncate text-sm ${isMe ? 'font-black text-pysim-primary' : 'font-bold text-pysim-on-surface'}`}>
-                                    {row.username}{isMe ? ' (คุณ)' : ''}
+                                    {row.username}{isMe ? lb('you') : ''}
                                   </span>
                                   <span className="block text-[11px] text-pysim-on-surface-variant">
-                                    {playerDetail(board, row)}
+                                    {playerDetail(board, row, lb)}
                                   </span>
                                 </div>
 

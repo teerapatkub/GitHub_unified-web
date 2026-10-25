@@ -127,9 +127,24 @@
   },
   "achievements": {
     "title": "ACHIEVEMENTS",
-    "locked": "LOCKED",
-    "back": "Back to Menu",
-    "progress": "Progress"
+    "locked": "Locked",
+    "back": "Back to home",
+    "progress": "Progress",
+    "subtitle": "Your road of achievements",
+    "signInToView": "Sign in to see your achievements",
+    "signInAgain": "Please sign in again",
+    "loadFailed": "Could not load achievements. Please try again.",
+    "loading": "Loading achievements...",
+    "unlocked": "Unlocked",
+    "total": "Total",
+    "specialPicture": "Special picture",
+    "done": "Done",
+    "difficulty": {
+      "Easy": "Easy",
+      "Medium": "Medium",
+      "Hard": "Hard",
+      "Very Hard": "Very hard"
+    }
   },
   "arena": {
     "backToHub": "Back to Hub",
@@ -187,5 +202,199 @@
     "comments": "Comments",
     "writeComment": "Add a comment...",
     "commentPost": "Post"
+  },
+  "shop": {
+    "title": "Shop",
+    "subtitle": "Make the site your own",
+    "search": "Search...",
+    "searchLabel": "Search the shop",
+    "categories": {
+      "all": "All",
+      "themes": "Themes",
+      "avatars": "Avatars",
+      "effects": "Effects"
+    },
+    "loadFailed": "Could not load the shop",
+    "signInToBuy": "Sign in before buying",
+    "buyFailed": "Purchase failed",
+    "buySetFailed": "Could not buy the set",
+    "connectionFailed": "Could not reach the shop",
+    "equipFailed": "Could not equip. Please try again.",
+    "unequipFailed": "Could not take it off. Please try again.",
+    "setsTitle": "Theme sets",
+    "setsSubtitle": "A whole set costs less than its pieces",
+    "save": "Save",
+    "owned": "Owned",
+    "coins": "coins",
+    "separately": "Separately",
+    "ownedDeducted": "{{count}} owned pieces deducted",
+    "setComplete": "Complete",
+    "buying": "Buying...",
+    "buySet": "Buy the set",
+    "loading": "Loading items...",
+    "equipped": "Equipped",
+    "equip": "Equip",
+    "buy": "Buy",
+    "unequip": "Take off",
+    "back": "Back to home"
+  },
+  "leaderboard": {
+    "title": "Hall of fame",
+    "back": "Back to home",
+    "refresh": "Refresh",
+    "loading": "Loading the leaderboard...",
+    "loadFailed": "Could not load the leaderboard. Please try again.",
+    "topThree": "Top three",
+    "topPlayers": "Top players",
+    "nextRanks": "Next ranks",
+    "rank": "Rank {{rank}}",
+    "you": " (you)",
+    "viewProfile": "View profile",
+    "viewProfileOf": "View {{name}}'s profile",
+    "viewProfileOfRank": "View {{name}}'s profile, rank {{rank}}",
+    "levelCoins": "Level {{level}} · 🪙 {{coins}}",
+    "minMatches": " (at least {{count}} matches)",
+    "boards": {
+      "xp": {
+        "tab": "Total XP",
+        "title": "Most XP earned",
+        "subtitle": "XP from every mode: lessons, exercises and matches",
+        "empty": "Nobody has earned XP yet. Try the first lesson, then come back."
+      },
+      "level": {
+        "tab": "Level",
+        "title": "Highest level",
+        "subtitle": "You level up each time the XP bar fills",
+        "format": "Level {{value}}",
+        "empty": "No players on the board yet"
+      },
+      "arcade_winrate": {
+        "tab": "Arcade win rate",
+        "title": "Best Arcade win rate",
+        "subtitle": "Only players with the minimum number of matches count, so one lucky win cannot top the board",
+        "detail": "Won {{wins}} of {{matches}} matches",
+        "empty": "Nobody has played the minimum number of Arcade matches yet"
+      },
+      "competitive": {
+        "tab": "Competitive problems",
+        "title": "Most Competitive Arena problems solved",
+        "subtitle": "Distinct problems only; solving one again does not count twice",
+        "format": "{{value}} problems",
+        "empty": "Nobody has submitted in Competitive Arena yet"
+      },
+      "coins": {
+        "tab": "Coins",
+        "title": "Most coins",
+        "subtitle": "Coins held right now, not all ever earned. Buying things lowers it.",
+        "empty": "Nobody has coins yet"
+      },
+      "cosmetics": {
+        "tab": "Cosmetics",
+        "title": "Most cosmetics owned",
+        "subtitle": "Pieces really owned: themes, profile frames and mouse effects",
+        "format": "{{value}} pieces",
+        "empty": "Nobody has bought a cosmetic yet"
+      }
+    }
+  },
+  "profile": {
+    "tier": {
+      "Beginner": "Beginner",
+      "Intermediate": "Intermediate",
+      "Advanced": "Advanced"
+    },
+    "status": {
+      "done": "Finished",
+      "in_progress": "In progress",
+      "not_started": "Not started"
+    },
+    "errors": {
+      "signInToView": "Sign in to see the profile",
+      "notFound": "This player was not found",
+      "signInAgain": "Please sign in again",
+      "loadFailed": "Could not load the profile",
+      "competitiveFailed": "Could not load Competitive history",
+      "showcaseMax": "You can pick up to {{max}}",
+      "saveFailed": "Could not save",
+      "resetPictureFailed": "Could not reset the picture",
+      "selectPictureFailed": "Could not choose the picture"
+    },
+    "loading": "Loading profile...",
+    "backToLessons": "Back to lessons",
+    "back": "Back",
+    "admin": "Admin",
+    "memberSince": "Member since {{date}}",
+    "level": "Level {{level}}",
+    "coins": "{{count}} coins",
+    "streak": "{{days}}-day streak",
+    "xpTotal": "{{xp}} XP total",
+    "cosmeticsInUse": "Cosmetics in use",
+    "themeLabel": "Theme: {{name}}",
+    "frameLabel": "Profile frame: {{name}}",
+    "effectLabel": "Mouse effect: {{name}}",
+    "defaultTheme": "Default",
+    "notWorn": "None",
+    "effectHint": "Move, click or double-click on this page to see the effect",
+    "stats": {
+      "lessonsDone": "Lessons finished",
+      "lessonsInProgress": "{{count}} in progress",
+      "exercisesPassed": "Exercises passed",
+      "overallProgress": "{{percent}}% overall",
+      "arcadePlayed": "Arcade matches",
+      "winsLosses": "{{wins}} won · {{losses}} lost",
+      "winRate": "Win rate",
+      "bestRank": "Best rank #{{rank}}",
+      "noStats": "No stats yet"
+    },
+    "current": {
+      "title": "Currently learning",
+      "preTest": "Pre-test {{score}}",
+      "postTest": "Post-test {{score}}",
+      "notTaken": "not taken",
+      "exercises": "Exercises {{passed}}/{{total}}",
+      "continue": "Continue"
+    },
+    "modules": {
+      "title": "Progress by chapter",
+      "lessons": "{{done}}/{{total}} lessons · {{percent}}%"
+    },
+    "history": {
+      "arcade": "Arcade history",
+      "competitive": "Competitive history",
+      "noArcade": "No finished matches yet",
+      "room": "Room",
+      "problem": "Problem",
+      "difficulty": "Difficulty",
+      "score": "Score",
+      "tests": "Tests",
+      "when": "When",
+      "arcadeTotals": "Total score {{score}} · Survival Cash earned {{cash}}",
+      "loadingCompetitive": "Loading Competitive history...",
+      "retry": "Try again",
+      "noCompetitive": "No Competitive history yet"
+    },
+    "lessons": {
+      "title": "All lessons",
+      "hideNotStarted": "Hide lessons not started",
+      "showAll": "Show all ({{count}} lessons)",
+      "none": "No lessons started yet",
+      "exercises": "exercises {{passed}}/{{total}}"
+    },
+    "achievements": {
+      "title": "Achievements",
+      "unlockedOf": "Unlocked {{unlocked}} / {{total}}",
+      "choose": "Choose what to show",
+      "pickLimit": "Pick up to {{max}}. Picked {{count}}",
+      "showAt": "Shown at position {{n}}",
+      "tapToPick": "Tap to pick",
+      "saving": "Saving...",
+      "save": "Save",
+      "cancel": "Cancel",
+      "clear": "Clear selection",
+      "unlockedOn": "Unlocked {{date}}",
+      "none": "No achievements unlocked yet",
+      "viewAll": "See all {{count}} achievements",
+      "reward": "Reward {{reward}} · {{difficulty}}"
+    }
   }
 }

@@ -31,6 +31,7 @@ import { requestJson } from '../config/api-client.js';
 import ModeEntryHeader from '../components/ModeEntryHeader';
 import TourHost from '../components/tour/TourHost.jsx';
 import SkeletonLoading from '../components/ui/Skeleton.jsx';
+import { toast } from '../components/ui/toast.js';
 
 const arenaFallbacks = {
   acceptChallenge: 'Accept Challenge',
@@ -629,7 +630,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
         method: 'POST'
       });
       if (data.success) {
-        alert(i18n.language === 'th' ? "สรุปผลและส่งรางวัลเข้ากล่องจดหมายผู้เล่นเรียบร้อย!" : "Instant summary completed! Mailbox rewards generated.");
+        toast(i18n.language === 'th' ? "สรุปผลและส่งรางวัลเข้ากล่องจดหมายผู้เล่นเรียบร้อย" : "Instant summary completed. Mailbox rewards generated.", 'success');
         fetchChallenges();
         fetchMailbox(user.user_id);
       }

@@ -2,6 +2,7 @@ import { useCallback, useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShoppingBag, ShoppingCart, Coins, CheckCircle, Search } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { toast, friendlyError } from '../components/ui/toast.js';
 import { useTheme } from '../contexts/useTheme.js';
 import { API_BASE, assetUrl } from '../config/api.js';
 import { getShopThemePalette, shopThemeColors } from '../themes/shopPalette.js';
@@ -34,6 +35,7 @@ const createShopTheme = (item) => {
 export default function ShopPage() {
     const navigate = useNavigate();
     const { t, i18n } = useTranslation();
+    const lang = i18n.language === 'en' ? 'en' : 'th';
     const { registerTheme, setTheme } = useTheme();
     // registerTheme changes identity whenever the signed-in user resolves, and
     // fetchShop depended on it, so the shop loaded items/inventory/sets three
@@ -178,7 +180,7 @@ export default function ShopPage() {
                 fetch(setsUrl),
             ]);
 
-            if (!itemsRes.ok) throw new Error('โหลดสินค้าไม่สำเร็จ');
+            if (!itemsRes.ok) throw new Error(t('shop.loadFailed', 'โหลดสินค้าไม่สำเร็จ'));
             const shopItems = await itemsRes.json();
             const inventoryItems = inventoryRes && inventoryRes.ok ? await inventoryRes.json() : [];
             const ownedIds = new Set((Array.isArray(inventoryItems) ? inventoryItems : []).map((item) => Number(item.item_id)));
@@ -208,7 +210,7 @@ export default function ShopPage() {
                 registerThemeRef.current(createShopTheme(equippedTheme));
             }
         } catch (err) {
-            setError(err.message || 'โหลดสินค้าไม่สำเร็จ');
+            setError(err.message || t('shop.loadFailed', 'โหลดสินค้าไม่สำเร็จ'));
             setItems([]);
         } finally {
             setLoading(false);
@@ -229,7 +231,7 @@ export default function ShopPage() {
         if (purchaseBusyRef.current) return;
         const user = JSON.parse(localStorage.getItem('user') || 'null');
         if (!user?.user_id || user?.isGuest) {
-            alert('กรุณาเข้าสู่ระบบก่อนซื้อสินค้า');
+            toast(t('shop.signInToBuy', 'กรุณาเข้าสู่ระบบก่อนซื้อสินค้า'));
             return;
         }
 
@@ -243,7 +245,7 @@ export default function ShopPage() {
             });
             const data = await res.json();
             if (!res.ok || data.success !== true) {
-                alert(data.error || 'ซื้อสินค้าไม่สำเร็จ');
+                toast(friendlyError(data.error, t('shop.buyFailed', 'ซื้อสินค้าไม่สำเร็จ'), lang));
                 return;
             }
 
@@ -271,7 +273,7 @@ export default function ShopPage() {
                 icon: item.icon.type === 'text' ? item.icon.value : '',
             });
         } catch {
-            alert('เชื่อมต่อร้านค้าไม่สำเร็จ');
+            toast(t('shop.connectionFailed', 'เชื่อมต่อร้านค้าไม่สำเร็จ'));
         } finally {
             purchaseBusyRef.current = false;
             setBuyingItemId(null);
@@ -282,7 +284,7 @@ export default function ShopPage() {
         if (purchaseBusyRef.current) return;
         const user = JSON.parse(localStorage.getItem('user') || 'null');
         if (!user?.user_id || user?.isGuest) {
-            alert('กรุณาเข้าสู่ระบบก่อนซื้อสินค้า');
+            toast(t('shop.signInToBuy', 'กรุณาเข้าสู่ระบบก่อนซื้อสินค้า'));
             return;
         }
 
@@ -296,7 +298,7 @@ export default function ShopPage() {
             });
             const data = await res.json();
             if (!res.ok || data.success !== true) {
-                alert(data.error || 'ซื้อเซ็ตไม่สำเร็จ');
+                toast(friendlyError(data.error, t('shop.buySetFailed', 'ซื้อเซ็ตไม่สำเร็จ'), lang));
                 return;
             }
 
@@ -318,7 +320,7 @@ export default function ShopPage() {
                 image: set.items.find((item) => item.asset_url)?.asset_url || '',
             });
         } catch {
-            alert('เชื่อมต่อร้านค้าไม่สำเร็จ');
+            toast(t('shop.connectionFailed', 'เชื่อมต่อร้านค้าไม่สำเร็จ'));
         } finally {
             purchaseBusyRef.current = false;
             setBuyingSet('');
@@ -337,7 +339,7 @@ export default function ShopPage() {
             });
             const data = await res.json();
             if (!res.ok) {
-                alert(data.error || 'Unable to equip item');
+                toast(friendlyError(data.error, t('shop.equipFailed', 'สวมใส่ไม่สำเร็จ ลองอีกครั้ง'), lang));
                 return;
             }
 
@@ -373,7 +375,7 @@ export default function ShopPage() {
                 detail: { user: nextUser },
             }));
         } catch {
-            alert('Unable to equip item');
+            toast(t('shop.unequipFailed', 'ถอดออกไม่สำเร็จ ลองอีกครั้ง'));
         }
     };
 
@@ -468,8 +470,8 @@ export default function ShopPage() {
                 {!loading && sets.length > 0 && selectedCategory === 'all' && !searchTerm && (
                     <div className={`mb-12 transition-all duration-700 delay-150 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
                         <div className="flex items-baseline gap-3 mb-4">
-                            <h2 className="text-2xl font-black text-pysim-on-surface">เซ็ตธีม</h2>
-                            <p className="text-sm text-pysim-on-surface-variant">ซื้อยกเซ็ตถูกกว่าเลือกทีละชิ้น</p>
+                            <h2 className="text-2xl font-black text-pysim-on-surface">{t('shop.setsTitle', 'เซ็ตธีม')}</h2>
+                            <p className="text-sm text-pysim-on-surface-variant">{t('shop.setsSubtitle', 'ซื้อยกเซ็ตถูกกว่าเลือกทีละชิ้น')}</p>
                         </div>
 
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -479,12 +481,12 @@ export default function ShopPage() {
                                     <div className="px-6 pt-5 pb-4 border-b border-pysim-outline/10">
                                         <div className="flex items-start justify-between gap-3">
                                             <div>
-                                                <h3 className="text-xl font-black text-pysim-on-surface">{set.name_th}</h3>
+                                                <h3 className="text-xl font-black text-pysim-on-surface">{lang === 'en' ? (set.name_en || set.name_th) : set.name_th}</h3>
                                                 <p className="mt-1 text-sm text-pysim-on-surface-variant">{set.description_th}</p>
                                             </div>
                                             {set.savings > 0 && (
                                                 <span className="shrink-0 rounded-lg bg-pysim-primary/10 px-3 py-1.5 text-xs font-black text-pysim-primary">
-                                                    ประหยัด {set.savings}
+                                                    {t('shop.save', 'ประหยัด')} {set.savings}
                                                 </span>
                                             )}
                                         </div>
@@ -508,12 +510,12 @@ export default function ShopPage() {
                                                     )}
                                                     {item.owned && (
                                                         <span className="absolute inset-x-0 bottom-0 bg-emerald-700 py-0.5 text-xs font-bold text-white">
-                                                            มีแล้ว
+                                                            {t('shop.owned', 'มีแล้ว')}
                                                         </span>
                                                     )}
                                                 </div>
                                                 <p className="mt-2 text-xs font-bold text-pysim-on-surface leading-tight">{item.name}</p>
-                                                <p className="text-[11px] text-pysim-outline">{item.price} เหรียญ</p>
+                                                <p className="text-[11px] text-pysim-outline">{item.price} {t('shop.coins', 'เหรียญ')}</p>
                                             </div>
                                         ))}
                                     </div>
@@ -521,14 +523,14 @@ export default function ShopPage() {
                                     <div className="mt-auto flex items-end justify-between gap-4 px-6 pb-5">
                                         <div>
                                             <p className="text-xs text-pysim-outline line-through">
-                                                แยกชิ้น {set.individual_total} เหรียญ
+                                                {t('shop.separately', 'แยกชิ้น')} {set.individual_total} {t('shop.coins', 'เหรียญ')}
                                             </p>
                                             <p className="text-2xl font-black text-pysim-primary leading-tight">
-                                                {set.fully_owned ? set.price : set.price_for_user} เหรียญ
+                                                {set.fully_owned ? set.price : set.price_for_user} {t('shop.coins', 'เหรียญ')}
                                             </p>
                                             {!set.fully_owned && set.owned_count > 0 && (
                                                 <p className="text-[11px] text-pysim-on-surface-variant">
-                                                    หักส่วนที่มีแล้ว {set.owned_count} ชิ้นออก
+                                                    {t('shop.ownedDeducted', { count: set.owned_count, defaultValue: 'หักส่วนที่มีแล้ว {{count}} ชิ้นออก' })}
                                                 </p>
                                             )}
                                         </div>
@@ -541,8 +543,8 @@ export default function ShopPage() {
                                                     : 'python-gradient text-white hover:opacity-90'
                                             }`}>
                                             {set.fully_owned
-                                                ? 'มีครบแล้ว'
-                                                : buyingSet === set.set_key ? 'กำลังซื้อ...' : 'ซื้อยกเซ็ต'}
+                                                ? t('shop.setComplete', 'มีครบแล้ว')
+                                                : buyingSet === set.set_key ? t('shop.buying', 'กำลังซื้อ...') : t('shop.buySet', 'ซื้อยกเซ็ต')}
                                         </button>
                                     </div>
                                 </div>
@@ -552,7 +554,7 @@ export default function ShopPage() {
                 )}
 
                 {loading ? (
-                    <SkeletonLoading variant="catalog" label="กำลังโหลดสินค้า..." className="py-4" />
+                    <SkeletonLoading variant="catalog" label={t('shop.loading', 'กำลังโหลดสินค้า...')} className="py-4" />
                 ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                         {filteredItems.map((item, index) => (
@@ -610,7 +612,7 @@ export default function ShopPage() {
                                             onClick={() => handleUnequip(item)}
                                             className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-600 transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600"
                                         >
-                                            ถอดออก
+                                            {t('shop.unequip', 'ถอดออก')}
                                         </button>
                                     )}
                                 </div>

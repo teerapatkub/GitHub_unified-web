@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Code, Cpu, Sparkles } from 'lucide-react';
 import { API_BASE } from '../config/api.js';
+import { toast } from '../components/ui/toast.js';
 
 export default function Login() {
     const navigate = useNavigate();
@@ -30,7 +31,7 @@ export default function Login() {
                     localStorage.setItem('user', JSON.stringify(res.data.user));
                     navigate('/learn');
                 } else {
-                    alert('ลงทะเบียนสำเร็จ! กรุณาล็อคอิน');
+                    toast('ลงทะเบียนสำเร็จ กรุณาเข้าสู่ระบบ', 'success');
                     setIsRegister(false);
                 }
             }

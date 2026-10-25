@@ -19,25 +19,21 @@ import ProfileAppearance from '../components/ProfileAppearance';
 import { assetUrl } from '../config/api.js';
 import { requestJson } from '../config/api-client.js';
 import SkeletonLoading from '../components/ui/Skeleton.jsx';
+import { useTranslation } from 'react-i18next';
 
 
-const SKILL_TIER_TH = {
-    Beginner: 'ผู้เริ่มต้น',
-    Intermediate: 'ระดับกลาง',
-    Advanced: 'ระดับสูง',
-};
-
+// Labels live in the locale files under `profile` (Spec 0005 #13).
 const STATUS_META = {
-    done: { label: 'เรียนจบแล้ว', icon: CheckCircle2, text: 'text-emerald-600', bg: 'bg-emerald-50' },
-    in_progress: { label: 'กำลังเรียน', icon: CircleDot, text: 'text-amber-600', bg: 'bg-amber-50' },
-    not_started: { label: 'ยังไม่เริ่ม', icon: Circle, text: 'text-slate-400', bg: 'bg-slate-50' },
+    done: { icon: CheckCircle2, text: 'text-emerald-600', bg: 'bg-emerald-50' },
+    in_progress: { icon: CircleDot, text: 'text-amber-600', bg: 'bg-amber-50' },
+    not_started: { icon: Circle, text: 'text-slate-400', bg: 'bg-slate-50' },
 };
 
-const formatDate = (value) => {
+const formatDate = (value, lang = 'th') => {
     if (!value) return '-';
     const d = new Date(value);
     if (Number.isNaN(d.getTime())) return '-';
-    return d.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
+    return d.toLocaleDateString(lang === 'en' ? 'en-GB' : 'th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
 };
 
 // A bar that always renders its track, so "0%" still reads as a measured zero
@@ -68,6 +64,13 @@ const StatTile = ({ icon, label, value, hint }) => (
 export default function ProfilePage({ user: propUser, onUserRefresh }) {
     const navigate = useNavigate();
     const params = useParams();
+    const { t, i18n } = useTranslation();
+    const lang = i18n.language === 'en' ? 'en' : 'th';
+    const p = (key, options) => t(`profile.${key}`, options);
+    // Error states hold a locale key ("profile.…") when the message is ours, or
+    // the server's own text; tx() renders either.
+    const tx = (value) => (typeof value === 'string' && value.startsWith('profile.') ? t(value) : value);
+    const fmt = (value) => formatDate(value, lang);
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -97,7 +100,7 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
 
     const load = useCallback(async () => {
         if (!userId) {
-            setError('กรุณาเข้าสู่ระบบเพื่อดูโปรไฟล์');
+            setError('profile.errors.signInToView');
             setLoading(false);
             return;
         }
@@ -110,8 +113,8 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
             }
             setData(profile);
         } catch (err) {
-            setError(err.status === 404 ? 'ไม่พบผู้ใช้คนนี้'
-                : err.kind === 'unauthorized' ? 'กรุณาเข้าสู่ระบบอีกครั้ง' : 'โหลดโปรไฟล์ไม่สำเร็จ');
+            setError(err.status === 404 ? 'profile.errors.notFound'
+                : err.kind === 'unauthorized' ? 'profile.errors.signInAgain' : 'profile.errors.loadFailed');
             setData(null);
         } finally {
             setLoading(false);
@@ -133,7 +136,7 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
             })
             .catch(error => {
                 if (!cancelled) setCompError(error.kind === 'unauthorized'
-                    ? 'กรุณาเข้าสู่ระบบอีกครั้ง' : 'โหลดประวัติ Competitive ไม่สำเร็จ');
+                    ? 'profile.errors.signInAgain' : 'profile.errors.competitiveFailed');
             })
             .finally(() => { if (!cancelled) setCompLoading(false); });
         return () => { cancelled = true; };
@@ -150,7 +153,7 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
         setPicked((current) => {
             if (current.includes(id)) return current.filter(x => x !== id);
             if (current.length >= max) {
-                setShowcaseError(`เลือกได้สูงสุด ${max} รายการ`);
+                setShowcaseError(p('errors.showcaseMax', { max }));
                 return current;
             }
             return [...current, id];
@@ -169,7 +172,7 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
             setEditingShowcase(false);
             await load();
         } catch (err) {
-            setShowcaseError(err.detail || 'บันทึกไม่สำเร็จ');
+            setShowcaseError(err.detail || 'profile.errors.saveFailed');
         } finally {
             setSavingShowcase(false);
         }
@@ -194,7 +197,7 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
 
     const handleAvatarReset = () => runAvatarChange(
         () => requestJson(`/api/profile/${userId}/avatar/reset`, { method: 'POST' }),
-        'รีเซ็ตรูปไม่สำเร็จ');
+        'profile.errors.resetPictureFailed');
 
     // Picking a picture the player already has. "Back to default" is the reset
     // route; the rest go through the select route with their source (and, for a
@@ -208,13 +211,13 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ source: opt.source, itemId: opt.itemId }),
             }),
-            'เลือกรูปไม่สำเร็จ');
+            'profile.errors.selectPictureFailed');
     };
 
     if (loading) {
         return (
             <div className="min-h-screen bg-pysim-surface px-4 py-8">
-                <SkeletonLoading variant="profile" label="กำลังโหลดโปรไฟล์..." className="mx-auto max-w-5xl" />
+                <SkeletonLoading variant="profile" label={p('loading')} className="mx-auto max-w-5xl" />
             </div>
         );
     }
@@ -223,12 +226,12 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
         return (
             <div className="min-h-screen bg-pysim-surface px-4 py-16">
                 <div className="mx-auto max-w-md rounded-xl bg-white p-8 text-center whisper-shadow">
-                    <p className="text-sm font-bold text-red-600">{error || 'โหลดโปรไฟล์ไม่สำเร็จ'}</p>
+                    <p className="text-sm font-bold text-red-600">{tx(error) || p('errors.loadFailed')}</p>
                     <button
                         onClick={() => navigate('/learn')}
                         className="mt-5 rounded-lg python-gradient px-6 py-2.5 text-sm font-bold text-white"
                     >
-                        กลับหน้าบทเรียน
+                        {p('backToLessons')}
                     </button>
                 </div>
             </div>
@@ -256,7 +259,7 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                     onClick={() => navigate(-1)}
                     className="mb-6 inline-flex items-center gap-2 text-sm font-bold text-pysim-on-surface-variant hover:text-pysim-on-surface"
                 >
-                    <ArrowLeft size={16} /> ย้อนกลับ
+                    <ArrowLeft size={16} /> {p('back')}
                 </button>
 
                 {/* ---------- identity ---------- */}
@@ -308,7 +311,7 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                                             ))}
                                         </div>
                                     )}
-                                    {avatarError && <p className="max-w-[12rem] text-center text-[11px] font-semibold text-red-500">{avatarError}</p>}
+                                    {avatarError && <p className="max-w-[12rem] text-center text-[11px] font-semibold text-red-500">{tx(avatarError)}</p>}
                                 </div>
                             )}
                         </div>
@@ -317,20 +320,20 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                             <div className="flex flex-wrap items-center justify-center gap-3 sm:justify-start">
                                 <h1 className="text-3xl font-black text-pysim-on-surface">{user.username}</h1>
                                 <span className="rounded-full bg-pysim-primary/10 px-3 py-1 text-xs font-black text-pysim-primary">
-                                    {SKILL_TIER_TH[progression.skill_tier] || progression.skill_tier}
+                                    {p(`tier.${progression.skill_tier}`, { defaultValue: progression.skill_tier })}
                                 </span>
                                 {user.role === 'admin' && (
-                                    <span className="rounded-full bg-slate-800 px-3 py-1 text-xs font-black text-white">แอดมิน</span>
+                                    <span className="rounded-full bg-slate-800 px-3 py-1 text-xs font-black text-white">{p('admin')}</span>
                                 )}
                             </div>
                             <p className="mt-1 text-sm text-pysim-on-surface-variant">
-                                สมาชิกตั้งแต่ {formatDate(user.created_at)}
+                                {p('memberSince', { date: fmt(user.created_at) })}
                             </p>
 
                             <div className="mt-5">
                                 <div className="flex items-end justify-between gap-3">
                                     <span className="text-sm font-black text-pysim-on-surface">
-                                        เลเวล {progression.level}
+                                        {p('level', { level: progression.level })}
                                     </span>
                                     <span className="text-xs font-bold text-pysim-outline">
                                         {progression.xp_into_level} / {progression.xp_needed_this_level} XP
@@ -341,66 +344,66 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
 
                             <div className="mt-5 flex flex-wrap justify-center gap-4 sm:justify-start">
                                 <span className="inline-flex items-center gap-1.5 text-sm font-bold text-amber-600">
-                                    <Coins size={16} /> {user.virtual_currency.toLocaleString()} ทอง
+                                    <Coins size={16} /> {p('coins', { count: user.virtual_currency.toLocaleString() })}
                                 </span>
                                 <span className="inline-flex items-center gap-1.5 text-sm font-bold text-orange-500">
-                                    <Flame size={16} /> ต่อเนื่อง {progression.streak_days} วัน
+                                    <Flame size={16} /> {p('streak', { days: progression.streak_days })}
                                 </span>
                                 <span className="inline-flex items-center gap-1.5 text-sm font-bold text-pysim-on-surface-variant">
-                                    <Star size={16} /> {progression.xp.toLocaleString()} XP สะสม
+                                    <Star size={16} /> {p('xpTotal', { xp: progression.xp.toLocaleString() })}
                                 </span>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <section aria-label="ของตกแต่งที่กำลังใช้" className="mt-4 rounded-xl bg-white/95 p-4 text-sm text-slate-600 whisper-shadow">
-                    <h2 className="font-bold text-slate-800">ของตกแต่งที่กำลังใช้</h2>
+                <section aria-label={p('cosmeticsInUse')} className="mt-4 rounded-xl bg-white/95 p-4 text-sm text-slate-600 whisper-shadow">
+                    <h2 className="font-bold text-slate-800">{p('cosmeticsInUse')}</h2>
                     <div className="mt-2 flex flex-wrap gap-x-6 gap-y-2">
-                        <span>ธีม: {user.theme_name || 'ค่าเริ่มต้น'}</span>
-                        <span>กรอบโปรไฟล์: {user.profile_frame_name || 'ไม่ได้สวมใส่'}</span>
-                        <span>เอฟเฟกต์เมาส์: {user.mouse_effect_name || 'ไม่ได้สวมใส่'}</span>
+                        <span>{p('themeLabel', { name: user.theme_name || p('defaultTheme') })}</span>
+                        <span>{p('frameLabel', { name: user.profile_frame_name || p('notWorn') })}</span>
+                        <span>{p('effectLabel', { name: user.mouse_effect_name || p('notWorn') })}</span>
                     </div>
-                    {user.mouse_effect_name && <p className="mt-2 text-xs">ลองเลื่อนเมาส์ คลิก หรือดับเบิลคลิกในหน้าโปรไฟล์เพื่อดูเอฟเฟกต์</p>}
+                    {user.mouse_effect_name && <p className="mt-2 text-xs">{p('effectHint')}</p>}
                 </section>
 
                 {/* ---------- headline numbers ---------- */}
                 <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
                     <StatTile
-                        icon={<BookOpen size={16} className="text-pysim-primary" />} label="บทเรียนที่จบ"
+                        icon={<BookOpen size={16} className="text-pysim-primary" />} label={p('stats.lessonsDone')}
                         value={`${learning.summary.lessons_done}/${learning.summary.lessons_total}`}
-                        hint={`กำลังเรียนอยู่ ${learning.summary.lessons_in_progress} บท`}
+                        hint={p('stats.lessonsInProgress', { count: learning.summary.lessons_in_progress })}
                     />
                     <StatTile
-                        icon={<Target size={16} className="text-emerald-500" />} label="แบบฝึกหัดที่ผ่าน"
+                        icon={<Target size={16} className="text-emerald-500" />} label={p('stats.exercisesPassed')}
                         value={`${learning.summary.exercises_passed}/${learning.summary.exercises_total}`}
-                        hint={`ความคืบหน้ารวม ${learning.summary.percent}%`}
+                        hint={p('stats.overallProgress', { percent: learning.summary.percent })}
                     />
                     <StatTile
-                        icon={<Gamepad2 size={16} className="text-violet-500" />} label="เล่น Arcade"
+                        icon={<Gamepad2 size={16} className="text-violet-500" />} label={p('stats.arcadePlayed')}
                         value={arcade.matches_played}
-                        hint={`ชนะ ${arcade.wins} · แพ้ ${arcade.losses}`}
+                        hint={p('stats.winsLosses', { wins: arcade.wins, losses: arcade.losses })}
                     />
                     <StatTile
-                        icon={<Trophy size={16} className="text-amber-500" />} label="อัตราการชนะ"
+                        icon={<Trophy size={16} className="text-amber-500" />} label={p('stats.winRate')}
                         value={`${arcade.win_rate}%`}
-                        hint={arcade.best_rank ? `อันดับดีที่สุด #${arcade.best_rank}` : 'ยังไม่มีสถิติ'}
+                        hint={arcade.best_rank ? p('stats.bestRank', { rank: arcade.best_rank }) : p('stats.noStats')}
                     />
                 </div>
 
                 {/* ---------- currently studying ---------- */}
                 {current && (
                     <div className="mt-6 rounded-2xl bg-white p-6 whisper-shadow">
-                        <h2 className="text-xs font-black uppercase tracking-widest text-pysim-outline">กำลังเรียน</h2>
+                        <h2 className="text-xs font-black uppercase tracking-widest text-pysim-outline">{p('current.title')}</h2>
                         <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
                             <div className="min-w-0">
                                 <p className="truncate text-xl font-black text-pysim-on-surface">{current.title}</p>
                                 <p className="mt-1 text-xs text-pysim-on-surface-variant">
-                                    แบบทดสอบก่อนเรียน {current.pre_score ? `${current.pre_score.score}/${current.pre_score.total}` : 'ยังไม่ทำ'}
+                                    {p('current.preTest', { score: current.pre_score ? `${current.pre_score.score}/${current.pre_score.total}` : p('current.notTaken') })}
                                     {' · '}
-                                    หลังเรียน {current.post_score ? `${current.post_score.score}/${current.post_score.total}` : 'ยังไม่ทำ'}
+                                    {p('current.postTest', { score: current.post_score ? `${current.post_score.score}/${current.post_score.total}` : p('current.notTaken') })}
                                     {' · '}
-                                    แบบฝึกหัด {current.exercises_passed}/{current.exercises_total}
+                                    {p('current.exercises', { passed: current.exercises_passed, total: current.exercises_total })}
                                 </p>
                             </div>
                             <span className="text-3xl font-black text-pysim-primary">{current.percent}%</span>
@@ -410,7 +413,7 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                             onClick={() => navigate(`/lesson/${current.lesson_id}`)}
                             className="mt-5 rounded-lg python-gradient px-6 py-2.5 text-sm font-bold text-white"
                         >
-                            เรียนต่อ
+                            {p('current.continue')}
                         </button>
                     </div>
                 )}
@@ -418,14 +421,14 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                 <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
                     {/* ---------- progress per module ---------- */}
                     <div className="rounded-2xl bg-white p-6 whisper-shadow">
-                        <h2 className="text-lg font-black text-pysim-on-surface">ความคืบหน้าตามหมวด</h2>
+                        <h2 className="text-lg font-black text-pysim-on-surface">{p('modules.title')}</h2>
                         <div className="mt-4 space-y-4">
                             {learning.modules.map((m) => (
                                 <div key={m.module_id}>
                                     <div className="flex items-baseline justify-between gap-3">
                                         <p className="min-w-0 truncate text-sm font-bold text-pysim-on-surface">{m.title}</p>
                                         <span className="shrink-0 text-xs font-bold text-pysim-outline">
-                                            {m.lessons_done}/{m.lessons_total} บท · {m.percent}%
+                                            {p('modules.lessons', { done: m.lessons_done, total: m.lessons_total, percent: m.percent })}
                                         </span>
                                     </div>
                                     <ProgressBar percent={m.percent} className="mt-1.5" />
@@ -441,30 +444,30 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                                 onClick={() => setHistoryTab('arcade')}
                                 className={`rounded-lg px-3 py-1.5 text-xs font-black transition ${historyTab === 'arcade' ? 'python-gradient text-white' : 'bg-pysim-surface-low text-pysim-on-surface-variant hover:bg-pysim-surface'}`}
                             >
-                                ประวัติ Arcade
+                                {p('history.arcade')}
                             </button>
                             <button
                                 onClick={() => setHistoryTab('competitive')}
                                 className={`rounded-lg px-3 py-1.5 text-xs font-black transition ${historyTab === 'competitive' ? 'python-gradient text-white' : 'bg-pysim-surface-low text-pysim-on-surface-variant hover:bg-pysim-surface'}`}
                             >
-                                ประวัติ Competitive
+                                {p('history.competitive')}
                             </button>
                         </div>
 
                         {historyTab === 'arcade' ? (
                             <>
                                 {arcade.recent_matches.length === 0 ? (
-                                    <p className="mt-4 text-sm text-pysim-outline">ยังไม่มีแมตช์ที่เล่นจบ</p>
+                                    <p className="mt-4 text-sm text-pysim-outline">{p('history.noArcade')}</p>
                                 ) : (
                                     <div className="mt-4 overflow-x-auto">
                                         <table className="w-full text-left text-xs">
                                             <thead className="text-pysim-outline">
                                                 <tr>
-                                                    <th className="pb-2 font-bold">ห้อง</th>
-                                                    <th className="pb-2 font-bold">ระดับ</th>
-                                                    <th className="pb-2 text-right font-bold">คะแนน</th>
-                                                    <th className="pb-2 text-right font-bold">เทสต์</th>
-                                                    <th className="pb-2 text-right font-bold">เมื่อ</th>
+                                                    <th className="pb-2 font-bold">{p('history.room')}</th>
+                                                    <th className="pb-2 font-bold">{p('history.difficulty')}</th>
+                                                    <th className="pb-2 text-right font-bold">{p('history.score')}</th>
+                                                    <th className="pb-2 text-right font-bold">{p('history.tests')}</th>
+                                                    <th className="pb-2 text-right font-bold">{p('history.when')}</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="text-pysim-on-surface">
@@ -477,7 +480,7 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                                                         </td>
                                                         <td className="py-2 text-right font-bold">{m.match_score}</td>
                                                         <td className="py-2 text-right">{m.tests_passed}/{m.tests_total}</td>
-                                                        <td className="py-2 text-right text-pysim-outline">{formatDate(m.ended_at)}</td>
+                                                        <td className="py-2 text-right text-pysim-outline">{fmt(m.ended_at)}</td>
                                                     </tr>
                                                 ))}
                                             </tbody>
@@ -485,30 +488,30 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                                     </div>
                                 )}
                                 <p className="mt-4 text-xs text-pysim-outline">
-                                    คะแนนสะสมทั้งหมด {arcade.total_score.toLocaleString()} · Survival Cash สะสม {arcade.total_cash_earned.toLocaleString()}
+                                    {p('history.arcadeTotals', { score: arcade.total_score.toLocaleString(), cash: arcade.total_cash_earned.toLocaleString() })}
                                 </p>
                             </>
                         ) : (
                             <>
                                 {compLoading ? (
-                                    <SkeletonLoading variant="table" label="กำลังโหลดประวัติ Competitive..." className="mt-4" />
+                                    <SkeletonLoading variant="table" label={p('history.loadingCompetitive')} className="mt-4" />
                                 ) : compError ? (
                                     <div className="mt-4 text-sm text-red-600" role="alert">
-                                        {compError}
-                                        <button type="button" className="ml-3 underline" onClick={() => { setCompError(''); setCompRetry(value => value + 1); }}>ลองใหม่</button>
+                                        {tx(compError)}
+                                        <button type="button" className="ml-3 underline" onClick={() => { setCompError(''); setCompRetry(value => value + 1); }}>{p('history.retry')}</button>
                                     </div>
                                 ) : !compHistory || compHistory.length === 0 ? (
-                                    <p className="mt-4 text-sm text-pysim-outline">ยังไม่มีประวัติการแข่ง Competitive</p>
+                                    <p className="mt-4 text-sm text-pysim-outline">{p('history.noCompetitive')}</p>
                                 ) : (
                                     <div className="mt-4 overflow-x-auto">
                                         <table className="w-full text-left text-xs">
                                             <thead className="text-pysim-outline">
                                                 <tr>
-                                                    <th className="pb-2 font-bold">โจทย์</th>
-                                                    <th className="pb-2 font-bold">ระดับ</th>
-                                                    <th className="pb-2 text-right font-bold">คะแนน</th>
-                                                    <th className="pb-2 text-right font-bold">เทสต์</th>
-                                                    <th className="pb-2 text-right font-bold">เมื่อ</th>
+                                                    <th className="pb-2 font-bold">{p('history.problem')}</th>
+                                                    <th className="pb-2 font-bold">{p('history.difficulty')}</th>
+                                                    <th className="pb-2 text-right font-bold">{p('history.score')}</th>
+                                                    <th className="pb-2 text-right font-bold">{p('history.tests')}</th>
+                                                    <th className="pb-2 text-right font-bold">{p('history.when')}</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="text-pysim-on-surface">
@@ -518,7 +521,7 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                                                         <td className="py-2">{m.difficulty || '-'}</td>
                                                         <td className="py-2 text-right font-bold">{m.score}</td>
                                                         <td className="py-2 text-right">{m.passed_cases}/{m.total_cases}</td>
-                                                        <td className="py-2 text-right text-pysim-outline">{formatDate(m.submitted_at)}</td>
+                                                        <td className="py-2 text-right text-pysim-outline">{fmt(m.submitted_at)}</td>
                                                     </tr>
                                                 ))}
                                             </tbody>
@@ -533,17 +536,17 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                 {/* ---------- lesson by lesson ---------- */}
                 <div className="mt-6 rounded-2xl bg-white p-6 whisper-shadow">
                     <div className="flex flex-wrap items-center justify-between gap-3">
-                        <h2 className="text-lg font-black text-pysim-on-surface">บทเรียนทั้งหมด</h2>
+                        <h2 className="text-lg font-black text-pysim-on-surface">{p('lessons.title')}</h2>
                         <button
                             onClick={() => setShowAllLessons(v => !v)}
                             className="rounded-lg bg-pysim-surface-low px-4 py-2 text-xs font-bold text-pysim-on-surface-variant hover:bg-pysim-surface"
                         >
-                            {showAllLessons ? 'ซ่อนบทที่ยังไม่เริ่ม' : `แสดงทั้งหมด (${learning.lessons.length} บท)`}
+                            {showAllLessons ? p('lessons.hideNotStarted') : p('lessons.showAll', { count: learning.lessons.length })}
                         </button>
                     </div>
 
                     {lessons.length === 0 ? (
-                        <p className="mt-4 text-sm text-pysim-outline">ยังไม่ได้เริ่มบทเรียนไหนเลย</p>
+                        <p className="mt-4 text-sm text-pysim-outline">{p('lessons.none')}</p>
                     ) : (
                         <div className="mt-4 space-y-2">
                             {lessons.map((l) => {
@@ -561,7 +564,7 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                                         <span className="min-w-0 flex-1">
                                             <span className="block truncate text-sm font-bold text-pysim-on-surface">{l.title}</span>
                                             <span className="block text-xs text-pysim-outline">
-                                                {meta.label} · แบบฝึกหัด {l.exercises_passed}/{l.exercises_total}
+                                                {p(`status.${STATUS_META[l.status] ? l.status : 'not_started'}`)} · {p('lessons.exercises', { passed: l.exercises_passed, total: l.exercises_total })}
                                             </span>
                                         </span>
                                         <span className="w-28 shrink-0">
@@ -580,17 +583,17 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                 {/* ---------- achievements ---------- */}
                 <div className="mt-6 rounded-2xl bg-white p-6 whisper-shadow">
                     <div className="flex flex-wrap items-baseline justify-between gap-3">
-                        <h2 className="text-lg font-black text-pysim-on-surface">ความสำเร็จ</h2>
+                        <h2 className="text-lg font-black text-pysim-on-surface">{p('achievements.title')}</h2>
                         <div className="flex items-center gap-4">
                             <span className="text-sm font-bold text-pysim-on-surface-variant">
-                                ปลดล็อกแล้ว {achievements.unlocked} / {achievements.total}
+                                {p('achievements.unlockedOf', { unlocked: achievements.unlocked, total: achievements.total })}
                             </span>
                             {isOwner && !editingShowcase && unlockedItems.length > 0 && (
                                 <button
                                     onClick={startEditing}
                                     className="rounded-lg bg-pysim-surface-low px-4 py-2 text-xs font-bold text-pysim-on-surface-variant hover:bg-pysim-surface"
                                 >
-                                    เลือกที่จะโชว์
+                                    {p('achievements.choose')}
                                 </button>
                             )}
                         </div>
@@ -605,10 +608,10 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                     {editingShowcase ? (
                         <div className="mt-5">
                             <p className="text-sm text-pysim-on-surface-variant">
-                                เลือกได้สูงสุด {maxShowcase} รายการ — เลือกแล้ว {picked.length}
+                                {p('achievements.pickLimit', { max: maxShowcase, count: picked.length })}
                             </p>
                             {showcaseError && (
-                                <p className="mt-2 text-sm font-bold text-red-600">{showcaseError}</p>
+                                <p className="mt-2 text-sm font-bold text-red-600">{tx(showcaseError)}</p>
                             )}
                             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                                 {unlockedItems.map((a) => {
@@ -625,7 +628,7 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                                             <span className="min-w-0 flex-1">
                                                 <span className="block truncate text-sm font-bold text-pysim-on-surface">{a.name}</span>
                                                 <span className="block text-[11px] text-pysim-outline">
-                                                    {on ? `โชว์เป็นลำดับที่ ${picked.indexOf(a.achievement_id) + 1}` : 'แตะเพื่อเลือก'}
+                                                    {on ? p('achievements.showAt', { n: picked.indexOf(a.achievement_id) + 1 }) : p('achievements.tapToPick')}
                                                 </span>
                                             </span>
                                         </button>
@@ -638,20 +641,20 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                                     disabled={savingShowcase}
                                     className="rounded-lg python-gradient px-6 py-2.5 text-sm font-bold text-white disabled:opacity-60"
                                 >
-                                    {savingShowcase ? 'กำลังบันทึก...' : 'บันทึก'}
+                                    {savingShowcase ? p('achievements.saving') : p('achievements.save')}
                                 </button>
                                 <button
                                     onClick={() => setEditingShowcase(false)}
                                     className="rounded-lg bg-pysim-surface-low px-6 py-2.5 text-sm font-bold text-pysim-on-surface-variant"
                                 >
-                                    ยกเลิก
+                                    {p('achievements.cancel')}
                                 </button>
                                 {picked.length > 0 && (
                                     <button
                                         onClick={() => setPicked([])}
                                         className="rounded-lg px-4 py-2.5 text-sm font-bold text-pysim-outline hover:text-pysim-on-surface"
                                     >
-                                        ล้างที่เลือก
+                                        {p('achievements.clear')}
                                     </button>
                                 )}
                             </div>
@@ -672,7 +675,7 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                                                     <p className="mt-0.5 line-clamp-2 text-xs text-pysim-on-surface-variant">{a.description}</p>
                                                 )}
                                                 <p className="mt-1 text-[11px] text-pysim-outline">
-                                                    ปลดล็อก {formatDate(a.unlocked_at)}
+                                                    {p('achievements.unlockedOn', { date: fmt(a.unlocked_at) })}
                                                 </p>
                                             </div>
                                         </div>
@@ -681,12 +684,12 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                             )}
 
                             {showcase.length === 0 && (
-                                <p className="mt-5 text-sm text-pysim-outline">ยังไม่ได้ปลดล็อกความสำเร็จใดเลย</p>
+                                <p className="mt-5 text-sm text-pysim-outline">{p('achievements.none')}</p>
                             )}
 
                             <details className="mt-6">
                                 <summary className="cursor-pointer text-sm font-bold text-pysim-on-surface-variant hover:text-pysim-on-surface">
-                                    ดูความสำเร็จทั้งหมด {achievements.total} รายการ
+                                    {p('achievements.viewAll', { count: achievements.total })}
                                 </summary>
                                 <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                                     {achievements.items.map((a) => (
@@ -709,7 +712,7 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                                                     <p className="mt-0.5 line-clamp-2 text-xs text-pysim-on-surface-variant">{a.description}</p>
                                                 )}
                                                 <p className="mt-1 text-[11px] text-pysim-outline">
-                                                    {a.unlocked ? `ปลดล็อก ${formatDate(a.unlocked_at)}` : `รางวัล ${a.reward} · ${a.difficulty}`}
+                                                    {a.unlocked ? p('achievements.unlockedOn', { date: fmt(a.unlocked_at) }) : p('achievements.reward', { reward: a.reward, difficulty: t(`achievements.difficulty.${a.difficulty}`, a.difficulty) })}
                                                 </p>
                                             </div>
                                         </div>

@@ -19,6 +19,7 @@ import { accessForRoute, leavesLoginPage, loginUrlFor, returnDestination } from 
 import { createAuthRestorer } from './auth/restore-state.js';
 import SkeletonLoading from './components/ui/Skeleton.jsx';
 import { titleForPath } from './config/routeTitles.js';
+import ToastHost from './components/ui/ToastHost.jsx';
 
 // Route components load only when visited, keeping the initial bundle small.
 const LearningPage = lazy(() => import('./pages/LearningPage'));
@@ -404,6 +405,7 @@ function AppContent() {
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-transparent text-slate-800 font-sans transition-colors duration-300 relative">
       {authError && <div role="alert" className="relative z-50 bg-rose-50 p-4 text-center text-sm text-rose-700">{authError} <button className="underline" onClick={() => window.location.reload()}>ลองใหม่</button></div>}
       <MouseEffectLayer user={user} />
+      <ToastHost />
       <TheInfiniteGrid>
         {!hideNavbar && !isSimulationMode && (
           <ModeEntryHeader mode={isLearningRoute ? 'learn' : undefined} user={user} onLogout={handleLogout} />

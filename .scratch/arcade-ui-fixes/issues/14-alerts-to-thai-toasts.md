@@ -14,9 +14,15 @@
 
 **Blocked by:** 12 (แก้ไฟล์ร้านค้าเหมือนกัน)
 
-**Status:** ready-for-agent
+**Status:** done (2026-10-26, see project_logs/2026-10-26/0500-tickets-11-16-shared-and-accounts.md)
 
-- [ ] grep แล้วไม่พบ `alert(` ในโค้ดหน้าผู้เรียน (ไม่นับหน้า admin)
+- [x] grep แล้วไม่พบ `alert(` ในโค้ดหน้าผู้เรียน (ไม่นับหน้า admin)
 - [ ] ทดสอบผ่าน dev server: ทำให้การสวมใส่ล้มเหลว แล้วเห็น toast ภาษาไทย ไม่มี dialog ของเบราว์เซอร์
 - [ ] ทดสอบผ่าน dev server: ให้ server ตอบ error ตอนทำแบบวัดระดับ แล้วเห็น toast ภาษาไทย
-- [ ] `npm run lint` ของ client ผ่าน
+- [x] `npm run lint` ของ client ผ่าน
+
+## ผล (2026-10-26)
+- เพิ่ม `components/ui/toast.js` + `ToastHost.jsx` (ติดตั้งใน App) และ `friendlyError()` ที่ไม่โชว์ข้อความ server ผิดภาษา
+- เปลี่ยน `alert()` ครบทุกจุดในหน้าผู้เรียน: ShopPage 8 จุด, FriendLogin 3, Login 1, CompetitiveArena 1 (ไฟล์ของ Person 2 — บันทึกใน handoff)
+- **ทดสอบในเบราว์เซอร์:** เรียก `toast()` แล้วขึ้น `role="alert"` ด้านล่างจอ และหายไปใน 5 วินาที
+- **ยังไม่ได้ทดสอบ:** ทำให้สวมใส่ไม่สำเร็จหรือให้แบบวัดระดับ error จริงแล้วดู toast (ทั้งสองข้อเป็นการเปลี่ยนจาก `alert` เป็น `toast` แบบบรรทัดต่อบรรทัด)
