@@ -8,10 +8,13 @@ async function settleArcadeRewards(connection, room) {
   );
   // Lock accounts in a consistent order, even when the same people finish
   // different rooms concurrently. Bots/unregistered names have no wallet.
+  // Spectators who guessed and then left the room are locked with the rest.
   const [accounts] = await connection.query(`SELECT u.user_id, u.username FROM users u
-    JOIN arcade_participants p ON p.user_name = u.username
-    WHERE p.room_id = ? AND p.match_id = ? AND p.participant_kind = 'human' ORDER BY u.user_id FOR UPDATE OF u`,
-  [room.room_id, room.current_match_id]);
+    WHERE u.username IN (SELECT user_name FROM arcade_participants
+        WHERE room_id = ? AND match_id = ? AND participant_kind = 'human')
+      OR u.username IN (SELECT user_name FROM arcade_spectator_guesses WHERE match_id = ?)
+    ORDER BY u.user_id FOR UPDATE OF u`,
+  [room.room_id, room.current_match_id, room.current_match_id]);
   // A spectator who named the winner gets a small fixed reward (Spec 0005 #24).
   // Paid with the receipt below, which is written once per match, so a settle
   // that runs twice cannot pay it twice. It changes no player's score or cash.
@@ -19,12 +22,26 @@ async function settleArcadeRewards(connection, room) {
   const [guesses] = await connection.query('SELECT user_name, guessed_name FROM arcade_spectator_guesses WHERE match_id = ?',
     [room.current_match_id]);
   const guessedRight = new Set(guesses.filter(guess => guess.guessed_name === winner).map(guess => guess.user_name));
+  const guessReward = Number(arcadeConfig.spectatorGuessReward) || 0;
   for (const account of accounts) {
     const index = standings.findIndex(p => p.user_name === account.username);
+    if (index < 0) {
+      // Left the room after guessing: no seat, so no rank and no receipt. The
+      // guess row records the payout, set once, so it pays once.
+      if (!guessedRight.has(account.username) || !guessReward) continue;
+      const [paid] = await connection.query(
+        'UPDATE arcade_spectator_guesses SET paid_coins = ? WHERE match_id = ? AND user_name = ? AND paid_coins IS NULL',
+        [guessReward, room.current_match_id, account.username]
+      );
+      if (paid.affectedRows) {
+        await connection.query('UPDATE users SET virtual_currency = COALESCE(virtual_currency, 0) + ? WHERE user_id = ?', [guessReward, account.user_id]);
+      }
+      continue;
+    }
     const player = standings[index];
     const rank = index + 1;
     const coins = Number(arcadeConfig.coinRewardByRank[String(rank)] ?? arcadeConfig.coinRewardParticipation ?? 0);
-    const guessCoins = guessedRight.has(account.username) ? Number(arcadeConfig.spectatorGuessReward) || 0 : 0;
+    const guessCoins = guessedRight.has(account.username) ? guessReward : 0;
     const [inserted] = await connection.query(`INSERT INTO arcade_reward_receipts
       (match_id, user_id, user_name, final_rank, score, cash, coins, guess_coins)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (match_id, user_id) DO NOTHING`,

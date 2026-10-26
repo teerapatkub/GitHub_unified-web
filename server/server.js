@@ -7103,6 +7103,7 @@ const {
   createAchievementEasyDifficultyMigration,
   createArcadeRoundKindsMigration,
   createArcadeSpectatorsMigration,
+  createArcadeGuessPayoutsMigration,
 } = require('./migrations/definitions');
 const { applyDataApiSecurity } = require('./security/data-api-security');
 const authProvisioningSchemaSql = fs.readFileSync(
@@ -7183,6 +7184,11 @@ const applicationMigrations = [
   createArcadeSpectatorsMigration(
     () => require('./arcade/migrate-spectators').migrateArcadeSpectators(db),
     require('./arcade/migrate-spectators').migrateArcadeSpectators.toString(),
+  ),
+  // A right guess paid to a spectator who left before the end (Spec 0005 #24).
+  createArcadeGuessPayoutsMigration(
+    () => require('./arcade/migrate-guess-payouts').migrateArcadeGuessPayouts(db),
+    require('./arcade/migrate-guess-payouts').migrateArcadeGuessPayouts.toString(),
   ),
 ];
 

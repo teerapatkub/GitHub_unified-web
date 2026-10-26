@@ -57,6 +57,7 @@ async function arcadeFixture(t, { beforeMigration, beforeShopMigration } = {}) {
   await require('../../arcade/migrate-quality-breakdown').migrateArcadeQualityBreakdown(db);
   await require('../../problemsSchema').migrateArcadeRoundKinds(db);
   await require('../../arcade/migrate-spectators').migrateArcadeSpectators(db);
+  await require('../../arcade/migrate-guess-payouts').migrateArcadeGuessPayouts(db);
   const authSubjects = new Map();
   const authAdmin = { auth: {
     getUser: async token => {

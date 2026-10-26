@@ -84,6 +84,30 @@ test('a right guess pays once at settlement, a wrong one pays nothing, and no pl
   assert.equal(reward.guess_coins, config.spectatorGuessReward);
 });
 
+// The exit button for players who are out (Spec 0005 #6) deletes their seat,
+// and settlement used to pay only seats that were still there.
+test('a spectator who leaves before the end still gets a right guess, once', async t => {
+  const { db, call, matchId } = await spectatedMatch(t);
+  await call('/api/arcade/rooms/1/guess', { user: 'bob', body: { match_id: matchId, guessed_name: 'alice' } });
+  await call('/api/arcade/rooms/1/guess', { user: 'carol', body: { match_id: matchId, guessed_name: 'dave' } });
+  for (const user of ['bob', 'carol']) assert.equal((await call('/api/arcade/rooms/1/leave', { user, body: {} })).status, 200);
+  const wallet = async name => (await db.query('SELECT virtual_currency FROM users WHERE username = ?', [name]))[0][0].virtual_currency;
+  const before = { bob: await wallet('bob'), carol: await wallet('carol') };
+  const [[room]] = await db.query('SELECT * FROM arcade_rooms WHERE room_id = 1');
+  for (let i = 0; i < 2; i++) {
+    const connection = await db.getConnection();
+    await connection.beginTransaction();
+    await settleArcadeRewards(connection, room);
+    await connection.commit();
+    connection.release();
+  }
+  assert.equal(await wallet('bob') - before.bob, config.spectatorGuessReward);
+  assert.equal(await wallet('carol') - before.carol, 0);
+  // Gone from the room, so no rank, no match coins and no receipt of a match they did not finish.
+  const [receipts] = await db.query('SELECT user_name FROM arcade_reward_receipts WHERE match_id = ? ORDER BY user_name', [matchId]);
+  assert.deepEqual(receipts.map(r => r.user_name), ['alice', 'dave']);
+});
+
 test('a spectator can cheer during a round, but not faster than the limit, and a survivor cannot', async t => {
   const { call } = await spectatedMatch(t);
   assert.equal((await call('/api/arcade/rooms/1/cheer', { user: 'bob', body: { emoji: '🔥' } })).status, 200);

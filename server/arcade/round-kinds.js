@@ -177,8 +177,17 @@ function computeReview(bank) {
     .slice(0, 3);
   if (wrong.length < 2) return null;
   const codes = [solution.code, ...wrong.map(answer => answer.code)];
-  return { options: codes.map((code, i) => ({ id: 'abcd'[i], code })) };
+  return { options: withReviewIds(codes.map(code => ({ code }))) };
 }
+
+// A review option's id is a hash of its code, never its place in the list: the
+// reference answer is built first, so a positional id ('a') named the right
+// answer to anyone reading the round view. Derived again on every read, so
+// rows stored with letters before this change are covered too.
+const reviewOptionId = code => crypto.createHash('sha256').update(code).digest('hex').slice(0, 8);
+const withReviewIds = options => options
+  .map(option => ({ id: reviewOptionId(option.code), code: option.code }))
+  .sort((a, b) => (a.id < b.id ? -1 : 1));
 
 // Which kinds a problem can be played as, and what each needs. Runs Python.
 async function computeRoundData(problem) {
@@ -223,7 +232,7 @@ function problemForKind(problem, kind) {
 function choiceOptions(kind, problem) {
   const data = asObject(problem?.round_data);
   if (kind === 'predict') return data.predict?.options || null;
-  if (kind === 'review') return data.review?.options || null;
+  if (kind === 'review') return data.review?.options ? withReviewIds(data.review.options) : null;
   return null;
 }
 
@@ -283,7 +292,7 @@ function publicRoundView(kind, problem, viewerKey = '') {
     return { kind, predict: { code: data.predict.code, call: data.predict.call, options: data.predict.options } };
   }
   if (kind === 'review' && data.review) {
-    return { kind, review: { options: orderFor(data.review.options, viewerKey) } };
+    return { kind, review: { options: orderFor(choiceOptions(kind, problem), viewerKey) } };
   }
   return { kind: 'write' };
 }

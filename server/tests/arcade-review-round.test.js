@@ -20,6 +20,8 @@ const REVIEW = { options: [
   { id: 'd', code: SUM_TO_N.solution_code.replace('total += i', 'total += 1') },
 ] };
 
+const idOf = (options, code) => options.find(option => option.code === code).id;
+
 async function reviewMatch(t) {
   const f = await arcadeFixture(t);
   const { db, call } = f;
@@ -49,10 +51,10 @@ test('two players see the answers in different orders, and the server judges bot
   const alice = (await call('/api/arcade/rooms/1/round')).body.review.options;
   const bob = (await call('/api/arcade/rooms/1/round', { user: 'bob' })).body.review.options;
   assert.notDeepEqual(alice.map(o => o.id), bob.map(o => o.id));
-  assert.deepEqual(alice.map(o => o.id).sort(), ['a', 'b', 'c', 'd']);
+  assert.deepEqual(alice.map(o => o.id).sort(), bob.map(o => o.id).sort());
   // Same answer, different place on screen: both pick the one that works.
-  await send('a');
-  await send('a', 'bob');
+  await send(idOf(alice, SUM_TO_N.solution_code));
+  await send(idOf(bob, SUM_TO_N.solution_code), 'bob');
   await settle();
   for (const user of ['alice', 'bob']) {
     const [round] = (await call('/api/arcade/rooms/1/round-history', { user })).body.history;
@@ -63,7 +65,7 @@ test('two players see the answers in different orders, and the server judges bot
 
 test('a wrong pick scores nothing, and afterwards says which tests that answer fails', async t => {
   const { call, send, settle } = await reviewMatch(t);
-  await send('b');
+  await send(idOf((await call('/api/arcade/rooms/1/round')).body.review.options, REVIEW.options[1].code));
   await settle();
   const [round] = (await call('/api/arcade/rooms/1/round-history')).body.history;
   assert.deepEqual([round.pass_count, round.total_count, round.round_score], [2, 4, 0]);
@@ -77,6 +79,25 @@ test('the round view never says which answer is right', async t => {
   const view = (await call('/api/arcade/rooms/1/round')).body;
   assert.equal(view.kind, 'review');
   for (const option of view.review.options) assert.deepEqual(Object.keys(option).sort(), ['code', 'id']);
+});
+
+// The stored options list the reference answer first. An id that followed that
+// order ('a' was always right) gave the answer to anyone reading the response.
+test('an option id comes from its code alone, so it never says which answer is right', async t => {
+  const { db, call, send, settle } = await reviewMatch(t);
+  const before = (await call('/api/arcade/rooms/1/round')).body.review.options;
+  for (const option of before) assert.doesNotMatch(option.id, /^[abcd]$/);
+  // The same answers stored in the opposite order keep the same ids.
+  const reversed = { options: [...REVIEW.options].reverse().map((option, i) => ({ ...option, id: 'abcd'[i] })) };
+  await db.query('UPDATE problem_modes SET round_data = ?', [JSON.stringify({ review: reversed })]);
+  const after = (await call('/api/arcade/rooms/1/round')).body.review.options;
+  for (const { code } of REVIEW.options) assert.equal(idOf(after, code), idOf(before, code));
+  // A stored letter is not an answer any more; the id the view gave is.
+  assert.equal((await send('a')).status, 400);
+  assert.equal((await send(idOf(after, SUM_TO_N.solution_code))).status, 200);
+  await settle();
+  const [round] = (await call('/api/arcade/rooms/1/round-history')).body.history;
+  assert.equal(round.round_score, 200);
 });
 
 // Enough lines for the bot coder to make several different mistakes.

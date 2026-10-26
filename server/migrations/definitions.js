@@ -2,6 +2,7 @@ const { defineMigration } = require('./index');
 const {
   ACHIEVEMENT_EASY_DIFFICULTY_VERSION,
   ARCADE_ACHIEVEMENT_REWARDS_VERSION,
+  ARCADE_GUESS_PAYOUTS_VERSION,
   ARCADE_QUALITY_BREAKDOWN_VERSION,
   ARCADE_ROUND_KINDS_VERSION,
   ARCADE_SPECTATORS_VERSION,
@@ -87,7 +88,15 @@ const createArcadeSpectatorsMigration = (up, signature) => defineMigration({
   up,
 });
 
+const createArcadeGuessPayoutsMigration = (up, signature) => defineMigration({
+  version: ARCADE_GUESS_PAYOUTS_VERSION,
+  name: 'arcade_guess_payouts',
+  signature: signatureFor(up, signature),
+  up,
+});
+
 module.exports = {
+  createArcadeGuessPayoutsMigration,
   createArcadeSpectatorsMigration,
   createArcadeRoundKindsMigration,
   createAchievementEasyDifficultyMigration,

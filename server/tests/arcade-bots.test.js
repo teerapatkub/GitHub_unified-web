@@ -16,6 +16,7 @@ test('host adds explicitly typed bots while a human named Bot_alice stays human'
 });
 
 const { settleDueArcadeRooms } = require('../arcade/match-ticker');
+const { choiceOptions } = require('../arcade/round-kinds');
 const { randomUUID } = require('node:crypto');
 async function botMatch(t, { bots = 1 } = {}) {
   const f = await arcadeFixture(t);
@@ -438,7 +439,8 @@ test('in a review round a bot picks the answer that passes every test and is sco
   for (let i = 0; i < 10 && !(await f.bot(f.botName)).has_submitted; i++) { await f.elapse(3000); await f.tick(); }
   const sent = await f.bot(f.botName);
   assert.equal(sent.has_submitted, 1);
-  assert.equal(sent.submitted_code, 'b');
+  const right = choiceOptions('review', { round_data: { review } }).find(option => option.code === SUM_TO_N.solution_code);
+  assert.equal(sent.submitted_code, right.id);
   await f.expire();
   await f.tick();
   assert.ok(await f.scoreOf(f.botName) >= 200);

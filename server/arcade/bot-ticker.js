@@ -195,7 +195,7 @@ function decideChoice({ room, kind, problem, writeBank, memory, random, roundNum
   const target = Math.min(1, Math.max(0, skill.passMin + random() * skill.passSpread));
   const written = coder.chooseAnswer(writeBank, target, random);
   const right = rightOption(kind, problem, writeBank);
-  const wrong = options.filter(option => option !== right);
+  const wrong = options.filter(option => option.id !== right?.id);
   // Not working it out, half the time it guesses among all the options - a
   // choice round has a floor a write round does not - and otherwise falls for
   // a wrong one.
