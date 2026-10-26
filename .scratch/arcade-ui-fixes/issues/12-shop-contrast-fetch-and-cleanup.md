@@ -14,7 +14,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** done except Heart decision and load time (2026-10-26, see project_logs/2026-10-26/0500-tickets-11-16-shared-and-accounts.md)
+**Status:** done except load time (2026-10-26, see project_logs/2026-10-26/0500-tickets-11-16-shared-and-accounts.md)
 
 - [x] วัด contrast ในเบราว์เซอร์จริง ปุ่ม "ซื้อ", "กำลังสวมใส่" และป้าย "มีแล้ว" ผ่าน 4.5:1 ทั้งหมด
 - [ ] ดู network request ตอนเปิดร้านหนึ่งครั้ง items, inventory และ sets ถูกเรียกอย่างละครั้ง (dev: 2 ครั้งเพราะ StrictMode, ดูข้อผลด้านล่าง)
@@ -32,4 +32,4 @@
 - [x] ช่องค้นหามี `aria-label` และเป็น `type="search"`
 - [x] สคริปต์ `server/scripts/hide-test-shop-items.js` (dry run ก่อนเสมอ, ซ่อนด้วย `is_active = 0` ไม่ลบ)
   - ฐานทดสอบ: ซ่อน "he" (item 59) แล้ว
-  - production: มีแค่ "Heart" (item 12) ซึ่งอยู่ใน `seed-content.sql` เป็นเอฟเฟกต์ฟรี อาจตั้งใจให้มี จึงไม่ได้ซ่อนทั้งสองที่ — **รอผู้ใช้ตัดสิน**
+  - production: มีแค่ "Heart" (item 12) ซึ่งอยู่ใน `seed-content.sql` เป็นเอฟเฟกต์ฟรี จึงไม่ได้ซ่อนทั้งสองที่ — **ผู้ใช้ยืนยันแล้ว (2026-10-26) ว่าเก็บไว้ เป็นของฟรีที่ตั้งใจให้มี**

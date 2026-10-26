@@ -2,8 +2,8 @@
 // meant for players (Spec 0005 ticket 12, user test bug U8: "he", price 0,
 // MOUSE_EFFECT, only in the test project). "Heart" (item 12) was reported in
 // the same breath but is part of seed-content.sql, the content set carried to
-// production as a free double-click effect, so it is left alone until the team
-// decides it is a leftover. Hiding sets is_active = 0, the flag GET /api/shop/items
+// production as a free double-click effect, and the team confirmed it is kept on
+// purpose (2026-10-26). Hiding sets is_active = 0, the flag GET /api/shop/items
 // already filters on; nothing is deleted, so owned copies stay in inventories
 // and the change is reversible.
 //
