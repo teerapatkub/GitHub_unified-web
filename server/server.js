@@ -1065,9 +1065,6 @@ const getLearningModeConfig = (mode = 'exercise') => {
         sectionLabel: 'Exercise',
         subtitle: 'Debug Lab',
         accent: 'blue',
-        // A Debug Lab hands the learner broken code to fix, so its starter must
-        // fail at least one test; a Hard Challenge starts from comments.
-        starterMustFail: true,
         rewardXpRange: [90, 180],
         rewardCoinsRange: [20, 60],
     };
@@ -1183,41 +1180,51 @@ const normalizeGeneratedLearningTask = (task, mode = 'exercise', level = 1) => {
 
 // A small local model writes plausible-looking problems with wrong expected
 // output often enough that nothing it writes may reach a learner unchecked. The
-// model sends its own solution with the problem, and the problem is only kept
-// when that solution passes every test case through the real grader - and, for
-// a Debug Lab, when the buggy starter does not (otherwise there is nothing to
-// fix). Any missing field rejects the whole problem rather than patching it with
-// pieces of the built-in one, which used to pair a generated title with
-// unrelated built-in test cases. The solution is dropped after checking: it is
-// never stored with the task or sent to the browser.
+// model sends its own solution with the problem, and each test's expected output
+// is what that solution prints for the test's input, run through the real
+// grader - not the value the model wrote down, which disagreed with its own
+// solution in 8 of 10 generated problems (docs/llm-benchmark, 2026-10-27). The
+// problem is only kept when the solution runs cleanly and prints something for
+// every input. Any missing field rejects
+// the whole problem rather than patching it with pieces of the built-in one,
+// which used to pair a generated title with unrelated built-in test cases. The
+// solution is dropped after checking: it is never stored with the task or sent
+// to the browser.
 // The one shape a practice task's tests are graded in, both when a generated
 // task is checked here and when a learner submits (/api/learning/ai-task/submit).
 const learningTaskProblem = (testCases) => ({ test_kind: 'stdio', test_cases: testCases, is_auto_gradable: 1 });
 
-const verifyGeneratedLearningTask = async (task, config) => {
+const verifyGeneratedLearningTask = async (task) => {
     const nonEmpty = (value) => typeof value === 'string' && value.trim() !== '';
     const instructions = Array.isArray(task?.instructions) ? task.instructions.filter(nonEmpty) : [];
-    const testCases = Array.isArray(task?.testCases)
-        ? task.testCases
-            .filter((test) => test && test.expected != null && String(test.expected).trim() !== '')
-            .map((test) => ({ input: String(test.input ?? ''), expected: String(test.expected) }))
+    const inputs = Array.isArray(task?.testCases)
+        ? task.testCases.filter((test) => test && typeof test === 'object').map((test) => String(test.input ?? ''))
         : [];
     if (!nonEmpty(task?.title) || instructions.length === 0 || typeof task?.starterCode !== 'string' || !nonEmpty(task?.solutionCode)) {
         throw new Error('generated task is missing its title, instructions, starter code or solution');
     }
-    if (testCases.length < 3) {
-        throw new Error(`generated task has ${testCases.length} usable test cases, expected at least 3`);
+    if (inputs.length < 3) {
+        throw new Error(`generated task has ${inputs.length} usable test cases, expected at least 3`);
     }
-    // The page shows at most five; checking the same five that get stored.
-    const keptCases = testCases.slice(0, 5);
+    // The page shows at most five; running the same five that get stored.
+    const keptInputs = inputs.slice(0, 5);
 
-    const problem = learningTaskProblem(keptCases);
-    const solved = await judgeLearnerSubmission({ problem, code: task.solutionCode });
-    if (!solved.accepted) {
-        throw new Error(`generated solution fails its own test cases (${solved.passedCount ?? 0}/${solved.totalCount ?? keptCases.length})`);
+    // Graded against an empty expectation, so each result's `actual` is the
+    // solution's own output with any input() prompt already removed - exactly
+    // what a learner's answer will be compared with.
+    const run = await gradeSubmission({
+        problem: learningTaskProblem(keptInputs.map((input) => ({ input, expected: '' }))),
+        code: task.solutionCode,
+    });
+    const broken = (run.results || []).find((result) => result.error || !String(result.actual ?? '').trim());
+    if (run.error || broken || (run.results || []).length !== keptInputs.length) {
+        throw new Error(`generated solution does not run cleanly on its own inputs (${broken?.error ? String(broken.error).split('\n').pop() : 'no output'})`);
     }
-    if (config.starterMustFail && (await judgeLearnerSubmission({ problem, code: task.starterCode })).accepted) {
-        throw new Error('generated Debug Lab starter already passes every test, so there is nothing to fix');
+    const keptCases = keptInputs.map((input, i) => ({ input, expected: normalizeOutput(run.results[i].actual) }));
+    // Different inputs, one output: the solution ignores its input, so the
+    // tests check nothing (2 of 13 otherwise-passing problems, 2026-10-27).
+    if (new Set(keptInputs).size > 1 && new Set(keptCases.map((test) => test.expected)).size === 1) {
+        throw new Error('generated solution prints the same output for every input');
     }
 
     // The example shown on the page must be one the solution was checked
@@ -1230,11 +1237,16 @@ const verifyGeneratedLearningTask = async (task, config) => {
     return { ...task, solutionCode: undefined, instructions, testCases: keptCases, example };
 };
 
+// Only a Hard Challenge is ever asked of the model. A Debug Lab needs a bug that
+// changes the output, and the model's "bugs" did not in 14 of 15 generated Debug
+// Labs (docs/llm-benchmark, 2026-10-27): the learner waited 20-45 s for a
+// problem that was then thrown away. A Debug Lab comes from the bank, or is the
+// built-in one when the bank has nothing left.
 const generateLearningTaskWithAI = async ({ mode = 'exercise', level = 1 }) => {
     const config = getLearningModeConfig(mode);
+    if (config.mode !== 'challenge') return normalizeGeneratedLearningTask({}, mode, level);
     const descriptiveLevel = normalizePlayerLevel(level);
-    const prompt = config.mode === 'challenge'
-        ? `
+    const prompt = `
 You are a game designer for a Python learning platform.
 Create ONE challenge task for a ${descriptiveLevel} learner.
 
@@ -1259,32 +1271,6 @@ Rules:
 - The expected outputs must be exact strings, exactly what solutionCode prints for that input.
 - Do not include markdown fences.
 - Do not use external libraries.
-`
-        : `
-You are a game designer for a Python learning platform.
-Create ONE debug-lab task for a ${descriptiveLevel} learner.
-
-Return ONLY valid JSON with this exact structure:
-{
-  "title": "short debug task title",
-  "instructions": ["step 1", "step 2"],
-  "example": { "input": "sample input", "output": "sample output" },
-  "starterCode": "buggy python code that should almost work but contains 1-3 real mistakes",
-  "solutionCode": "the same code with the mistakes fixed",
-  "testCases": [
-    { "input": "sample input", "expected": "exact expected output" }
-  ],
-  "rewardXp": 120,
-  "rewardCoins": 30
-}
-
-Rules:
-- The starterCode MUST be intentionally buggy.
-- The player should fix the existing code instead of writing a totally unrelated solution.
-- Generate 3 or 4 test cases.
-- The expected outputs must be exact strings, exactly what solutionCode prints for that input.
-- Do not include markdown fences.
-- Do not use external libraries.
 `;
 
     try {
@@ -1301,7 +1287,7 @@ Rules:
             throw new Error('AI task response is not valid JSON');
         }
 
-        return normalizeGeneratedLearningTask(await verifyGeneratedLearningTask(parsed, config), mode, level);
+        return normalizeGeneratedLearningTask(await verifyGeneratedLearningTask(parsed), mode, level);
     } catch (error) {
         // Never fatal: a built-in task is a far better outcome for the learner
         // than an error screen, so the endpoint keeps working while the model is down.

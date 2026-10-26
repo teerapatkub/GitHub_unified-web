@@ -22,6 +22,7 @@
     "test:targeting": "node scripts/arcade-tests/bot-targeting-test.mjs",
     "test:trialrun": "node scripts/arcade-tests/trial-run-test.mjs",
     "sim:bots": "node scripts/arcade-tests/bot-balance-sim.js",
+    "bench:llm": "node scripts/llm-benchmark.js --out ../docs/llm-benchmark/latest-results.json",
     "test:arcade": "npm run test:tasks && npm run test:score && npm run test:draw && npm run test:bot-progress && npm run test:targeting && npm run test:trialrun && npm run test:spectator && npm run test:bots && npm run test:round-kinds",
     "check:sql": "node scripts/sql-dialect-check.js",
     "check:undef": "node scripts/undefined-call-check.js",

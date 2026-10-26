@@ -1,0 +1,627 @@
+{
+  "model": "scb10x/typhoon2.5-qwen3-4b",
+  "baseURL": "http://localhost:11434/v1",
+  "generate": [
+    {
+      "mode": "debug",
+      "level": "Beginner",
+      "ms": 104955,
+      "tokens": 241,
+      "json": true,
+      "verdict": "buggy starter already passes",
+      "modelAgreed": 0,
+      "title": "Fix the Calculator Error",
+      "within45s": false
+    },
+    {
+      "mode": "debug",
+      "level": "Beginner",
+      "ms": 19062,
+      "tokens": 250,
+      "json": true,
+      "verdict": "ok",
+      "modelAgreed": 4,
+      "title": "Fix the Greeting Bug",
+      "within45s": true,
+      "instructions": [
+        "Look at the current code and identify the issue.",
+        "Fix only the bug in the starterCode without changing its structure or adding new features."
+      ],
+      "starterCode": "def greet(name):\n    print(\"Hello,\" + name + '!')\n\nname = input()\\ngreet(name)",
+      "cases": [
+        {
+          "input": "Bob",
+          "expected": "Hello,Bob!"
+        },
+        {
+          "input": "Charlie",
+          "expected": "Hello,Charlie!"
+        },
+        {
+          "input": "Diana",
+          "expected": "Hello,Diana!"
+        },
+        {
+          "input": "Eve",
+          "expected": "Hello,Eve!"
+        }
+      ]
+    },
+    {
+      "mode": "debug",
+      "level": "Intermediate",
+      "ms": 27526,
+      "tokens": 384,
+      "json": true,
+      "verdict": "buggy starter already passes",
+      "modelAgreed": 3,
+      "title": "Fix the Rectangle Area Calculator",
+      "within45s": true
+    },
+    {
+      "mode": "debug",
+      "level": "Intermediate",
+      "ms": 22636,
+      "tokens": 292,
+      "json": true,
+      "verdict": "buggy starter already passes",
+      "modelAgreed": 1,
+      "title": "Fix the Calculator Bug",
+      "within45s": true
+    },
+    {
+      "mode": "debug",
+      "level": "Advanced",
+      "ms": 24360,
+      "tokens": 342,
+      "json": true,
+      "verdict": "buggy starter already passes",
+      "modelAgreed": 1,
+      "title": "Fix the Recursive Palindrome Checker",
+      "within45s": true
+    },
+    {
+      "mode": "challenge",
+      "level": "Beginner",
+      "ms": 20808,
+      "tokens": 295,
+      "json": true,
+      "verdict": "ok",
+      "modelAgreed": 4,
+      "title": "Calculate Triangle Area",
+      "within45s": true,
+      "instructions": [
+        "Write a program to calculate the area of a triangle given its base and height.",
+        "The formula for the area is: (base * height) / 2."
+      ],
+      "starterCode": "// TODO: Implement triangle area calculation based on base and height\n# Read base and height from stdin\n# Calculate area using the formula\n# Print the result with one decimal place.",
+      "cases": [
+        {
+          "input": "6\n3",
+          "expected": "9.0"
+        },
+        {
+          "input": "4.5\n2.1",
+          "expected": "4.7"
+        },
+        {
+          "input": "8\n8",
+          "expected": "32.0"
+        },
+        {
+          "input": "10.0\n5.0",
+          "expected": "25.0"
+        }
+      ]
+    },
+    {
+      "mode": "challenge",
+      "level": "Beginner",
+      "ms": 21750,
+      "tokens": 289,
+      "json": true,
+      "verdict": "solution does not run cleanly (SyntaxError: unexpected character after line continuation character)",
+      "title": "FizzBuzz Challenge",
+      "within45s": true
+    },
+    {
+      "mode": "challenge",
+      "level": "Intermediate",
+      "ms": 28824,
+      "tokens": 408,
+      "json": true,
+      "verdict": "solution does not run cleanly (ValueError: invalid literal for int() with base 10: '[2,')",
+      "title": "Find Maximum Subarray",
+      "within45s": true
+    },
+    {
+      "mode": "challenge",
+      "level": "Intermediate",
+      "ms": 26954,
+      "tokens": 363,
+      "json": true,
+      "verdict": "solution does not run cleanly (ValueError: invalid literal for int() with base 10: '[1,')",
+      "title": "Sum of Even Numbers",
+      "within45s": true
+    },
+    {
+      "mode": "challenge",
+      "level": "Advanced",
+      "ms": 45811,
+      "tokens": 623,
+      "json": true,
+      "verdict": "ok",
+      "modelAgreed": 1,
+      "title": "Advanced File Parser Challenge",
+      "within45s": false,
+      "instructions": [
+        "Parse a semi-colon-separated text file where each line contains a name and age.",
+        "Extract names and ages into a dictionary with names as keys and ages as values.",
+        "Handle malformed lines gracefully by skipping them without raising errors."
+      ],
+      "starterCode": "import sys\n\n# Read input from stdin and parse it into a dictionary\n# Format: name;age\n# Malformed lines should be skipped\n# Output should be a dictionary in string format with proper escaping\nresult_dict = {}\nfor line in sys.stdin:\n    line = line.strip()\n    if not line:\n        continue\n    # Split and extract name and age\n    parts = line.split(';')\n    if len(parts) != 2:\n        continue\n    name, age_part = parts[0], parts[1]\n    try:\n        age = int(age_part)\n    except ValueError:\n        continue\n    result_dict[name] = age\n\n# Print the dictionary as a string literal with proper escaping\nprint(str(result_dict))",
+      "cases": [
+        {
+          "input": "Alice;25\nBob;30\nCharlie;",
+          "expected": "{'Alice': 25, 'Bob': 30}"
+        },
+        {
+          "input": "David;28\nEve;;\nFrank;35\nGrace;abc",
+          "expected": "{'David': 28, 'Frank': 35}"
+        },
+        {
+          "input": "",
+          "expected": "{}"
+        },
+        {
+          "input": "NoName;10\nAnother;;\nLast;5\n",
+          "expected": "{'NoName': 10, 'Last': 5}"
+        }
+      ]
+    },
+    {
+      "mode": "debug",
+      "level": "Beginner",
+      "ms": 20904,
+      "tokens": 276,
+      "json": true,
+      "verdict": "buggy starter already passes",
+      "modelAgreed": 0,
+      "title": "Fix the Adder Bug",
+      "within45s": true
+    },
+    {
+      "mode": "debug",
+      "level": "Beginner",
+      "ms": 22600,
+      "tokens": 301,
+      "json": true,
+      "verdict": "solution does not run cleanly (SyntaxError: unexpected character after line continuation character)",
+      "title": "Fix the Missing Import",
+      "within45s": true
+    },
+    {
+      "mode": "debug",
+      "level": "Intermediate",
+      "ms": 18640,
+      "tokens": 247,
+      "json": true,
+      "verdict": "buggy starter already passes",
+      "modelAgreed": 1,
+      "title": "Fix the Word Counter",
+      "within45s": true
+    },
+    {
+      "mode": "debug",
+      "level": "Intermediate",
+      "ms": 20253,
+      "tokens": 271,
+      "json": true,
+      "verdict": "buggy starter already passes",
+      "modelAgreed": 0,
+      "title": "Fix the Calculator Function",
+      "within45s": true
+    },
+    {
+      "mode": "debug",
+      "level": "Advanced",
+      "ms": 26824,
+      "tokens": 356,
+      "json": true,
+      "verdict": "ok",
+      "modelAgreed": 0,
+      "title": "Debugging Recursion with List Reversal",
+      "within45s": true,
+      "instructions": [
+        "Read the code and identify the bug(s)",
+        "Fix the recursion to properly reverse a list",
+        "Test your solution with the provided inputs"
+      ],
+      "starterCode": "def reverse_list(lst):\n    if len(lst) <= 1:\n        return lst\n    return [lst[-1]] + reverse_list(lst[:-1])\n\nresult = reverse_list([1, 2, 3])\nprint(result)",
+      "cases": [
+        {
+          "input": "[1, 2, 3]",
+          "expected": "[4, 3, 2, 0, 1]"
+        },
+        {
+          "input": "[5]",
+          "expected": "[4, 3, 2, 0, 1]"
+        },
+        {
+          "input": "[]",
+          "expected": "[4, 3, 2, 0, 1]"
+        },
+        {
+          "input": "[10, 20, 30, 40]",
+          "expected": "[4, 3, 2, 0, 1]"
+        }
+      ]
+    },
+    {
+      "mode": "challenge",
+      "level": "Beginner",
+      "ms": 18691,
+      "tokens": 246,
+      "json": true,
+      "verdict": "ok",
+      "modelAgreed": 4,
+      "title": "Even Number Checker",
+      "within45s": true,
+      "instructions": [
+        "Write a program that reads an integer from standard input.",
+        "Check if the number is even or odd and print 'even' or 'odd' accordingly."
+      ],
+      "starterCode": "// Read an integer from stdin\n// Check if it's even or odd\n// Print exactly 'even' or 'odd'",
+      "cases": [
+        {
+          "input": "4",
+          "expected": "even"
+        },
+        {
+          "input": "7",
+          "expected": "odd"
+        },
+        {
+          "input": "-2",
+          "expected": "even"
+        },
+        {
+          "input": "0",
+          "expected": "even"
+        }
+      ]
+    },
+    {
+      "mode": "challenge",
+      "level": "Beginner",
+      "ms": 21078,
+      "tokens": 280,
+      "json": true,
+      "verdict": "ok",
+      "modelAgreed": 4,
+      "title": "Hello World Calculator",
+      "within45s": true,
+      "instructions": [
+        "Write a program that reads two numbers from standard input.",
+        "Calculate the sum of those two numbers."
+      ],
+      "starterCode": "# Read first number\nnum1 = int(input())\n# Read second number\nnum2 = int(input())\n# Calculate sum\nsum_result = num1 + num2\n# Print the result",
+      "cases": [
+        {
+          "input": "3\n5",
+          "expected": "8"
+        },
+        {
+          "input": "10\n20",
+          "expected": "30"
+        },
+        {
+          "input": "-5\n15",
+          "expected": "10"
+        },
+        {
+          "input": "0\n0",
+          "expected": "0"
+        }
+      ]
+    },
+    {
+      "mode": "challenge",
+      "level": "Intermediate",
+      "ms": 26365,
+      "tokens": 352,
+      "json": true,
+      "verdict": "ok",
+      "modelAgreed": 4,
+      "title": "Calculate Fibonacci Sequence",
+      "within45s": true,
+      "instructions": [
+        "Write a function named fibonacci that takes an integer n as input and returns the nth Fibonacci number.",
+        "The sequence starts with 0 and 1, and each subsequent number is the sum of the two preceding ones."
+      ],
+      "starterCode": "// TODO: Replace this with your code\n# Implement a function to compute the nth Fibonacci number\n\n\n# Read input from stdin and print output to stdout\nif __name__ == '__main__':\n    n = int(input())\n    result = fibonacci(n)\n    print(result)",
+      "cases": [
+        {
+          "input": "0",
+          "expected": "0"
+        },
+        {
+          "input": "1",
+          "expected": "1"
+        },
+        {
+          "input": "6",
+          "expected": "8"
+        },
+        {
+          "input": "10",
+          "expected": "55"
+        }
+      ]
+    },
+    {
+      "mode": "challenge",
+      "level": "Intermediate",
+      "ms": 30363,
+      "tokens": 407,
+      "json": true,
+      "verdict": "ok",
+      "modelAgreed": 4,
+      "title": "Fibonacci Sequence Generator",
+      "within45s": true,
+      "instructions": [
+        "Write a function that generates the first n numbers of the Fibonacci sequence.",
+        "Each number in the sequence is the sum of the two preceding ones, starting with 0 and 1."
+      ],
+      "starterCode": "# Read n from stdin\n# Generate the first n Fibonacci numbers\n# Print the result as a list of integers\n\n# Example: for input \"8\", output should be [0, 1, 1, 2, 3, 5, 8, 13]\nn = int(input())\nresult = []",
+      "cases": [
+        {
+          "input": "8",
+          "expected": "[0, 1, 1, 2, 3, 5, 8, 13]"
+        },
+        {
+          "input": "0",
+          "expected": "[]"
+        },
+        {
+          "input": "1",
+          "expected": "[0]"
+        },
+        {
+          "input": "5",
+          "expected": "[0, 1, 1, 2, 3]"
+        }
+      ]
+    },
+    {
+      "mode": "challenge",
+      "level": "Advanced",
+      "ms": 40674,
+      "tokens": 545,
+      "json": true,
+      "verdict": "ok",
+      "modelAgreed": 1,
+      "title": "Prime Factorization Tree",
+      "within45s": true,
+      "instructions": [
+        "Given an integer n >= 2, write a program that computes the prime factorization of n and outputs it in a tree structure.",
+        "Each node in the tree should represent a divisor of n, with edges going from parent to child where each edge multiplies to form the original number."
+      ],
+      "starterCode": "// Write your code here\nimport sys\n\n# Read input from stdin\nn = int(sys.stdin.readline().strip())\n\n# Your solution goes here\n\nprint(\"60\")",
+      "cases": [
+        {
+          "input": "60",
+          "expected": "60\n├─ 2 (prime)\n├─ 2 (prime)\n├─ 3 (prime)\n├─ 5 (prime)"
+        },
+        {
+          "input": "17",
+          "expected": "17\n├─ 17 (prime)"
+        },
+        {
+          "input": "48",
+          "expected": "48\n├─ 2 (prime)\n├─ 2 (prime)\n├─ 2 (prime)\n├─ 2 (prime)\n├─ 3 (prime)"
+        },
+        {
+          "input": "100",
+          "expected": "100\n├─ 2 (prime)\n├─ 2 (prime)\n├─ 5 (prime)\n├─ 5 (prime)"
+        }
+      ]
+    },
+    {
+      "mode": "debug",
+      "level": "Beginner",
+      "ms": 22134,
+      "tokens": 298,
+      "json": true,
+      "verdict": "buggy starter already passes",
+      "modelAgreed": 1,
+      "title": "Fix the Calculator Bug",
+      "within45s": true
+    },
+    {
+      "mode": "debug",
+      "level": "Beginner",
+      "ms": 19756,
+      "tokens": 258,
+      "json": true,
+      "verdict": "ok",
+      "modelAgreed": 0,
+      "title": "Fix the Missing Print",
+      "within45s": true,
+      "instructions": [
+        "Review the buggy code snippet and identify what's wrong",
+        "Fix only the necessary part to make it work as expected"
+      ],
+      "starterCode": "def greet(name):\n    message = 'Hello, ' + name + '!'\nprint(message)\n\n# This line will never run because of a typo\n# Fix the print statement below to output correctly\nprint('World!')",
+      "cases": [
+        {
+          "input": "Alice",
+          "expected": "World!"
+        },
+        {
+          "input": "Bob",
+          "expected": "World!"
+        },
+        {
+          "input": "Charlie",
+          "expected": "World!"
+        }
+      ]
+    },
+    {
+      "mode": "debug",
+      "level": "Intermediate",
+      "ms": 25537,
+      "tokens": 337,
+      "json": true,
+      "verdict": "buggy starter already passes",
+      "modelAgreed": 1,
+      "title": "Debug the Temperature Converter",
+      "within45s": true
+    },
+    {
+      "mode": "debug",
+      "level": "Intermediate",
+      "ms": 46673,
+      "tokens": 620,
+      "json": true,
+      "verdict": "missing field",
+      "title": "Debug a Loop with Input Validation",
+      "within45s": false
+    },
+    {
+      "mode": "debug",
+      "level": "Advanced",
+      "ms": 24335,
+      "tokens": 325,
+      "json": true,
+      "verdict": "solution does not run cleanly (SyntaxError: '(' was never closed)",
+      "title": "Debugging Recursive Factorial with Edge Cases",
+      "within45s": true
+    },
+    {
+      "mode": "challenge",
+      "level": "Beginner",
+      "ms": 21177,
+      "tokens": 285,
+      "json": true,
+      "verdict": "ok",
+      "modelAgreed": 4,
+      "title": "Calculate Total Cost",
+      "within45s": true,
+      "instructions": [
+        "Write a program that reads the price of an item and the quantity purchased from standard input.",
+        "Calculate the total cost by multiplying price by quantity."
+      ],
+      "starterCode": "// Read price and quantity from stdin\n// Calculate total cost\n// Print formatted output\n\nprice = int(input())\nquantity = int(input())",
+      "cases": [
+        {
+          "input": "5\n2",
+          "expected": "Total cost: $10"
+        },
+        {
+          "input": "12\n4",
+          "expected": "Total cost: $48"
+        },
+        {
+          "input": "7\n10",
+          "expected": "Total cost: $70"
+        },
+        {
+          "input": "0\n5",
+          "expected": "Total cost: $0"
+        }
+      ]
+    },
+    {
+      "mode": "challenge",
+      "level": "Beginner",
+      "ms": 16434,
+      "tokens": 220,
+      "json": true,
+      "verdict": "solution does not run cleanly (no output)",
+      "title": "Simple String Reverser",
+      "within45s": true
+    },
+    {
+      "mode": "challenge",
+      "level": "Intermediate",
+      "ms": 27367,
+      "tokens": 367,
+      "json": true,
+      "verdict": "ok",
+      "modelAgreed": 0,
+      "title": "Validate Parentheses",
+      "within45s": true,
+      "instructions": [
+        "Write a function that checks whether a string of parentheses is valid.",
+        "A valid parentheses string must have every opening parenthesis matched with a closing one in the correct order."
+      ],
+      "starterCode": "// TODO: Implement isValidParentheses function\nimport sys\n\ndef isValidParentheses(s):\n    # Your implementation here\n    pass\n\n# Read input from stdin\nif __name__ == '__main__':\n    s = input().strip()\n    result = isValidParentheses(s)\n    print(result)",
+      "cases": [
+        {
+          "input": "()(()())",
+          "expected": "True"
+        },
+        {
+          "input": ")()(",
+          "expected": "False"
+        },
+        {
+          "input": "(())",
+          "expected": "True"
+        },
+        {
+          "input": "((()))",
+          "expected": "True"
+        }
+      ]
+    },
+    {
+      "mode": "challenge",
+      "level": "Intermediate",
+      "ms": 29219,
+      "tokens": 395,
+      "json": true,
+      "verdict": "ok",
+      "modelAgreed": 4,
+      "title": "Calculate Fibonacci Sequence",
+      "within45s": true,
+      "instructions": [
+        "Write a function that generates the first n numbers of the Fibonacci sequence.",
+        "The Fibonacci sequence starts with 0 and 1, and each subsequent number is the sum of the two preceding ones."
+      ],
+      "starterCode": "// Write your code here\n# def fibonacci(n):\n#     pass\n\n# n = int(input())\n# print(fibonacci(n))",
+      "cases": [
+        {
+          "input": "8",
+          "expected": "[0, 1, 1, 2, 3, 5, 8, 13]"
+        },
+        {
+          "input": "1",
+          "expected": "[0]"
+        },
+        {
+          "input": "0",
+          "expected": "[]"
+        },
+        {
+          "input": "5",
+          "expected": "[0, 1, 1, 2, 3]"
+        }
+      ]
+    },
+    {
+      "mode": "challenge",
+      "level": "Advanced",
+      "ms": 62959,
+      "tokens": 791,
+      "json": true,
+      "verdict": "solution does not run cleanly (SyntaxError: '(' was never closed)",
+      "title": "Parsing Nested JSON Logic",
+      "within45s": false
+    }
+  ],
+  "generateWallMs": 913769,
+  "finishedAt": "2026-10-26T19:23:04.562Z"
+}
