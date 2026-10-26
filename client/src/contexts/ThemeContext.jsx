@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import ThemeContext from './theme-context.js';
 import { BUILT_IN_THEMES, THEME_CYBERPUNK_DARK } from '../themes/themes';
 import { getShopThemePalette, shopThemeColors } from '../themes/shopPalette.js';
@@ -99,6 +99,9 @@ export function ThemeProvider({ children }) {
         return getInitialThemeId(readStoredUser());
     });
 
+    // CSS variables the active theme put on <html>, so a switch can clear them.
+    const appliedKeysRef = useRef([]);
+
     // Get current theme object
     const activeTheme = themes.find(t => t.id === activeThemeId) || THEME_CYBERPUNK_DARK;
 
@@ -108,6 +111,14 @@ export function ThemeProvider({ children }) {
 
         // Set data-theme attribute (useful for CSS selectors)
         root.setAttribute('data-theme', activeTheme.id);
+
+        // Drop what the previous theme set and this one does not. A shop
+        // theme writes the token layer (--c-*), the built-in ones do not, so
+        // without this the shop colours stayed after the theme was taken off.
+        appliedKeysRef.current
+            .filter(key => !(key in activeTheme.colors))
+            .forEach(key => root.style.removeProperty(key));
+        appliedKeysRef.current = Object.keys(activeTheme.colors);
 
         // Apply all CSS variables
         Object.entries(activeTheme.colors).forEach(([key, value]) => {

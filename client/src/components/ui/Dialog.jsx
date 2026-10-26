@@ -16,7 +16,7 @@ import { FOCUSABLE_SELECTOR, wrapTabIndex } from './dialogFocus.js';
 // click (see the Arcade modals' history).
 export default function Dialog({
   open, onClose, titleId, children,
-  panelClassName = '', overlayClassName = 'fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm',
+  panelClassName = '', overlayClassName = 'fixed inset-0 z-50 bg-pysim-on-surface/40 backdrop-blur-sm',
   panelMotion = { initial: { scale: 0.95 }, animate: { scale: 1 } },
 }) {
   const panelRef = useRef(null);

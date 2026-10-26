@@ -117,9 +117,82 @@ export const getShopThemePalette = (source) => {
     };
 };
 
+// --- colour arithmetic for shopThemeTokens --------------------------------
+
+const hexToRgb = (hex) => {
+    const h = hex.replace('#', '');
+    const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+    return [0, 2, 4].map(i => parseInt(full.slice(i, i + 2), 16));
+};
+
+// t = 0 gives a, t = 1 gives b.
+const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+
+const luminance = (rgb) => {
+    const [r, g, b] = rgb.map(v => {
+        const c = v / 255;
+        return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+
+export const contrastRatio = (a, b) => {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+};
+
+// Darkens `fg` toward `ink` until it reads at `min`:1 on `bg`. A theme's accent
+// is chosen to look good as a fill; as text it is often just under 4.5:1
+// (sakura pink is 3.5:1 on white), and the theme must not cost readability.
+const readable = (fg, bg, ink, min = 4.5) => {
+    for (let t = 0; t <= 1; t += 0.05) {
+        const candidate = mix(fg, ink, t);
+        if (contrastRatio(candidate, bg) >= min) return candidate;
+    }
+    return ink;
+};
+
+const channels = (rgb) => rgb.join(' ');
+const WHITE = [255, 255, 255];
+
+// What a shop theme writes into the token layer (styles/tokens.css). Only the
+// brand, surface, text and accent roles follow a theme; error, success, warning
+// and info do not, because green has to keep meaning "passed".
+export const shopThemeTokens = (palette) => {
+    const bg = hexToRgb(palette.bg);
+    const bgSoft = hexToRgb(palette.bgSoft);
+    const text = hexToRgb(palette.text);
+    const accent = hexToRgb(palette.accent);
+    const accentHover = hexToRgb(palette.accentHover);
+    const textSoft = readable(hexToRgb(palette.textSoft), bgSoft, text);
+    const strong = readable(accentHover, WHITE, text);
+    return {
+        '--c-primary': channels(strong),
+        '--c-primary-container': channels(accent),
+        '--c-primary-fixed': channels(mix(accent, WHITE, 0.82)),
+        '--c-on-primary-fixed': channels(text),
+        '--c-surface': channels(bg),
+        '--c-surface-low': channels(bgSoft),
+        '--c-surface-container': channels(mix(bgSoft, accent, 0.06)),
+        '--c-surface-high': channels(mix(bgSoft, accent, 0.1)),
+        '--c-surface-highest': channels(mix(bgSoft, accent, 0.14)),
+        '--c-surface-dim': channels(mix(bgSoft, accent, 0.18)),
+        '--c-on-surface': channels(text),
+        '--c-on-surface-variant': channels(textSoft),
+        '--c-outline': channels(readable(mix(textSoft, bgSoft, 0.2), bgSoft, text)),
+        '--c-outline-variant': channels(mix(accent, WHITE, 0.72)),
+        '--c-label': channels(textSoft),
+        '--c-accent': channels(accent),
+        '--c-accent-strong': channels(strong),
+        '--c-accent-container': channels(mix(accent, WHITE, 0.92)),
+        '--c-accent-border': channels(mix(accent, WHITE, 0.7)),
+    };
+};
+
 // The CSS variables a shop theme sets. Also shared, for the same reason the
 // palette is: the two copies of this had already drifted apart on --t-input.
 export const shopThemeColors = (palette) => ({
+    ...shopThemeTokens(palette),
     '--t-bg': palette.bg,
     '--t-bg-soft': palette.bgSoft,
     '--t-card': 'rgba(255, 255, 255, 0.82)',

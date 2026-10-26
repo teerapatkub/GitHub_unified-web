@@ -509,7 +509,7 @@ export default function ShopPage() {
                                                         </span>
                                                     )}
                                                     {item.owned && (
-                                                        <span className="absolute inset-x-0 bottom-0 bg-emerald-700 py-0.5 text-xs font-bold text-white">
+                                                        <span className="absolute inset-x-0 bottom-0 bg-pysim-success-strong py-0.5 text-xs font-bold text-white">
                                                             {t('shop.owned', 'มีแล้ว')}
                                                         </span>
                                                     )}
@@ -590,7 +590,7 @@ export default function ShopPage() {
                                             <button
                                                 type="button"
                                                 onClick={() => handleEquip(item)}
-                                                className={`flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors ${equippedItems[itemSlot(item.type)] === item.itemId ? 'bg-emerald-700 hover:bg-emerald-800' : 'bg-sky-700 hover:bg-sky-800'}`}
+                                                className={`flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors ${equippedItems[itemSlot(item.type)] === item.itemId ? 'bg-pysim-success-strong hover:bg-pysim-success-strong/90' : 'bg-pysim-primary hover:bg-pysim-primary/90'}`}
                                             >
                                                 <CheckCircle size={17} /> {equippedItems[itemSlot(item.type)] === item.itemId ? t('shop.equipped', 'กำลังสวมใส่') : t('shop.equip', 'สวมใส่')}
                                             </button>
@@ -599,7 +599,7 @@ export default function ShopPage() {
                                                 type="button"
                                                 onClick={() => handleBuy(item)}
                                                 disabled={buyingItemId !== null || Boolean(buyingSet)}
-                                                className="flex items-center justify-center gap-2 rounded-lg bg-sky-700 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-sky-800 active:scale-[0.98] disabled:cursor-wait disabled:opacity-60"
+                                                className="flex items-center justify-center gap-2 rounded-lg bg-pysim-primary px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-pysim-primary/90 active:scale-[0.98] disabled:cursor-wait disabled:opacity-60"
                                             >
                                                 <ShoppingCart size={17} />
                                                 {buyingItemId === item.itemId ? t('shopPurchase.buying', 'กำลังซื้อ...') : t('shop.buy', 'ซื้อ')}

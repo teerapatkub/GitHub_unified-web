@@ -1,19 +1,27 @@
 /* ===== Google Fonts ===== */
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap');
+/* The one colour layer. Must load before anything that reads --c-*. */
+@import './styles/tokens.css';
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* ===== Light Luxury Theme Variables ===== */
+/* ===== Theme Variables ===== */
+/* --color-* came from a friend's learning app and are aliases of the token
+   layer now (styles/tokens.css); no page reads them. The [data-theme="sakura"]
+   and [data-theme="ocean"] blocks that used to follow were never applied - shop
+   themes use data-theme="shop-theme-<id>" - so they are gone.
+   --t-* are still written by the built-in themes in themes/themes.js and read
+   by the component classes below (glass-panel and friends). */
 :root,
 [data-theme="default"] {
-    --color-bg-primary: #ffffff; /* pure white */
-    --color-bg-secondary: #f8fafc; /* very light slate */
-    --color-text-primary: #0f172a; /* deep slate for headings */
-    --color-text-secondary: #64748b; /* muted slate for body */
-    --color-accent: #d4af37; /* muted luxurious gold */
-    --color-primary: #3b82f6; /* sophisticated vibrant blue */
+    --color-bg-primary: rgb(var(--c-card));
+    --color-bg-secondary: rgb(var(--c-surface));
+    --color-text-primary: rgb(var(--c-on-surface));
+    --color-text-secondary: rgb(var(--c-outline));
+    --color-accent: rgb(var(--c-secondary-container));
+    --color-primary: rgb(var(--c-primary));
 
     --t-bg: #ffffff;
     --t-bg-soft: #f8fafc;
@@ -34,24 +42,6 @@
     --t-scrollbar-track: transparent;
     --t-scrollbar-thumb: #cbd5e1;
     --t-scrollbar-thumb-hover: #94a3b8;
-}
-
-[data-theme="sakura"] {
-    --color-bg-primary: #fff5f7;
-    --color-bg-secondary: #ffffff;
-    --color-text-primary: #2d3748;
-    --color-text-secondary: #718096;
-    --color-accent: #e53e3e;
-    --color-primary: #d69e2e;
-}
-
-[data-theme="ocean"] {
-    --color-bg-primary: #0a192f;
-    --color-bg-secondary: #172a45;
-    --color-text-primary: #ccd6f6;
-    --color-text-secondary: #8892b0;
-    --color-accent: #64ffda;
-    --color-primary: #64ffda;
 }
 
 /* ===== Global Reset ===== */
@@ -105,20 +95,20 @@ h1, h2, h3, h4, h5, h6 {
        card. The shop's "ซื้อยกเซ็ต" button, the sign-in button and the profile
        save buttons were all present and clickable but completely invisible.
 
-       The two stops are the PySim primary tokens from tailwind.config.js, so
-       this matches the buttons that were already visible.
+       The two stops are the primary tokens (styles/tokens.css), so this
+       matches the buttons that were already visible and follows a theme.
 
        The colour here is only a floor: these live in @layer components, so a
        `text-*` utility on the same element still wins. */
     .python-gradient {
-        background-image: linear-gradient(135deg, #145D91 0%, #3776AB 100%);
-        color: #FFFFFF;
+        background-image: linear-gradient(135deg, rgb(var(--c-primary)) 0%, rgb(var(--c-primary-container)) 100%);
+        color: rgb(var(--c-on-primary));
     }
 
     .whisper-shadow {
         box-shadow:
-            0 1px 2px rgba(25, 28, 29, 0.04),
-            0 8px 24px rgba(25, 28, 29, 0.06);
+            0 1px 2px rgb(var(--c-on-surface) / 0.04),
+            0 8px 24px rgb(var(--c-on-surface) / 0.06);
     }
 
     .glass-panel {

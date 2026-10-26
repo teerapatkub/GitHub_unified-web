@@ -1,0 +1,84 @@
+/* The one colour layer (Spec 0005 Track H, ticket 17).
+
+   Every colour the app paints comes from these variables. Tailwind reads them
+   through the `pysim-*` colour family (tailwind.config.js), so a class such as
+   `bg-pysim-surface` or `text-pysim-accent-strong/80` resolves here, and a
+   purchased theme repaints the whole site by writing new values into these
+   same variables (themes/shopPalette.js -> shopThemeTokens) instead of
+   overriding a few hand-picked classes.
+
+   Values are space-separated RGB channels, not hex, so Tailwind's opacity
+   modifier keeps working: rgb(var(--c-primary) / 0.3).
+
+   The four older systems all point here now and are kept only so nothing
+   breaks while pages move over (expand-contract; the contract step deletes
+   them once Person 1, 2 and 3 have migrated):
+     - `pysim-*` hex values in tailwind.config.js  -> these variables
+     - Tailwind `t-*` colours                       -> these variables
+     - `--color-*` (index.css :root)                -> these variables
+     - `cyber-*`, `neon-*`, `cat-*`                 -> these variables
+
+   Defaults are exactly the old `pysim-*` hex values, so a page that already
+   used `pysim-*` looks the same until a theme is worn. */
+:root {
+    /* Brand */
+    --c-primary: 20 93 145;               /* #145D91 */
+    --c-primary-container: 55 118 171;    /* #3776AB */
+    --c-primary-fixed: 207 229 255;       /* #CFE5FF */
+    --c-on-primary: 255 255 255;
+    --c-on-primary-fixed: 0 29 51;        /* #001D33 */
+    --c-secondary: 114 92 0;              /* #725C00 */
+    --c-secondary-container: 254 211 58;  /* #FED33A */
+    --c-secondary-fixed: 255 224 130;     /* #FFE082 */
+    --c-on-secondary: 255 255 255;
+    --c-on-secondary-container: 113 91 0; /* #715B00 */
+    --c-tertiary: 119 82 0;               /* #775200 */
+    --c-tertiary-container: 150 105 10;   /* #96690A */
+    --c-tertiary-fixed: 255 222 172;      /* #FFDEAC */
+
+    /* Surfaces and text */
+    --c-surface: 248 249 250;             /* #F8F9FA */
+    --c-surface-low: 243 244 245;         /* #F3F4F5 */
+    --c-surface-container: 237 238 239;   /* #EDEEEF */
+    --c-surface-high: 231 232 233;        /* #E7E8E9 */
+    --c-surface-highest: 225 227 228;     /* #E1E3E4 */
+    --c-surface-dim: 217 218 219;         /* #D9DADB */
+    --c-card: 255 255 255;                /* panels and popups */
+    --c-on-surface: 25 28 29;             /* #191C1D */
+    --c-on-surface-variant: 65 71 79;     /* #41474F */
+    /* #717880 is 4.47:1 on white, a hair under 4.5. Kept as is so every
+       existing page looks the same; small text should use --c-label. */
+    --c-outline: 113 120 128;
+    --c-outline-variant: 193 199 208;     /* #C1C7D0, borders only */
+
+    /* Small labels: colour that stays >= 4.5:1 on card and surface. */
+    --c-label: 65 71 79;                  /* 9.4:1 on white */
+
+    /* A mode's own accent (Arcade's rose). Themes repaint it. */
+    --c-accent: 244 63 94;                /* rose-500, fills and icons */
+    --c-accent-strong: 225 29 72;         /* rose-600, text: 4.7:1 on white */
+    --c-accent-container: 255 241 242;    /* rose-50 */
+    --c-accent-border: 254 205 211;       /* rose-200 */
+
+    /* Status. Themes leave these alone: green must still mean "passed". */
+    --c-error: 186 26 26;                 /* #BA1A1A */
+    --c-error-container: 255 218 214;     /* #FFDAD6 */
+    --c-error-border: 254 202 202;        /* red-200 */
+    --c-success: 5 150 105;               /* emerald-600, fills */
+    --c-success-strong: 4 120 87;         /* emerald-700, text: 5.5:1 */
+    --c-success-container: 236 253 245;  /* emerald-50 */
+    --c-success-border: 167 243 208;      /* emerald-200 */
+    --c-warning: 245 158 11;              /* amber-500, fills */
+    --c-warning-strong: 146 64 14;        /* amber-800, text: 7.1:1 */
+    --c-warning-container: 255 251 235;  /* amber-50 */
+    --c-warning-border: 253 230 138;      /* amber-200 */
+    --c-info: 79 70 229;                  /* indigo-600 */
+    --c-info-strong: 67 56 202;           /* indigo-700, text: 7.9:1 */
+    --c-info-container: 238 242 255;     /* indigo-50 */
+    --c-info-border: 199 210 254;         /* indigo-200 */
+
+    /* Sizes. A label is never smaller than this (Tailwind: text-label). */
+    --text-label-min: 0.75rem;            /* 12px */
+    --target-min: 2rem;                   /* 32px, any control */
+    --target-primary: 2.75rem;            /* 44px, a screen's main action */
+}

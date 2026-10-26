@@ -3,9 +3,9 @@ import { subscribeToasts, TOAST_MS } from './toast.js';
 import './toast.css';
 
 const STYLES = {
-  error: 'bg-rose-50 border-rose-300 text-rose-900',
-  success: 'bg-emerald-50 border-emerald-300 text-emerald-900',
-  info: 'bg-white border-slate-300 text-slate-800',
+  error: 'bg-pysim-error-container border-pysim-error-border text-pysim-on-surface',
+  success: 'bg-pysim-success-container border-pysim-success-border text-pysim-on-surface',
+  info: 'bg-pysim-card border-pysim-outline-variant text-pysim-on-surface',
 };
 
 // Renders toast() messages bottom-centre. role="status" / "alert" so screen
