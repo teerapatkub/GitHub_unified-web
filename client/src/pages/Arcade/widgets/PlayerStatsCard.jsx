@@ -20,22 +20,22 @@ export default function PlayerStatsCard({ stats, playerName, t }) {
   ];
 
   return (
-    <div data-tour="arcade-stats" className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-      <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between gap-4">
+    <div data-tour="arcade-stats" className="bg-pysim-card rounded-3xl shadow-sm border border-pysim-outline-variant overflow-hidden">
+      <div className="px-6 py-4 border-b border-pysim-outline-variant flex items-center justify-between gap-4">
         <div>
-          <h3 className="text-sm font-black text-slate-800">{t('statsCardTitle')}</h3>
-          <p className="text-xs text-slate-400 mt-0.5">{playerName}</p>
+          <h3 className="text-sm font-black text-pysim-on-surface">{t('statsCardTitle')}</h3>
+          <p className="text-xs text-pysim-label mt-0.5">{playerName}</p>
         </div>
         {played === 0 && (
-          <span className="text-[11px] font-bold text-slate-400 text-right">{t('statsNoMatchesYet')}</span>
+          <span className="text-label font-bold text-pysim-label text-right">{t('statsNoMatchesYet')}</span>
         )}
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-x divide-y sm:divide-y-0 divide-slate-100">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-x divide-y sm:divide-y-0 divide-pysim-outline-variant">
         {cells.map((cell) => (
           <div key={cell.label} className="px-4 py-4 text-center">
-            <div className="text-lg font-black text-slate-800 leading-none">{cell.value}</div>
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mt-1.5">{cell.label}</div>
+            <div className="text-lg font-black text-pysim-on-surface leading-none">{cell.value}</div>
+            <div className="text-label font-bold text-pysim-label uppercase tracking-wide mt-1.5">{cell.label}</div>
           </div>
         ))}
       </div>

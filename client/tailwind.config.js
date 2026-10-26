@@ -61,6 +61,14 @@ export default {
           'info-strong': tok('info-strong'),
           'info-container': tok('info-container'),
           'info-border': tok('info-border'),
+          'inverse-surface': tok('inverse-surface'),
+          'inverse-surface-high': tok('inverse-surface-high'),
+          'inverse-outline': tok('inverse-outline'),
+          'on-inverse': tok('on-inverse'),
+          'on-inverse-muted': tok('on-inverse-muted'),
+          'inverse-code': tok('inverse-code'),
+          'inverse-accent': tok('inverse-accent'),
+          'inverse-success': tok('inverse-success'),
         },
         // ===== Deprecated aliases (expand-contract, do not use in new code) =====
         // Old theme-aware family. Pointed at the token layer; was var(--t-*).

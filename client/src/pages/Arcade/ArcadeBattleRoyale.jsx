@@ -574,8 +574,8 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
           invisible full-screen click-blocker over the create-room modal
           earlier, and this element sits above the whole match UI. */}
       {connectionLost && (
-        <div className="shrink-0 bg-amber-500 text-white text-center text-xs font-black py-2 px-4 flex items-center justify-center gap-2">
-          <span className="inline-block h-2 w-2 rounded-full bg-white motion-safe:animate-pulse" />
+        <div className="shrink-0 bg-pysim-warning text-pysim-on-surface text-center text-xs font-black py-2 px-4 flex items-center justify-center gap-2">
+          <span className="inline-block h-2 w-2 rounded-full bg-pysim-card motion-safe:animate-pulse" />
           {t('connectionLostBanner')}
         </div>
       )}
@@ -591,11 +591,13 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
         <button type="button" className="mode-entry-button" data-tour="arcade-glossary" onClick={() => setShowGlossary(true)} aria-label={t('itemGlossary')} title={t('itemGlossary')}>
           <BookOpen aria-hidden="true" /><span className="app-action-label">{t('itemGlossary')}</span>
         </button>
-        {isSpectating({ phase, eliminated: playerState.eliminated }) && <span className="text-xs font-bold text-rose-600">{t('spectatorMode')}</span>}
+        {/* Hidden on phones, where the header has one row and no room for it;
+            the eliminated screen says the same thing. */}
+        {isSpectating({ phase, eliminated: playerState.eliminated }) && <span className="hidden text-xs font-bold text-pysim-accent-strong sm:inline">{t('spectatorMode')}</span>}
       </ModeEntryHeader>
 
       {shopRetryNeeded && (
-        <div role="status" className="shrink-0 bg-amber-50 text-amber-900 p-3 text-center text-sm">
+        <div role="status" className="shrink-0 bg-pysim-warning-container text-pysim-warning-strong p-3 text-center text-sm">
           <span>{t('shopRequestFailed')} </span>
           <button type="button" disabled={shopState.busy} onClick={retryShopCommand} className="font-bold underline disabled:opacity-50">
             {t('shopRetryAction')}
@@ -628,7 +630,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
             
             {/* VIEW A: NO ROOM JOINED -> PUBLIC ROOM BROWSER */}
             {!currentRoom && restoringRoom ? (
-              <div role="status" className="py-24 text-center text-sm font-bold text-slate-600">
+              <div role="status" className="py-24 text-center text-sm font-bold text-pysim-label">
                 {t('reconnectingToMatch')}
               </div>
             ) : !currentRoom ? (
@@ -766,12 +768,12 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
         {playerState.eliminated && (phase === PHASES.ROUND_1 || phase === PHASES.ROUND_2 || phase === PHASES.ROUND_3 || phase === PHASES.ROUND_4) && (
           <div className="h-full w-full overflow-y-auto">
             <div className="min-h-full p-8 max-w-lg mx-auto flex flex-col items-center justify-center text-center space-y-4">
-            <div className="p-4 bg-slate-100 rounded-full text-slate-400 inline-block shadow-inner">
+            <div className="p-4 bg-pysim-surface-container rounded-full text-pysim-label inline-block shadow-inner">
               <Users className="h-10 w-10" />
             </div>
-            <h1 className="text-2xl font-black text-slate-800 tracking-tight">{t('eliminatedSpectatingTitle')}</h1>
-            <p className="text-sm text-slate-500">{t('eliminatedSpectatingDesc')}</p>
-            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 bg-slate-100 px-3 py-1 rounded-full">
+            <h1 className="text-2xl font-black text-pysim-on-surface tracking-tight">{t('eliminatedSpectatingTitle')}</h1>
+            <p className="text-sm text-pysim-label">{t('eliminatedSpectatingDesc')}</p>
+            <span className="text-label font-black uppercase tracking-widest text-pysim-label bg-pysim-surface-container px-3 py-1 rounded-full">
               ⭐ {playerState.score} {t('ptsUnit')}
             </span>
             {/* Bug A4: an eliminated player used to be stuck here until the
@@ -781,11 +783,11 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
             <button
               type="button"
               onClick={handleLeaveRoom}
-              className="mt-2 px-5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-white text-sm font-black"
+              className="mt-2 px-5 py-3 rounded-2xl bg-pysim-on-surface hover:bg-pysim-on-surface-variant text-pysim-on-primary text-sm font-black"
             >
               {t('leaveWhileEliminatedBtn')}
             </button>
-            <p className="text-xs text-slate-600">{t('leaveWhileEliminatedNote')}</p>
+            <p className="text-xs text-pysim-label">{t('leaveWhileEliminatedNote')}</p>
             </div>
           </div>
         )}
@@ -837,8 +839,8 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
               animate={{ opacity: 1, scale: 1 }}
               className="space-y-2"
             >
-              <h1 className="text-4xl font-black text-slate-800 tracking-tight">{t('matchOver')}</h1>
-              <p className="text-sm text-slate-400 font-bold uppercase tracking-wider">{t('finalPlacementsSubtitle')}</p>
+              <h1 className="text-4xl font-black text-pysim-on-surface tracking-tight">{t('matchOver')}</h1>
+              <p className="text-sm text-pysim-label font-bold uppercase tracking-wider">{t('finalPlacementsSubtitle')}</p>
             </Motion.div>
 
             {/* Winner Trophy Box */}
@@ -853,29 +855,29 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
 
               return (
                 <>
-                  <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-200 w-full relative overflow-hidden">
-                    <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-yellow-400 to-amber-500"></div>
-                    <div className="p-4 bg-amber-50 rounded-full text-amber-500 inline-block mb-3 shadow-inner">
-                      <Trophy className="h-10 w-10 fill-amber-100" />
+                  <div className="bg-pysim-card p-8 rounded-3xl shadow-xl border border-pysim-outline-variant w-full relative overflow-hidden">
+                    <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-pysim-warning to-pysim-warning"></div>
+                    <div className="p-4 bg-pysim-warning-container rounded-full text-pysim-warning-strong inline-block mb-3 shadow-inner">
+                      <Trophy className="h-10 w-10 fill-pysim-warning-container" />
                     </div>
-                    <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">{t('winner')}</h2>
-                    <div className="text-3xl font-black text-slate-800">
+                    <h2 className="text-xs font-black text-pysim-label uppercase tracking-widest mb-1">{t('winner')}</h2>
+                    <div className="text-3xl font-black text-pysim-on-surface">
                       {winner.name}
                     </div>
-                    <p className="text-sm text-slate-400 font-mono mt-1">{t('finalScoreLabel')} <span className="text-emerald-600 font-bold">{winner.score} {t('ptsUnit')}</span></p>
+                    <p className="text-sm text-pysim-label font-mono mt-1">{t('finalScoreLabel')} <span className="text-pysim-success-strong font-bold">{winner.score} {t('ptsUnit')}</span></p>
                   </div>
 
                   {/* Placement List */}
-                  <div className="w-full bg-white rounded-3xl overflow-hidden shadow-sm border border-slate-200">
+                  <div className="w-full bg-pysim-card rounded-3xl overflow-hidden shadow-sm border border-pysim-outline-variant">
                     {allPlayers.map((p) => (
-                      <div key={p.name} className={`flex justify-between items-center p-5 border-b border-slate-100 last:border-0 ${p.isPlayer ? 'bg-rose-50/50 font-black' : 'hover:bg-slate-50'}`}>
+                      <div key={p.name} className={`flex justify-between items-center p-5 border-b border-pysim-outline-variant last:border-0 ${p.isPlayer ? 'bg-pysim-accent-container/50 font-black' : 'hover:bg-pysim-surface'}`}>
                         <div className="flex items-center gap-4">
-                          <span className={`w-8 text-center text-xs font-black ${p.rank === 1 ? 'text-amber-500' : 'text-slate-400'}`}>#{p.rank}</span>
-                          <span className={`text-xs ${p.eliminated ? 'text-slate-400 line-through font-normal' : 'text-slate-700'}`}>
+                          <span className={`w-8 text-center text-xs font-black ${p.rank === 1 ? 'text-pysim-warning-strong' : 'text-pysim-label'}`}>#{p.rank}</span>
+                          <span className={`text-xs ${p.eliminated ? 'text-pysim-label line-through font-normal' : 'text-pysim-on-surface-variant'}`}>
                             {p.name} {p.isPlayer ? t('youSuffix') : ""}
                           </span>
                         </div>
-                        <span className="text-emerald-600 font-mono text-xs font-bold">{p.score} {t('ptsUnit')}</span>
+                        <span className="text-pysim-success-strong font-mono text-xs font-bold">{p.score} {t('ptsUnit')}</span>
                       </div>
                     ))}
                   </div>
@@ -892,30 +894,30 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
               const myRow = roomParticipants.find(p => p.user_name === playerState.name);
               const { matchCoins, achievements, total: coins } = resultCoinBreakdown(viewerReward, myRow);
               return (
-                <div className="w-full bg-white rounded-3xl shadow-sm border border-slate-200 p-6 space-y-4">
+                <div className="w-full bg-pysim-card rounded-3xl shadow-sm border border-pysim-outline-variant p-6 space-y-4">
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex items-center gap-4 text-left">
-                    <div className="p-3 bg-amber-50 rounded-2xl text-amber-500 shrink-0">
+                    <div className="p-3 bg-pysim-warning-container rounded-2xl text-pysim-warning-strong shrink-0">
                       <Coins className="h-7 w-7" />
                     </div>
                     <div>
-                      <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">{t('coinsEarnedTitle')}</h3>
-                      <p className="text-xs text-slate-400 mt-1">
+                      <h3 className="text-xs font-black text-pysim-label uppercase tracking-widest">{t('coinsEarnedTitle')}</h3>
+                      <p className="text-xs text-pysim-label mt-1">
                         {coins > 0 ? t('coinsEarnedHint') : t('coinsNoneHint')}
                       </p>
                     </div>
                   </div>
-                  <div className="text-3xl font-black text-amber-500 whitespace-nowrap">
-                    +{coins} <span className="text-sm font-bold text-slate-400">{t('coinsUnit')}</span>
+                  <div className="text-3xl font-black text-pysim-warning-strong whitespace-nowrap">
+                    +{coins} <span className="text-sm font-bold text-pysim-label">{t('coinsUnit')}</span>
                   </div>
                 </div>
                 {achievements.length > 0 && (
-                  <ul className="border-t border-slate-100 pt-3 space-y-1.5 text-sm">
-                    <li className="flex justify-between gap-3 text-slate-700">
+                  <ul className="border-t border-pysim-outline-variant pt-3 space-y-1.5 text-sm">
+                    <li className="flex justify-between gap-3 text-pysim-on-surface-variant">
                       <span>{t('coinsFromMatch')}</span><b>+{matchCoins}</b>
                     </li>
                     {achievements.map(a => (
-                      <li key={a.name} className="flex justify-between gap-3 text-slate-700">
+                      <li key={a.name} className="flex justify-between gap-3 text-pysim-on-surface-variant">
                         <span>🏆 {t('coinsFromAchievement').replace('{{name}}', a.name)}</span><b>+{a.reward}</b>
                       </li>
                     ))}
@@ -931,14 +933,14 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
             <div className="flex flex-wrap items-center justify-center gap-4 pt-4">
               <button
                 onClick={() => handleFinishChoice('LEAVE')}
-                className="px-8 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black text-xs uppercase tracking-wider rounded-2xl border border-slate-200 hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
+                className="px-8 py-3.5 bg-pysim-surface-container hover:bg-pysim-surface-high text-pysim-on-surface-variant font-black text-xs uppercase tracking-wider rounded-2xl border border-pysim-outline-variant hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
               >
                 {t('leaveRoomBtn')}
               </button>
 
               <button
                 onClick={() => handleFinishChoice('REMAIN')}
-                className="px-8 py-3.5 bg-rose-600 hover:bg-rose-500 text-white font-black text-xs uppercase tracking-wider rounded-2xl shadow-lg shadow-rose-500/20 hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
+                className="px-8 py-3.5 bg-pysim-accent-strong hover:bg-pysim-accent-strong/90 text-pysim-on-primary font-black text-xs uppercase tracking-wider rounded-2xl shadow-lg shadow-pysim-accent-strong/20 hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
               >
                 {t('remainRoomBtn')}
               </button>

@@ -32,28 +32,28 @@ export default function ChatPanel({
   };
 
   return (
-    <div className="bg-white rounded-3xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
-      <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-2">
-        <MessageSquare className="h-4 w-4 text-slate-400" />
-        <h3 className="text-xs font-black text-slate-700">{t('chatTitle')}</h3>
+    <div className="bg-pysim-card rounded-3xl shadow-sm border border-pysim-outline-variant flex flex-col overflow-hidden">
+      <div className="px-5 py-3 border-b border-pysim-outline-variant flex items-center gap-2">
+        <MessageSquare className="h-4 w-4 text-pysim-label" />
+        <h3 className="text-xs font-black text-pysim-on-surface-variant">{t('chatTitle')}</h3>
       </div>
 
       <div ref={listRef} className="flex-1 min-h-[120px] max-h-[260px] overflow-y-auto px-5 py-3 space-y-2">
         {messages.length === 0 ? (
-          <p className="text-[11px] text-slate-400 font-bold">{t('chatEmpty')}</p>
+          <p className="text-label text-pysim-label font-bold">{t('chatEmpty')}</p>
         ) : (
           messages.map((m) => {
             const mine = m.user_name === playerName;
             return (
               <div key={m.id} className={`flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-wide">
+                <span className="text-label font-black text-pysim-label uppercase tracking-wide">
                   {mine ? t('youSuffix') : m.user_name}
                 </span>
                 {m.kind === 'emoji' ? (
                   <span className="text-2xl leading-tight">{m.emoji}</span>
                 ) : (
                   <span className={`px-3 py-1.5 rounded-2xl text-xs font-bold max-w-[85%] break-words ${
-                    mine ? 'bg-rose-50 text-rose-700' : 'bg-slate-100 text-slate-700'
+                    mine ? 'bg-pysim-accent-container text-pysim-accent-strong' : 'bg-pysim-surface-container text-pysim-on-surface-variant'
                   }`}>
                     {m.message}
                   </span>
@@ -65,7 +65,7 @@ export default function ChatPanel({
       </div>
 
       {chatOpen ? (
-        <div className="border-t border-slate-100">
+        <div className="border-t border-pysim-outline-variant">
           <div className="px-4 py-2 flex flex-wrap gap-1.5">
             {emojiSet.map((emo) => (
               <button
@@ -73,7 +73,7 @@ export default function ChatPanel({
                 type="button"
                 onClick={() => sendEmoji(emo)}
                 disabled={sending}
-                className="text-lg leading-none px-2 py-1 rounded-xl hover:bg-slate-100 active:scale-90 transition-all disabled:opacity-40"
+                className="inline-flex min-h-target min-w-target items-center justify-center text-lg leading-none px-2 py-1 rounded-xl hover:bg-pysim-surface-container active:scale-90 transition-all disabled:opacity-40"
                 aria-label={`react ${emo}`}
               >
                 {emo}
@@ -87,12 +87,13 @@ export default function ChatPanel({
               onChange={(e) => setDraft(e.target.value)}
               maxLength={300}
               placeholder={t('chatPlaceholder')}
-              className="flex-1 px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-rose-200"
+              aria-label={t('chatPlaceholder')}
+              className="flex-1 px-3 py-2 rounded-xl border border-pysim-outline-variant text-xs font-bold focus:outline-none focus:ring-2 focus:ring-pysim-accent-border"
             />
             <button
               type="submit"
               disabled={sending || !draft.trim()}
-              className="p-2 rounded-xl bg-rose-600 text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-rose-500 transition-all"
+              className="p-2 rounded-xl bg-pysim-accent-strong text-pysim-on-primary disabled:opacity-40 disabled:cursor-not-allowed hover:bg-pysim-accent-strong/90 transition-all"
               aria-label={t('chatSend')}
             >
               <Send className="h-4 w-4" />
@@ -100,7 +101,7 @@ export default function ChatPanel({
           </form>
         </div>
       ) : (
-        <div className="border-t border-slate-100 px-5 py-3 flex items-center gap-2 text-[11px] font-bold text-slate-400">
+        <div className="border-t border-pysim-outline-variant px-5 py-3 flex items-center gap-2 text-label font-bold text-pysim-label">
           <Lock className="h-3.5 w-3.5 shrink-0" />
           <span>{t('chatLockedDuringRound')}</span>
         </div>

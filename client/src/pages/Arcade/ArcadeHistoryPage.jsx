@@ -51,7 +51,7 @@ export default function ArcadeHistoryPage({ user }) {
     return () => clearTimeout(timer);
   }, [load]);
 
-  const choice = (selected) => `min-h-[40px] px-3 rounded-xl text-xs font-bold border transition-colors ${selected ? 'bg-rose-600 text-white border-rose-700' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`;
+  const choice = (selected) => `min-h-[40px] px-3 rounded-xl text-xs font-bold border transition-colors ${selected ? 'bg-pysim-accent-strong text-pysim-on-primary border-pysim-accent-strong' : 'bg-pysim-card text-pysim-on-surface-variant border-pysim-outline-variant hover:bg-pysim-surface'}`;
   const filters = [
     { label: t('difficultyLabel'), value: difficulty, set: setDifficulty, key: 'difficulty', options: [
       ['all', t('historyFilterAll')], ['default', t('difficultyDefault')], ['easy', t('difficultyEasy')], ['medium', t('difficultyMedium')], ['hard', t('difficultyHard')],
@@ -63,22 +63,22 @@ export default function ArcadeHistoryPage({ user }) {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 sm:px-6 space-y-5">
-      <Link to="/matchmaking" className="inline-flex items-center gap-1.5 min-h-[40px] text-sm font-bold text-slate-700 hover:text-slate-900">
+      <Link to="/matchmaking" className="inline-flex items-center gap-1.5 min-h-[40px] text-sm font-bold text-pysim-on-surface-variant hover:text-pysim-on-surface">
         <ArrowLeft className="h-4 w-4" aria-hidden="true" /> {t('backToArcadeLobby')}
       </Link>
 
       <div className="flex items-center gap-3">
-        <History className="h-6 w-6 text-rose-600" aria-hidden="true" />
+        <History className="h-6 w-6 text-pysim-accent-strong" aria-hidden="true" />
         <div>
-          <h1 className="text-xl font-black text-slate-900">{t('matchHistoryPageTitle')}</h1>
-          <p className="text-sm text-slate-600">{t('pastMatchesSubtitle')}</p>
+          <h1 className="text-xl font-black text-pysim-on-surface">{t('matchHistoryPageTitle')}</h1>
+          <p className="text-sm text-pysim-label">{t('pastMatchesSubtitle')}</p>
         </div>
       </div>
 
-      <div className="bg-white rounded-3xl border border-slate-200 p-4 space-y-3">
+      <div className="bg-pysim-card rounded-3xl border border-pysim-outline-variant p-4 space-y-3">
         {filters.map(filter => (
           <div key={filter.key} className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
-            <p id={`${id}-${filter.key}`} className="text-xs font-black text-slate-700 sm:w-28 shrink-0">{filter.label}</p>
+            <p id={`${id}-${filter.key}`} className="text-xs font-black text-pysim-on-surface-variant sm:w-28 shrink-0">{filter.label}</p>
             <div role="group" aria-labelledby={`${id}-${filter.key}`} className="flex flex-wrap gap-2">
               {filter.options.map(([value, label]) => (
                 <button key={value} type="button" aria-pressed={filter.value === value}
@@ -91,7 +91,7 @@ export default function ArcadeHistoryPage({ user }) {
         ))}
       </div>
 
-      <div aria-live="polite" className="text-sm font-bold text-slate-600">
+      <div aria-live="polite" className="text-sm font-bold text-pysim-label">
         {status === 'loading' ? t('historyLoading')
           : status === 'error' ? t('historyLoadError')
             : t('historyCount').replace('{{shown}}', String(matches.length)).replace('{{total}}', String(total))}
@@ -102,18 +102,18 @@ export default function ArcadeHistoryPage({ user }) {
       )}
 
       {status !== 'loading' && status !== 'error' && matches.length === 0 && (
-        <div className="bg-white rounded-3xl border border-slate-200 p-8 text-center space-y-3">
-          <p className="text-sm font-bold text-slate-700">
+        <div className="bg-pysim-card rounded-3xl border border-pysim-outline-variant p-8 text-center space-y-3">
+          <p className="text-sm font-bold text-pysim-on-surface-variant">
             {difficulty === 'all' && pace === 'all' ? t('historyEmpty') : t('historyEmptyFiltered')}
           </p>
-          <Link to="/matchmaking" className="inline-flex items-center min-h-[44px] px-5 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white text-sm font-black">
+          <Link to="/matchmaking" className="inline-flex items-center min-h-[44px] px-5 rounded-2xl bg-pysim-accent-strong hover:bg-pysim-accent-strong/90 text-pysim-on-primary text-sm font-black">
             {t('historyEmptyCta')}
           </Link>
         </div>
       )}
 
       {matches.length > 0 && (
-        <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+        <div className="bg-pysim-card rounded-3xl shadow-sm border border-pysim-outline-variant overflow-hidden">
           {matches.map(m => (
             <MatchHistoryRow key={m.match_id} match={m} open={openMatch === m.match_id}
               onToggle={() => setOpenMatch(openMatch === m.match_id ? null : m.match_id)} t={t} lang={lang} />
@@ -124,7 +124,7 @@ export default function ArcadeHistoryPage({ user }) {
       {nextBefore && status !== 'error' && (
         <div className="flex justify-center">
           <button type="button" disabled={status === 'more'} aria-busy={status === 'more'} onClick={() => load(nextBefore)}
-            className="min-h-[44px] px-6 rounded-2xl border border-slate-300 bg-white text-sm font-black text-slate-700 hover:bg-slate-50 disabled:cursor-wait disabled:opacity-70">
+            className="min-h-[44px] px-6 rounded-2xl border border-pysim-outline-variant bg-pysim-card text-sm font-black text-pysim-on-surface-variant hover:bg-pysim-surface disabled:cursor-wait disabled:opacity-70">
             {status === 'more' ? t('historyLoading') : t('historyLoadMore')}
           </button>
         </div>

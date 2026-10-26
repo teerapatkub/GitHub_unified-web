@@ -6,37 +6,37 @@ export default function RoundSummaryView({ roundSummary, timeLeft, t }) {
     <div className="h-full w-full overflow-y-auto">
       <div className="min-h-full p-8 max-w-2xl mx-auto flex flex-col items-center justify-center text-center space-y-6">
       <div className="space-y-2">
-        <span className="px-3 py-1 text-[10px] font-black uppercase tracking-widest text-rose-500 bg-rose-50 rounded-full border border-rose-100">
+        <span className="px-3 py-1 text-label font-black uppercase tracking-widest text-pysim-accent-strong bg-pysim-accent-container rounded-full border border-pysim-accent-border">
           {t('roundSummaryBadge')} {roundNum}
         </span>
-        <h1 className="text-3xl font-black text-slate-800 tracking-tight">{t('roundSummaryTitle')}</h1>
-        <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">
-          {t('roundSummaryNextIn')} <span className="text-rose-500 text-base">{timeLeft}s</span>
+        <h1 className="text-3xl font-black text-pysim-on-surface tracking-tight">{t('roundSummaryTitle')}</h1>
+        <p className="text-xs text-pysim-label font-bold uppercase tracking-wider">
+          {t('roundSummaryNextIn')} <span className="text-pysim-accent-strong text-base">{timeLeft}s</span>
         </p>
       </div>
 
-      <div className="w-full bg-white rounded-3xl overflow-hidden shadow-sm border border-slate-200">
+      <div className="w-full bg-pysim-card rounded-3xl overflow-hidden shadow-sm border border-pysim-outline-variant">
         {entries.map((entry, idx) => (
-          <div key={idx} className={`flex justify-between items-center p-5 border-b border-slate-100 last:border-0 ${entry.isPlayer ? 'bg-rose-50/50 font-black' : 'hover:bg-slate-50'}`}>
+          <div key={idx} className={`flex justify-between items-center p-5 border-b border-pysim-outline-variant last:border-0 ${entry.isPlayer ? 'bg-pysim-accent-container/50 font-black' : 'hover:bg-pysim-surface'}`}>
             <div className="flex items-center gap-4">
-              <span className={`w-8 text-center text-xs font-black ${entry.rank === 1 ? 'text-amber-500' : 'text-slate-400'}`}>#{entry.rank}</span>
-              <span className={`text-xs ${entry.eliminated ? 'text-slate-400 line-through font-normal' : 'text-slate-700'}`}>
+              <span className={`w-8 text-center text-xs font-black ${entry.rank === 1 ? 'text-pysim-warning-strong' : 'text-pysim-label'}`}>#{entry.rank}</span>
+              <span className={`text-xs ${entry.eliminated ? 'text-pysim-label line-through font-normal' : 'text-pysim-on-surface-variant'}`}>
                 {entry.name} {entry.isPlayer ? t('youSuffix') : ""}
               </span>
               {entry.eliminated && (
-                <span className="text-[9px] font-black uppercase tracking-wider bg-rose-100 text-rose-600 px-2 py-1 rounded-lg">
+                <span className="text-label font-black uppercase tracking-wider bg-pysim-accent-container text-pysim-accent-strong px-2 py-1 rounded-lg">
                   {t('eliminated')}
                 </span>
               )}
             </div>
             <span className="flex flex-col items-end">
-              <span className="text-emerald-600 font-mono text-xs font-bold">🪙 +{entry.cashGain}</span>
+              <span className="text-pysim-success-strong font-mono text-xs font-bold">🪙 +{entry.cashGain}</span>
               {/* Where the money came from (server/arcade/round-cash.js): the
                   comeback part is what lets the player behind afford an item. */}
               {entry.cashParts && (
-                <span className="mt-0.5 text-[10px] font-semibold text-slate-400">
+                <span className="mt-0.5 text-label font-semibold text-pysim-label">
                   {t('cashBase')} {entry.cashParts.base} · {t('cashRank')} +{entry.cashParts.rank}
-                  {entry.cashParts.comeback > 0 && <span className="text-sky-600"> · {t('cashComeback')} +{entry.cashParts.comeback}</span>}
+                  {entry.cashParts.comeback > 0 && <span className="text-pysim-info"> · {t('cashComeback')} +{entry.cashParts.comeback}</span>}
                 </span>
               )}
             </span>

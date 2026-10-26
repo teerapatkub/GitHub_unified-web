@@ -77,6 +77,18 @@
     --c-info-container: 238 242 255;     /* indigo-50 */
     --c-info-border: 199 210 254;         /* indigo-200 */
 
+    /* Dark consoles: the code output panel, code listings and the debuff
+       overlays that black out the editor. Themes leave these alone; a console
+       stays dark whatever the page around it is wearing. */
+    --c-inverse-surface: 15 23 42;        /* slate-900 */
+    --c-inverse-surface-high: 2 6 23;     /* slate-950 */
+    --c-inverse-outline: 30 41 59;        /* slate-800 */
+    --c-on-inverse: 203 213 225;          /* slate-300, 12:1 on slate-900 */
+    --c-on-inverse-muted: 148 163 184;    /* slate-400, 7.0:1 */
+    --c-inverse-code: 52 211 153;         /* emerald-400, program output */
+    --c-inverse-accent: 251 113 133;      /* rose-400 */
+    --c-inverse-success: 167 243 208;     /* emerald-200 */
+
     /* Sizes. A label is never smaller than this (Tailwind: text-label). */
     --text-label-min: 0.75rem;            /* 12px */
     --target-min: 2rem;                   /* 32px, any control */
