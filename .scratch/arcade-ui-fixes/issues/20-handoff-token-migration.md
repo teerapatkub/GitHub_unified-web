@@ -12,8 +12,9 @@
 
 **Blocked by:** 18
 
-**Status:** ready-for-agent
+**Status:** done (2026-10-26, see project_logs/2026-10-26/0700-tickets-17-20-tokens-and-mobile-header.md)
 
-- [ ] `docs/handoff-to-person-1.md` มีหัวข้อการย้าย token ของ Person 1 และ Person 2
-- [ ] มีรายการไฟล์และจำนวนสีดิบที่นับจริง ณ วันที่เขียน
-- [ ] ระบุว่าขั้น contract ต้องรอให้ทุกคนย้ายเสร็จก่อน
+- [x] `docs/handoff-to-person-1.md` มีหัวข้อการย้าย token ของ Person 1 และ Person 2 พร้อมตารางแปลงสี ขนาดขั้นต่ำ และวิธีตรวจด้วย `client/scripts/audit-page.js`
+  - สคริปต์แปลงที่ Arcade ใช้อยู่ใน repo แล้วที่ `client/scripts/migrate-raw-colors.py` (มี `--dry`)
+- [x] รายการไฟล์และจำนวนสีดิบที่นับจริง 2026-10-26: Person 1 627 จุดใน 8 ไฟล์, Person 2 505 จุดใน 9 ไฟล์, ไฟล์กลาง 347 จุด (รวม 1,479 ตรงกับที่สคริปต์นับ)
+- [x] ระบุว่าขั้น contract ต้องรอให้ทุกคนย้ายเสร็จก่อน และเหตุผล (Tailwind ไม่เตือน class ที่ไม่รู้จัก หน้าจะไม่มีสีแบบเงียบๆ)

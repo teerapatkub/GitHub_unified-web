@@ -515,3 +515,128 @@ Fixed undefined LESSON_PASS_PERCENT using POST_PASS_RATIO * 100. Read-only route
 - **`i18n.js`:**
   - จำภาษาที่ผู้ใช้เลือกไว้ใน localStorage และตั้ง `<html lang>` ตามภาษา
   - หน้าที่ใช้ `t('key', 'ค่าไทย')` ต้องมี key ใน `public/locales/en/translation.json` ด้วย ไม่อย่างนั้นโหมด EN จะเห็นภาษาไทย
+
+## 2026-10-26 · Spec 0005 Track H: ย้ายหน้าของตัวเองมาใช้ token สี (Person 1 และ Person 2)
+
+**ทำไม:** ธีมที่ผู้เล่นซื้อเขียนสีลง token ชุดเดียว (`client/src/styles/tokens.css`) แล้ว
+หน้าไหนที่ยังใช้สีดิบของ Tailwind (`bg-slate-50`, `text-rose-600`, ...) จะไม่เปลี่ยนตามธีม
+Arcade ย้ายครบแล้ว (ticket 18) ตอนนี้สวมธีมแล้วทั้งหน้า Arcade และแถบด้านบนเปลี่ยนสีตาม
+
+### วิธีย้าย
+
+1. รันสคริปต์กับโฟลเดอร์ของตัวเอง ดูผลก่อนด้วย `--dry`:
+   ```bash
+   python client/scripts/migrate-raw-colors.py client/src/pages --dry
+   ```
+   สคริปต์แก้ทุกไฟล์ในโฟลเดอร์ที่ให้ไป ถ้าโฟลเดอร์มีไฟล์ของคนอื่นด้วย ให้รันแล้ว commit เฉพาะไฟล์ของตัวเอง (`git checkout -- <ไฟล์>` คืนไฟล์ที่ไม่ใช่ของตัวเอง)
+2. **แก้ด้วยมือ:** บนพื้นมืด (คอนโซลโค้ด, overlay ที่ทำให้จอมืด) สคริปต์จะได้ตัวอักษรมืดบนพื้นมืด ให้เปลี่ยนเป็น `inverse-*` เอง (ดูแถวสุดท้ายของตาราง)
+3. ตัวอักษรที่เล็กกว่า 12px (`text-[8px]` ถึง `text-[11px]`) เปลี่ยนเป็น `text-label`
+4. ปุ่มที่เล็กกว่า 32×32px ใส่ `min-h-target` (และ `min-w-target` ถ้าเป็นปุ่มไอคอน) ปุ่มหลักของหน้าใช้ `min-h-target-primary` (44px)
+5. ตรวจด้วย `client/scripts/audit-page.js` ที่ความกว้าง 375px (ดูหัวข้อถัดไป)
+
+### ตารางแปลงสี (สิ่งที่สคริปต์ทำ)
+
+ทุกชื่อในตารางขึ้นต้นด้วย `pysim-` เช่น `text-pysim-label`, `bg-pysim-surface`
+
+| สีดิบ | ตัวอักษร (`text-`) | เส้นขอบ (`border-`, `ring-`, `divide-`) | พื้น (`bg-`, `from-`, `to-`) |
+|---|---|---|---|
+| `white` | `on-primary` | `card` | `card` |
+| slate/gray 50–300 | `label` | `outline-variant` | 50 `surface`, 100 `surface-container`, 200 `surface-high`, 300 `surface-dim` |
+| slate/gray 400–600 | `label` | 400–500 `outline`, 600 `on-surface-variant` | 400–500 `outline`, 600 `on-surface-variant` |
+| slate/gray 700 | `on-surface-variant` | `on-surface-variant` | `on-surface-variant` |
+| slate/gray 800–950, `black` | `on-surface` | `on-surface-variant` | `on-surface` |
+| rose/pink | ≤400 `accent`, 500+ `accent-strong` | ≤300 `accent-border`, 400–500 `accent`, 600+ `accent-strong` | ≤100 `accent-container`, ≤300 `accent-border`, 400 `accent`, 500+ `accent-strong` |
+| emerald/green/teal | 400+ `success-strong` | ≤300 `success-border` | ≤100 `success-container`, ≤300 `success-border`, 400–500 `success`, 600+ `success-strong` |
+| amber/yellow/orange | 400+ `warning-strong` | ≤300 `warning-border` | ≤100 `warning-container`, ≤300 `warning-border`, 400–500 `warning`, 600+ `warning-strong` |
+| red | `error` | ≤300 `error-border` | ≤100 `error-container`, ≤300 `error-border`, 400+ `error` |
+| indigo/blue/sky/violet/purple | 600 `info`, 700+ `info-strong` | ≤300 `info-border` | ≤100 `info-container`, ≤300 `info-border`, 400–500 `info`, 600+ `info-strong` |
+| **พื้นมืด (แก้เอง)** | `on-inverse`, รอง `on-inverse-muted`, โค้ด `inverse-code` | `inverse-outline` | `inverse-surface`, `inverse-surface-high` |
+
+- ทุกตัวต่อด้วย `/opacity` ได้เหมือนเดิม เช่น `bg-pysim-accent-container/50`
+- **ไม่เปลี่ยนตามธีม:** สีสถานะ (error, success, warning, info) และ `inverse-*` เพราะสีเขียวต้องยังแปลว่า "ผ่าน" และคอนโซลต้องมืดเสมอ
+- **`accent`:** สีประจำโหมด (Arcade ใช้ชมพู) ธีมเขียนทับได้ ส่วน `primary` คือสีน้ำเงินหลักของเว็บ
+- **หน้าที่มีสีประจำของตัวเอง** (เช่น Competitive ใช้ indigo) ใช้ `info` แทน `accent` ได้ แต่ `info` ไม่ตามธีม
+
+### ขนาดขั้นต่ำ
+
+- **ตัวอักษร:** อย่างน้อย 12px คือ `text-label` หรือ `text-xs` ห้ามใช้ `text-[8px]` ถึง `text-[11px]`
+- **สีป้ายกำกับเล็ก:** `text-pysim-label` (9.4:1 บนพื้นขาว) แทน `text-slate-400` (2.6:1)
+  - `text-pysim-outline` ได้ 4.47:1 ต่ำกว่าเกณฑ์นิดหน่อย อย่าใช้กับตัวอักษรเล็ก
+- **ปุ่ม:** อย่างน้อย 32×32px (`min-h-target`, `min-w-target`) และปุ่มหลัก 44px (`min-h-target-primary`)
+
+### ตรวจผลด้วย audit-page
+
+1. เปิดหน้าใน Chrome DevTools แบบ device toolbar ที่ 375×812
+2. พิมพ์ `window.AUDIT_SCOPE = 'main'` ใน Console เพื่อไม่ให้นับแถบด้านบน
+3. วางเนื้อหาของ `client/scripts/audit-page.js` ใน Console
+4. `tinyText`, `lowContrastCount`, `smallCount` ต้องเป็น 0 ทั้งหมด ถ้าไม่ใช่ `tinySamples`, `lowContrast` และ `smallTargets` จะบอกว่าตัวไหน
+   - `hScroll` อ่านได้ 0 เสมอเพราะ `html` ตั้ง `overflow-x: hidden` ให้ดูด้วยตาว่ามีอะไรล้นขอบขวา
+5. **สวมธีมที่ซื้อ** แล้วดูว่าหน้าเปลี่ยนสีทั้งหน้า
+
+### สีดิบที่ยังเหลือ (นับเมื่อ 2026-10-26 หลัง ticket 18)
+
+นับด้วย regex เดียวกับสคริปต์ ไม่รวมไฟล์เทส ช่อง "เล็ก" คือจำนวน `text-[<12px]`
+
+**Person 1 — 627 สีดิบ, 40 ตัวอักษรเล็ก**
+
+| ไฟล์ | สีดิบ | เล็ก |
+|---|---:|---:|
+| `pages/MiNi_Game.jsx` | 183 | 19 |
+| `pages/ExercisePage.jsx` | 144 | 8 |
+| `components/learning/CodingWorkspace.jsx` | 121 | 11 |
+| `pages/LessonPage.jsx` | 77 | 0 |
+| `pages/PromotionExamPage.jsx` | 42 | 0 |
+| `components/learning/ProgressCelebration.jsx` | 28 | 0 |
+| `pages/LearningPage.jsx` | 22 | 2 |
+| `components/learning/AiTaskPage.jsx` | 10 | 0 |
+
+`MiNi_Game.jsx` และ `ExercisePage.jsx` มี hex ใน class อย่างละ 1 จุด (`[#...]`) ให้แปลงด้วยมือ
+
+**Person 2 — 505 สีดิบ, 40 ตัวอักษรเล็ก**
+
+| ไฟล์ | สีดิบ | เล็ก |
+|---|---:|---:|
+| `pages/CompetitiveArena.jsx` | 283 | 30 |
+| `admin/pages/Dashboard.jsx` | 44 | 9 |
+| `admin/pages/ManageAccount.jsx` | 43 | 0 |
+| `admin/pages/CompetitiveChallengePage.jsx` | 29 | 0 |
+| `admin/pages/ThemePage.jsx` | 29 | 0 |
+| `admin/pages/Leaderboard.jsx` | 28 | 0 |
+| `admin/pages/StudentProgressPage.jsx` | 25 | 0 |
+| `admin/pages/AddLesson.jsx` | 19 | 0 |
+| `admin/components/AdminNavbar.jsx` | 5 | 1 |
+
+หน้า admin ไม่จำเป็นต้องตามธีมของผู้เล่น ถ้าทีมตกลงว่า admin คงสีเดิม ให้ย้ายเฉพาะ `CompetitiveArena.jsx`
+
+**ไฟล์กลาง / Person 3 — ยังไม่ได้ย้ายในรอบนี้ (347 สีดิบ, 15 ตัวอักษรเล็ก)**
+
+`FriendLogin.jsx` 56, `LeaderboardPage.jsx` 56, `ProfilePage.jsx` 44, `SettingsModal.jsx` 37,
+`WebTutorialModal.jsx` 26, `shop/PurchaseSuccessPopup.jsx` 26, `tour/GuidedTour.jsx` 20,
+`GameModeLocked.jsx` 20, `ShopPage.jsx` 20, `Achievements.jsx` 12, `ui/tubelight-navbar.jsx` 10,
+`App.jsx` 6, `ui/Skeleton.jsx` 6, `ui/the-infinite-grid.jsx` 4, `Login.jsx` 3, `ui/typewriter-text.jsx` 1
+
+### ขั้น contract (ยังไม่ทำ)
+
+- **ลบชื่อเดิม:** ทั้ง 4 ชุดใน `tailwind.config.js` และ `index.css` (`t-*`, `cyber-*`/`neon-*`/`cat-*`, `--color-*`)
+- **`--t-*`:** เปลี่ยนให้ธีมในตัวเขียนค่าจาก token
+- **ทำได้หลังทุกคนย้ายเสร็จเท่านั้น:** ถ้าลบก่อน หน้าที่ยังใช้ชื่อเดิมจะไม่มีสีเลย และ Tailwind ไม่เตือนเรื่อง class ที่ไม่รู้จัก
+
+### ไฟล์กลางที่ Person 3 แตะใน ticket 17–19 (ตรวจก่อน merge)
+
+- **`tailwind.config.js`:** สีทุกตระกูลอ่านจาก `--c-*`
+  - เพิ่ม `text-label`, `min-h-target`, `min-h-target-primary`, `min-w-target`
+  - **ค่าเริ่มต้นเท่าเดิม:** เทียบสีที่คำนวณได้ของทุก element ใน 7 หน้าแล้วไม่เปลี่ยน
+- **`index.css`:** import `styles/tokens.css`
+  - `--color-*` เป็น alias
+  - ลบบล็อก `[data-theme="sakura"]` และ `[data-theme="ocean"]` ที่ไม่เคยถูกใช้
+  - `.python-gradient` อ่านจาก token
+- **`contexts/ThemeContext.jsx`:** ตอนเปลี่ยนธีม ลบตัวแปร CSS ของธีมก่อนหน้า (เดิมสีของธีมร้านค้าจะค้างหลังถอดธีม)
+- **`themes/shopPalette.js`:** ธีมร้านค้าเขียน `--c-*` ด้วย และมี guard ให้ตัวอักษรผ่าน 4.5:1 เสมอ (เทสอยู่ใน `themes/shop-palette.test.js`)
+- **`components/ModeEntryHeader.jsx` และ `components/mode-entry.css`** (แถบด้านบนของทุกหน้า):
+  - บนมือถือ (< 640px) เหลือแถวเดียว สูง 105px
+  - ภาษา ร้านค้า ตารางอันดับ และวิธีใช้ ย้ายไปอยู่ในเมนู ⋯
+  - ที่ 1366px ตำแหน่งและขนาดของทุก element เท่าเดิม
+  - **ปุ่มที่หน้าส่งเข้ามาเป็น `children`** (เช่นกล่องจดหมายของ Competitive) ยังอยู่ในแถวหลัก ถ้าจะเพิ่มปุ่มให้ลองที่ความกว้าง 375px ด้วย ตอนนี้เหลือที่ประมาณ 1 ปุ่ม
+- **`data/appTour.js`:** เพิ่มขั้น "เมนูเพิ่มเติม" ที่ขึ้นเฉพาะบนมือถือ
+- **`components/ui/Dialog.jsx`, `components/ui/ToastHost.jsx`, `pages/ShopPage.jsx`:** ใช้ token
+  - ปุ่ม "ซื้อ" ในร้านเปลี่ยนจาก sky-700 เป็น `pysim-primary` ให้ตามธีม
