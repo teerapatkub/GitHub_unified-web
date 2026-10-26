@@ -1,4 +1,5 @@
 const arcadeConfig = require('../../shared/arcadeConfig.json');
+const { assignRoundKinds } = require('./round-kinds');
 const arcadePhaseDurations = room => room?.round_duration_mode === 'quick' ? arcadeConfig.quickModePhaseDurations : arcadeConfig.phaseDurations;
 
 function rematchRoster(room, previousMatch, participants) {
@@ -111,20 +112,25 @@ function installArcadeMatchStart(app, db) {
         participants = eligibleParticipants;
       }
       if (participants.length < 2) return await reject(400, 'ต้องมีผู้เล่นอย่างน้อย 2 คน');
-      const drawnTasks = await drawArcadeRoundTasks(connection, room);
+      // Mixed rooms then fit the draw to the round kinds (round-kinds.js).
+      const fitted = await assignRoundKinds(connection, room, await drawArcadeRoundTasks(connection, room));
+      const drawnTasks = fitted.taskIds;
       const tasks = drawnTasks ? JSON.stringify(drawnTasks) : null;
+      const kinds = JSON.stringify(fitted.kinds);
+      const roundFormat = room.round_format === 'classic' ? 'classic' : 'mixed';
       const roundSeconds = arcadePhaseDurations(room).ROUND_1;
       const [inserted] = await connection.query(
-        `INSERT INTO arcade_matches (room_id, room_code, room_name, difficulty, round_duration_mode, round_task_ids)
-         VALUES (?, ?, ?, ?, ?, ?) RETURNING match_id`,
-        [room.room_id, room.room_code, room.room_name, room.difficulty, room.round_duration_mode, tasks]
+        `INSERT INTO arcade_matches (room_id, room_code, room_name, difficulty, round_duration_mode, round_task_ids,
+           round_format, round_kinds)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING match_id`,
+        [room.room_id, room.room_code, room.room_name, room.difficulty, room.round_duration_mode, tasks, roundFormat, kinds]
       );
       const matchId = inserted.insertId;
       await connection.query(
         `UPDATE arcade_rooms SET current_match_id = ?, status = 'PLAYING', phase = 'ROUND_1',
          phase_deadline = clock_timestamp() + make_interval(secs => ?),
-         current_round = 1, last_round_summary = NULL, round_task_ids = ? WHERE room_id = ?`,
-        [matchId, roundSeconds, tasks, room.room_id]
+         current_round = 1, last_round_summary = NULL, round_task_ids = ?, round_kinds = ? WHERE room_id = ?`,
+        [matchId, roundSeconds, tasks, kinds, room.room_id]
       );
       await connection.query(
         `UPDATE arcade_participants SET match_id = ?, score = 0, cash = 0, coins_awarded = 0, is_eliminated = 0,
@@ -137,7 +143,7 @@ function installArcadeMatchStart(app, db) {
       res.json({ success: true, match_id: matchId, message: 'เริ่มการแข่งขันแล้ว!' });
       // Grade the bots' answer banks now, after the lock is gone (ADR 0005).
       if (drawnTasks && participants.some(p => p.participant_kind === 'bot')) {
-        require('./bot-ticker').warmRoundAnswers(db, drawnTasks).catch(() => {});
+        require('./bot-ticker').warmRoundAnswers(db, drawnTasks, fitted.kinds).catch(() => {});
       }
     } catch (error) {
       if (connection) await connection.rollback();

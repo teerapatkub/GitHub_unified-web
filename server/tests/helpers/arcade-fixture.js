@@ -34,6 +34,10 @@ async function arcadeFixture(t, { beforeMigration, beforeShopMigration } = {}) {
     CREATE TABLE arcade_effects (id serial PRIMARY KEY, room_id integer REFERENCES arcade_rooms(room_id) ON DELETE CASCADE);
     CREATE TABLE arcade_chat_messages (id serial PRIMARY KEY, room_id integer REFERENCES arcade_rooms(room_id) ON DELETE CASCADE, user_name varchar(50) NOT NULL, kind varchar(10) NOT NULL DEFAULT 'text', message varchar(300), emoji varchar(16), created_at timestamp DEFAULT CURRENT_TIMESTAMP);
     CREATE TABLE arcade_tasks (task_id serial PRIMARY KEY, work_chars integer, difficulty text, test_cases jsonb);
+    -- The problem registry the round kinds read (round-kinds.js). Empty unless a
+    -- test inserts problems; an Arcade task with no row here plays as "write".
+    CREATE TABLE problems (problem_id integer PRIMARY KEY, title_th text, desc_th text, title_en text, test_kind text, test_cases jsonb, solution_code text, starter_code text);
+    CREATE TABLE problem_modes (mode text NOT NULL, entry_id integer NOT NULL, problem_id integer REFERENCES problems(problem_id), difficulty text, is_active smallint NOT NULL DEFAULT 1, updated_at timestamp DEFAULT now(), PRIMARY KEY (mode, entry_id));
     CREATE TABLE arcade_player_stats (user_name varchar(50) PRIMARY KEY, matches_played integer DEFAULT 0, wins integer DEFAULT 0, best_rank integer, total_score integer DEFAULT 0, total_cash_earned integer DEFAULT 0, updated_at timestamp DEFAULT now());
     INSERT INTO users (username) VALUES ('alice'), ('bob'), ('outsider');
     INSERT INTO arcade_rooms (room_code,room_name,host_name) VALUES ('ARC-TEST','Test room','alice');
@@ -51,6 +55,7 @@ async function arcadeFixture(t, { beforeMigration, beforeShopMigration } = {}) {
   await require('../../arcade/migrate-drafts').migrateArcadeDrafts(db);
   await require('../../arcade/migrate-score-breakdown').migrateArcadeScoreBreakdown(db);
   await require('../../arcade/migrate-quality-breakdown').migrateArcadeQualityBreakdown(db);
+  await require('../../problemsSchema').migrateArcadeRoundKinds(db);
   const authSubjects = new Map();
   const authAdmin = { auth: {
     getUser: async token => {

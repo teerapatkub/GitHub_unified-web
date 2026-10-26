@@ -1,5 +1,6 @@
 import { useId } from 'react';
 import Dialog from '../../../components/ui/Dialog.jsx';
+import RoundFormatChoice from './RoundFormatChoice.jsx';
 
 // Built on the shared Dialog; see CreateRoomModal.jsx for the label/group rules.
 export default function RoomSettingsModal({ show, onClose, settingsForm, setSettingsForm, onSubmit, occupiedSeats = 0, t }) {
@@ -55,6 +56,12 @@ export default function RoomSettingsModal({ show, onClose, settingsForm, setSett
             <p id={`${id}-max-note`} className="text-xs font-bold text-pysim-label mt-1.5">{occupancyNote}</p>
           )}
         </div>
+
+        <RoundFormatChoice value={settingsForm.round_format} t={t}
+          choiceClass={selected => `flex-1 min-h-target-primary py-2 rounded-xl font-bold text-xs border transition-all ${selected
+            ? 'bg-pysim-accent-strong text-pysim-on-primary border-pysim-accent-strong'
+            : 'bg-pysim-surface text-pysim-on-surface-variant border-pysim-outline-variant'}`}
+          onChange={format => setSettingsForm(prev => ({ ...prev, round_format: format }))} />
 
         <div>
           <label htmlFor={`${id}-password`} className="block text-xs font-black text-pysim-label uppercase mb-1">{t('roomPasswordLabel')}</label>

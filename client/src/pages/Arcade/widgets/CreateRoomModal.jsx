@@ -1,5 +1,6 @@
 import { useId } from 'react';
 import Dialog from '../../../components/ui/Dialog.jsx';
+import RoundFormatChoice from './RoundFormatChoice.jsx';
 
 // Built on the shared Dialog (role, focus trap, Escape, focus return). Choice
 // rows are role="group" with aria-pressed buttons so a screen reader hears
@@ -73,6 +74,9 @@ export default function CreateRoomModal({ show, onClose, createForm, setCreateFo
             ))}
           </div>
         </div>
+
+        <RoundFormatChoice value={createForm.round_format} t={t} choiceClass={choice}
+          onChange={format => setCreateForm(prev => ({ ...prev, round_format: format }))} />
 
         <div>
           <p id={`${id}-difficulty`} className="block text-xs font-black text-pysim-label uppercase mb-1">{t('difficultyLabel')}</p>

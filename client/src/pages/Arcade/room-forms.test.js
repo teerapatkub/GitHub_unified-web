@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import { newRoomForm, hasSavedActiveRoom } from './roomForms.js';
 
 // Bug A9: the reset after creating a room dropped two of the five fields.
-test('every create-room form starts with all five fields, including pacing and difficulty', () => {
+test('every create-room form starts with all six fields, including pacing, difficulty and round format', () => {
   const form = newRoomForm();
-  assert.deepEqual(Object.keys(form).sort(), ['difficulty', 'max_players', 'password', 'room_name', 'round_duration_mode']);
+  assert.deepEqual(Object.keys(form).sort(), ['difficulty', 'max_players', 'password', 'room_name', 'round_duration_mode', 'round_format']);
   assert.equal(form.round_duration_mode, 'standard');
   assert.equal(form.difficulty, 'default');
+  assert.equal(form.round_format, 'mixed');
 });
 
 test('each call is a fresh object, so a reset never shares state with the last room', () => {

@@ -1,9 +1,10 @@
 // The create-room form's starting values, in one place. The form used to be
 // initialised with five fields and reset after a successful create with only
 // three, so the next room was sent without round_duration_mode or difficulty
-// (bug A9). Five players matches the server's default for a new room.
+// (bug A9). Five players and mixed rounds match the server's defaults for a
+// new room.
 export function newRoomForm() {
-  return { room_name: '', password: '', max_players: 5, round_duration_mode: 'standard', difficulty: 'default' };
+  return { room_name: '', password: '', max_players: 5, round_duration_mode: 'standard', difficulty: 'default', round_format: 'mixed' };
 }
 
 // Whether a saved "active room" marker exists, read once at mount so the

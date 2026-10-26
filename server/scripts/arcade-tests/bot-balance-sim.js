@@ -18,6 +18,7 @@ const config = require('../../../shared/arcadeConfig.json');
 const profiles = require('../../../shared/arcadeBotProfiles.json');
 const coder = require('../../arcade/bot-coder');
 const { createArcadeCodeJudge } = require('../../arcade/code-judge');
+const { problemForKind } = require('../../arcade/round-kinds');
 
 // Mean unattacked bot round score under the progress-bar scoring (Monte Carlo
 // in project_logs/2026-10-18/0440-arcade-debuffs-cost-bots-points.md, 3 cases).
@@ -25,15 +26,28 @@ const BEFORE = { easy: 92.2, default: 133.4, medium: 164.8, hard: 184.1 };
 const ROUND_SECONDS = 60;
 const POOLS = { easy: ['easy'], default: ['easy', 'medium'], medium: ['medium'], hard: ['hard'] };
 
-function simulateRound(bank, profile, skill, random) {
-  const target = Math.min(1, Math.max(0, skill.passMin + random() * skill.passSpread));
-  const answer = coder.chooseAnswer(bank, target, random);
-  const plan = coder.typingPlan(bank.starter, answer.code);
-  const steps = 14 + Math.floor(random() * 11);
+// A fix round (ADR 0010) types from its own bank: the AI's wrong answer as the
+// starter and give-up, edits of it as attempts (arcade/bot-coder.js buildFixBank).
+const fixStart = bank => ({ starter: bank.fixBank.starter, answers: bank.fixBank, fix: true, writeStarter: bank.starter });
+
+// Same as bot-ticker.js answerKeystrokeMs.
+function keystrokeMs(profile, plan, steps) {
   const chars = Math.max(1, plan.insert.length);
   const pauses = (plan.insert.match(/[\n:]/g) || []).length * (coder.PAUSE_FACTOR - 1);
   const lengthFactor = Math.min(1.6, Math.max(0.7, Math.sqrt(chars / config.botReferenceAnswerChars)));
-  const charMs = profile.typingSpeedMs * steps * lengthFactor / (chars + pauses);
+  return profile.typingSpeedMs * steps * lengthFactor / (chars + pauses);
+}
+
+function simulateRound(bank, profile, skill, random, start = { starter: bank.starter, answers: bank }) {
+  const target = Math.min(1, Math.max(0, skill.passMin + random() * skill.passSpread));
+  const answer = start.fix ? coder.chooseFixAnswer(start.answers, bank, target, random) : coder.chooseAnswer(start.answers, target, random);
+  const plan = coder.typingPlan(start.starter, answer.code);
+  const steps = 14 + Math.floor(random() * 11);
+  let charMs = keystrokeMs(profile, plan, steps);
+  if (start.fix) {
+    const writePlan = coder.typingPlan(start.writeStarter, answer.code);
+    charMs = keystrokeMs(profile, writePlan, steps) * coder.huntingFactor(writePlan, plan);
+  }
   let elapsed = 0;
   let finished = false;
   // Giving up leaves the scaffold for the deadline to send (bot-ticker.js).
@@ -42,9 +56,16 @@ function simulateRound(bank, profile, skill, random) {
     if (coder.typingStep(plan, { accuracy: profile.accuracy, effects: new Set(), random }) === 'done') { finished = true; break; }
   }
   const code = coder.draftOf(plan);
+  // Sending the AI's answer back untouched scores nothing (phase-finalizer.js).
+  if (start.fix && code === start.starter) return { score: 0, finished, typo: false };
   // A typo left in the answer means it is not the banked code; count it as failing.
-  const graded = bank.find(a => a.code === code);
-  const passRatio = graded ? graded.passed / graded.total : 0;
+  const graded = start.answers.find(a => a.code === code);
+  let passRatio = graded ? graded.passed / graded.total : 0;
+  if (start.fix && graded) {
+    // Only the tests the AI's answer failed count (phase-finalizer.js scoredRatio).
+    const base = start.answers.find(a => a.id === 'starter').passed;
+    passRatio = Math.max(0, (graded.passed - base) / (graded.total - base));
+  }
   // A typo left in the draft is judged as the answer the bot meant to type.
   const judged = answer.quality;
   const quality = !judged || judged.source === 'starter' ? 0 : Math.round(judged.score * (0.5 + 0.5 * passRatio));
@@ -56,7 +77,7 @@ function simulateRound(bank, profile, skill, random) {
   const rounds = Number(process.argv[2]) || 4000;
   const c = new Client({ connectionString: process.env.DATABASE_URL });
   await c.connect();
-  const { rows } = await c.query(`SELECT m.entry_id, m.difficulty, p.title_th, p.desc_th, p.test_kind, p.test_cases, p.solution_code, p.starter_code
+  const { rows } = await c.query(`SELECT m.entry_id, m.difficulty, m.round_data, p.title_th, p.desc_th, p.test_kind, p.test_cases, p.solution_code, p.starter_code
     FROM problem_modes m JOIN problems p ON p.problem_id = m.problem_id WHERE m.mode = 'arcade'`);
   await c.end();
   const banks = {};
@@ -66,6 +87,13 @@ function simulateRound(bank, profile, skill, random) {
     await Promise.all(bank.map(async answer => {
       answer.quality = await judge.judge({ taskId: row.entry_id, problem: row, code: answer.code });
     }));
+    const fixProblem = problemForKind(row, 'fix');
+    if (fixProblem !== row) {
+      bank.fixBank = await coder.buildFixBank(fixProblem, row.starter_code);
+      await Promise.all(bank.fixBank.map(async answer => {
+        answer.quality = await judge.judge({ taskId: `${row.entry_id}:fix`, problem: fixProblem, code: answer.code });
+      }));
+    }
     (banks[row.difficulty] ??= []).push(bank);
   }
   const sources = {};
@@ -84,5 +112,28 @@ function simulateRound(bank, profile, skill, random) {
     const after = total / rounds;
     const change = ((after / BEFORE[difficulty] - 1) * 100).toFixed(1);
     console.log(`${difficulty.padEnd(10)}  ${BEFORE[difficulty].toFixed(1).padStart(6)}  ${after.toFixed(1).padStart(6)}  ${change.padStart(5)}%  ${(finished / rounds * 100).toFixed(0).padStart(6)}%  ${(typos / rounds * 100).toFixed(1).padStart(8)}%`);
+  }
+
+  // Each round kind against write, on the same problems (ADR 0010): a kind
+  // whose average is more than 15% from write makes that round a lottery.
+  console.log('\nround kind  difficulty  write   kind    change');
+  let outOfBand = 0;
+  for (const difficulty of Object.keys(BEFORE)) {
+    const pool = POOLS[difficulty].flatMap(d => banks[d]).filter(bank => bank.fixBank);
+    const skill = config.botSkillByDifficulty[difficulty];
+    let write = 0; let fix = 0;
+    for (let i = 0; i < rounds; i++) {
+      const bank = pool[Math.floor(random() * pool.length)];
+      const profile = profiles[i % profiles.length];
+      write += simulateRound(bank, profile, skill, random).score;
+      fix += simulateRound(bank, profile, skill, random, fixStart(bank)).score;
+    }
+    const change = (fix / write - 1) * 100;
+    if (Math.abs(change) > 15) outOfBand++;
+    console.log(`fix         ${difficulty.padEnd(10)}  ${(write / rounds).toFixed(1).padStart(6)}  ${(fix / rounds).toFixed(1).padStart(6)}  ${change.toFixed(1).padStart(5)}%`);
+  }
+  if (outOfBand) {
+    console.log(`\n${outOfBand} row(s) more than 15% from write.`);
+    process.exitCode = 1;
   }
 })().catch(error => { console.error(error.message); process.exit(1); });

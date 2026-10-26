@@ -531,7 +531,31 @@ async function runMigration(db) {
     return moved;
 }
 
+// Round kinds (Spec 0005 Track G, ADR 0010). Whether an Arcade problem can be
+// played as "write", "fix the AI's answer", "predict the output" or "review the
+// AI's answers" is a setting of the Arcade registration, not of the problem: the
+// same problem is played several ways. round_data holds what each kind needs
+// (the wrong answer to fix, the snippet and options to predict, the answers to
+// review); scripts/arcade-round-kinds.js computes it by running the real grader
+// and Python, never by hand.
+//
+// A migration of its own (202610260003) rather than a change to runMigration
+// above, whose source is part of the applied core migration's checksum.
+async function migrateArcadeRoundKinds(db) {
+    await db.query(`ALTER TABLE problem_modes ADD COLUMN IF NOT EXISTS round_kinds JSONB NOT NULL DEFAULT '["write"]'::jsonb`);
+    await db.query(`ALTER TABLE problem_modes ADD COLUMN IF NOT EXISTS round_data JSONB NOT NULL DEFAULT '{}'::jsonb`);
+    // Classic rooms write code every round; mixed rooms play the round kinds.
+    // Existing rooms become mixed too, the same as a new room, and their host
+    // can switch back in the room settings.
+    await db.query(`ALTER TABLE arcade_rooms ADD COLUMN IF NOT EXISTS round_format VARCHAR(10) NOT NULL DEFAULT 'mixed'`);
+    await db.query(`ALTER TABLE arcade_rooms ADD COLUMN IF NOT EXISTS round_kinds JSONB DEFAULT NULL`);
+    await db.query(`ALTER TABLE arcade_matches ADD COLUMN IF NOT EXISTS round_format VARCHAR(10) DEFAULT NULL`);
+    // NULL on every match played before round kinds existed: read as all "write".
+    await db.query(`ALTER TABLE arcade_matches ADD COLUMN IF NOT EXISTS round_kinds JSONB DEFAULT NULL`);
+}
+
 module.exports = {
+    migrateArcadeRoundKinds,
     MODES,
     CHILD_FKS,
     VIEWS,

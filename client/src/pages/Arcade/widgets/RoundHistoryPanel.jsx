@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { API_BASE } from '../../../config/api.js';
+import { roundKindLabelKey } from '../roundKinds.js';
 
 // Phase 8.3 — "review your code" panel on the RESULT screen. Shows what this
 // player submitted each round, with the same three-part breakdown the round
@@ -35,6 +36,13 @@ export default function RoundHistoryPanel({ history, t }) {
                 <span className="text-xs font-black text-pysim-label uppercase tracking-wide">
                   {t('roundLabelShort')} {row.round_num}
                 </span>
+                {/* Only kinds other than writing are named: every round before
+                    round kinds existed was a write round (ADR 0010). */}
+                {row.round_kind && row.round_kind !== 'write' && (
+                  <span className="ml-2 rounded-md bg-pysim-info-container px-2 py-0.5 text-label font-black text-pysim-info-strong">
+                    {t(roundKindLabelKey(row.round_kind))}
+                  </span>
+                )}
                 <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-3 text-label text-pysim-label sm:flex sm:flex-wrap sm:gap-x-4">
                   <span><b className="text-pysim-on-surface-variant">{t('testsResultLabel')}:</b> {row.pass_count}/{row.total_count}</span>
                   <span><b className="text-pysim-on-surface-variant">{t('qualityScoreLabel')}:</b> {row.quality_score}/100</span>

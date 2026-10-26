@@ -51,6 +51,8 @@ import { parseUtcTimestamp, PHASES, TASKS, SHOP_ITEMS, BOT_NAMES, AUTO_SUBMIT_LE
          AUTO_SUBMIT_WARN_SECONDS, ROUND_TIMES, phaseDurationsFor } from './constants.js';
 import { isSpectating } from './spectatorView.js';
 import { resultCoinBreakdown } from './resultReward.js';
+import useRoundView from './hooks/useRoundView.js';
+import { nextRoundKind, roundKindLabelKey } from './roundKinds.js';
 
 export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
   const { i18n } = useTranslation();
@@ -204,12 +206,16 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
   } = useRoundJudging({ playerState, setPlayerState, currentRoom, notify, t, lang, API_BASE });
 
 
+  // A fix round opens the editor on the AI's answer instead of the scaffold
+  // (ADR 0010); the draft waits until that answer has arrived.
+  const roundView = useRoundView({ currentRoom, API_BASE });
   const draftRound = Number(currentRoom?.phase?.split('_')[1]);
-  const draftStarter = draftRound === 4 ? getRound4Task()?.initialCode
-    : (getPoolTask(draftRound) || TASKS[currentRoom?.phase])?.initialCode;
+  const draftStarter = roundView.view?.fix?.starter_code ?? (draftRound === 4 ? getRound4Task()?.initialCode
+    : (getPoolTask(draftRound) || TASKS[currentRoom?.phase])?.initialCode);
   const { draftReady, draftStatus, retryDraft } = useRoundDraft({
-    playerState, setPlayerState, currentRoom, starterCode: draftStarter ?? '', tasksReady, API_BASE
+    playerState, setPlayerState, currentRoom, starterCode: draftStarter ?? '', tasksReady: tasksReady && roundView.ready, API_BASE
   });
+  const upcomingKind = nextRoundKind(currentRoom);
 
   // Phase 8.3 — read-only progression views (RESULT-screen code review + lobby
   // career card). Takes primitives rather than the currentRoom object so its
@@ -722,7 +728,8 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
 
         {/* --- ROUND SUMMARY VIEW (rank + coins earned, auto-advances) --- */}
         {(phase === PHASES.SUMMARY_1 || phase === PHASES.SUMMARY_2 || phase === PHASES.SUMMARY_3) && (
-          <RoundSummaryView roundSummary={roundSummary} timeLeft={timeLeft} t={t} />
+          <RoundSummaryView roundSummary={roundSummary} timeLeft={timeLeft} t={t}
+            nextRoundLabel={upcomingKind ? t('nextRoundLabel').replace('{{kind}}', t(roundKindLabelKey(upcomingKind))) : ''} />
         )}
 
         {/* --- SHOP PHASE VIEW --- */}
@@ -737,6 +744,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
               buyItem={buyItem}
               sellItem={sellItem}
               t={t}
+              nextRoundLabel={upcomingKind ? t('nextRoundLabel').replace('{{kind}}', t(roundKindLabelKey(upcomingKind))) : ''}
             />
             {/* Phase 8.2 — the shop intermission is the other moment players
                 are free to talk without it becoming an answer channel. */}
@@ -806,6 +814,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
             challengeFunctionName={activeRoundTask.functionName}
             challengeTestCases={activeRoundTask.testCases}
             challengeHiddenCaseCount={activeRoundTask.hiddenCaseCount || 0}
+            fixRound={roundView.view?.fix || null}
             timeLeft={timeLeft}
             playerState={playerState}
             checkEffectActive={checkEffectActive}

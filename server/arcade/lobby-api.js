@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const arcadeConfig = require('../../shared/arcadeConfig.json');
 const { rematchRoster } = require('./match-api');
 const { publicParticipants } = require('./room-api');
+const { ROUND_FORMATS } = require('./round-kinds');
 
 // Clamps a requested max_players to arcadeConfig.maxPlayers' [min, max] bound
 // (shared with the client's "Max Players (2-5)" room-creation label) — used
@@ -35,7 +36,7 @@ function installArcadeLobbyRoutes(app, db, sanitizeName) {
   // host and "1 / N" immediately instead of "0 / N" until the first poll (A8).
   app.post('/api/arcade/rooms/create', async (req, res) => {
     try {
-      const { room_name: roomName, password, max_players: maxPlayers = 5, host_name: hostName, round_duration_mode: roundDurationMode, difficulty } = req.body || {};
+      const { room_name: roomName, password, max_players: maxPlayers = 5, host_name: hostName, round_duration_mode: roundDurationMode, difficulty, round_format: roundFormat } = req.body || {};
       if (!roomName || !hostName) {
         return res.status(400).json({ error: 'กรุณาระบุชื่อห้องและชื่อผู้สร้างห้อง' });
       }
@@ -50,13 +51,15 @@ function installArcadeLobbyRoutes(app, db, sanitizeName) {
       // match pacing and task selection for everyone in it.
       const durationMode = arcadeConfig.roundDurationModes.includes(roundDurationMode) ? roundDurationMode : 'standard';
       const roomDifficulty = arcadeConfig.difficulties.includes(difficulty) ? difficulty : 'default';
+      // Mixed by default: new rooms play the round kinds (round-kinds.js).
+      const format = ROUND_FORMATS.includes(roundFormat) ? roundFormat : 'mixed';
       const roomCode = generateRoomCode();
       const pwdValue = (typeof password === 'string' && password.trim()) ? await bcrypt.hash(password.trim(), 10) : null;
 
       const [insertResult] = await db.query(
-        `INSERT INTO arcade_rooms (room_code, room_name, host_name, password, max_players, status, round_duration_mode, difficulty)
-         VALUES (?, ?, ?, ?, ?, 'WAITING', ?, ?) RETURNING room_id`,
-        [roomCode, cleanRoomName, cleanHostName, pwdValue, maxPlayersNum, durationMode, roomDifficulty]
+        `INSERT INTO arcade_rooms (room_code, room_name, host_name, password, max_players, status, round_duration_mode, difficulty, round_format)
+         VALUES (?, ?, ?, ?, ?, 'WAITING', ?, ?, ?) RETURNING room_id`,
+        [roomCode, cleanRoomName, cleanHostName, pwdValue, maxPlayersNum, durationMode, roomDifficulty, format]
       );
       const roomId = insertResult[0]?.room_id || insertResult.insertId;
 
@@ -73,6 +76,7 @@ function installArcadeLobbyRoutes(app, db, sanitizeName) {
           max_players: maxPlayersNum,
           round_duration_mode: durationMode,
           difficulty: roomDifficulty,
+          round_format: format,
           status: 'WAITING',
           phase: 'LOBBY',
           is_password_protected: Boolean(pwdValue)
@@ -183,7 +187,7 @@ function installArcadeLobbyRoutes(app, db, sanitizeName) {
   // Treating "" as "remove" is how saving a rename used to unlock private rooms.
   app.post('/api/arcade/rooms/:id/settings', async (req, res) => {
     try {
-      const { host_name: hostName, room_name: roomName, max_players: maxPlayers, password, clear_password: clearPassword } = req.body || {};
+      const { host_name: hostName, room_name: roomName, max_players: maxPlayers, password, clear_password: clearPassword, round_format: roundFormat } = req.body || {};
       const [[room]] = await db.query('SELECT * FROM arcade_rooms WHERE room_id = ?', [req.params.id]);
       if (!room) return res.status(404).json({ error: 'ไม่พบห้อง' });
       if (room.host_name !== hostName) return res.status(403).json({ error: 'สิทธิ์เฉพาะหัวห้องเท่านั้น' });
@@ -203,11 +207,17 @@ function installArcadeLobbyRoutes(app, db, sanitizeName) {
       if (newPassword) storedPassword = await bcrypt.hash(newPassword, 10);
       else if (clearPassword === true) storedPassword = null;
 
+      // Omitted keeps the room's format; anything but the two formats is refused.
+      if (roundFormat !== undefined && !ROUND_FORMATS.includes(roundFormat)) {
+        return res.status(400).json({ error: 'รูปแบบห้องต้องเป็น "คลาสสิก" หรือ "ผสม"' });
+      }
+      const newFormat = roundFormat ?? room.round_format ?? 'mixed';
+
       await db.query(
-        'UPDATE arcade_rooms SET room_name = ?, max_players = ?, password = ?, updated_at = CURRENT_TIMESTAMP WHERE room_id = ?',
-        [newName, newMax, storedPassword, room.room_id]
+        'UPDATE arcade_rooms SET room_name = ?, max_players = ?, password = ?, round_format = ?, updated_at = CURRENT_TIMESTAMP WHERE room_id = ?',
+        [newName, newMax, storedPassword, newFormat, room.room_id]
       );
-      res.json({ success: true, message: 'อัปเดตการตั้งค่าห้องสำเร็จ', is_password_protected: Boolean(storedPassword) });
+      res.json({ success: true, message: 'อัปเดตการตั้งค่าห้องสำเร็จ', is_password_protected: Boolean(storedPassword), round_format: newFormat });
     } catch (err) {
       console.error('❌ POST /api/arcade/rooms/:id/settings error:', err.message);
       res.status(500).json({ error: 'อัปเดตการตั้งค่าห้องไม่สำเร็จ กรุณาลองอีกครั้ง' });

@@ -1,8 +1,10 @@
 // The Arcade problem a round was drawn from: everything the grader, the code
-// judge (its statement and starter) and the bots' answer banks need.
+// judge (its statement and starter) and the bots' answer banks need, plus what
+// each round kind needs (round-kinds.js).
 async function loadArcadeProblem(db, taskId) {
   if (taskId === undefined || taskId === null) return null;
-  const [rows] = await db.query(`SELECT p.title_th, p.desc_th, p.test_kind, p.test_cases, p.solution_code, p.starter_code
+  const [rows] = await db.query(`SELECT p.title_th, p.desc_th, p.test_kind, p.test_cases, p.solution_code, p.starter_code,
+    m.round_data
     FROM problem_modes m JOIN problems p ON p.problem_id = m.problem_id
     WHERE m.mode = 'arcade' AND m.entry_id = ?`, [taskId]);
   return rows?.[0] || null;

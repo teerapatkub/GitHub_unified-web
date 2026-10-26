@@ -3,6 +3,7 @@ const {
   ACHIEVEMENT_EASY_DIFFICULTY_VERSION,
   ARCADE_ACHIEVEMENT_REWARDS_VERSION,
   ARCADE_QUALITY_BREAKDOWN_VERSION,
+  ARCADE_ROUND_KINDS_VERSION,
   APPLICATION_SCHEMA_VERSION,
   AUTH_PROVISIONING_VERSION,
   CORE_SCHEMA_VERSION,
@@ -71,7 +72,15 @@ const createAchievementEasyDifficultyMigration = (up, signature) => defineMigrat
   up,
 });
 
+const createArcadeRoundKindsMigration = (up, signature) => defineMigration({
+  version: ARCADE_ROUND_KINDS_VERSION,
+  name: 'arcade_round_kinds',
+  signature: signatureFor(up, signature),
+  up,
+});
+
 module.exports = {
+  createArcadeRoundKindsMigration,
   createAchievementEasyDifficultyMigration,
   createArcadeAchievementRewardsMigration,
   createArcadeQualityBreakdownMigration,

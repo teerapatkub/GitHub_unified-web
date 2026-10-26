@@ -31,7 +31,7 @@ export default function useRoomLifecycle({
   const [joinPasswordPrompt, setJoinPasswordPrompt] = useState(null);
   const [inputPassword, setInputPassword] = useState('');
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [settingsForm, setSettingsForm] = useState({ room_name: '', password: '', has_password: false, clear_password: false, max_players: 4 });
+  const [settingsForm, setSettingsForm] = useState({ room_name: '', password: '', has_password: false, clear_password: false, max_players: 4, round_format: 'mixed' });
 
   // Resume-in-progress-match support: a refresh, crash, or accidental tab
   // close used to lose the match entirely — the player's own
@@ -195,6 +195,7 @@ export default function useRoomLifecycle({
           max_players: createForm.max_players,
           round_duration_mode: createForm.round_duration_mode,
           difficulty: createForm.difficulty,
+          round_format: createForm.round_format,
           host_name: playerState.name
         })
       });
@@ -288,6 +289,7 @@ export default function useRoomLifecycle({
           host_name: playerState.name,
           room_name: settingsForm.room_name,
           max_players: settingsForm.max_players,
+          round_format: settingsForm.round_format,
           ...(settingsForm.password.trim() ? { password: settingsForm.password } : {}),
           ...(settingsForm.clear_password ? { clear_password: true } : {})
         })

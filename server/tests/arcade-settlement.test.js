@@ -62,10 +62,8 @@ test('a grading service exception preserves the submitted answer instead of sett
 test('score, cash, elimination, history and final phase commit together after a failed final write', async t => {
   const { db, call } = await arcadeFixture(t);
   const matchId = (await call('/api/arcade/rooms/1/start', { body: {} })).body.match_id;
-  await db.query(`CREATE TABLE problems (problem_id integer PRIMARY KEY, title_th text, desc_th text, test_kind text, test_cases jsonb, solution_code text, starter_code text)`);
-  await db.query(`CREATE TABLE problem_modes (problem_id integer, mode text, entry_id integer)`);
   await db.query(`INSERT INTO problems (problem_id, test_kind, test_cases, solution_code, starter_code) VALUES (1, 'stdio', '[{"input":"","expected":"7"}]', 'print(7)', '')`);
-  await db.query("INSERT INTO problem_modes VALUES (1, 'arcade', 1)");
+  await db.query("INSERT INTO problem_modes (problem_id, mode, entry_id) VALUES (1, 'arcade', 1)");
   await db.query('ALTER TABLE arcade_tasks ADD COLUMN IF NOT EXISTS test_cases jsonb');
   await db.query(`INSERT INTO arcade_tasks (task_id, test_cases) VALUES (1, '[{"input":"","expected":"7"}]')`);
   await db.query("UPDATE arcade_rooms SET phase = 'ROUND_2', round_task_ids = '[1,1,1,1]'");

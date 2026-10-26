@@ -337,10 +337,8 @@ let nextTaskId = 9100;
 async function codingBotMatch(t, options) {
   const f = await botMatch(t, options);
   const taskId = nextTaskId++; // the answer-bank cache is per process, keyed by task id
-  await f.db.query('CREATE TABLE problems (problem_id integer PRIMARY KEY, title_th text, desc_th text, test_kind text, test_cases jsonb, solution_code text, starter_code text)');
-  await f.db.query('CREATE TABLE problem_modes (problem_id integer, mode text, entry_id integer)');
   await f.db.query('INSERT INTO problems (problem_id, test_kind, test_cases, solution_code, starter_code) VALUES (1, ?, ?, ?, ?)', [SUM_TO_N.test_kind, JSON.stringify(SUM_TO_N.test_cases), SUM_TO_N.solution_code, SUM_TO_N.starter_code]);
-  await f.db.query("INSERT INTO problem_modes VALUES (1, 'arcade', ?)", [taskId]);
+  await f.db.query("INSERT INTO problem_modes (problem_id, mode, entry_id) VALUES (1, 'arcade', ?)", [taskId]);
   await f.db.query("UPDATE arcade_rooms SET difficulty = 'hard', round_task_ids = ?", [JSON.stringify([taskId, taskId, taskId, taskId])]);
   await warmRoundAnswers(f.db, [taskId]);
   const bot = async name => (await f.db.query('SELECT * FROM arcade_participants WHERE user_name = ?', [name]))[0][0];
@@ -374,6 +372,30 @@ test('a bot types a real answer, submits it itself and is scored by the real gra
   // reference (ADR 0007), scaled by 0.5 + 0.5 x 2/4; plus time earned by those cases.
   const score = await f.scoreOf(f.botName);
   assert.ok(score > 100 && score < 200, `score ${score}`);
+});
+
+test('in a fix round a bot starts from the AI answer and sends a real fix the grader passes', async t => {
+  const f = await codingBotMatch(t);
+  const aiAnswer = SUM_TO_N.solution_code.replace('total += i', 'total = i');
+  await f.db.query("UPDATE problem_modes SET round_kinds = '[\"write\",\"fix\"]', round_data = ? WHERE entry_id = ?",
+    [JSON.stringify({ fix: { code: aiAnswer, passed: 2, total: 4 } }), f.taskId]);
+  await f.db.query(`UPDATE arcade_rooms SET round_kinds = '["write","fix","write","write"]'`);
+  await warmRoundAnswers(f.db, [f.taskId, f.taskId], ['write', 'fix']);
+  await f.roundAt('ROUND_2', 0);
+  await f.setBot(f.botName, {});
+  await f.tick();
+  const reading = await f.bot(f.botName);
+  assert.equal(reading.bot_state.bankKey, `${f.taskId}:fix`);
+  // Hard band at random()=0: the write round would send the 2-of-4 answer, so
+  // the bot finds the bug half the time - and random()=0 always finds it.
+  for (let i = 0; i < 20 && !(await f.bot(f.botName)).has_submitted; i++) { await f.elapse(3000); await f.tick(); }
+  const sent = await f.bot(f.botName);
+  assert.equal(sent.has_submitted, 1);
+  assert.equal(sent.submitted_code, SUM_TO_N.solution_code);
+  await f.expire();
+  await f.tick();
+  // Both broken tests fixed: 100 test points plus time, at quality 0 (the test judge).
+  assert.ok(await f.scoreOf(f.botName) > 100);
 });
 
 test('an ink-fogged bot sends the same real answer later and scores less than its twin', async t => {

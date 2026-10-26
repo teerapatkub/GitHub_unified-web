@@ -77,12 +77,39 @@ async function buildBank(problem) {
   return bank;
 }
 
+// A fix round's bank (ADR 0010). The editor opens on the AI's wrong answer
+// (problem.starter_code here, see round-kinds.js problemForKind). Sending it
+// back unchanged is giving up and scores nothing, so it is the 'starter'
+// answer. A wrong attempt is another edit of the AI's
+// answer - the bug left in, something else changed - graded for real.
+// writeStarter is the scaffold the write round would have opened on.
+async function buildFixBank(problem, writeStarter) {
+  const graded = async (id, code) => {
+    const verdict = await gradeSubmission({ problem, code });
+    return { id, code, passed: verdict.passed, total: verdict.total, verdict };
+  };
+  const solution = await graded('solution', lines(problem.solution_code).join('\n'));
+  const fixCode = lines(problem.starter_code).join('\n');
+  const giveUp = await graded('starter', fixCode);
+  const attempts = [];
+  for (const [i, code] of candidateAnswers({ starter_code: '', solution_code: fixCode }).entries()) {
+    if (code === solution.code) continue;
+    attempts.push(await graded(`attempt-${i}`, code));
+    if (attempts.length >= 8) break;
+  }
+  const bank = [solution, giveUp, ...attempts];
+  bank.starter = fixCode;
+  bank.writeStarter = lines(writeStarter).join('\n');
+  return bank;
+}
+
 // Load and grade a problem's bank once; later calls share the same promise.
-function warmBank(key, loadProblem) {
+// `build` makes a fix round's bank instead (buildFixBank).
+function warmBank(key, loadProblem, build = buildBank) {
   if (!banks.has(key)) {
     const pending = Promise.resolve().then(loadProblem).then(async problem => {
       if (!problem) throw new Error('problem not found');
-      const bank = await buildBank(problem);
+      const bank = await build(problem);
       // Bots type as soon as the tests are graded; each answer's quality is
       // measured behind them (code-metrics.js).
       bank.qualityReady = judgeBank(key, problem, bank);
@@ -210,10 +237,32 @@ function typingStep(plan, { accuracy, effects, random }) {
   return 'typing';
 }
 
+// A fix round is won by finding the bug; tests the AI already passed earn
+// nothing (phase-finalizer.js scoredRatio). The skill roll that would pick an
+// answer in the write round of the same problem (writeBank) picks one here
+// too, and the bot finds the bug with the share of tests that answer passes,
+// so a bot is as strong in either kind of round. Missing it, the bot gives up
+// one time in five and otherwise sends one of its own wrong edits.
+function chooseFixAnswer(bank, writeBank, target, random) {
+  const written = chooseAnswer(writeBank, target, random);
+  if (random() < written.passed / written.total) return bank.find(answer => answer.id === 'solution');
+  const misses = bank.filter(answer => answer.id.startsWith('attempt-') && answer.passed < answer.total);
+  if (!misses.length || random() < 0.2) return bank.find(answer => answer.id === 'starter');
+  return misses[Math.floor(random() * misses.length)];
+}
+
+// Finding the bug takes a person about as long as writing the answer would;
+// the edit itself is a few characters. A bot therefore spends the time the
+// write round would have taken, spread over the shorter edit.
+function huntingFactor(writePlan, fixPlan) {
+  const effort = plan => plan.insert.length + (plan.insert.match(/[\n:]/g) || []).length * (PAUSE_FACTOR - 1);
+  return Math.max(1, effort(writePlan)) / Math.max(1, effort(fixPlan));
+}
+
 const progressOf = plan => (plan.insert.length ? Math.min(100, (correctLength(plan) / plan.insert.length) * 100) : 100);
 
 module.exports = {
-  MUTATIONS, PAUSE_FACTOR, candidateAnswers, buildBank, warmBank, readyBank, bankFailed, chooseAnswer, gradedFromBank,
+  MUTATIONS, PAUSE_FACTOR, candidateAnswers, buildFixBank, chooseFixAnswer, huntingFactor, buildBank, warmBank, readyBank, bankFailed, chooseAnswer, gradedFromBank,
   answerQuality,
   typingPlan, typingStep, stepCost, draftOf, progressOf, correctLength,
 };

@@ -5,6 +5,7 @@ const { gradeSubmission } = require('../problemGrader');
 const { arcadeCodeJudge } = require('./code-judge');
 const { summarise } = require('./code-metrics');
 const { loadArcadeProblem } = require('./round-problem');
+const { roundKindOf, publicRoundView } = require('./round-kinds');
 function publicParticipants(rows) {
   const fields = ['id', 'room_id', 'match_id', 'user_name', 'is_host', 'score', 'cash',
     'participant_kind', 'bot_profile', 'is_eliminated', 'joined_at', 'last_seen', 'has_submitted', 'coins_awarded'];
@@ -83,6 +84,33 @@ function installArcadeRoomReads(app, db) {
     } catch (err) {
       console.error('❌ GET /api/arcade/rooms/:id error:', err.message);
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // What the current round asks of the player beyond its problem: in a fix
+  // round, the AI's answer the editor opens on and how many tests it passes
+  // (round-kinds.js). Only players of the match may read it, and only while
+  // its round is being played.
+  app.get('/api/arcade/rooms/:id/round', async (req, res) => {
+    try {
+      const [[room]] = await db.query('SELECT * FROM arcade_rooms WHERE room_id = ?', [req.params.id]);
+      if (!room) return res.status(404).json({ error: 'ไม่พบห้อง' });
+      const [[viewer]] = await db.query(
+        `SELECT match_id FROM arcade_participants WHERE room_id = ? AND user_name = ? AND participant_kind = 'human'`,
+        [room.room_id, req.player.username]
+      );
+      if (!viewer || viewer.match_id !== room.current_match_id) return res.status(403).json({ error: 'เฉพาะผู้เล่นในแมตช์นี้เท่านั้น' });
+      const match = /^ROUND_([1-4])$/.exec(room.phase || '');
+      if (room.status !== 'PLAYING' || !match) return res.status(409).json({ error: 'ตอนนี้ไม่ได้อยู่ในรอบแข่ง' });
+      const roundNum = Number(match[1]);
+      const kind = roundKindOf(room, roundNum);
+      const taskId = Array.isArray(room.round_task_ids) ? room.round_task_ids[roundNum - 1] : undefined;
+      const problem = kind === 'write' || taskId === undefined ? null : await loadArcadeProblem(db, taskId);
+      res.json({ success: true, match_id: room.current_match_id, round_num: roundNum, task_id: taskId ?? null,
+        ...publicRoundView(kind, problem) });
+    } catch (err) {
+      console.error('❌ GET /api/arcade/rooms/:id/round error:', err.message);
+      res.status(500).json({ error: 'โหลดข้อมูลรอบไม่สำเร็จ' });
     }
   });
 
@@ -181,9 +209,10 @@ function installArcadeRoomReads(app, db) {
             h.round_num, h.code, h.pass_count, h.total_count, h.quality_score, h.time_used_seconds,
             h.score_multiplier, h.round_score, h.match_ended_at,
             h.quality_rubric, h.quality_reason, h.quality_feedback, h.quality_source,
-            rr.final_rank, COALESCE(rr.coins, 0) AS coins_awarded
+            rr.final_rank, COALESCE(rr.coins, 0) AS coins_awarded, m.round_format, m.round_kinds
         FROM arcade_round_history h
         LEFT JOIN arcade_reward_receipts rr ON rr.match_id = h.match_id AND rr.user_name = h.user_name
+        LEFT JOIN arcade_matches m ON m.match_id = h.match_id
         WHERE h.user_name = ? AND h.match_id IN (${pageIds.map(() => '?').join(', ')})
         ORDER BY h.match_id DESC, h.round_num ASC`,
         [userName, ...pageIds]
@@ -204,6 +233,8 @@ function installArcadeRoomReads(app, db) {
             // different in a 30-second room than a 60-second one.
             difficulty: row.difficulty,
             round_duration_mode: row.round_duration_mode,
+            // Matches from before round kinds were all classic.
+            round_format: row.round_format || 'classic',
             ended_at: row.match_ended_at,
             final_rank: row.final_rank,
             coins_awarded: row.coins_awarded,
@@ -214,7 +245,7 @@ function installArcadeRoomReads(app, db) {
         const match = byMatch.get(row.match_id);
         match.total_score += row.round_score || 0;
         match.rounds.push({
-          history_id: row.history_id, round_num: row.round_num, code: row.code,
+          history_id: row.history_id, round_num: row.round_num, round_kind: roundKindOf(row, row.round_num), code: row.code,
           pass_count: row.pass_count, total_count: row.total_count,
           quality_score: row.quality_score, time_used_seconds: row.time_used_seconds,
           score_multiplier: row.score_multiplier,
@@ -238,16 +269,18 @@ function installArcadeRoomReads(app, db) {
       if (!userName) return res.status(400).json({ error: 'ต้องระบุชื่อผู้เล่น' });
 
       const [rows] = await db.query(
-        `SELECT id AS history_id, round_num, code, pass_count, total_count, quality_score, time_used_seconds,
-          score_multiplier, round_score, match_ended_at,
-          quality_rubric, quality_reason, quality_feedback, quality_source
-        FROM arcade_round_history
-        WHERE room_id = ? AND user_name = ?
-         AND match_id = COALESCE(?, (SELECT current_match_id FROM arcade_rooms WHERE room_id = ?))
-        ORDER BY round_num ASC`,
+        `SELECT h.id AS history_id, h.round_num, h.code, h.pass_count, h.total_count, h.quality_score, h.time_used_seconds,
+          h.score_multiplier, h.round_score, h.match_ended_at,
+          h.quality_rubric, h.quality_reason, h.quality_feedback, h.quality_source, m.round_kinds
+        FROM arcade_round_history h LEFT JOIN arcade_matches m ON m.match_id = h.match_id
+        WHERE h.room_id = ? AND h.user_name = ?
+         AND h.match_id = COALESCE(?, (SELECT current_match_id FROM arcade_rooms WHERE room_id = ?))
+        ORDER BY h.round_num ASC`,
         [roomId, userName, req.query.match_id || null, roomId]
       );
-      res.json({ success: true, history: rows || [] });
+      res.json({ success: true, history: (rows || []).map(({ round_kinds: _kinds, ...row }) => ({
+        ...row, round_kind: roundKindOf({ round_kinds: _kinds }, row.round_num),
+      })) });
     } catch (err) {
       console.error('❌ GET /api/arcade/rooms/:id/round-history error:', err.message);
       res.status(500).json({ error: err.message });

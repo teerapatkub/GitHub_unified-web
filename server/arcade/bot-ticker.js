@@ -7,6 +7,7 @@ const { useOwnedItem } = require('./use-item');
 const { readPhaseClock } = require('./phase-clock');
 const coder = require('./bot-coder');
 const { loadArcadeProblem } = require('./round-problem');
+const { roundKindOf, asObject, problemForKind } = require('./round-kinds');
 
 // ---- Shopping and attacking with a plan --------------------------------------
 //
@@ -152,10 +153,33 @@ const roundTaskId = room => {
   return ids && Number.isInteger(round) ? ids[round - 1] : undefined;
 };
 
+// The answer bank a bot types from this round. A fix round (ADR 0010) has its
+// own: it opens on the AI's wrong answer, and the bot's attempts are edits of
+// that answer (bot-coder.js buildFixBank). A problem with no fix data plays as
+// write, which assignRoundKinds already guarantees.
+const bankKeyOf = (room, taskId) => {
+  const round = Number(String(room.phase).split('_')[1]);
+  return roundKindOf(room, round) === 'fix' ? `${taskId}:fix` : taskId;
+};
+
+function warmBankFor(db, key) {
+  const fix = typeof key === 'string' && key.endsWith(':fix');
+  const taskId = fix ? Number(key.slice(0, -4)) : key;
+  if (!fix) return coder.warmBank(taskId, () => loadArcadeProblem(db, taskId));
+  let writeStarter = '';
+  return coder.warmBank(key, async () => {
+    const problem = await loadArcadeProblem(db, taskId);
+    writeStarter = problem?.starter_code || '';
+    return asObject(problem?.round_data).fix ? problemForKind(problem, 'fix') : null;
+  }, problem => coder.buildFixBank(problem, writeStarter));
+}
+
 // Start grading every drawn problem's answer bank, Round 1 first. Never awaited
 // under a room lock: a bot simply keeps reading the problem until it is ready.
-function warmRoundAnswers(db, taskIds) {
-  return (taskIds || []).reduce((chain, id) => chain.then(() => coder.warmBank(id, () => loadArcadeProblem(db, id))), Promise.resolve());
+// `kinds` (the match's round kinds) adds the fix banks.
+function warmRoundAnswers(db, taskIds, kinds = []) {
+  const keys = (taskIds || []).map((id, i) => (kinds[i] === 'fix' ? `${id}:fix` : id));
+  return keys.reduce((chain, key) => chain.then(() => warmBankFor(db, key)), Promise.resolve());
 }
 
 // Milliseconds per keystroke for this answer. The whole answer takes about as
@@ -257,27 +281,41 @@ async function tickArcadeBots(db, roomId, random = Math.random) {
         delete memory.plan;
         delete memory.answerId;
         delete memory.taskId;
+        delete memory.bankKey;
       }
       const effects = activeAttackEffects(state.attack_effects, room.phase, now);
       const taskId = roundTaskId(room);
       // A drawn problem means the bot writes and submits a real answer. Rooms
       // without one, or whose answers could not be graded, keep the progress
       // bar (phase-finalizer synthesizes that bot's score) so a match never stalls.
-      const writesCode = room.phase.startsWith('ROUND_') && taskId !== undefined && !coder.bankFailed(taskId);
+      const bankKey = taskId === undefined ? undefined : bankKeyOf(room, taskId);
+      const writesCode = room.phase.startsWith('ROUND_') && taskId !== undefined && !coder.bankFailed(bankKey);
       if (writesCode && !player.has_submitted) {
-        const bank = coder.readyBank(taskId);
-        if (!bank) {
-          warmRoundAnswers(pool, [taskId]);
+        const bank = coder.readyBank(bankKey);
+        // A fix round also needs the write bank: it sets how often the bot finds the bug.
+        const writeBank = bankKey === taskId ? bank : coder.readyBank(taskId);
+        if (!bank || !writeBank) {
+          warmBankFor(pool, bankKey).catch(() => {});
+          if (!writeBank) warmBankFor(pool, taskId).catch(() => {});
           memory.lastProgress = now; // still reading the problem
         } else {
           if (!memory.plan) {
             const skill = config.botSkillByDifficulty[room.difficulty] || config.botSkillByDifficulty.default;
             const target = Math.min(1, Math.max(0, skill.passMin + random() * skill.passSpread));
-            const answer = coder.chooseAnswer(bank, target, random);
+            const answer = bank.writeStarter
+              ? coder.chooseFixAnswer(bank, writeBank, target, random)
+              : coder.chooseAnswer(bank, target, random);
             memory.taskId = taskId;
+            memory.bankKey = bankKey;
             memory.answerId = answer.id;
             memory.plan = coder.typingPlan(bank.starter, answer.code);
             memory.charMs = answerKeystrokeMs(profile, memory.plan, memory.stepsToFinish);
+            if (bank.writeStarter) {
+              // Hunting for the bug: as long as writing this answer would take.
+              const writePlan = coder.typingPlan(bank.writeStarter, answer.code);
+              memory.charMs = answerKeystrokeMs(profile, writePlan, memory.stepsToFinish)
+                * coder.huntingFactor(writePlan, memory.plan);
+            }
           }
           const finishedAt = typeAnswer({ room, profile, memory, effects, now, random });
           const draft = coder.draftOf(memory.plan);

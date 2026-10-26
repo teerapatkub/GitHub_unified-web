@@ -48,6 +48,8 @@ export default function BattleRoyaleGameplayView({
   challengeFunctionName,
   challengeTestCases,
   challengeHiddenCaseCount = 0,
+  // A fix round (ADR 0010): { passed, total } of the AI's answer in the editor.
+  fixRound = null,
   timeLeft,
   playerState,
   checkEffectActive,
@@ -123,6 +125,17 @@ export default function BattleRoyaleGameplayView({
               <h2 className="text-base font-black text-pysim-on-surface">
                 {challengeTitle}
               </h2>
+              {/* Stays visible when the problem card is folded: it is what the
+                  round asks for, and how far the AI's answer already gets. */}
+              {fixRound && (
+                <div role="note" className="flex flex-wrap items-center gap-2 rounded-xl border border-pysim-info-border bg-pysim-info-container px-3 py-2 text-xs font-bold text-pysim-info-strong max-w-2xl">
+                  <span className="rounded-md bg-pysim-info-strong px-2 py-0.5 text-label font-black text-pysim-on-primary">{t('roundKindFix')}</span>
+                  <span>
+                    {t('fixRoundBanner').replace('{{passed}}', String(fixRound.passed)).replace('{{total}}', String(fixRound.total))}
+                  </span>
+                  <span className="basis-full font-medium text-pysim-on-surface-variant">{t('fixRoundScoreNote')}</span>
+                </div>
+              )}
               {!collapsed.problem && (
                 <p className="text-xs text-pysim-label leading-relaxed max-w-2xl font-medium">
                   {challengeDesc}

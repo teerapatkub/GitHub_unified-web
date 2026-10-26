@@ -1,4 +1,4 @@
-export default function RoundSummaryView({ roundSummary, timeLeft, t }) {
+export default function RoundSummaryView({ roundSummary, timeLeft, t, nextRoundLabel = '' }) {
   if (!roundSummary) return null;
   const { roundNum, entries } = roundSummary;
 
@@ -13,6 +13,7 @@ export default function RoundSummaryView({ roundSummary, timeLeft, t }) {
         <p className="text-xs text-pysim-label font-bold uppercase tracking-wider">
           {t('roundSummaryNextIn')} <span className="text-pysim-accent-strong text-base">{timeLeft}s</span>
         </p>
+        {nextRoundLabel && <p className="text-sm font-black text-pysim-on-surface-variant">{nextRoundLabel}</p>}
       </div>
 
       <div className="w-full bg-pysim-card rounded-3xl overflow-hidden shadow-sm border border-pysim-outline-variant">

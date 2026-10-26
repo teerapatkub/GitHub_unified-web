@@ -31,6 +31,8 @@ npm run test:tasks
 | `tests/arcade-draw.test.js` (`test:draw`) | `TEST_DATABASE_URL` | ~15 วินาที |
 | `tests/arcade-spectator.test.js` (`test:spectator`) | `TEST_DATABASE_URL` | ~10 วินาที |
 | `tests/arcade-bot-skill.test.js` (`test:bots`) | `TEST_DATABASE_URL` + Python | ~1 นาที (รอรอบจริงจบ) |
+| `verify-round-kinds.js` (`test:round-kinds`) | ฐานข้อมูลที่ server ใช้ (`DATABASE_URL`) + Python — รันข้อมูลรูปแบบรอบทุกแถวซ้ำด้วยตัวตรวจจริง (ADR 0010) | ~30 วินาที |
+| `bot-balance-sim.js` (`sim:bots`) | ฐานข้อมูลที่ server ใช้ + Python — ตารางท้ายสุดเทียบแต่ละรูปแบบรอบกับรอบเขียน ต้องห่างไม่เกิน 15% | ~2–4 นาที |
 | `ui-clip-check.js` | เบราว์เซอร์ (paste ลง console) | ทันที |
 | `playtest-report.js` | server รันอยู่ (ไม่ใช่ test — ใช้หลังให้คนจริงเล่น) | ทันที |
 

@@ -9,7 +9,8 @@ export default function ShopPhaseView({
   canBuyItem,
   buyItem,
   sellItem,
-  t
+  t,
+  nextRoundLabel = ''
 }) {
   return (
     <div className="h-full w-full overflow-y-auto p-8 max-w-[1400px] mx-auto">
@@ -19,6 +20,8 @@ export default function ShopPhaseView({
         <p className="text-sm text-pysim-label font-bold mt-1">
           {t('timeRemaining')} <span className="text-pysim-accent-strong text-lg font-black ml-1">{timeLeft}s</span>
         </p>
+        {/* Shown before the shop so players can buy for the round that is coming. */}
+        {nextRoundLabel && <p className="text-sm font-black text-pysim-on-surface-variant mt-2">{nextRoundLabel}</p>}
 
         <div className="flex flex-wrap items-center justify-center gap-6 mt-6 pt-6 border-t border-pysim-outline-variant">
           <p className="text-lg font-black text-pysim-on-surface-variant bg-pysim-surface px-5 py-2.5 rounded-2xl border border-pysim-outline-variant flex items-center gap-2">

@@ -19,6 +19,7 @@ export default function MatchHistoryRow({ match: m, open, onToggle, t, lang }) {
           </div>
           <div className="text-xs font-bold text-pysim-label">
             {m.room_code} · {formatMatchDate(m.ended_at, lang)} · {m.rounds.length} {t('roundsUnit')}
+            {m.round_format === 'mixed' && <> · {t('roundFormatMixed')}</>}
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0 border-t border-pysim-outline-variant pt-3 sm:border-0 sm:pt-0">

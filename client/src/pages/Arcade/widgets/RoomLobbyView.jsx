@@ -68,7 +68,8 @@ export default function RoomLobbyView({
                     password: '',
                     has_password: Boolean(currentRoom.is_password_protected),
                     clear_password: false,
-                    max_players: currentRoom.max_players
+                    max_players: currentRoom.max_players,
+                    round_format: currentRoom.round_format || 'mixed'
                   });
                   setShowSettingsModal(true);
                 }}

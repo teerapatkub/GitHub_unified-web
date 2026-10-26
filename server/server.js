@@ -7075,6 +7075,21 @@ const recomputeGradabilityAfterInstall = () => {
     });
 };
 
+// Arcade round kinds (ADR 0010) need data computed by running code: the AI's
+// answer to fix, the snippets to predict, the answers to review. Rows that are
+// missing or stale are computed here, in the background, about a second of
+// Python each; until a problem is done it is played as a write round.
+const refreshArcadeRoundKinds = () => {
+    const { refreshArcadeRoundData } = require('./arcade/round-data');
+    refreshArcadeRoundData(db)
+        .then((report) => {
+            const changed = report.filter((row) => row.changed).length;
+            const failed = report.filter((row) => row.error).length;
+            if (changed || failed) console.log(`🎲 Arcade round kinds: คำนวณใหม่ ${changed} ข้อ${failed ? `, ล้มเหลว ${failed} ข้อ` : ''}`);
+        })
+        .catch((err) => console.warn('⚠️ คำนวณรูปแบบรอบของ Arcade ไม่สำเร็จ:', describeError(err)));
+};
+
 const { getMigrationStatus, runMigrations } = require('./migrations');
 const {
   createApplicationSchemaMigration,
@@ -7084,6 +7099,7 @@ const {
   createArcadeQualityBreakdownMigration,
   createArcadeAchievementRewardsMigration,
   createAchievementEasyDifficultyMigration,
+  createArcadeRoundKindsMigration,
 } = require('./migrations/definitions');
 const { applyDataApiSecurity } = require('./security/data-api-security');
 const authProvisioningSchemaSql = fs.readFileSync(
@@ -7155,6 +7171,11 @@ const applicationMigrations = [
     () => require('./migrate-achievement-difficulty').migrateAchievementDifficulty(db),
     require('fs').readFileSync(require.resolve('./migrate-achievement-difficulty'), 'utf8'),
   ),
+  // Round kinds for Arcade problems and rooms (Spec 0005 Track G, ADR 0010).
+  createArcadeRoundKindsMigration(
+    () => require('./problemsSchema').migrateArcadeRoundKinds(db),
+    require('./problemsSchema').migrateArcadeRoundKinds.toString(),
+  ),
 ];
 
 const supabasePublishableKey = String(
@@ -7187,6 +7208,7 @@ const prepareApplication = async ({ checkAuth = checkSupabaseAuth } = {}) => {
     if (!status.ready) throw new Error('Database migrations are incomplete');
     startBackgroundJobs();
     recomputeGradabilityAfterInstall();
+    refreshArcadeRoundKinds();
 };
 
 // Serve the built front end from the API server itself.
