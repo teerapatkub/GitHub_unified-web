@@ -1,12 +1,12 @@
 // Round kinds on the client (server/arcade/round-kinds.js, ADR 0010). The room
 // carries the kind of each of its four rounds; a match from before round kinds
 // has none and every round was "write".
-export const ROUND_KINDS = ['write', 'fix', 'predict'];
+export const ROUND_KINDS = ['write', 'fix', 'predict', 'review'];
 // Answered by tapping an option instead of sending code.
-export const isChoiceKind = kind => kind === 'predict';
+export const isChoiceKind = kind => kind === 'predict' || kind === 'review';
 export const ROUND_FORMATS = ['mixed', 'classic'];
 
-const LABEL_KEYS = { write: 'roundKindWrite', fix: 'roundKindFix', predict: 'roundKindPredict' };
+const LABEL_KEYS = { write: 'roundKindWrite', fix: 'roundKindFix', predict: 'roundKindPredict', review: 'roundKindReview' };
 
 export function roundKindOf(room, roundNum) {
   const kind = Array.isArray(room?.round_kinds) ? room.round_kinds[roundNum - 1] : undefined;

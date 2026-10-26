@@ -10,25 +10,29 @@
 //            fails some tests; find the bug and make every test pass
 //   predict  a short round: read a piece of code and one call, and tap what it
 //            prints
+//   review   three or four answers "from the AI"; pick the one that passes
+//            every test
 //
 // What each kind needs for a problem is in problem_modes.round_data, computed by
 // computeRoundData() from the bot coder's graded wrong answers (arcade/bot-coder.js)
 // - real code, really run - and never by asking a model.
+const crypto = require('node:crypto');
 const config = require('../../shared/arcadeConfig.json');
 const { buildBank } = require('./bot-coder');
+const { gradeSubmission } = require('../problemGrader');
 const { runPythonScript, normalizeOutput } = require('../pythonRunner');
 
-const KINDS = ['write', 'fix', 'predict'];
+const KINDS = ['write', 'fix', 'predict', 'review'];
 
 // Kinds answered by picking an option instead of sending code.
-const CHOICE_KINDS = new Set(['predict']);
+const CHOICE_KINDS = new Set(['predict', 'review']);
 
 // What a mixed room plays, round by round. null is drawn at match start from
 // every kind a mixed room can play.
 const MIXED_ORDER = ['predict', 'write', 'fix', null];
 
 // Kinds a mixed room actually plays today.
-const PLAYABLE = new Set(['write', 'fix', 'predict']);
+const PLAYABLE = new Set(['write', 'fix', 'predict', 'review']);
 
 const ROUND_FORMATS = ['classic', 'mixed'];
 
@@ -160,6 +164,22 @@ async function computePredict(problem, bank) {
   };
 }
 
+// A review round: the reference answer and up to three wrong ones, the wrong
+// ones that pass the most tests first - the convincing kind of wrong. Only the
+// code is kept, never which is right: the server finds that out by grading the
+// option a player picks (gradeChoice), and npm run test:round-kinds checks
+// exactly one option passes everything.
+function computeReview(bank) {
+  const solution = bank.find(answer => answer.id === 'solution');
+  const wrong = bank
+    .filter(answer => answer.id.startsWith('mistake-') && answer.passed < answer.total)
+    .sort((a, b) => b.passed / b.total - a.passed / a.total)
+    .slice(0, 3);
+  if (wrong.length < 2) return null;
+  const codes = [solution.code, ...wrong.map(answer => answer.code)];
+  return { options: codes.map((code, i) => ({ id: 'abcd'[i], code })) };
+}
+
 // Which kinds a problem can be played as, and what each needs. Runs Python.
 async function computeRoundData(problem) {
   const bank = await buildBank(problem);
@@ -175,6 +195,11 @@ async function computeRoundData(problem) {
     const [answer] = almostRight;
     kinds.push('fix');
     data.fix = { code: answer.code, passed: answer.passed, total: answer.total };
+  }
+  const review = computeReview(bank);
+  if (review) {
+    kinds.push('review');
+    data.review = review;
   }
   const predict = await computePredict(problem, bank);
   if (predict) {
@@ -194,26 +219,62 @@ function problemForKind(problem, kind) {
   return problem;
 }
 
-// The options of a choice round (predict), or null.
+// The options of a choice round, or null.
 function choiceOptions(kind, problem) {
   const data = asObject(problem?.round_data);
   if (kind === 'predict') return data.predict?.options || null;
+  if (kind === 'review') return data.review?.options || null;
   return null;
 }
 
-// Marks an answer to a choice round. A predict answer is right when the option
-// picked is what the code really prints (stored at compute time, re-run by
-// npm run test:round-kinds). One "test": passed 1 of 1, or 0 of 1.
-function gradeChoice(kind, problem, choice) {
+// The tests an answer fails, said in a line a player can act on.
+const failedTests = verdict => (verdict?.results || []).filter(result => !result.passed)
+  .map(result => `${JSON.stringify(result.args ?? result.input)} → ${JSON.stringify(result.expected)}`).slice(0, 3);
+
+// Marks an answer to a choice round.
+// - predict: right when the option picked is what the code really prints
+//   (stored at compute time, re-run by npm run test:round-kinds). One "test".
+// - review: the picked answer is run by the real grader, and it is right only
+//   if it passes every test. passed/total are that answer's real counts, and
+//   `failed` names the tests a wrong pick fails, for the history.
+async function gradeChoice(kind, problem, choice) {
   const data = asObject(problem?.round_data);
   const option = (choiceOptions(kind, problem) || []).find(candidate => candidate.id === choice);
+  if (kind === 'review') {
+    if (!option) return { correct: false, passed: 0, total: 0, picked: '', failed: [] };
+    const verdict = await gradeSubmission({ problem, code: option.code });
+    const correct = verdict.total > 0 && verdict.passed === verdict.total;
+    return { correct, passed: verdict.passed, total: verdict.total, picked: option.code, failed: failedTests(verdict) };
+  }
   const correct = Boolean(option) && kind === 'predict' && option.text === data.predict.answer;
-  return { correct, passed: correct ? 1 : 0, total: 1, picked: option?.text ?? '' };
+  return { correct, passed: correct ? 1 : 0, total: 1, picked: option?.text ?? '', failed: [] };
+}
+
+// The right option, read from graded answers already in hand - for a bot
+// deciding under the room lock, where Python must not run. A review option is
+// a bank answer (computeReview), so its grade is in the bank.
+function rightOption(kind, problem, bank) {
+  const data = asObject(problem?.round_data);
+  const options = choiceOptions(kind, problem) || [];
+  if (kind === 'predict') return options.find(option => option.text === data.predict?.answer) || null;
+  if (kind === 'review') {
+    return options.find(option => bank?.some(answer => answer.code === option.code && answer.total > 0
+      && answer.passed === answer.total)) || null;
+  }
+  return null;
+}
+
+// A review round shows each player the options in their own order, so a
+// neighbour's "the second one" means nothing. Stable for one player in one
+// match, so a reload shows the same order.
+function orderFor(options, viewerKey) {
+  const rank = option => crypto.createHash('sha256').update(`${viewerKey}:${option.id}`).digest('hex');
+  return [...options].sort((a, b) => (rank(a) < rank(b) ? -1 : 1));
 }
 
 // What a player's browser may see of a round beyond the problem itself. Never
 // which option is right.
-function publicRoundView(kind, problem) {
+function publicRoundView(kind, problem, viewerKey = '') {
   const data = asObject(problem?.round_data);
   if (kind === 'fix' && data.fix) {
     return { kind, fix: { starter_code: data.fix.code, passed: data.fix.passed, total: data.fix.total } };
@@ -221,11 +282,14 @@ function publicRoundView(kind, problem) {
   if (kind === 'predict' && data.predict) {
     return { kind, predict: { code: data.predict.code, call: data.predict.call, options: data.predict.options } };
   }
+  if (kind === 'review' && data.review) {
+    return { kind, review: { options: orderFor(data.review.options, viewerKey) } };
+  }
   return { kind: 'write' };
 }
 
 module.exports = {
   KINDS, PLAYABLE, MIXED_ORDER, ROUND_FORMATS, CHOICE_KINDS,
   roundKindOf, roundSeconds, isChoiceKind, planRoundKinds, assignRoundKinds, computeRoundData, problemForKind,
-  choiceOptions, gradeChoice, publicRoundView, pyLiteral, printedBy, asObject,
+  choiceOptions, gradeChoice, rightOption, publicRoundView, pyLiteral, printedBy, asObject,
 };

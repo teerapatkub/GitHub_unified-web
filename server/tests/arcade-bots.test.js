@@ -420,6 +420,30 @@ test('in a predict round a bot reads for a while, then taps an option and is sco
   assert.ok(await f.scoreOf(f.botName) >= 200);
 });
 
+test('in a review round a bot picks the answer that passes every test and is scored on it', async t => {
+  const f = await codingBotMatch(t);
+  const review = { options: [
+    { id: 'a', code: SUM_TO_N.solution_code.replace('total += i', 'total = i') },
+    { id: 'b', code: SUM_TO_N.solution_code },
+    { id: 'c', code: SUM_TO_N.solution_code.replace('total += i', 'total += 1') },
+  ] };
+  await f.db.query("UPDATE problem_modes SET round_kinds = '[\"write\",\"review\"]', round_data = ? WHERE entry_id = ?",
+    [JSON.stringify({ review }), f.taskId]);
+  await f.db.query(`UPDATE arcade_rooms SET round_kinds = '["write","review","write","write"]'`);
+  await f.roundAt('ROUND_2', 0);
+  await f.setBot(f.botName, {});
+  await f.tick();
+  await f.tick();
+  // random()=0: it knows the answer and reads for a quarter of the 60-second round.
+  for (let i = 0; i < 10 && !(await f.bot(f.botName)).has_submitted; i++) { await f.elapse(3000); await f.tick(); }
+  const sent = await f.bot(f.botName);
+  assert.equal(sent.has_submitted, 1);
+  assert.equal(sent.submitted_code, 'b');
+  await f.expire();
+  await f.tick();
+  assert.ok(await f.scoreOf(f.botName) >= 200);
+});
+
 test('an ink-fogged bot sends the same real answer later and scores less than its twin', async t => {
   const f = await codingBotMatch(t, { bots: 2 });
   const [fogged, clear] = f.botNames;

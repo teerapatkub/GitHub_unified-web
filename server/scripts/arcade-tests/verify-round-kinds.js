@@ -10,7 +10,8 @@
 //   - a fix round's AI answer does not pass at least one test, or passes all
 //     of them, or its stored pass count differs from what the grader says now;
 //   - a predict round's stored answer is not what Python prints for its code
-//     and call, is not one of the options, or two options are the same.
+//     and call, is not one of the options, or two options are the same;
+//   - a review round does not have exactly one answer that passes every test.
 const { Client } = require('pg');
 const { databaseClientConfig } = require('../database-client-config');
 const { gradeSubmission } = require('../../problemGrader');
@@ -52,6 +53,16 @@ const config = require('../../../shared/arcadeConfig.json');
         .map(testCase => `print(${name}(${(testCase.args || []).map(pyLiteral).join(', ')}))`);
       if (shown.includes(predict?.call)) failures.push(`${label}: the predict call ${predict.call} is a worked example shown with its answer`);
       if (new Set(texts).size !== texts.length || texts.length < 3) failures.push(`${label}: predict needs at least three different options`);
+    }
+    if (kinds.includes('review')) {
+      const codes = (data.review?.options || []).map(option => option.code);
+      if (codes.length < 3 || new Set(codes).size !== codes.length) failures.push(`${label}: review needs at least three different answers`);
+      let right = 0;
+      for (const code of codes) {
+        const verdict = await gradeSubmission({ problem: row, code });
+        if (verdict.total > 0 && verdict.passed === verdict.total) right++;
+      }
+      if (right !== 1) failures.push(`${label}: ${right} review options pass every test; exactly one must`);
     }
     if (kinds.includes('fix')) {
       const fix = data.fix;

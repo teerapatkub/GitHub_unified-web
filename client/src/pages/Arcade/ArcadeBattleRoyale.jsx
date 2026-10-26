@@ -824,7 +824,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
             challengeTitle={activeRoundTask.title}
             challengeDesc={activeRoundTask.desc}
             challengeFunctionName={activeRoundTask.functionName}
-            challengeTestCases={choiceRoundNow ? [] : activeRoundTask.testCases}
+            challengeTestCases={roundView.kind === 'predict' ? [] : activeRoundTask.testCases}
             challengeHiddenCaseCount={activeRoundTask.hiddenCaseCount || 0}
             fixRound={roundView.view?.fix || null}
             timeLeft={timeLeft}
@@ -837,7 +837,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
             consoleOutput={consoleOutput}
             runCodeTests={() => runCodeTests(activeRoundTask)}
             handleManualSubmit={() => handleManualSubmit(choiceRoundNow ? selectedChoice : undefined)}
-            choiceRound={roundView.view?.predict || null}
+            choiceRound={roundView.view?.predict || roundView.view?.review || null}
             selectedChoice={selectedChoice}
             onSelectChoice={selectChoice}
             isGrading={isGrading}

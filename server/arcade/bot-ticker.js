@@ -7,7 +7,7 @@ const { useOwnedItem, typingAttackWasted } = require('./use-item');
 const { readPhaseClock } = require('./phase-clock');
 const coder = require('./bot-coder');
 const { loadArcadeProblem } = require('./round-problem');
-const { roundKindOf, asObject, problemForKind, isChoiceKind, choiceOptions, gradeChoice, roundSeconds } = require('./round-kinds');
+const { roundKindOf, asObject, problemForKind, isChoiceKind, choiceOptions, rightOption, roundSeconds } = require('./round-kinds');
 
 // ---- Shopping and attacking with a plan --------------------------------------
 //
@@ -175,7 +175,7 @@ function warmBankFor(db, key) {
   }, problem => coder.buildFixBank(problem, writeStarter));
 }
 
-// A choice round (predict, ADR 0010): the bot reads, then taps. Whether it
+// A choice round (predict, review; ADR 0010): the bot reads, then taps. Whether it
 // picks the right option follows the rule of a fix round - the share of tests
 // its skill roll would pass in the write round of this problem - so a bot is
 // as strong in either. Reading takes a quarter to three quarters of the round;
@@ -194,7 +194,7 @@ function decideChoice({ room, kind, problem, writeBank, memory, random, roundNum
   const skill = config.botSkillByDifficulty[room.difficulty] || config.botSkillByDifficulty.default;
   const target = Math.min(1, Math.max(0, skill.passMin + random() * skill.passSpread));
   const written = coder.chooseAnswer(writeBank, target, random);
-  const right = options.find(option => gradeChoice(kind, problem, option.id).correct);
+  const right = rightOption(kind, problem, writeBank);
   const wrong = options.filter(option => option !== right);
   // Not working it out, half the time it guesses among all the options - a
   // choice round has a floor a write round does not - and otherwise falls for

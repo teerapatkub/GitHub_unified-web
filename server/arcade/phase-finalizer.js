@@ -156,7 +156,7 @@ function createArcadePhaseFinalizer({ db, judgeArcadeCode = args => arcadeCodeJu
     if (isChoiceKind(kind)) {
       // A bot that never picked in time scores nothing, like a player.
       if (!submitted) return 0;
-      const { correct } = gradeChoice(kind, problem, p.submitted_code);
+      const { correct } = await gradeChoice(kind, problem, p.submitted_code);
       const elapsed = Number(p.submitted_elapsed_seconds);
       const timeUsed = Number.isFinite(elapsed) ? Math.max(0, Math.min(roundDuration, elapsed)) : roundDuration;
       const ratio = correct ? 1 : 0;
@@ -196,11 +196,12 @@ function createArcadePhaseFinalizer({ db, judgeArcadeCode = args => arcadeCodeJu
       let totalCount = 0;
       let verdict = null;
 
-      // A choice round (predict): the option picked is right or wrong, one
-      // "test", and with no code to measure it earns full quality or none
-      // (ADR 0010). History keeps the text of the option picked.
+      // A choice round (predict, review): the option picked is right or wrong,
+      // and with no code of the player's own to measure it earns full quality
+      // or none (ADR 0010). History keeps the option picked, and for review the
+      // real test counts of the answer picked.
       if (isChoiceKind(kind)) {
-        const choice = gradeChoice(kind, problem, code);
+        const choice = await gradeChoice(kind, problem, code);
         const ratio = choice.correct ? 1 : 0;
         const elapsedSeconds = Number(p.submitted_elapsed_seconds);
         const timeUsed = Number.isFinite(elapsedSeconds)
@@ -210,7 +211,9 @@ function createArcadePhaseFinalizer({ db, judgeArcadeCode = args => arcadeCodeJu
         graded.set(p.id, {
           roundScore: Math.max(0, Math.min(arcadeConfig.maxSubmittableRoundScore, Math.round(roundScore))),
           passCount: choice.passed, totalCount: choice.total, quality: ratio * 100, timeUsed, scoreMultiplier,
-          code: choice.picked, judged: { rubric: null, reason: '', feedback: '', source: 'choice' },
+          // A wrong review pick says which tests the answer it trusted fails.
+          code: choice.picked, judged: { rubric: null, reason: '', source: 'choice',
+            feedback: choice.failed.length ? `คำตอบที่เลือกไม่ผ่านเทส: ${choice.failed.join(' · ')}` : '' },
         });
         return;
       }

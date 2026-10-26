@@ -107,7 +107,7 @@ function installArcadeRoomReads(app, db) {
       const taskId = Array.isArray(room.round_task_ids) ? room.round_task_ids[roundNum - 1] : undefined;
       const problem = kind === 'write' || taskId === undefined ? null : await loadArcadeProblem(db, taskId);
       res.json({ success: true, match_id: room.current_match_id, round_num: roundNum, task_id: taskId ?? null,
-        ...publicRoundView(kind, problem) });
+        ...publicRoundView(kind, problem, `${room.current_match_id}:${req.player.username}`) });
     } catch (err) {
       console.error('❌ GET /api/arcade/rooms/:id/round error:', err.message);
       res.status(500).json({ error: 'โหลดข้อมูลรอบไม่สำเร็จ' });
