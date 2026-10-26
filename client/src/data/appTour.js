@@ -58,6 +58,18 @@ export const appTours = {
         },
       },
       {
+        // Phones only: the header folds language, shop, leaderboard and help
+        // into this menu, so their own steps are skipped there.
+        id: 'more-menu',
+        target: sel('more-menu'),
+        lumi: 'smile',
+        title: { th: 'เมนูเพิ่มเติม', en: 'More' },
+        body: {
+          th: 'ปุ่มนี้รวมการเปลี่ยนภาษา ร้านค้าของตกแต่ง ตารางอันดับ และวิธีใช้งานหน้านี้ไว้ด้วยกัน',
+          en: 'Language, the cosmetic shop, the leaderboard and help for this page are all in here.',
+        },
+      },
+      {
         id: 'shop',
         target: sel('shop'),
         lumi: 'happy',

@@ -1,20 +1,22 @@
 /* Shared site navigation plus mode-specific entry-page accents. */
 .mode-entry,
 .mode-entry-header {
-  --mode-accent: #145d91;
-  --mode-soft: #eaf3fb;
+  /* Colours come from the token layer (styles/tokens.css), so the header
+     follows a purchased theme like the rest of the page. */
+  --mode-accent: rgb(var(--c-primary));
+  --mode-soft: rgb(var(--c-primary-fixed) / 0.4);
   --mode-card-radius: 1rem;
   --mode-control-radius: 0.75rem;
   font-family: 'Inter', 'Leelawadee UI', Tahoma, sans-serif;
 }
 
 .mode-entry--competitive {
-  --mode-accent: #4f46e5;
-  --mode-soft: #eef2ff;
+  --mode-accent: rgb(var(--c-info));
+  --mode-soft: rgb(var(--c-info-container));
 }
 .mode-entry--arcade {
-  --mode-accent: #e11d48;
-  --mode-soft: #fff1f2;
+  --mode-accent: rgb(var(--c-accent-strong));
+  --mode-soft: rgb(var(--c-accent-container));
 }
 
 .mode-entry-header {
@@ -23,8 +25,8 @@
   z-index: 40;
   flex-shrink: 0;
   width: 100%;
-  border-bottom: 1px solid #e2e8f0;
-  background: rgba(255, 255, 255, 0.96);
+  border-bottom: 1px solid rgb(var(--c-surface-high));
+  background: rgb(var(--c-card) / 0.96);
   backdrop-filter: blur(16px);
 }
 
@@ -55,7 +57,7 @@
   place-items: center;
   border-radius: 0.875rem;
   background: var(--mode-accent);
-  color: white;
+  color: rgb(var(--c-on-primary));
 }
 .mode-entry-brand__mark svg {
   width: 1.5rem;
@@ -68,7 +70,7 @@
   font-weight: 800;
   line-height: 1.1;
   letter-spacing: -0.04em;
-  color: #0f172a;
+  color: rgb(var(--c-on-surface));
 }
 .mode-entry-brand__mode {
   display: block;
@@ -104,7 +106,7 @@
   border-radius: 0.5rem 0.5rem 0 0;
   font-size: 0.875rem;
   font-weight: 600;
-  color: #475569;
+  color: rgb(var(--c-on-surface-variant));
   transition: background-color 150ms, color 150ms;
 }
 .mode-entry-nav__link svg {
@@ -126,10 +128,10 @@
   justify-content: center;
   gap: 0.5rem;
   padding: 0.625rem 0.875rem;
-  border: 1px solid #e2e8f0;
+  border: 1px solid rgb(var(--c-surface-high));
   border-radius: var(--mode-control-radius);
-  background: white;
-  color: #475569;
+  background: rgb(var(--c-card));
+  color: rgb(var(--c-on-surface-variant));
   font-size: 0.875rem;
   font-weight: 600;
   line-height: 1.5;
@@ -143,11 +145,11 @@
 .mode-entry-button--primary {
   border-color: var(--mode-accent);
   background: var(--mode-accent);
-  color: white;
+  color: rgb(var(--c-on-primary));
 }
 .mode-entry-button--primary:hover {
   background: var(--mode-accent);
-  color: white;
+  color: rgb(var(--c-on-primary));
   filter: brightness(0.93);
 }
 .mode-entry-button svg {
@@ -162,8 +164,8 @@
   gap: 0.375rem;
   padding: 0.625rem 0.75rem;
   border-radius: 0.75rem;
-  background: #fffbeb;
-  color: #92400e;
+  background: rgb(var(--c-warning-container));
+  color: rgb(var(--c-warning-strong));
   font-size: 0.875rem;
   font-weight: 700;
 }
@@ -303,7 +305,7 @@
   display: grid;
   place-items: center;
   background: var(--mode-accent);
-  color: white;
+  color: rgb(var(--c-on-primary));
   font-weight: 700;
 }
 .app-profile-frame {
@@ -333,10 +335,10 @@
   width: 12rem;
   z-index: 50;
   padding: 0.375rem;
-  border: 1px solid #e2e8f0;
+  border: 1px solid rgb(var(--c-surface-high));
   border-radius: 0.875rem;
-  background: white;
-  box-shadow: 0 12px 30px #0f172a1f;
+  background: rgb(var(--c-card));
+  box-shadow: 0 12px 30px rgb(var(--c-on-surface) / 0.12);
 }
 .app-profile-dropdown a, .app-profile-dropdown button {
   display: flex;
@@ -347,7 +349,7 @@
   border-radius: 0.5rem;
   padding: 0.625rem;
   font-size: 0.875rem;
-  color: #334155;
+  color: rgb(var(--c-on-surface-variant));
   text-align: left;
 }
 .app-profile-dropdown a:hover, .app-profile-dropdown button:hover {
@@ -357,7 +359,18 @@
   width: 1rem;
   height: 1rem;
 }
-.app-action-label {
+.app-action-label,
+.app-menu-label {
+  display: none;
+}
+
+/* The fold-out menu. On wide screens both wrappers vanish from layout and
+   their buttons sit in the actions row exactly as before. */
+.mode-entry-more-wrap,
+.mode-entry-more {
+  display: contents;
+}
+.mode-entry-more-toggle {
   display: none;
 }
 .mode-entry-button[aria-current='page'] {
@@ -368,15 +381,15 @@
 .mode-entry-nav__link--locked,
 .mode-entry-nav__link--locked:hover {
   cursor: not-allowed;
-  color: #64748b;
-  background: #f8fafc;
+  color: rgb(var(--c-label));
+  background: rgb(var(--c-surface));
 }
 .mode-entry-lock-level {
   border-radius: 0.375rem;
   padding: 0.125rem 0.375rem;
-  background: #fef3c7;
-  color: #92400e;
-  font-size: 0.625rem;
+  background: rgb(var(--c-warning-container));
+  color: rgb(var(--c-warning-strong));
+  font-size: var(--text-label-min);
   white-space: nowrap;
 }
 .mode-entry-lock-hint {
@@ -384,7 +397,7 @@
   align-items: center;
   gap: 0.375rem;
   padding-block: 0.5rem;
-  color: #92400e;
+  color: rgb(var(--c-warning-strong));
   font-size: 0.75rem;
   line-height: 1.6;
 }
@@ -453,5 +466,82 @@
 
   .mode-entry-nav a:active svg {
     transform: scale(0.92);
+  }
+}
+
+/* Phones: one row of brand mark, profile, coins, the page's own buttons and
+   the fold-out, then the mode tabs (Spec 0005 #19; the bar was 245px tall and
+   wrapped into three or four rows at 375px). Placed last so it overrides the
+   wrapping rules above. */
+@media (max-width: 639px) {
+  .mode-entry-header__row {
+    flex-wrap: nowrap;
+    min-height: 0;
+    gap: 0.5rem;
+    padding-block: 0.5rem;
+  }
+  .mode-entry-brand > span:last-child {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .mode-entry-header__actions {
+    width: auto;
+    min-width: 0;
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+    margin-left: auto;
+  }
+  .mode-entry-balance {
+    padding-inline: 0.625rem;
+  }
+  .mode-entry-more-wrap {
+    display: block;
+    position: relative;
+  }
+  .mode-entry-more-toggle {
+    display: inline-flex;
+  }
+  .mode-entry-more {
+    display: none;
+  }
+  .mode-entry-more.is-open {
+    position: absolute;
+    top: calc(100% + 0.5rem);
+    right: 0;
+    z-index: 50;
+    display: flex;
+    width: 13rem;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.375rem;
+    border: 1px solid rgb(var(--c-surface-high));
+    border-radius: 0.875rem;
+    background: rgb(var(--c-card));
+    box-shadow: 0 12px 30px rgb(var(--c-on-surface) / 0.12);
+  }
+  .mode-entry-more.is-open .mode-entry-button {
+    width: 100%;
+    justify-content: flex-start;
+    border-color: transparent;
+  }
+  .mode-entry-more.is-open .app-action-label,
+  .mode-entry-more.is-open .app-menu-label {
+    display: inline;
+  }
+  .mode-entry-more.is-open .app-language-code {
+    display: none;
+  }
+  .mode-entry-nav__link {
+    min-height: 2.75rem;
+    padding-block: 0.375rem;
+  }
+  /* Still read out through the locked tabs' aria-describedby; the tabs
+     themselves carry the LV badge on screen. */
+  .mode-entry-lock-hint {
+    display: none;
   }
 }
