@@ -242,12 +242,12 @@ function typingStep(plan, { accuracy, effects, random }) {
 // answer in the write round of the same problem (writeBank) picks one here
 // too, and the bot finds the bug with the share of tests that answer passes,
 // so a bot is as strong in either kind of round. Missing it, the bot gives up
-// one time in five and otherwise sends one of its own wrong edits.
+// one time in ten and otherwise sends one of its own wrong edits.
 function chooseFixAnswer(bank, writeBank, target, random) {
   const written = chooseAnswer(writeBank, target, random);
   if (random() < written.passed / written.total) return bank.find(answer => answer.id === 'solution');
   const misses = bank.filter(answer => answer.id.startsWith('attempt-') && answer.passed < answer.total);
-  if (!misses.length || random() < 0.2) return bank.find(answer => answer.id === 'starter');
+  if (!misses.length || random() < 0.1) return bank.find(answer => answer.id === 'starter');
   return misses[Math.floor(random() * misses.length)];
 }
 

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Shield, AlertTriangle, ChevronDown, ChevronUp, Eye, ArrowLeft } from 'lucide-react';
 import Editor from '@monaco-editor/react';
+import ChoiceRoundPanel from './ChoiceRoundPanel.jsx';
 import { EXAMPLE_CASES_SHOWN, pyLiteral } from '../constants.js';
 import arcadeConfig from '../../../../../shared/arcadeConfig.json';
 import { editorFrameDebuffClass, debuffOverlayText } from '../debuffVisuals.js';
@@ -50,6 +51,10 @@ export default function BattleRoyaleGameplayView({
   challengeHiddenCaseCount = 0,
   // A fix round (ADR 0010): { passed, total } of the AI's answer in the editor.
   fixRound = null,
+  // A predict round: { code, call, options } replaces the editor (ADR 0010).
+  choiceRound = null,
+  selectedChoice = null,
+  onSelectChoice = () => {},
   timeLeft,
   playerState,
   checkEffectActive,
@@ -320,7 +325,7 @@ export default function BattleRoyaleGameplayView({
               )}
             </div>
 
-            {!watchedPlayer && (
+            {!watchedPlayer && !choiceRound && (
               <div role="status" aria-live="polite" className={`flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-xs border-b ${['error', 'restoreError', 'conflict'].includes(draftStatus) ? 'bg-pysim-warning-container text-pysim-warning-strong' : 'bg-pysim-surface text-pysim-label'}`}>
                 <span>{t(`draft_${draftStatus}`)}</span>
                 {['error', 'restoreError', 'conflict'].includes(draftStatus) && (
@@ -357,6 +362,10 @@ export default function BattleRoyaleGameplayView({
               ${checkEffectActive('mirrorMode') ? 'scale-x-[-1]' : ''}
               ${checkEffectActive('screenDimmer') ? 'opacity-[0.12] pointer-events-none' : ''}
             `}>
+              {choiceRound ? (
+                <ChoiceRoundPanel view={choiceRound} selected={selectedChoice} onSelect={onSelectChoice}
+                  locked={editorLocked || playerState.hasSubmittedThisRound} t={t} />
+              ) : (
               <Editor
                 height="100%"
                 defaultLanguage="python"
@@ -380,6 +389,7 @@ export default function BattleRoyaleGameplayView({
                   readOnly: editorLocked
                 }}
               />
+              )}
 
               {/* Visual Overlay: Blackout / Fog Alert */}
               {checkEffectActive('blackout') && (
@@ -429,6 +439,7 @@ export default function BattleRoyaleGameplayView({
             there is nothing in it worth 112 pixels of a laptop screen, and the
             editor takes the space back. Folded it keeps its title bar, so it is
             still obvious where output will appear. */}
+        {!choiceRound && (
         <div className={`bg-pysim-inverse-surface border border-pysim-inverse-outline rounded-2xl flex flex-col overflow-hidden shadow-inner shrink-0 ${collapsed.output ? '' : 'h-28'}`}>
           <button
             type="button"
@@ -447,19 +458,22 @@ export default function BattleRoyaleGameplayView({
             />
           )}
         </div>
+        )}
 
         {/* Actions Footer */}
         <div className="h-14 bg-pysim-card border border-pysim-outline-variant rounded-2xl px-5 flex items-center justify-between shrink-0 shadow-sm">
+          {choiceRound ? <span /> : (
           <button
             onClick={runCodeTests}
             className="px-6 py-2.5 bg-pysim-surface-container hover:bg-pysim-surface-high text-pysim-label rounded-xl text-xs font-black transition-all hover:scale-[1.02] active:scale-[0.98]"
           >
             {t('runTests')}
           </button>
+          )}
 
           <button
             onClick={handleManualSubmit}
-            disabled={!draftReady || isGrading || spectating || playerState.eliminated}
+            disabled={!draftReady || isGrading || spectating || playerState.eliminated || (choiceRound && !selectedChoice)}
             className="px-8 py-2.5 bg-pysim-accent-strong hover:bg-pysim-accent-strong/90 active:scale-[0.98] text-pysim-on-primary rounded-xl text-xs font-black transition-all shadow-md shadow-pysim-accent-strong/10 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
           >
             {isGrading ? t('judgingCode') : spectating ? t('submittedBadge') : t('submitCode')}

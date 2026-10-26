@@ -48,11 +48,11 @@ import { API_BASE } from '../../config/api.js';
 import { requestJson } from '../../config/api-client.js';
 import SkeletonLoading from '../../components/ui/Skeleton.jsx';
 import { parseUtcTimestamp, PHASES, TASKS, SHOP_ITEMS, BOT_NAMES, AUTO_SUBMIT_LEAD_SECONDS,
-         AUTO_SUBMIT_WARN_SECONDS, ROUND_TIMES, phaseDurationsFor } from './constants.js';
+         AUTO_SUBMIT_WARN_SECONDS, ROUND_TIMES, phaseDurationsFor, PREDICT_ROUND_SECONDS } from './constants.js';
 import { isSpectating } from './spectatorView.js';
 import { resultCoinBreakdown } from './resultReward.js';
 import useRoundView from './hooks/useRoundView.js';
-import { nextRoundKind, roundKindLabelKey } from './roundKinds.js';
+import { nextRoundKind, roundKindLabelKey, isChoiceKind } from './roundKinds.js';
 
 export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
   const { i18n } = useTranslation();
@@ -212,9 +212,16 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
   const draftRound = Number(currentRoom?.phase?.split('_')[1]);
   const draftStarter = roundView.view?.fix?.starter_code ?? (draftRound === 4 ? getRound4Task()?.initialCode
     : (getPoolTask(draftRound) || TASKS[currentRoom?.phase])?.initialCode);
+  const choiceRoundNow = isChoiceKind(roundView.kind);
   const { draftReady, draftStatus, retryDraft } = useRoundDraft({
-    playerState, setPlayerState, currentRoom, starterCode: draftStarter ?? '', tasksReady: tasksReady && roundView.ready, API_BASE
+    playerState, setPlayerState, currentRoom, starterCode: draftStarter ?? '', tasksReady: tasksReady && roundView.ready, API_BASE,
+    saveDrafts: !choiceRoundNow
   });
+  // The option picked in a choice round, for this round only.
+  const choiceScope = `${currentRoom?.room_id}:${currentRoom?.current_match_id}:${currentRoom?.phase}`;
+  const [pickedChoice, setPickedChoice] = useState({ scope: null, id: null });
+  const selectedChoice = pickedChoice.scope === choiceScope ? pickedChoice.id : null;
+  const selectChoice = id => setPickedChoice({ scope: choiceScope, id });
   const upcomingKind = nextRoundKind(currentRoom);
 
   // Phase 8.3 — read-only progression views (RESULT-screen code review + lobby
@@ -458,7 +465,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
   const tickRef = useRef({});
   useEffect(() => {
     tickRef.current = {
-      playerState, submitMyRound, draftReady
+      playerState, submitMyRound, draftReady, choiceRoundNow, selectedChoice
     };
   });
 
@@ -472,7 +479,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
     if (phase === PHASES.LOBBY || phase === PHASES.RESULT) return;
 
     const tick = () => {
-      const { playerState: ps, submitMyRound: submitNow, draftReady: ready } = tickRef.current;
+      const { playerState: ps, submitMyRound: submitNow, draftReady: ready, choiceRoundNow: choosing, selectedChoice: picked } = tickRef.current;
 
       // Recomputed from the absolute deadline every tick rather than
       // decrementing, so a throttled background tab self-corrects to the true
@@ -495,9 +502,11 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
         String(phase).startsWith('ROUND_') &&
         ready && remaining > 0 && remaining <= AUTO_SUBMIT_LEAD_SECONDS &&
         !ps.hasSubmittedThisRound &&
-        !ps.eliminated
+        !ps.eliminated &&
+        // A choice round sends the option picked; with none picked there is nothing to send.
+        (!choosing || picked)
       ) {
-        submitNow();
+        submitNow(choosing ? picked : undefined);
       }
     };
 
@@ -536,7 +545,9 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
   // than half of a 30s Quick Mode round, turning a heads-up into a permanent
   // fixture. Clamped to 40% of the round, which still leaves a clear gap
   // before the auto-submit fires at AUTO_SUBMIT_LEAD_SECONDS.
-  const roundDurationSeconds = phaseDurationsFor(currentRoom)[phase] || ROUND_TIMES.ROUND_1;
+  const roundDurationSeconds = roundView.kind === 'predict'
+    ? PREDICT_ROUND_SECONDS[currentRoom?.round_duration_mode === 'quick' ? 'quick' : 'standard']
+    : phaseDurationsFor(currentRoom)[phase] || ROUND_TIMES.ROUND_1;
   const autoSubmitWarnSeconds = Math.max(
     AUTO_SUBMIT_LEAD_SECONDS + 1,
     Math.min(AUTO_SUBMIT_WARN_SECONDS, Math.ceil(roundDurationSeconds * 0.4))
@@ -745,6 +756,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
               sellItem={sellItem}
               t={t}
               nextRoundLabel={upcomingKind ? t('nextRoundLabel').replace('{{kind}}', t(roundKindLabelKey(upcomingKind))) : ''}
+              nextRoundIsChoice={isChoiceKind(upcomingKind)}
             />
             {/* Phase 8.2 — the shop intermission is the other moment players
                 are free to talk without it becoming an answer channel. */}
@@ -812,7 +824,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
             challengeTitle={activeRoundTask.title}
             challengeDesc={activeRoundTask.desc}
             challengeFunctionName={activeRoundTask.functionName}
-            challengeTestCases={activeRoundTask.testCases}
+            challengeTestCases={choiceRoundNow ? [] : activeRoundTask.testCases}
             challengeHiddenCaseCount={activeRoundTask.hiddenCaseCount || 0}
             fixRound={roundView.view?.fix || null}
             timeLeft={timeLeft}
@@ -824,7 +836,10 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
             handleEditorKeyDown={handleEditorKeyDown}
             consoleOutput={consoleOutput}
             runCodeTests={() => runCodeTests(activeRoundTask)}
-            handleManualSubmit={handleManualSubmit}
+            handleManualSubmit={() => handleManualSubmit(choiceRoundNow ? selectedChoice : undefined)}
+            choiceRound={roundView.view?.predict || null}
+            selectedChoice={selectedChoice}
+            onSelectChoice={selectChoice}
             isGrading={isGrading}
             autoSubmitLeadSeconds={AUTO_SUBMIT_LEAD_SECONDS}
             autoSubmitWarnSeconds={autoSubmitWarnSeconds}

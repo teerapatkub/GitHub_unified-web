@@ -8,12 +8,15 @@
 //     server recomputes these in the background after boot, so this means it
 //     has not run since the problem changed;
 //   - a fix round's AI answer does not pass at least one test, or passes all
-//     of them, or its stored pass count differs from what the grader says now.
+//     of them, or its stored pass count differs from what the grader says now;
+//   - a predict round's stored answer is not what Python prints for its code
+//     and call, is not one of the options, or two options are the same.
 const { Client } = require('pg');
 const { databaseClientConfig } = require('../database-client-config');
 const { gradeSubmission } = require('../../problemGrader');
 const { sourceHash } = require('../../arcade/round-data');
-const { asObject } = require('../../arcade/round-kinds');
+const { asObject, printedBy, pyLiteral } = require('../../arcade/round-kinds');
+const config = require('../../../shared/arcadeConfig.json');
 
 (async () => {
   const client = new Client(databaseClientConfig());
@@ -34,6 +37,21 @@ const { asObject } = require('../../arcade/round-kinds');
     if (data.source_hash !== sourceHash(row)) {
       failures.push(`${label}: round data is stale or missing (run: npm run round-kinds -- --apply)`);
       continue;
+    }
+    if (kinds.includes('predict')) {
+      const predict = data.predict;
+      const texts = (predict?.options || []).map(option => option.text);
+      const printed = predict ? await printedBy(predict.code, predict.call) : null;
+      if (printed !== predict?.answer) {
+        failures.push(`${label}: predict answer is stored as ${JSON.stringify(predict?.answer)} but Python prints ${JSON.stringify(printed)}`);
+      }
+      if (!texts.includes(predict?.answer)) failures.push(`${label}: the predict answer is not one of the options`);
+      // A worked example is shown with its result, so its call would give the answer away.
+      const name = /^def\s+(\w+)\s*\(/m.exec(row.solution_code || '')?.[1];
+      const shown = (Array.isArray(row.test_cases) ? row.test_cases : []).slice(0, Number(config.exampleCasesShown) || 0)
+        .map(testCase => `print(${name}(${(testCase.args || []).map(pyLiteral).join(', ')}))`);
+      if (shown.includes(predict?.call)) failures.push(`${label}: the predict call ${predict.call} is a worked example shown with its answer`);
+      if (new Set(texts).size !== texts.length || texts.length < 3) failures.push(`${label}: predict needs at least three different options`);
     }
     if (kinds.includes('fix')) {
       const fix = data.fix;

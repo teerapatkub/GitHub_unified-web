@@ -94,6 +94,7 @@ function simulateRound(bank, profile, skill, random, start = { starter: bank.sta
         answer.quality = await judge.judge({ taskId: `${row.entry_id}:fix`, problem: fixProblem, code: answer.code });
       }));
     }
+    bank.predict = row.round_data?.predict?.options?.length || 0;
     (banks[row.difficulty] ??= []).push(bank);
   }
   const sources = {};
@@ -131,6 +132,28 @@ function simulateRound(bank, profile, skill, random, start = { starter: bank.sta
     const change = (fix / write - 1) * 100;
     if (Math.abs(change) > 15) outOfBand++;
     console.log(`fix         ${difficulty.padEnd(10)}  ${(write / rounds).toFixed(1).padStart(6)}  ${(fix / rounds).toFixed(1).padStart(6)}  ${change.toFixed(1).padStart(5)}%`);
+  }
+  // A predict round (bot-ticker.js decideChoice): right with the share of tests
+  // the same roll passes in the write round, answered a quarter to three
+  // quarters of the way into a 20-second round; right earns 200 plus time.
+  for (const difficulty of Object.keys(BEFORE)) {
+    const pool = POOLS[difficulty].flatMap(d => banks[d]).filter(bank => bank.predict);
+    const skill = config.botSkillByDifficulty[difficulty];
+    let write = 0; let predict = 0;
+    for (let i = 0; i < rounds; i++) {
+      const bank = pool[Math.floor(random() * pool.length)];
+      write += simulateRound(bank, profiles[i % profiles.length], skill, random).score;
+      const target = Math.min(1, Math.max(0, skill.passMin + random() * skill.passSpread));
+      const written = coder.chooseAnswer(bank, target, random);
+      // Not knowing, half the time it guesses among the options (bot-ticker.js).
+      const right = random() < written.passed / written.total
+        || (random() < 0.5 && random() < 1 / bank.predict);
+      const used = 0.25 + 0.5 * random();
+      predict += right ? 200 + (1 - used) * 100 : 0;
+    }
+    const change = (predict / write - 1) * 100;
+    if (Math.abs(change) > 15) outOfBand++;
+    console.log(`predict     ${difficulty.padEnd(10)}  ${(write / rounds).toFixed(1).padStart(6)}  ${(predict / rounds).toFixed(1).padStart(6)}  ${change.toFixed(1).padStart(5)}%`);
   }
   if (outOfBand) {
     console.log(`\n${outOfBand} row(s) more than 15% from write.`);

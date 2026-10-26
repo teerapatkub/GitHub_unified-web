@@ -2,7 +2,9 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 
 // Read and save only this editor's room/match/phase. Keep one unacknowledged
 // request unchanged so a late response cannot overwrite a newer saved draft.
-export default function useRoundDraft({ playerState, setPlayerState, currentRoom, starterCode, tasksReady, API_BASE }) {
+// saveDrafts is false in a choice round: there is no code to keep, but the
+// recovery read still says whether this player has already answered.
+export default function useRoundDraft({ playerState, setPlayerState, currentRoom, starterCode, tasksReady, API_BASE, saveDrafts = true }) {
   const roomId = currentRoom?.room_id;
   const matchId = currentRoom?.current_match_id;
   const phase = currentRoom?.phase;
@@ -56,7 +58,7 @@ export default function useRoundDraft({ playerState, setPlayerState, currentRoom
           await recover();
           return;
         }
-        if (conflict || ps.codeScope !== scope || ps.hasSubmittedThisRound || ps.eliminated) return;
+        if (!saveDrafts || conflict || ps.codeScope !== scope || ps.hasSubmittedThisRound || ps.eliminated) return;
         if (!pending && ps.code === savedCode) return;
         pending ||= { match_id: matchId, round_num: Number(phase.split('_')[1]), code: ps.code, draft_revision: revision };
         report('saving');
@@ -87,7 +89,7 @@ export default function useRoundDraft({ playerState, setPlayerState, currentRoom
     void pump();
     const interval = setInterval(() => void pump(), 2000);
     return () => { stopped = true; clearInterval(interval); retryRef.current = () => {}; };
-  }, [roomId, matchId, phase, name, scope, starterCode, tasksReady, API_BASE, setPlayerState]);
+  }, [roomId, matchId, phase, name, scope, starterCode, tasksReady, API_BASE, setPlayerState, saveDrafts]);
 
   const draftReady = playerState.codeScope === scope && status.scope === scope
     && !['restoring', 'restoreError'].includes(status.type);

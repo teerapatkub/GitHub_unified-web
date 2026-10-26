@@ -25,6 +25,10 @@
     "SHOP_3": 15,
     "ROUND_4": 30
   },
+  "_predictRoundComment": "A predict round (ADR 0010) is a short read-and-tap round: its ROUND_n phase lasts this long instead of the phase duration above, per room pace.",
+  "predictRoundSeconds": { "standard": 20, "quick": 15 },
+  "_choiceRoundBlockedItemsComment": "Attacks that only make sense while typing code. In a predict or review round there is nothing to type, so these are refused there (the shop says why).",
+  "typingOnlyItems": ["backspaceLock", "keyScrambler", "typoGenerator", "capsLockLock"],
   "_difficultyComment": "Phase 8.4 task source for Rounds 1-3. 'default' keeps the three fixed built-in tasks every match has always used; easy/medium/hard instead draw from the arcade_tasks DB pool by difficulty, the same way Round 4 already does.",
   "difficulties": [
     "default",

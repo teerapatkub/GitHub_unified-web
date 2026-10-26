@@ -1,4 +1,6 @@
-export default function ShopItemCard({ item, onBuy, canBuy, t }) {
+// `blockedNote`: why this item will not work in the coming round (an attack on
+// typing before a round answered by tapping). It can still be bought for later.
+export default function ShopItemCard({ item, onBuy, canBuy, t, blockedNote = '' }) {
   return (
     <div className="bg-pysim-card p-6 rounded-3xl shadow-sm border border-pysim-outline-variant flex flex-col justify-between transition-all hover:shadow-lg relative overflow-hidden group">
       {item.purchased && (
@@ -23,6 +25,7 @@ export default function ShopItemCard({ item, onBuy, canBuy, t }) {
           {t(item.nameKey)}
         </h3>
         <p className="text-pysim-label text-xs leading-relaxed">{t(item.descKey)}</p>
+        {blockedNote && <p className="mt-2 rounded-lg bg-pysim-warning-container px-2 py-1 text-xs font-bold text-pysim-warning-strong">{blockedNote}</p>}
       </div>
 
       <button

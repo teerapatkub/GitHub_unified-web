@@ -99,6 +99,10 @@ export const PHASES = {
 
 export const ROUND_TIMES = arcadeConfig.phaseDurations;
 export const QUICK_ROUND_TIMES = arcadeConfig.quickModePhaseDurations;
+// A predict round's own length, and the attacks that do nothing in a round
+// answered by tapping (server/arcade/round-kinds.js, use-item.js).
+export const PREDICT_ROUND_SECONDS = arcadeConfig.predictRoundSeconds;
+export const TYPING_ONLY_ITEMS = arcadeConfig.typingOnlyItems;
 export const DIFFICULTIES = arcadeConfig.difficulties;
 export const ROUND_DURATION_MODES = arcadeConfig.roundDurationModes;
 

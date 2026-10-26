@@ -1,5 +1,6 @@
 import { RotateCcw } from 'lucide-react';
 import ShopItemCard from './ShopItemCard.jsx';
+import { TYPING_ONLY_ITEMS } from '../constants.js';
 
 export default function ShopPhaseView({
   timeLeft,
@@ -10,7 +11,9 @@ export default function ShopPhaseView({
   buyItem,
   sellItem,
   t,
-  nextRoundLabel = ''
+  nextRoundLabel = '',
+  // The coming round is answered by tapping: attacks on typing do nothing there.
+  nextRoundIsChoice = false
 }) {
   return (
     <div className="h-full w-full overflow-y-auto p-8 max-w-[1400px] mx-auto">
@@ -51,6 +54,7 @@ export default function ShopPhaseView({
             onBuy={() => buyItem(item, index)}
             canBuy={canBuyItem(item)}
             t={t}
+            blockedNote={nextRoundIsChoice && TYPING_ONLY_ITEMS.includes(item.id) ? t('itemBlockedNextRound') : ''}
           />
         ))}
       </div>

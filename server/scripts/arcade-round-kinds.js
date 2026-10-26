@@ -34,7 +34,10 @@ const IDS = process.argv.includes('--ids') ? String(idsArg).split(',').map(Numbe
     const counts = {};
     for (const row of report) for (const kind of row.kinds || []) counts[kind] = (counts[kind] || 0) + 1;
     const failed = report.filter(row => row.error);
-    console.log(`\n${report.length} problems, by kind:`, counts, failed.length ? `failed: ${failed.length}` : '');
+    const unchanged = report.filter(row => !row.changed && !row.error).length;
+    // Rows already up to date are not recomputed, so they are not in the counts.
+    console.log(`\n${report.length} problems: ${report.length - unchanged - failed.length} computed, by kind:`, counts,
+      `- ${unchanged} already up to date${failed.length ? `, ${failed.length} failed` : ''}`);
     console.log(APPLY ? 'Written.' : 'Report only. Add --apply to write.');
     process.exitCode = failed.length ? 1 : 0;
   } finally {

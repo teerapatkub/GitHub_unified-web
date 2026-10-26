@@ -150,7 +150,9 @@ export default function useRoundJudging({ playerState, setPlayerState, currentRo
 
   // Keep an uncertain request unchanged for retries: the first accepted answer
   // wins even if its HTTP response was lost. Only acknowledge a confirmed save.
-  const submitMyRound = async () => {
+  // `choice` answers a choice round (predict, ADR 0010): the option id goes to
+  // the same endpoint in place of code.
+  const submitMyRound = async (choice) => {
     if (!currentRoom || !/^ROUND_[1-4]$/.test(currentRoom.phase)
       || playerState.codeScope !== `${submissionScope}:${playerState.name}`
       || submittingRoundRef.current === submissionScope
@@ -160,7 +162,7 @@ export default function useRoundJudging({ playerState, setPlayerState, currentRo
       pendingAnswerRef.current = { scope, body: {
         match_id: currentRoom.current_match_id,
         round_num: Number(currentRoom.phase.split('_')[1]),
-        code: playerState.code
+        ...(choice ? { choice } : { code: playerState.code })
       } };
     }
     const body = pendingAnswerRef.current.body;
@@ -178,7 +180,7 @@ export default function useRoundJudging({ playerState, setPlayerState, currentRo
       }
       if (!response.ok || !result.success) throw new Error(result.error || (lang === 'en' ? 'Could not save your answer. Please retry.' : 'บันทึกคำตอบไม่สำเร็จ กรุณาลองอีกครั้ง'));
       if (scopeRef.current !== scope) return;
-      setPlayerState(prev => ({ ...prev, code: body.code, hasSubmittedThisRound: true }));
+      setPlayerState(prev => ({ ...prev, ...(body.code !== undefined ? { code: body.code } : {}), hasSubmittedThisRound: true }));
       notify(t('submittedWaitingForResult'), 'success');
     } catch (error) {
       if (scopeRef.current === scope) {
@@ -309,8 +311,12 @@ export default function useRoundJudging({ playerState, setPlayerState, currentRo
   // round summary) — a submitted player just becomes a spectator via
   // hasSubmittedThisRound (see the item-button disabled checks) until the
   // room-state poller picks up the next phase for everyone at once.
-  const handleManualSubmit = () => {
+  const handleManualSubmit = (choice) => {
     if (isGrading || playerState.hasSubmittedThisRound || playerState.eliminated) return;
+    if (choice) {
+      submitMyRound(choice);
+      return;
+    }
     if (playerState.code.trim().length === 0) {
       notify(t('codeEmpty'), "error");
       return;

@@ -3,6 +3,7 @@
 const { verifiedMultiplier } = require('./self-effects');
 const { arcadeCodeJudge } = require('./code-judge');
 const { loadArcadeProblem, roundTaskIdOf } = require('./round-problem');
+const { roundKindOf, isChoiceKind, choiceOptions } = require('./round-kinds');
 
 // Measure an answer's quality the moment it is sent, outside every
 // transaction, so the verdict is cached before the round closes (ADR 0007).
@@ -19,12 +20,16 @@ function startJudging(db, room, roundNum, code) {
 function installArcadeSubmissions(app, db) {
   for (const action of ['submit-round', 'code-draft']) {
     app.post(`/api/arcade/rooms/:id/${action}`, async (req, res) => {
-      const { match_id: matchId, round_num: roundNum, code } = req.body || {};
+      const { match_id: matchId, round_num: roundNum, code: sentCode, choice } = req.body || {};
+      // Code for a write or fix round, an option id for a choice round
+      // (round-kinds.js); which one is checked once the room's round is known.
       if (!Number.isSafeInteger(matchId) || matchId <= 0
         || !Number.isInteger(roundNum) || roundNum < 1 || roundNum > 4
-        || typeof code !== 'string' || code.length > 20000) {
+        || (sentCode !== undefined && (typeof sentCode !== 'string' || sentCode.length > 20000))
+        || (choice !== undefined && (typeof choice !== 'string' || choice.length > 8))) {
         return res.status(400).json({ error: 'ข้อมูลแมตช์ รอบ หรือคำตอบไม่ถูกต้อง' });
       }
+      let code = sentCode;
       let connection;
       try {
         connection = await db.getConnection();
@@ -45,6 +50,15 @@ function installArcadeSubmissions(app, db) {
           return await reject(409, 'รอบการแข่งขันเปลี่ยนแล้ว กรุณารอข้อมูลล่าสุด');
         }
         if (player.is_eliminated) return await reject(403, 'คุณตกรอบไปแล้ว');
+        const kind = roundKindOf(room, roundNum);
+        if (isChoiceKind(kind)) {
+          if (action === 'code-draft') return await reject(409, 'รอบนี้ตอบด้วยการเลือก ไม่มีโค้ดให้บันทึก');
+          const options = choiceOptions(kind, await loadArcadeProblem(connection, roundTaskIdOf(room, roundNum)));
+          if (!options?.some(option => option.id === choice)) return await reject(400, 'กรุณาเลือกหนึ่งในตัวเลือกของรอบนี้');
+          code = choice;
+        } else if (typeof code !== 'string') {
+          return await reject(400, 'ข้อมูลแมตช์ รอบ หรือคำตอบไม่ถูกต้อง');
+        }
         const revision = req.body.draft_revision;
         const submitting = action === 'submit-round';
         if (player.has_submitted) {
@@ -87,7 +101,7 @@ function installArcadeSubmissions(app, db) {
         }
         await connection.commit();
         res.json({ success: true, match_id: matchId, round_num: roundNum, ...(!submitting ? { draft_revision: player.draft_revision + 1 } : {}) });
-        if (submitting) startJudging(db, room, roundNum, code);
+        if (submitting && !isChoiceKind(kind)) startJudging(db, room, roundNum, code);
       } catch (error) {
         if (connection) await connection.rollback();
         console.error('Arcade answer write failed:', error.message);

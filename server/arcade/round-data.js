@@ -13,7 +13,8 @@ const crypto = require('node:crypto');
 const { computeRoundData, asObject } = require('./round-kinds');
 
 // Bump to recompute every row, e.g. after changing how a kind is built.
-const DATA_VERSION = 1;
+// 2: predict rounds (Spec 0005 #22). 3: predict never uses a worked example.
+const DATA_VERSION = 3;
 
 function sourceHash(problem) {
   const cases = typeof problem.test_cases === 'string' ? problem.test_cases : JSON.stringify(problem.test_cases);

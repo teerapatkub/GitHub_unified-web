@@ -3,11 +3,11 @@ const config = require('../../shared/arcadeConfig.json');
 const profiles = require('../../shared/arcadeBotProfiles.json');
 const { activeSelfEffects } = require('./self-effects');
 const { activeAttackEffects } = require('./attacks');
-const { useOwnedItem } = require('./use-item');
+const { useOwnedItem, typingAttackWasted } = require('./use-item');
 const { readPhaseClock } = require('./phase-clock');
 const coder = require('./bot-coder');
 const { loadArcadeProblem } = require('./round-problem');
-const { roundKindOf, asObject, problemForKind } = require('./round-kinds');
+const { roundKindOf, asObject, problemForKind, isChoiceKind, choiceOptions, gradeChoice, roundSeconds } = require('./round-kinds');
 
 // ---- Shopping and attacking with a plan --------------------------------------
 //
@@ -91,6 +91,7 @@ async function useForBot(db, room, player, state, memory, now, phaseDeadlineMs, 
   for (const item of state.inventory) {
     if (activeSelfEffects(state.self_effects, room.phase, now).some(e => e.type === item.id)) continue;
     if (item.id === 'aiHelper') continue;
+    if (typingAttackWasted(room, item.id)) continue;
     // A bot writing a real answer saves its booster for the moment it submits.
     if (item.id === 'scoreMultiplier' && memory.plan) continue;
     let targetName;
@@ -172,6 +173,42 @@ function warmBankFor(db, key) {
     writeStarter = problem?.starter_code || '';
     return asObject(problem?.round_data).fix ? problemForKind(problem, 'fix') : null;
   }, problem => coder.buildFixBank(problem, writeStarter));
+}
+
+// A choice round (predict, ADR 0010): the bot reads, then taps. Whether it
+// picks the right option follows the rule of a fix round - the share of tests
+// its skill roll would pass in the write round of this problem - so a bot is
+// as strong in either. Reading takes a quarter to three quarters of the round;
+// Ink Fog, Freeze and Blackout stop that clock as they stop typing.
+const choiceProblems = new Map();
+function choiceProblem(db, taskId) {
+  if (!choiceProblems.has(taskId)) {
+    choiceProblems.set(taskId, null);
+    loadArcadeProblem(db, taskId).then(problem => choiceProblems.set(taskId, problem), () => choiceProblems.delete(taskId));
+  }
+  return choiceProblems.get(taskId);
+}
+
+function decideChoice({ room, kind, problem, writeBank, memory, random, roundNum }) {
+  const options = choiceOptions(kind, problem) || [];
+  const skill = config.botSkillByDifficulty[room.difficulty] || config.botSkillByDifficulty.default;
+  const target = Math.min(1, Math.max(0, skill.passMin + random() * skill.passSpread));
+  const written = coder.chooseAnswer(writeBank, target, random);
+  const right = options.find(option => gradeChoice(kind, problem, option.id).correct);
+  const wrong = options.filter(option => option !== right);
+  // Not working it out, half the time it guesses among all the options - a
+  // choice round has a floor a write round does not - and otherwise falls for
+  // a wrong one.
+  const knows = random() < written.passed / written.total;
+  const guess = !knows && random() < 0.5;
+  const pick = !right ? wrong[Math.floor(random() * wrong.length)]
+    : knows || !wrong.length ? right
+      : guess ? options[Math.floor(random() * options.length)]
+        : wrong[Math.floor(random() * wrong.length)];
+  memory.choice = pick?.id || null;
+  memory.answerId = 'choice';
+  memory.thinkTotal = roundSeconds(room, roundNum) * 1000 * (0.25 + 0.5 * random());
+  memory.thinkMs = memory.thinkTotal;
 }
 
 // Start grading every drawn problem's answer bank, Round 1 first. Never awaited
@@ -282,14 +319,36 @@ async function tickArcadeBots(db, roomId, random = Math.random) {
         delete memory.answerId;
         delete memory.taskId;
         delete memory.bankKey;
+        delete memory.choice;
       }
       const effects = activeAttackEffects(state.attack_effects, room.phase, now);
       const taskId = roundTaskId(room);
       // A drawn problem means the bot writes and submits a real answer. Rooms
       // without one, or whose answers could not be graded, keep the progress
       // bar (phase-finalizer synthesizes that bot's score) so a match never stalls.
+      const roundNum = Number(String(room.phase).split('_')[1]);
+      const kind = roundKindOf(room, roundNum);
+      const choiceRound = room.phase.startsWith('ROUND_') && taskId !== undefined && isChoiceKind(kind);
+      if (choiceRound && !player.has_submitted) {
+        const writeBank = coder.readyBank(taskId);
+        const problem = choiceProblem(pool, taskId);
+        if (!writeBank || !problem) {
+          if (!writeBank) warmBankFor(pool, taskId).catch(() => {});
+          memory.lastProgress = now; // still reading the problem
+        } else {
+          if (memory.answerId !== 'choice') decideChoice({ room, kind, problem, writeBank, memory, random, roundNum });
+          if (!effects.some(e => STOPS_TYPING.has(e.type))) memory.thinkMs -= now - memory.lastProgress;
+          memory.lastProgress = now;
+          memory.progress = Math.min(99, 100 * (1 - memory.thinkMs / memory.thinkTotal));
+          if (memory.thinkMs <= 0 && memory.choice) {
+            memory.progress = 100;
+            await connection.query(`UPDATE arcade_participants SET has_submitted = 1, submitted_code = ?,
+              submitted_at = to_timestamp(?::double precision / 1000) WHERE id = ?`, [memory.choice, now, player.id]);
+          }
+        }
+      }
       const bankKey = taskId === undefined ? undefined : bankKeyOf(room, taskId);
-      const writesCode = room.phase.startsWith('ROUND_') && taskId !== undefined && !coder.bankFailed(bankKey);
+      const writesCode = !choiceRound && room.phase.startsWith('ROUND_') && taskId !== undefined && !coder.bankFailed(bankKey);
       if (writesCode && !player.has_submitted) {
         const bank = coder.readyBank(bankKey);
         // A fix round also needs the write bank: it sets how often the bot finds the bug.
@@ -338,7 +397,7 @@ async function tickArcadeBots(db, roomId, random = Math.random) {
       const frozen = effects.some(e => e.type === 'timeFreeze' || e.type === 'inkFog');
       if (frozen) memory.lastProgress = now;
       else {
-        if (room.phase.startsWith('ROUND_') && !writesCode) advanceProgress(memory, profile.typingSpeedMs * roundPaceScale(room), now);
+        if (room.phase.startsWith('ROUND_') && !writesCode && !choiceRound) advanceProgress(memory, profile.typingSpeedMs * roundPaceScale(room), now);
         if (room.phase.startsWith('SHOP_') && memory.chatPhase !== room.phase) {
           memory.chatPhase = room.phase;
           const said = chatFor(player, room, profile, memory, random);

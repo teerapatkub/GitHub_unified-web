@@ -1,5 +1,15 @@
 const { SELF_ITEM_IDS, activeSelfEffects } = require('./self-effects');
 const { applyArcadeAttack } = require('./attacks');
+const config = require('../../shared/arcadeConfig.json');
+const { roundKindOf, isChoiceKind } = require('./round-kinds');
+
+// Attacks on typing (Backspace Lock, Key Scrambler...) do nothing in a round
+// answered by tapping an option (ADR 0010), so they are refused there rather
+// than wasted. The item stays in the inventory for a later round.
+function typingAttackWasted(room, itemId) {
+  const round = /^ROUND_([1-4])$/.exec(room?.phase || '')?.[1];
+  return Boolean(round) && isChoiceKind(roundKindOf(room, Number(round))) && config.typingOnlyItems.includes(itemId);
+}
 
 // Both authenticated commands and bot decisions own the room lock and commit
 // inventory, effects and money together. This is the shared item rule boundary.
@@ -7,6 +17,9 @@ async function useOwnedItem({ db, room, player, state, instanceId, targetName, n
   const index = state.inventory.findIndex(item => item.instance_id === instanceId);
   if (index < 0) throw Object.assign(new Error('คุณไม่มีไอเทมชิ้นนี้'), { status: 409 });
   const item = state.inventory[index];
+  if (typingAttackWasted(room, item.id)) {
+    throw Object.assign(new Error('ไอเทมนี้ใช้ได้เฉพาะรอบที่ต้องพิมพ์โค้ด รอบนี้ตอบด้วยการเลือก'), { status: 409 });
+  }
   let result = null;
   if (SELF_ITEM_IDS.includes(item.id)) {
     // Callers pass the database clock; expiry checks compare against it.
@@ -22,4 +35,4 @@ async function useOwnedItem({ db, room, player, state, instanceId, targetName, n
   state.inventory.splice(index, 1);
   return result;
 }
-module.exports = { useOwnedItem };
+module.exports = { useOwnedItem, typingAttackWasted };

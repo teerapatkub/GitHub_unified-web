@@ -7,7 +7,7 @@ const coder = require('./bot-coder');
 const { arcadeCodeJudge, heuristicCodeQualityScore, normalizeCode } = require('./code-judge');
 const { loadArcadeProblem } = require('./round-problem');
 const { roundCashFor } = require('./round-cash');
-const { roundKindOf, problemForKind } = require('./round-kinds');
+const { roundKindOf, problemForKind, roundSeconds, isChoiceKind, gradeChoice } = require('./round-kinds');
 
 // A fix round starts from the AI's wrong answer, which already passes some
 // tests (ADR 0010). What the player is scored on is the tests they FIXED: of
@@ -153,6 +153,16 @@ function createArcadePhaseFinalizer({ db, judgeArcadeCode = args => arcadeCodeJu
   // the draft costs it tests, not a fresh judge call.
   async function gradeBotAnswer({ p, taskId, problem, kind, roundDuration, room, phaseClock, db }) {
     const submitted = Number(p.has_submitted) === 1;
+    if (isChoiceKind(kind)) {
+      // A bot that never picked in time scores nothing, like a player.
+      if (!submitted) return 0;
+      const { correct } = gradeChoice(kind, problem, p.submitted_code);
+      const elapsed = Number(p.submitted_elapsed_seconds);
+      const timeUsed = Number.isFinite(elapsed) ? Math.max(0, Math.min(roundDuration, elapsed)) : roundDuration;
+      const ratio = correct ? 1 : 0;
+      const multiplied = Number(p.score_multiplier_active) === 1;
+      return Math.round((ratio * 200 + ratio * ((roundDuration - timeUsed) / roundDuration) * 100) * (multiplied ? 2 : 1));
+    }
     const code = (submitted ? p.submitted_code : p.draft_code) || '';
     // A fix round's bot typed from that round's own bank (bot-ticker.js).
     const bankKey = p.bot_state?.bankKey || taskId;
@@ -185,6 +195,25 @@ function createArcadePhaseFinalizer({ db, judgeArcadeCode = args => arcadeCodeJu
       let passCount = 0;
       let totalCount = 0;
       let verdict = null;
+
+      // A choice round (predict): the option picked is right or wrong, one
+      // "test", and with no code to measure it earns full quality or none
+      // (ADR 0010). History keeps the text of the option picked.
+      if (isChoiceKind(kind)) {
+        const choice = gradeChoice(kind, problem, code);
+        const ratio = choice.correct ? 1 : 0;
+        const elapsedSeconds = Number(p.submitted_elapsed_seconds);
+        const timeUsed = Number.isFinite(elapsedSeconds)
+          ? Math.max(0, Math.min(roundDuration, Math.round(elapsedSeconds))) : roundDuration;
+        const scoreMultiplier = Number(p.score_multiplier_active) === 1 ? 2 : 1;
+        const roundScore = (ratio * 200 + ratio * ((roundDuration - timeUsed) / roundDuration) * 100) * scoreMultiplier;
+        graded.set(p.id, {
+          roundScore: Math.max(0, Math.min(arcadeConfig.maxSubmittableRoundScore, Math.round(roundScore))),
+          passCount: choice.passed, totalCount: choice.total, quality: ratio * 100, timeUsed, scoreMultiplier,
+          code: choice.picked, judged: { rubric: null, reason: '', feedback: '', source: 'choice' },
+        });
+        return;
+      }
 
       if (problem) {
         verdict = await gradeSubmission({ problem, code });
@@ -257,7 +286,8 @@ function createArcadePhaseFinalizer({ db, judgeArcadeCode = args => arcadeCodeJu
 
     if (phase.startsWith('ROUND_')) {
       const roundNum = parseInt(phase.split('_')[1], 10);
-      const roundDuration = arcadePhaseDurations(room)[phase];
+      // A predict round is shorter than the room's pace (round-kinds.js roundSeconds).
+      const roundDuration = roundSeconds(room, roundNum);
       const eliminateCount = ARCADE_ELIMINATE_COUNT[roundNum] || 0;
 
       // Scale synthetic bot scores against the problem drawn for this round.
@@ -408,7 +438,7 @@ function createArcadePhaseFinalizer({ db, judgeArcadeCode = args => arcadeCodeJu
       const roundNum = parseInt(phase.split('_')[1], 10);
       const nextPhase = `ROUND_${roundNum + 1}`;
       await db.query(`UPDATE arcade_rooms SET phase = ?, phase_deadline = ${NEXT_DEADLINE_SQL} WHERE room_id = ?`,
-        [nextPhase, arcadePhaseDurations(room)[nextPhase], roomId]);
+        [nextPhase, roundSeconds(room, roundNum + 1), roomId]);
       return;
     }
   }
