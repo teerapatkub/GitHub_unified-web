@@ -5800,6 +5800,8 @@ const ARCADE_CHAT_EMOJI = ['👍', '😂', '🔥', '😮', '😢', '👏', '😎
 // Minimum gap between two messages from the same player, to stop one client
 // from flooding a room's history (and everyone else's poll payload).
 const ARCADE_CHAT_MIN_INTERVAL_MS = 700;
+// Spectators: watch the survivors, guess the last one, cheer (Spec 0005 #24).
+require('./arcade/spectator-api').installArcadeSpectators(app, db, { emojiSet: ARCADE_CHAT_EMOJI });
 
 app.post('/api/arcade/rooms/:id/chat', async (req, res) => {
     try {
@@ -7100,6 +7102,7 @@ const {
   createArcadeAchievementRewardsMigration,
   createAchievementEasyDifficultyMigration,
   createArcadeRoundKindsMigration,
+  createArcadeSpectatorsMigration,
 } = require('./migrations/definitions');
 const { applyDataApiSecurity } = require('./security/data-api-security');
 const authProvisioningSchemaSql = fs.readFileSync(
@@ -7175,6 +7178,11 @@ const applicationMigrations = [
   createArcadeRoundKindsMigration(
     () => require('./problemsSchema').migrateArcadeRoundKinds(db),
     require('./problemsSchema').migrateArcadeRoundKinds.toString(),
+  ),
+  // Spectators' guesses of the last survivor (Spec 0005 #24).
+  createArcadeSpectatorsMigration(
+    () => require('./arcade/migrate-spectators').migrateArcadeSpectators(db),
+    require('./arcade/migrate-spectators').migrateArcadeSpectators.toString(),
   ),
 ];
 

@@ -69,10 +69,10 @@ function installArcadeRoomReads(app, db) {
       let viewerReward = null;
       if (userName && roomSafe.current_match_id) {
         const [[receipt]] = await db.query(
-          'SELECT coins, achievement_rewards FROM arcade_reward_receipts WHERE match_id = ? AND user_name = ?',
+          'SELECT coins, guess_coins, achievement_rewards FROM arcade_reward_receipts WHERE match_id = ? AND user_name = ?',
           [roomSafe.current_match_id, userName]
         );
-        if (receipt) viewerReward = { coins: receipt.coins, achievements: receipt.achievement_rewards ?? null };
+        if (receipt) viewerReward = { coins: receipt.coins, guess_coins: receipt.guess_coins || 0, achievements: receipt.achievement_rewards ?? null };
       }
       res.json({
         success: true, room: roomSafe, serverNow: new Date(serverNow).getTime(),

@@ -12,18 +12,26 @@ async function settleArcadeRewards(connection, room) {
     JOIN arcade_participants p ON p.user_name = u.username
     WHERE p.room_id = ? AND p.match_id = ? AND p.participant_kind = 'human' ORDER BY u.user_id FOR UPDATE OF u`,
   [room.room_id, room.current_match_id]);
+  // A spectator who named the winner gets a small fixed reward (Spec 0005 #24).
+  // Paid with the receipt below, which is written once per match, so a settle
+  // that runs twice cannot pay it twice. It changes no player's score or cash.
+  const winner = standings[0]?.user_name;
+  const [guesses] = await connection.query('SELECT user_name, guessed_name FROM arcade_spectator_guesses WHERE match_id = ?',
+    [room.current_match_id]);
+  const guessedRight = new Set(guesses.filter(guess => guess.guessed_name === winner).map(guess => guess.user_name));
   for (const account of accounts) {
     const index = standings.findIndex(p => p.user_name === account.username);
     const player = standings[index];
     const rank = index + 1;
     const coins = Number(arcadeConfig.coinRewardByRank[String(rank)] ?? arcadeConfig.coinRewardParticipation ?? 0);
+    const guessCoins = guessedRight.has(account.username) ? Number(arcadeConfig.spectatorGuessReward) || 0 : 0;
     const [inserted] = await connection.query(`INSERT INTO arcade_reward_receipts
-      (match_id, user_id, user_name, final_rank, score, cash, coins)
-      VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (match_id, user_id) DO NOTHING`,
-    [room.current_match_id, account.user_id, account.username, rank, player.score || 0, player.cash || 0, coins]);
+      (match_id, user_id, user_name, final_rank, score, cash, coins, guess_coins)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (match_id, user_id) DO NOTHING`,
+    [room.current_match_id, account.user_id, account.username, rank, player.score || 0, player.cash || 0, coins, guessCoins]);
     if (!inserted.affectedRows) continue;
     // This mode grants coins only. Increment the shared wallet without rewriting XP/level.
-    await connection.query('UPDATE users SET virtual_currency = COALESCE(virtual_currency, 0) + ? WHERE user_id = ?', [coins, account.user_id]);
+    await connection.query('UPDATE users SET virtual_currency = COALESCE(virtual_currency, 0) + ? WHERE user_id = ?', [coins + guessCoins, account.user_id]);
     await connection.query(`INSERT INTO arcade_player_stats
       (user_name, matches_played, wins, best_rank, total_score, total_cash_earned, updated_at)
       VALUES (?, 1, ?, ?, ?, ?, CURRENT_TIMESTAMP)

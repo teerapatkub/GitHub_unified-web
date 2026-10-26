@@ -15,7 +15,7 @@ test('the total is match coins plus every achievement the match unlocked', () =>
 });
 
 test('before the receipt arrives the participant row is used and nothing is pending', () => {
-  assert.deepEqual(resultCoinBreakdown(null, { coins_awarded: 40 }), { matchCoins: 40, achievements: [], total: 40, achievementsPending: false });
+  assert.deepEqual(resultCoinBreakdown(null, { coins_awarded: 40 }), { matchCoins: 40, guessCoins: 0, achievements: [], total: 40, achievementsPending: false });
 });
 
 test('a receipt whose achievement check has not run yet is marked pending', () => {
@@ -24,4 +24,10 @@ test('a receipt whose achievement check has not run yet is marked pending', () =
 
 test('achievements that pay no coins (picture rewards) are not listed as gold', () => {
   assert.deepEqual(resultCoinBreakdown({ coins: 0, achievements: [{ name: 'Pic', reward: 0 }] }, null).achievements, []);
+});
+
+test('a right guess of the last survivor is added to the total', () => {
+  const breakdown = resultCoinBreakdown({ coins: 10, guess_coins: 30, achievements: [] }, null);
+  assert.equal(breakdown.guessCoins, 30);
+  assert.equal(breakdown.total, 40);
 });

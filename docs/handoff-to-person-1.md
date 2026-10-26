@@ -640,3 +640,17 @@ Arcade ย้ายครบแล้ว (ticket 18) ตอนนี้สวม
 - **`data/appTour.js`:** เพิ่มขั้น "เมนูเพิ่มเติม" ที่ขึ้นเฉพาะบนมือถือ
 - **`components/ui/Dialog.jsx`, `components/ui/ToastHost.jsx`, `pages/ShopPage.jsx`:** ใช้ token
   - ปุ่ม "ซื้อ" ในร้านเปลี่ยนจาก sky-700 เป็น `pysim-primary` ให้ตามธีม
+
+## 2026-10-26 · Spec 0005 Track G: รูปแบบรอบของ Arcade (แตะไฟล์กลาง)
+
+- **`server/problemsSchema.js`:** เพิ่มฟังก์ชันใหม่ `migrateArcadeRoundKinds` (migration 202610260003) เพิ่มคอลัมน์ `problem_modes.round_kinds` และ `round_data`
+  - ไม่แตะ `migrateProblems`, view และตารางเดิม
+  - ค่าเริ่มต้นของทุกแถวคือ `["write"]` / `{}` บทเรียนและ Competitive ไม่ได้รับผล
+  - **ถ้าแก้โจทย์ Arcade ใน `arcadeTaskSeed.js`:** server จะคำนวณ `round_data` ของข้อนั้นใหม่เองตอนบูต และ `npm run test:round-kinds` ตรวจซ้ำ
+- **`shared/arcadeConfig.json`:** เพิ่ม `predictRoundSeconds`, `typingOnlyItems`, `spectatorGuessReward`, `spectatorCheerIntervalMs`
+- **`server/server.js`:**
+  - เพิ่ม migration 202610260003–0004
+  - งานเบื้องหลังหลังบูต `refreshArcadeRoundKinds`
+  - route ของผู้ชม (`arcade/spectator-api.js`)
+- **ที่พบแต่ไม่ได้แก้:** `POST /api/arcade/rooms/:id/chat` (ใน `server.js`) ยังเชื่อ `user_name` จาก body แทนผู้ใช้ที่ล็อกอินอยู่ ใครที่รู้ชื่อคนในห้องจะส่งแชทในนามคนนั้นได้ ส่วน endpoint เชียร์ใหม่ใช้ผู้ใช้ที่ล็อกอินแล้ว
+- เหตุผลและรายละเอียดของรูปแบบรอบอยู่ใน ADR 0010

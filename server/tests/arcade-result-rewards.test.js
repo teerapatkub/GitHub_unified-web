@@ -23,7 +23,7 @@ async function endedMatch(t) {
 test('the result poll reports match coins and the achievements the match unlocked', async t => {
   const { call, db, matchId, aliceId } = await endedMatch(t);
   const before = await call('/api/arcade/rooms/1');
-  assert.deepEqual(before.body.viewer_reward, { coins: 35, achievements: null });
+  assert.deepEqual(before.body.viewer_reward, { coins: 35, guess_coins: 0, achievements: null });
 
   await recordArcadeAchievementRewards(db, matchId, aliceId, [
     { code: 'first_arcade', name: 'Arcade ครั้งแรก', reward: 50 },

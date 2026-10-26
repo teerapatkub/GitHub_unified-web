@@ -4,6 +4,7 @@ const {
   ARCADE_ACHIEVEMENT_REWARDS_VERSION,
   ARCADE_QUALITY_BREAKDOWN_VERSION,
   ARCADE_ROUND_KINDS_VERSION,
+  ARCADE_SPECTATORS_VERSION,
   APPLICATION_SCHEMA_VERSION,
   AUTH_PROVISIONING_VERSION,
   CORE_SCHEMA_VERSION,
@@ -79,7 +80,15 @@ const createArcadeRoundKindsMigration = (up, signature) => defineMigration({
   up,
 });
 
+const createArcadeSpectatorsMigration = (up, signature) => defineMigration({
+  version: ARCADE_SPECTATORS_VERSION,
+  name: 'arcade_spectator_guesses',
+  signature: signatureFor(up, signature),
+  up,
+});
+
 module.exports = {
+  createArcadeSpectatorsMigration,
   createArcadeRoundKindsMigration,
   createAchievementEasyDifficultyMigration,
   createArcadeAchievementRewardsMigration,

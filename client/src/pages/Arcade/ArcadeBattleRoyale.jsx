@@ -52,6 +52,7 @@ import { parseUtcTimestamp, PHASES, TASKS, SHOP_ITEMS, BOT_NAMES, AUTO_SUBMIT_LE
 import { isSpectating } from './spectatorView.js';
 import { resultCoinBreakdown } from './resultReward.js';
 import useRoundView from './hooks/useRoundView.js';
+import SpectatorPanel from './widgets/SpectatorPanel.jsx';
 import { nextRoundKind, roundKindLabelKey, isChoiceKind } from './roundKinds.js';
 
 export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
@@ -796,6 +797,10 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
             <span className="text-label font-black uppercase tracking-widest text-pysim-label bg-pysim-surface-container px-3 py-1 rounded-full">
               ⭐ {playerState.score} {t('ptsUnit')}
             </span>
+            {currentRoom?.current_match_id && (
+              <SpectatorPanel roomId={currentRoom.room_id} matchId={currentRoom.current_match_id} apiBase={API_BASE}
+                emojiSet={emojiSet} notify={notify} t={t} />
+            )}
             {/* Bug A4: an eliminated player used to be stuck here until the
                 match ended. Leaving forfeits the end-of-match reward, and the
                 match never gets match_ended_at, so the history page (which
@@ -916,7 +921,7 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
                 and get the explanation instead of a silent zero. */}
             {(() => {
               const myRow = roomParticipants.find(p => p.user_name === playerState.name);
-              const { matchCoins, achievements, total: coins } = resultCoinBreakdown(viewerReward, myRow);
+              const { matchCoins, guessCoins, achievements, total: coins } = resultCoinBreakdown(viewerReward, myRow);
               return (
                 <div className="w-full bg-pysim-card rounded-3xl shadow-sm border border-pysim-outline-variant p-6 space-y-4">
                 <div className="flex items-center justify-between gap-4">
@@ -935,11 +940,16 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
                     +{coins} <span className="text-sm font-bold text-pysim-label">{t('coinsUnit')}</span>
                   </div>
                 </div>
-                {achievements.length > 0 && (
+                {(achievements.length > 0 || guessCoins > 0) && (
                   <ul className="border-t border-pysim-outline-variant pt-3 space-y-1.5 text-sm">
                     <li className="flex justify-between gap-3 text-pysim-on-surface-variant">
                       <span>{t('coinsFromMatch')}</span><b>+{matchCoins}</b>
                     </li>
+                    {guessCoins > 0 && (
+                      <li className="flex justify-between gap-3 text-pysim-on-surface-variant">
+                        <span>🎯 {t('coinsFromGuess')}</span><b>+{guessCoins}</b>
+                      </li>
+                    )}
                     {achievements.map(a => (
                       <li key={a.name} className="flex justify-between gap-3 text-pysim-on-surface-variant">
                         <span>🏆 {t('coinsFromAchievement').replace('{{name}}', a.name)}</span><b>+{a.reward}</b>

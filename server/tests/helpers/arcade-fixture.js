@@ -56,6 +56,7 @@ async function arcadeFixture(t, { beforeMigration, beforeShopMigration } = {}) {
   await require('../../arcade/migrate-score-breakdown').migrateArcadeScoreBreakdown(db);
   await require('../../arcade/migrate-quality-breakdown').migrateArcadeQualityBreakdown(db);
   await require('../../problemsSchema').migrateArcadeRoundKinds(db);
+  await require('../../arcade/migrate-spectators').migrateArcadeSpectators(db);
   const authSubjects = new Map();
   const authAdmin = { auth: {
     getUser: async token => {
@@ -102,6 +103,7 @@ async function arcadeFixture(t, { beforeMigration, beforeShopMigration } = {}) {
   installArcadeRoomReads(app, db);
   require('../../arcade/room-membership').installArcadeRoomMembership(app, db);
   installArcadeMatchStart(app, db);
+  require('../../arcade/spectator-api').installArcadeSpectators(app, db, { emojiSet: ['👍', '🔥', '👏'] });
   const server = app.listen(0, '127.0.0.1');
   await new Promise(resolve => server.once('listening', resolve));
   t.after(() => new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }));
