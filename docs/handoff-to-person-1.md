@@ -797,3 +797,18 @@ Arcade ย้ายครบแล้ว (ticket 18) ตอนนี้สวม
   - route ของผู้ชม (`arcade/spectator-api.js`)
 - **ที่พบแต่ไม่ได้แก้:** `POST /api/arcade/rooms/:id/chat` (ใน `server.js`) ยังเชื่อ `user_name` จาก body แทนผู้ใช้ที่ล็อกอินอยู่ ใครที่รู้ชื่อคนในห้องจะส่งแชทในนามคนนั้นได้ ส่วน endpoint เชียร์ใหม่ใช้ผู้ใช้ที่ล็อกอินแล้ว
 - เหตุผลและรายละเอียดของรูปแบบรอบอยู่ใน ADR 0010
+
+## 2026-10-28 · รวม commit `b4b14b2` (แก้ไข MINI_GAME) จาก remote `deploy` เข้า main
+
+**ถึง:** ผู้ที่ push `b4b14b2` (suphachaikh-creator)
+
+- **งาน Mini Game เข้า main แล้ว:** รวมด้วย cherry-pick พร้อม migration `202610280001 mini_game_choices`
+  - ครั้งหน้าให้ทำงานบน main แล้ว push ไป `origin`
+  - **ห้ามรัน server จาก remote `deploy` กับฐาน production อีก:** `deploy` ไม่มี migration `202610260001`–`202610270001` ซึ่งฐาน production มีแล้ว server จะไม่ยอมบูต
+- **`client/src/pages/Login.jsx`:** ใน `b4b14b2` ไฟล์นี้ถูกเขียนทับด้วยโค้ดของ `MiNi_Game.jsx` (มี `export default function MiNi_Game`) น่าจะบันทึกผิดไฟล์
+  - main เก็บ `Login.jsx` เดิมไว้ (ไม่มีใคร import ใช้)
+  - ถ้ามีงานที่ตั้งใจจะใส่ใน `Login.jsx` จริง ให้ตรวจอีกครั้ง
+- **migration ที่รันแล้วถูกแก้:** `problemsSchema.js` / `schema.sql` / `seed-content.sql` ที่แก้ทำให้ checksum ของ core migration `202610120001` เปลี่ยน แล้วแก้ด้วยการเพิ่ม fingerprint ใน `migrations/index.js`
+  - ใช้ได้เพราะยังรับเฉพาะ checksum ที่ระบุ
+  - แต่ตามกฎของ repo ถ้าจะเปลี่ยน schema ให้เพิ่ม migration ใหม่แทนการแก้ input ของ migration เดิม
+- ฐาน production ตอนนี้มี migration ครบทั้งสองฝั่ง และ checksum ตรงกับโค้ดบน main ทุกตัว (ตรวจแล้ว 2026-10-28)
