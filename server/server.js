@@ -720,13 +720,18 @@ const _miniGameModuleCache = new Map();
 // LLM_TIMEOUT_MS, so the answer is asked to be short and capped. The rule joins
 // the page's own system message: a chat template takes only one.
 const LUMI_LENGTH_RULE = 'ตอบเป็นภาษาไทย สั้น กระชับ ไม่เกิน 5 บรรทัด ยกตัวอย่างโค้ดได้ไม่เกิน 5 บรรทัด';
+// Lumi is a woman (the mascot and the tour speak as one). Added here, with the
+// length rule, so every page's chat gets it whatever system message it sends;
+// left to the model, it answered with "ครับ" and "ผม".
+const LUMI_PERSONA_RULE = 'Lumi เป็นผู้หญิง แทนตัวเองว่า "ลูมี่" หรือ "เรา" ลงท้ายประโยคด้วย "ค่ะ" หรือ "คะ" เสมอ ห้ามใช้ "ครับ" หรือ "ผม"';
+const LUMI_RULES = `${LUMI_PERSONA_RULE}\n${LUMI_LENGTH_RULE}`;
 const LUMI_MAX_TOKENS = 400;
 const withLumiLengthRule = (messages) => {
     const list = Array.isArray(messages) ? messages : [];
     if (list[0]?.role === 'system') {
-        return [{ ...list[0], content: `${list[0].content}\n${LUMI_LENGTH_RULE}` }, ...list.slice(1)];
+        return [{ ...list[0], content: `${list[0].content}\n${LUMI_RULES}` }, ...list.slice(1)];
     }
-    return [{ role: 'system', content: `คุณคือ Lumi ผู้ช่วยสอน Python สำหรับผู้เริ่มต้น\n${LUMI_LENGTH_RULE}` }, ...list];
+    return [{ role: 'system', content: `คุณคือ Lumi ผู้ช่วยสอน Python สำหรับผู้เริ่มต้น\n${LUMI_RULES}` }, ...list];
 };
 
 app.post('/api/ai/chat', async (req, res) => {

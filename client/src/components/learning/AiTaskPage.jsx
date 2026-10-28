@@ -200,7 +200,7 @@ export default function AiTaskPage({ mode = 'exercise', user, onUserRefresh }) {
 
   const progressMeta = useMemo(() => {
     if (!task) return '';
-    return `+${task.rewardXp} XP • +${task.rewardCoins} Coins • รีโจทย์ได้อีก ${task.rerollsRemaining} ครั้ง`;
+    return `+${task.rewardXp} XP • +${task.rewardCoins} Coins • เปลี่ยนโจทย์ได้อีก ${task.rerollsRemaining} ครั้ง`;
   }, [task]);
 
   if (loading) {
@@ -249,8 +249,8 @@ export default function AiTaskPage({ mode = 'exercise', user, onUserRefresh }) {
       example={task.example}
       initialCode={task.starterCode}
       starterMessage={mode === 'challenge'
-        ? 'สวัสดี เราคือ Lumi ผู้ช่วยประจำด่าน Challenge นี้ ถ้าคุณอยากได้ hint หรืออยากให้ช่วยมองบั๊กจากโค้ดที่เขียนอยู่ก็เรียกเราได้เลย ✨'
-        : 'สวัสดี เราคือ Lumi ผู้ช่วยของห้อง Debug Lab นี้เอง ถ้าติดบั๊กหรืออยากได้ hint ก็ถามเราได้เลย ✨'}
+        ? 'สวัสดีค่ะ เราคือ Lumi ผู้ช่วยประจำด่าน Challenge นี้ ถ้าอยากได้ hint หรืออยากให้ช่วยมองบั๊กจากโค้ดที่เขียนอยู่ เรียกเราได้เลยนะคะ ✨'
+        : 'สวัสดีค่ะ เราคือ Lumi ผู้ช่วยของห้อง Debug Lab นี้ ถ้าติดบั๊กหรืออยากได้ hint ถามเราได้เลยนะคะ ✨'}
       testCases={task.example ? [{ input: task.example.input, expected: task.example.output }] : []}
       submitLabel={mode === 'challenge' ? 'Submit challenge' : 'Submit answer'}
       progressLabel={modeCopy.progressLabel}

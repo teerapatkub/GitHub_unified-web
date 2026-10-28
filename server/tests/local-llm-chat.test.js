@@ -49,6 +49,9 @@ test('Lumi answers through the local model, and falls back politely when it fail
       assert.equal(systems.length, 1, 'a chat template takes one system message');
       assert.equal(sent.body.messages[0].role, 'system');
       assert.match(systems[0].content, /สั้น/);
+      // Lumi is a woman on every page, whatever system message the page sent.
+      assert.match(systems[0].content, /ผู้หญิง/);
+      assert.match(systems[0].content, /ค่ะ/);
       if (messages[0].role === 'system') assert.match(systems[0].content, /โจทย์: ทักทาย/);
     }
   });

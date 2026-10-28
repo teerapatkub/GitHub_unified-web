@@ -413,10 +413,10 @@ export default function CodingWorkspace({
                       onClick={onReroll}
                       disabled={!onReroll || rerollsRemaining <= 0 || rerolling}
                       className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm transition-colors hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-                      title="สุ่มโจทย์ใหม่"
+                      title="เปลี่ยนเป็นโจทย์ใหม่"
                     >
                       <RefreshCcw size={14} className={rerolling ? 'animate-spin' : ''} />
-                      รีโจทย์ ({rerollsRemaining})
+                      เปลี่ยนโจทย์ ({rerollsRemaining})
                     </button>
                   </div>
                 </div>

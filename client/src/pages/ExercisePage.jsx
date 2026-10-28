@@ -98,7 +98,7 @@ export default function ExercisePage({ lessonId, user, onUserRefresh, onNavigate
   const [currentPrompt, setCurrentPrompt] = useState("");
   const [isAiOpen, setIsAiOpen] = useState(false);
   const [chatHistory, setChatHistory] = useState([
-    { role: "ai", text: "สวัสดี เราคือ Lumi ผู้ช่วยของแบบฝึกหัดนี้ ถ้าอยากได้ hint หรืออยากให้ช่วยดูโค้ด ถามเราได้เลย" },
+    { role: "ai", text: "สวัสดีค่ะ เราคือ Lumi ผู้ช่วยของแบบฝึกหัดนี้ ถ้าอยากได้ hint หรืออยากให้ช่วยดูโค้ด ถามเราได้เลยนะคะ" },
   ]);
   const [chatInput, setChatInput] = useState("");
   const [isAiResponding, setIsAiResponding] = useState(false);

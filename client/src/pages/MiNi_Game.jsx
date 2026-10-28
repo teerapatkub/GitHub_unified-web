@@ -236,7 +236,7 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
   const [chatHistory, setChatHistory] = useState([
     {
       role: "ai",
-      text: "สวัสดีครับ เราคือ Lumi ผู้ช่วยของมินิเกมนี้ ถามเรื่องโจทย์หรือโค้ด Python ได้เลย",
+      text: "สวัสดีค่ะ เราคือ Lumi ผู้ช่วยของมินิเกมนี้ ถามเรื่องโจทย์หรือโค้ด Python ได้เลยนะคะ",
     },
   ]);
   const [chatInput, setChatInput] = useState("");

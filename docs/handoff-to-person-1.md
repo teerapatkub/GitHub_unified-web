@@ -812,3 +812,25 @@ Arcade ย้ายครบแล้ว (ticket 18) ตอนนี้สวม
   - ใช้ได้เพราะยังรับเฉพาะ checksum ที่ระบุ
   - แต่ตามกฎของ repo ถ้าจะเปลี่ยน schema ให้เพิ่ม migration ใหม่แทนการแก้ input ของ migration เดิม
 - ฐาน production ตอนนี้มี migration ครบทั้งสองฝั่ง และ checksum ตรงกับโค้ดบน main ทุกตัว (ตรวจแล้ว 2026-10-28)
+
+## 2026-10-28 · Lumi เป็นผู้หญิง, ปุ่ม "เปลี่ยนโจทย์" และงาน AI ของ Person 2
+
+**ถึง Person 1:**
+- **ไฟล์ของคุณที่ Person 3 แก้ (ผู้ใช้สั่ง):**
+  - `components/learning/CodingWorkspace.jsx`: ปุ่ม "รีโจทย์" เป็น "เปลี่ยนโจทย์"
+  - `components/learning/AiTaskPage.jsx`: "เปลี่ยนโจทย์ได้อีก n ครั้ง" และคำทักทายของ Lumi ลงท้าย "ค่ะ"
+  - `pages/ExercisePage.jsx`, `pages/MiNi_Game.jsx`: คำทักทายของ Lumi ลงท้าย "ค่ะ"
+- **Lumi เป็นผู้หญิงแล้ว:** server เติมกฎนี้ใน system message ทุกครั้ง หน้าใหม่ที่เรียก `/api/ai/chat` ไม่ต้องเขียนเอง
+- **ยังค้าง (ของคุณ):** บทพูด Lumi (npc_id 1) ใน `seed-content.sql` 1 ประโยคยังลงท้าย "ครับ"
+  - ห้ามแก้ไฟล์ seed ตรงๆ เพราะเป็น input ของ core migration ที่รันแล้ว
+  - ให้เพิ่ม migration ใหม่ที่ `UPDATE mini_game_dialogues` แทน
+
+**ถึง Person 2 (teerapatkub):**
+- **งาน `d07b4e7` เข้า main แล้ว:** ทั้งสร้างข้อสอบก่อน/หลังเรียน และ Generated โจทย์ Competitive
+- **ย้ายจาก Gemini ไปใช้โมเดลในเครื่อง:** อาจารย์ห้ามใช้ API key ของ AI ภายนอก (Spec 0004)
+  - `server/ai/localJson.js` ใช้ `LLM_CHAT_MODEL` และ `LLM_GENERATE_TIMEOUT_MS`
+  - ไม่ต้องตั้ง `GEMINI_*` แล้ว
+- **expected ของโจทย์ Competitive ที่ AI สร้าง:** มาจากการรันโค้ดเฉลยจริง
+- **คำตอบ Competitive ยังตรวจด้วย rubric ในเครื่อง:** ทางที่ส่งโค้ดผู้เล่นไปให้ Gemini ถูกตัดออก
+- **การแก้ใน `server.js` ที่เก็บไว้ทั้งหมด:** สิทธิ์แอดมิน, `createdBy`, 503 เมื่อ Python runner ล่ม, ไม่จ่ายรางวัลถ้าผ่านไม่ครบ
+- **ครั้งหน้าให้ทำงานบน main ของ `origin`:** อย่าทำบน remote `deploy`
