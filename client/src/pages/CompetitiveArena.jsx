@@ -1,4 +1,5 @@
-﻿import { useState, useEffect, useRef, useCallback } from 'react';
+import CompetitiveGenerator from '../components/CompetitiveGenerator';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { 
   Trophy, 
@@ -806,7 +807,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                         <div>
                           <p className="text-[10px] font-black uppercase tracking-widest text-blue-600">Python Lesson Topic</p>
-                          <p className="mt-1 text-[11px] font-semibold text-slate-500">เลือกหมวดบทเรียนเป็นแนวทาง แล้วกำหนด test cases ด้วยตัวเอง</p>
+                          <p className="mt-1 text-[11px] font-semibold text-slate-500">เลือกหมวดบทเรียน แล้วกรอกโจทย์เองหรือใช้ Generated โจทย์</p>
                         </div>
                         <div className="rounded-xl bg-white px-3 py-2 text-[10px] font-black uppercase tracking-widest text-blue-600 ring-1 ring-blue-100">
                           {selectedLessonTemplate?.category}
@@ -828,6 +829,10 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                         {selectedLessonTemplate?.guide}
                       </p>
                     </div>
+
+                    <CompetitiveGenerator topic={selectedLessonTemplate?.category || 'Python'} onApply={draft => {
+                      setPostTitle(draft.title); setPostDesc(draft.description); setPostTestCases(draft.testCases);
+                    }} />
 
                     <div>
                       <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">{t('arena.postTitle')}</label>
@@ -887,7 +892,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                           </div>
                           <div>
                             <h3 className="text-lg font-black text-slate-900">Test cases</h3>
-                            <p className="mt-0.5 text-xs font-bold text-slate-400">ผู้โพสต์ต้องกำหนด input และคำตอบเองก่อนโพสต์</p>
+                            <p className="mt-0.5 text-xs font-bold text-slate-400">ตรวจ input และคำตอบก่อนโพสต์ แก้ไขเองหรือใช้ Generated โจทย์ได้</p>
                           </div>
                         </div>
                         <button

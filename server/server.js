@@ -21,6 +21,7 @@ const { publicArcadeTask } = require('./arcade/public-task');
 // The single answer-checker. See server/problemGrader.js for why there is only
 // one now, and server/problemsSchema.js for the problem bank it grades against.
 const { gradeSubmission, screenUnverifiedSubmission } = require('./problemGrader');
+const { createCompetitiveAiRouter } = require('./competitiveAi');
 const { gradeMiniGameSubmission } = require('./miniGameGrader');
 // The single definition of how far through a lesson a learner is - see the
 // header of server/lessonProgress.js for why it had to become one.
@@ -134,6 +135,7 @@ app.use('/api', createPlacementRouter(db, {
 }));
 app.use('/api/themes', createThemeRouter(db));
 app.use('/api/admin/lessons', createLessonAdminRouter(db));
+app.use('/api/competitive/challenges', createCompetitiveAiRouter());
 app.use('/api/admin/student-progress', createStudentProgressRouter(db));
 
 
@@ -3552,6 +3554,7 @@ Return ONLY valid JSON: {"feedback":"short Thai advice"}`
 
 const calculateCompetitiveSolverReward = (challenge, scored) => {
     if (scored?.breakdown?.timeExpired) return 0;
+    if (!(Number(scored?.totalCases) > 0) || Number(scored?.passedCases) !== Number(scored?.totalCases)) return 0;
     const reward = Number(challenge?.reward || 0);
     const score = Number(scored?.score || 0);
     if (!reward || !score) return 0;
@@ -4242,6 +4245,9 @@ app.post('/api/competitive/challenges', async (req, res) => {
 
     try {
         const normalizedScope = normalizeCompetitiveChallengeScope(challengeScope);
+        if (normalizedScope !== 'standard' && req.player?.role !== 'admin') {
+            return res.status(403).json({ error: 'เฉพาะแอดมินสร้างโจทย์พิเศษได้' });
+        }
         const normalizedType = normalizeCompetitiveChallengeType(challengeType, normalizedScope);
         const expires = expiresAt || new Date(Date.now() + 24 * 3600000).toISOString();
         const tests = testCases
@@ -4264,7 +4270,7 @@ app.post('/api/competitive/challenges', async (req, res) => {
                 challenge_type: normalizedType,
                 challenge_scope: normalizedScope,
             },
-            createdBy: createdBy || null,
+            createdBy: req.player?.user_id || createdBy || null,
         });
 
         res.status(201).json({
@@ -4442,6 +4448,9 @@ app.post('/api/competitive/challenges/:id/submit', async (req, res) => {
         const allTestsPassed = !timedOut
             && Number(testResult.total || 0) > 0
             && Number(testResult.passed || 0) === Number(testResult.total || 0);
+
+        if (!timedOut && testResult.runnerAvailable === false) return res.status(503).json({ error: 'ระบบรัน Python ไม่พร้อม กรุณาลองส่งอีกครั้ง' });
+        if (!parsedTestCases.length) return res.status(400).json({ error: 'โจทย์นี้ยังไม่มี test cases สำหรับตรวจคำตอบ' });
 
         const preliminaryScore = timedOut
             ? buildCompetitiveTimeUpScore(parsedTestCases)

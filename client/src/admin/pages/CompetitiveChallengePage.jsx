@@ -10,6 +10,7 @@ import {
   Save,
   Trash2,
 } from "lucide-react";
+import CompetitiveGenerator from '../../components/CompetitiveGenerator';
 import AdminNavbar from "../components/AdminNavbar";
 import { API_BASE } from '../../config/api.js';
 
@@ -244,6 +245,8 @@ export default function CompetitiveChallengePage() {
             )}
           </section>
 
+          <CompetitiveGenerator topic={form.category} scope={form.challengeScope} disabled={saving} onApply={draft => setForm(current => ({ ...current, title: draft.title, description: draft.description, testCases: draft.testCases.map(c => ({ lines: c.input.split('\n'), expected: c.expected })) }))} />
+
           <section className="grid gap-6 lg:grid-cols-[1fr_360px]">
             <div className="rounded-3xl border border-pysim-outline-variant/50 bg-white p-6 shadow-sm">
               <div className="grid gap-4">
@@ -367,7 +370,7 @@ export default function CompetitiveChallengePage() {
                 </div>
                 <div>
                   <h2 className="text-lg font-black text-pysim-on-surface">Test cases</h2>
-                  <p className="text-xs font-bold text-pysim-outline">ผู้โพสต์ต้องกำหนด input และคำตอบเองก่อนโพสต์</p>
+                  <p className="text-xs font-bold text-pysim-outline">ตรวจ input และคำตอบก่อนโพสต์ แก้ไขเองหรือใช้ Generated โจทย์ได้</p>
                 </div>
               </div>
 

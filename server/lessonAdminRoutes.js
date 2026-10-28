@@ -1,14 +1,69 @@
 const express = require('express');
 const { requireAdminPrincipal } = require('./auth/admin-principal');
+const { fail, readSource, generatePair, signDraft, verifyDraft } = require('./lessonQuizAi');
 
 const text = (value, max) => typeof value === 'string' && value.trim().length > 0 && value.length <= max;
 const positive = (value) => Number.isInteger(value) && value > 0 && value <= 2147483647;
 const mediaUrl = (value) => typeof value === 'string' && value.length <= 255
   && (!value || /^\/(?!\/)[^\\\r\n]*$/.test(value) || /^https?:\/\/[^\s]+$/i.test(value));
 
-function createLessonAdminRouter(db) {
+function createLessonAdminRouter(db, { generate = generatePair } = {}) {
   const router = express.Router();
   router.use(requireAdminPrincipal);
+  let generating = false;
+  let nextGeneration = 0;
+
+  const requireEmptyQuizzes = async (connection, id) => {
+    const [rows] = await connection.query('SELECT q.question_id FROM quiz_questions q JOIN lesson_quizzes z ON z.quiz_id = q.quiz_id WHERE z.lesson_id = ? LIMIT 1', [id]);
+    if (rows.length) throw fail(409, 'บทเรียนนี้มีข้อสอบแล้ว ระบบจะไม่เขียนทับข้อสอบเดิมเพื่อรักษาผลการเรียน กรุณาใช้บทเรียนใหม่สำหรับชุด AI');
+  };
+
+  router.post('/:lessonId/quizzes/generate', async (req, res, next) => {
+    const id = Number(req.params.lessonId);
+    if (!positive(id)) return res.status(400).json({ error: 'รหัสบทเรียนไม่ถูกต้อง' });
+    if (generating || Date.now() < nextGeneration) return res.status(429).json({ error: 'กรุณารออย่างน้อย 15 วินาทีก่อนสร้างข้อสอบอีกครั้ง' });
+    generating = true;
+    try {
+      const { source, fingerprint } = await readSource(db, id);
+      await requireEmptyQuizzes(db, id);
+      nextGeneration = Date.now() + 15000;
+      const { pair, model } = await generate(source);
+      const token = signDraft({ lessonId: id, fingerprint, pair, model });
+      res.json({ pair, model, token });
+    } catch (error) { next(error); }
+    finally { generating = false; }
+  });
+
+  router.post('/:lessonId/quizzes/publish', async (req, res, next) => {
+    const id = Number(req.params.lessonId);
+    if (!positive(id)) return res.status(400).json({ error: 'รหัสบทเรียนไม่ถูกต้อง' });
+    let conn;
+    try {
+      const draft = verifyDraft(req.body?.token, id);
+      conn = await db.getConnection();
+      await conn.beginTransaction();
+      await conn.query('SELECT lesson_id FROM lessons WHERE lesson_id = ? FOR UPDATE', [id]);
+      const { fingerprint } = await readSource(conn, id);
+      if (fingerprint !== draft.fingerprint) throw fail(409, 'เนื้อหาบทเรียนเปลี่ยนแล้ว กรุณาสร้างข้อสอบใหม่ให้ตรงกับเนื้อหาปัจจุบัน');
+      await requireEmptyQuizzes(conn, id);
+      for (const kind of ['pre', 'post']) {
+        const [quizzes] = await conn.query('SELECT quiz_id FROM lesson_quizzes WHERE lesson_id = ? AND quiz_type = ? ORDER BY quiz_id', [id, kind]);
+        let quizId = quizzes[0]?.quiz_id;
+        if (!quizId) {
+          const [created] = await conn.query('INSERT INTO lesson_quizzes (lesson_id, quiz_type) VALUES (?, ?) RETURNING quiz_id', [id, kind]);
+          quizId = created.rows[0].quiz_id;
+        }
+        for (const [index, question] of draft.pair[kind].entries()) {
+          const [created] = await conn.query('INSERT INTO quiz_questions (quiz_id, question_order, question_text, question_type, correct_answer) VALUES (?, ?, ?, ?, ?) RETURNING question_id',
+            [quizId, index + 1, question.question, question.type, question.type === 'fill' ? question.answer : question.options[question.correct]]);
+          for (const option of question.type === 'choice' ? question.options : []) await conn.query('INSERT INTO question_choices (question_id, choice_text) VALUES (?, ?)', [created.rows[0].question_id, option]);
+        }
+      }
+      await conn.commit();
+      res.status(201).json({ pre: 5, post: 5 });
+    } catch (error) { if (conn) await conn.rollback(); next(error); }
+    finally { conn?.release(); }
+  });
 
   router.get('/', async (_req, res, next) => {
     try {
@@ -104,6 +159,7 @@ function createLessonAdminRouter(db) {
     finally { conn?.release(); }
   });
   router.use((error, _req, res, _next) => {
+    if (error.status) return res.status(error.status).json({ error: error.message });
     console.error('Admin lesson request failed:', error.code || error.name);
     res.status(500).json({ error: 'บันทึกบทเรียนไม่สำเร็จ กรุณาลองใหม่' });
   });
