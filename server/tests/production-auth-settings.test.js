@@ -25,6 +25,10 @@ test('production Auth settings use only exact HTTPS callbacks and explicit SMTP'
     'https://preview.example.com/login?auth=recovery',
   ]);
   assert.equal(settings.patch.smtp_admin_email, 'no-reply@example.com');
+  // The Management API rejects a number here: "smtp_port: expected string" (HTTP 400, 2026-10-28).
+  assert.equal(settings.patch.smtp_port, '587');
+  assert.equal(settings.smtpPort, 587);
+  assert.equal(matchesAppliedAuthSettings({ ...settings.patch, uri_allow_list: settings.redirectUrls.join(','), smtp_port: 587 }, settings), true);
   assert.equal(settings.patch.uri_allow_list.includes('localhost'), false);
   assert.equal(settings.patch.mailer_autoconfirm, false);
   assert.equal(matchesAppliedAuthSettings({

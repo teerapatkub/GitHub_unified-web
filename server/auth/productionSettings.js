@@ -69,7 +69,8 @@ function buildProductionAuthSettings(env) {
     mailer_autoconfirm: false,
     mailer_secure_email_change_enabled: true,
     smtp_host: smtpHost,
-    smtp_port: smtpPort,
+    // A string: the Management API answers 400 "expected string" to a number.
+    smtp_port: String(smtpPort),
     smtp_user: smtpUser,
     smtp_pass: smtpPass,
     smtp_admin_email: sender,
@@ -81,7 +82,7 @@ function buildProductionAuthSettings(env) {
     patch.external_google_client_id = google.clientId;
     patch.external_google_secret = google.secret;
   }
-  return { siteUrl, origins, redirectUrls, projectRef: supabaseUrl.hostname.split('.')[0], patch };
+  return { siteUrl, origins, redirectUrls, projectRef: supabaseUrl.hostname.split('.')[0], smtpPort, patch };
 }
 
 function matchesAppliedAuthSettings(actual, expected) {
@@ -95,7 +96,7 @@ function matchesAppliedAuthSettings(actual, expected) {
     && actual.external_email_enabled === true
     && actual.mailer_autoconfirm === false
     && actual.smtp_host === expected.patch.smtp_host
-    && Number(actual.smtp_port) === expected.patch.smtp_port
+    && Number(actual.smtp_port) === expected.smtpPort
     && actual.smtp_admin_email === expected.patch.smtp_admin_email
     && (!expected.patch.external_google_enabled
       || (actual.external_google_enabled === true

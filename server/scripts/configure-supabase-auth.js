@@ -27,8 +27,8 @@ async function main() {
 
   const transport = nodemailer.createTransport({
     host: settings.patch.smtp_host,
-    port: settings.patch.smtp_port,
-    secure: settings.patch.smtp_port === 465,
+    port: settings.smtpPort,
+    secure: settings.smtpPort === 465,
     auth: { user: settings.patch.smtp_user, pass: settings.patch.smtp_pass },
     connectionTimeout: 10000,
     greetingTimeout: 10000,
