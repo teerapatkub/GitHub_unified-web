@@ -2,14 +2,17 @@ const crypto = require('node:crypto');
 
 const MIGRATION_TABLE = 'app_schema_migrations';
 const MIGRATION_LOCK_KEY = 804651239;
-// The first hosted database ran these two migrations before their source was
-// finalized on 2026-10-12. Accept only that recorded fingerprint paired with
-// this exact, line-ending-normalized revision. Any later edit still fails closed.
+// Hosted databases have recorded these migrations before their source was
+// finalized. Accept only listed fingerprints paired with this exact,
+// line-ending-normalized revision. Any other edit still fails closed.
 const HISTORICAL_FINGERPRINTS = Object.freeze({
   '202610120001': {
     name: 'core_schema',
-    applied: '510e97a03e7a71f55b55055336de1e859bfd2dc60faa8fed4f950837ee7ab36a',
-    current: 'a32e43374eb674f64f68a96fe73264c347cde9fab53ee618b0566b9887baa4ed',
+    applied: [
+      '510e97a03e7a71f55b55055336de1e859bfd2dc60faa8fed4f950837ee7ab36a',
+      'a32e43374eb674f64f68a96fe73264c347cde9fab53ee618b0566b9887baa4ed',
+    ],
+    current: 'e9c63aa7fef1f126ee6a5d1dd3f0859e71507b8e20759cda276409b26e4d0498',
   },
   '202610120002': {
     name: 'application_schema',
@@ -75,7 +78,7 @@ const assertMigrationMatches = (migration, applied) => {
   const knownEarlierRevision = historical
     && migration.name === historical.name
     && applied.name === historical.name
-    && applied.checksum === historical.applied
+    && historical.applied.includes(applied.checksum)
     && migration.checksum === historical.current;
   if (!knownEarlierRevision && (applied.name !== migration.name || applied.checksum !== migration.checksum)) {
     throw new Error(

@@ -6610,7 +6610,7 @@ app.get('/api/mini-game/modules/:moduleId', async (req, res) => {
                     JSON_ARRAY() AS required_vars_json,
                     test_cases_json,
                     'แบบฝึกหัดผ่านแล้ว' AS success_message,
-                    '/data_MiNiGame/locations/classroom.jpg' AS scene_background_image,
+                    '/data_MiNiGame/locations/classroom.png' AS scene_background_image,
                     1 AS is_active
              FROM mini_game_exercises
              WHERE lesson_id = ?
@@ -6649,8 +6649,8 @@ app.get('/api/mini-game/modules/:moduleId', async (req, res) => {
             queryValues
         );
 
-        // ดึง end dialogues (exercise_id = NULL, exercise_order = 'end') แยก
-        // เพราะ WHERE exercise_id IN (...) กรองออกไปหมด
+        // End-dialogue rows are not attached to a mini-game exercise. Older
+        // databases stored exercise_id as NULL; the newer database uses 0.
         const [endDialogueRows] = await db.execute(
             `SELECT d.dialogue_id,
                     d.exercise_id,
@@ -6669,8 +6669,8 @@ app.get('/api/mini-game/modules/:moduleId', async (req, res) => {
              LEFT JOIN mini_game_npcs n ON n.npc_id = d.npc_id
              LEFT JOIN mini_game_locations l ON l.location_id = d.location_id
              WHERE d.lesson_id = ?
-               AND d.exercise_id IS NULL
-               AND d.exercise_order = 'end'
+               AND (d.exercise_id IS NULL OR d.exercise_id = 0)
+               AND (d.exercise_order = 'end' OR d.branch_key = 'end')
              ORDER BY d.dialogue_order ASC, d.dialogue_id ASC`,
             [lessonId]
         );
@@ -6688,32 +6688,42 @@ app.get('/api/mini-game/modules/:moduleId', async (req, res) => {
             miniGameFileRows = fileRows;
         }
 
-        // มินิเกมยังไม่มีระบบตัวเลือกบทสนทนา (dialogue choices) ในสคีมาปัจจุบัน
-        // เก็บไว้เป็น array ว่างเผื่ออนาคตมีตาราง mini_game_dialogue_choices
-        const choiceRows = [];
+        const [choiceRows] = await db.execute(
+            `SELECT c.choice_id, c.dialogue_id, c.choice_text,
+                    c.next_dialogue_id, c.next_branch_key, c.choice_order
+             FROM mini_game_choices c
+             JOIN mini_game_dialogues d ON d.dialogue_id = c.dialogue_id
+             WHERE d.exercise_id IN (${placeholder})
+             ORDER BY c.dialogue_id ASC, c.choice_order ASC, c.choice_id ASC`,
+            queryValues
+        );
 
+        // Normalize ids because PostgreSQL may return them as numbers or strings.
+        // A strict Map lookup would otherwise silently omit dialogues/choices.
         // 1. จัดกลุ่มบทสนทนาตาม exercise_id ไว้ล่วงหน้า (สแกนรอบเดียวจบ)
         const dialogueMap = new Map();
         dialogueRows.forEach((d) => {
-            if (!dialogueMap.has(d.exercise_id)) dialogueMap.set(d.exercise_id, []);
-            dialogueMap.get(d.exercise_id).push(d);
+            const key = String(d.exercise_id);
+            if (!dialogueMap.has(key)) dialogueMap.set(key, []);
+            dialogueMap.get(key).push(d);
         });
 
         // 2. จัดกลุ่มตัวเลือกตาม dialogue_id ไว้ล่วงหน้า (สแกนรอบเดียวจบ)
         const choiceMap = new Map();
         choiceRows.forEach((c) => {
-            if (!choiceMap.has(c.dialogue_id)) choiceMap.set(c.dialogue_id, []);
-            choiceMap.get(c.dialogue_id).push(c);
+            const key = String(c.dialogue_id);
+            if (!choiceMap.has(key)) choiceMap.set(key, []);
+            choiceMap.get(key).push(c);
         });
 
         // 3. ประกอบร่างข้อมูลรอบเดียวเสร็จ ไม่ต้องลูปกรองซ้ำซ้อน
         const subtopics = exerciseRows.map((row) => {
             const { test_cases_json: _privateTests, ...publicRow } = row;
-            const currentDialogues = dialogueMap.get(row.exercise_id) || [];
+            const currentDialogues = dialogueMap.get(String(row.exercise_id)) || [];
             const allChoicesForExercise = [];
 
             const dialogues = currentDialogues.map((dialogue) => {
-                const choices = choiceMap.get(dialogue.dialogue_id) || [];
+                const choices = choiceMap.get(String(dialogue.dialogue_id)) || [];
                 allChoicesForExercise.push(...choices);
                 return {
                     ...dialogue,
@@ -6722,7 +6732,7 @@ app.get('/api/mini-game/modules/:moduleId', async (req, res) => {
             });
 
             const extraFiles = miniGameFileRows
-                .filter((f) => f.exercise_id === row.exercise_id)
+                .filter((f) => String(f.exercise_id) === String(row.exercise_id))
                 .map((f) => ({ name: f.file_name, content: f.file_content || "" }));
 
             return {
@@ -6753,7 +6763,7 @@ app.get('/api/mini-game/modules/:moduleId', async (req, res) => {
             reward_coins: rewardCoins,
             scene_background_image: first.scene_background_image,
             subtopics,
-            // dialogues ของ exercise_order = 'end' (exercise_id = NULL)
+            // Dialogues with no exercise association (NULL or zero).
             end_dialogues: endDialogueRows,
         };
         _miniGameModuleCache.set(lessonId, { data: result, ts: Date.now() });
@@ -6821,8 +6831,17 @@ app.post('/api/mini-game/modules/:moduleId/progress', async (req, res) => {
 
         const exercise = exerciseRows[0];
         const config = safeJsonParse(exercise.test_cases_json, {});
-        const cases = Array.isArray(config) ? config : config.correctness;
-        if (!Array.isArray(cases) || cases.length === 0 || !String(submitted_code).trim()) {
+        const correctness = Array.isArray(config) ? config : config?.correctness;
+        const hasCodeChecks = Array.isArray(config?.code_checks)
+            ? config.code_checks.length > 0
+            : Boolean(config?.code_checks && Object.keys(config.code_checks).length > 0);
+        const hasTypeChecks = Array.isArray(config?.isinstance)
+            ? config.isinstance.length > 0
+            : Boolean(config?.isinstance && Object.keys(config.isinstance).length > 0);
+        if ((!Array.isArray(correctness) || correctness.length === 0) && !hasCodeChecks && !hasTypeChecks) {
+            return res.status(400).json({ error: 'โจทย์นี้ยังไม่มีเงื่อนไขตรวจคำตอบ' });
+        }
+        if (!String(submitted_code).trim()) {
             return res.status(400).json({ error: 'โจทย์นี้ยังไม่มีเทสเคสที่ตรวจได้ หรือไม่ได้ส่งโค้ด' });
         }
         const [fileRows] = await db.execute(
@@ -6830,7 +6849,7 @@ app.post('/api/mini-game/modules/:moduleId/progress', async (req, res) => {
             [exercise.exercise_id]
         );
         const files = Object.fromEntries(fileRows.map((row) => [row.file_name, row.file_content || '']));
-        const verdict = await gradeMiniGameSubmission(submitted_code, cases, files);
+        const verdict = await gradeMiniGameSubmission(submitted_code, config, files);
         if (!verdict.accepted) {
             return res.status(400).json({ error: 'ยังผ่านไม่ครบทุกเทสเคส',
                 passed: verdict.passed, total: verdict.total,
@@ -6839,7 +6858,7 @@ app.post('/api/mini-game/modules/:moduleId/progress', async (req, res) => {
         }
         const rules = Array.isArray(config)
             ? config.filter((item) => item.branch_key || item.crossroad)
-            : Array.isArray(config.rules) ? config.rules : [];
+            : Array.isArray(config?.rules) ? config.rules : [];
         let branchKey = 'default';
         if (rules.length) {
             const branchRun = await runPythonCase({ code: submitted_code, input: String(story_input).slice(0, 2000), expected: '', files });
@@ -7083,6 +7102,7 @@ const {
   createApplicationSchemaMigration,
   createAuthProvisioningMigration,
   createDataApiSecurityMigration,
+  createMiniGameChoicesMigration,
   createTutorialsSeenMigration,
   createArcadeQualityBreakdownMigration,
   createArcadeAchievementRewardsMigration,
@@ -7175,6 +7195,23 @@ const applicationMigrations = [
   createArcadeGuessPayoutsMigration(
     () => require('./arcade/migrate-guess-payouts').migrateArcadeGuessPayouts(db),
     require('./arcade/migrate-guess-payouts').migrateArcadeGuessPayouts.toString(),
+  ),
+  // Mini-game choices schema (Person 1, 2026-10-28; first applied to production
+  // from the deploy repo, merged into main afterwards).
+  createMiniGameChoicesMigration(
+    async () => {
+      await db.ensureMiniGameChoicesSchema();
+      await db.lockDownPublicSchema();
+    },
+    [
+      db.ensureMiniGameChoicesSchema.toString(),
+      require('./problemsSchema').migrateProblems.toString(),
+      require('./problemsSchema').migrateLegacyRows.toString(),
+      require('./problemsSchema').archiveExistingLegacyBackup.toString(),
+      require('./problemsSchema').ensureChildForeignKeyColumn.toString(),
+      require('./problemsSchema').runMigration.toString(),
+      db.miniGameExercisesViewSql,
+    ].join('\n-- migration input --\n'),
   ),
 ];
 

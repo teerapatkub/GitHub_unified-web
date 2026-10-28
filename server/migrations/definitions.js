@@ -10,6 +10,7 @@ const {
   AUTH_PROVISIONING_VERSION,
   CORE_SCHEMA_VERSION,
   DATA_API_SECURITY_VERSION,
+  MINI_GAME_CHOICES_VERSION,
   TUTORIALS_SEEN_VERSION,
 } = require('./versions');
 
@@ -95,6 +96,13 @@ const createArcadeGuessPayoutsMigration = (up, signature) => defineMigration({
   up,
 });
 
+const createMiniGameChoicesMigration = (up, signature) => defineMigration({
+  version: MINI_GAME_CHOICES_VERSION,
+  name: 'mini_game_choices',
+  signature: signatureFor(up, signature),
+  up,
+});
+
 module.exports = {
   createArcadeGuessPayoutsMigration,
   createArcadeSpectatorsMigration,
@@ -106,5 +114,6 @@ module.exports = {
   createAuthProvisioningMigration,
   createCoreSchemaMigration,
   createDataApiSecurityMigration,
+  createMiniGameChoicesMigration,
   createTutorialsSeenMigration,
 };

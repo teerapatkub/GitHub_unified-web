@@ -174,6 +174,9 @@ test('the previously applied core schema fingerprint remains readable without ac
   });
   assert.equal((await getMigrationStatus(database, coreMigrations)).ready, true);
 
+  database.applied.get('202610120001').checksum = 'a32e43374eb674f64f68a96fe73264c347cde9fab53ee618b0566b9887baa4ed';
+  assert.equal((await getMigrationStatus(database, coreMigrations)).ready, true);
+
   database.applied.get('202610120001').checksum = 'incorrect-checksum';
   await assert.rejects(getMigrationStatus(database, coreMigrations), /create a new migration/);
 });

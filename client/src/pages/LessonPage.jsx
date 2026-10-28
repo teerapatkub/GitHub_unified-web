@@ -603,7 +603,7 @@ export default function LessonPage({
 
                     {quizLocked[quizId] && (
                       <p className="mt-2 text-sm font-bold text-blue-700">
-                        บันทึกคำตอบแล้ว ดูคะแนนรวมด้านบน
+                        บันทึกคำตอบแล้ว
                       </p>
                     )}
                   </div>

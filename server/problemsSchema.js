@@ -113,9 +113,9 @@ function normalizeFunctionCases(raw) {
         }));
 }
 
-// Mini-games store one object holding the branching rules AND the real cases.
-// Only `correctness` is a test case; the rest describes the story branch and
-// belongs with the mode's settings, not with the grading data.
+// Mini-games store one object for output tests, story rules, literal source
+// checks, and runtime variable-type checks. Only `correctness` belongs in the
+// shared problem test_cases column; the remaining keys stay in mode settings.
 function splitMiniGamePayload(raw) {
     const parsed = asJson(raw, null);
     if (Array.isArray(parsed)) {
@@ -127,6 +127,8 @@ function splitMiniGamePayload(raw) {
             extra: {
                 expected_format: parsed.expected_format ?? '',
                 rules: Array.isArray(parsed.rules) ? parsed.rules : [],
+                code_checks: parsed.code_checks ?? [],
+                isinstance: parsed.isinstance ?? [],
             },
         };
     }
@@ -218,6 +220,8 @@ const VIEWS = {
                (jsonb_build_object(
                     'expected_format', COALESCE(m.extra->'expected_format', '""'::jsonb),
                     'rules',           COALESCE(m.extra->'rules', '[]'::jsonb),
+                    'code_checks',     COALESCE(m.extra->'code_checks', '[]'::jsonb),
+                    'isinstance',      COALESCE(m.extra->'isinstance', '[]'::jsonb),
                     'correctness',     p.test_cases))::text  AS test_cases_json,
                m.xp_reward                             AS xp_reward,
                m.coin_reward                           AS currency_reward,
@@ -377,6 +381,35 @@ async function relationKind(db, name) {
     return rows?.[0]?.relkind || null; // 'r' = table, 'v' = view, null = missing
 }
 
+async function archiveExistingLegacyBackup(db, table) {
+    const backupName = `${table}_pre_merge`;
+    const backupKind = await relationKind(db, backupName);
+    if (!backupKind) return null;
+    if (backupKind !== 'r') {
+        throw new Error(
+            `Cannot preserve legacy ${table}: ${backupName} exists and is not a table`,
+        );
+    }
+
+    let suffix = 1;
+    let archivedName;
+    do {
+        archivedName = `${backupName}_previous_${suffix}`;
+        suffix += 1;
+    } while (await relationKind(db, archivedName));
+
+    await db.query(`ALTER TABLE "${backupName}" RENAME TO "${archivedName}"`);
+    return archivedName;
+}
+
+async function ensureChildForeignKeyColumn(db, { table, column }) {
+    if (table !== 'mini_game_current_conversations' || column !== 'exercise_id') return;
+    await db.query(
+        `ALTER TABLE "mini_game_current_conversations"
+         ADD COLUMN IF NOT EXISTS "exercise_id" BIGINT`
+    );
+}
+
 // Everything here happens on ONE connection inside ONE transaction. Swapping a
 // table for a view is several statements per mode, and a failure halfway through
 // would leave the database in a shape neither the old code nor the new code can
@@ -394,6 +427,42 @@ async function migrateProblems(pool) {
     } finally {
         db.release();
     }
+}
+
+async function migrateLegacyRows(db, mode, rows) {
+    let count = 0;
+    for (const row of rows) {
+        const { entryId, problem, registration } = projectLegacyRow(mode, row);
+        const [existing] = await db.query(
+            `SELECT 1 FROM problem_modes WHERE mode = ? AND entry_id = ?`,
+            [mode, entryId]
+        );
+        // A prior merge may have populated the canonical registration while
+        // the original table remained; keep that canonical row and its identity.
+        if (existing?.length) continue;
+
+        const [ins] = await db.query(
+            `INSERT INTO problems (title_th, title_en, desc_th, desc_en, hint_th, hint_en,
+                                   starter_code, solution_code, test_kind, test_cases, created_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?) RETURNING problem_id`,
+            [problem.title_th, problem.title_en ?? null, problem.desc_th, problem.desc_en ?? null,
+             problem.hint_th ?? null, problem.hint_en ?? null,
+             problem.starter_code ?? null, problem.solution_code ?? null,
+             problem.test_kind, JSON.stringify(problem.test_cases), problem.created_by ?? null]
+        );
+        const problemId = ins.insertId;
+        await db.query(
+            `INSERT INTO problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty,
+                                        xp_reward, coin_reward, time_limit_sec, expires_at, extra, is_active)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?)`,
+            [mode, entryId, problemId, registration.lesson_id, registration.order_index,
+             registration.difficulty, registration.xp_reward, registration.coin_reward,
+             registration.time_limit_sec, registration.expires_at ?? null,
+             JSON.stringify(registration.extra), registration.is_active]
+        );
+        count += 1;
+    }
+    return count;
 }
 
 async function runMigration(db) {
@@ -439,30 +508,7 @@ async function runMigration(db) {
         if ((await relationKind(db, table)) !== 'r') continue; // already migrated
 
         const [rows] = await db.query(`SELECT * FROM ${table}`);
-        let count = 0;
-        for (const row of rows || []) {
-            const { entryId, problem, registration } = projectLegacyRow(mode, row);
-            const [ins] = await db.query(
-                `INSERT INTO problems (title_th, title_en, desc_th, desc_en, hint_th, hint_en,
-                                       starter_code, solution_code, test_kind, test_cases, created_by)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?) RETURNING problem_id`,
-                [problem.title_th, problem.title_en ?? null, problem.desc_th, problem.desc_en ?? null,
-                 problem.hint_th ?? null, problem.hint_en ?? null,
-                 problem.starter_code ?? null, problem.solution_code ?? null,
-                 problem.test_kind, JSON.stringify(problem.test_cases), problem.created_by ?? null]
-            );
-            const problemId = ins.insertId;
-            await db.query(
-                `INSERT INTO problem_modes (mode, entry_id, problem_id, lesson_id, order_index, difficulty,
-                                            xp_reward, coin_reward, time_limit_sec, expires_at, extra, is_active)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?)`,
-                [mode, entryId, problemId, registration.lesson_id, registration.order_index,
-                 registration.difficulty, registration.xp_reward, registration.coin_reward,
-                 registration.time_limit_sec, registration.expires_at ?? null,
-                 JSON.stringify(registration.extra), registration.is_active]
-            );
-            count += 1;
-        }
+        const count = await migrateLegacyRows(db, mode, rows || []);
 
         // Drop every foreign key aimed at this table, then park the table under a
         // _pre_merge name. Renaming rather than dropping keeps the original rows
@@ -479,6 +525,7 @@ async function runMigration(db) {
             await db.query(`ALTER TABLE "${fk.child}" DROP CONSTRAINT "${fk.conname}"`);
         }
 
+        await archiveExistingLegacyBackup(db, table);
         await db.query(`ALTER TABLE ${table} RENAME TO ${table}_pre_merge`);
         await db.query(VIEWS[table]);
         moved[table] = count;
@@ -489,6 +536,7 @@ async function runMigration(db) {
     // without any row having to be rewritten.
     for (const fk of CHILD_FKS) {
         if ((await relationKind(db, fk.table)) !== 'r') continue;
+        await ensureChildForeignKeyColumn(db, fk);
         const marker = `problem_mode_${fk.mode}`;
         const [existing] = await db.query(
             `SELECT 1 FROM information_schema.columns
@@ -563,6 +611,9 @@ module.exports = {
     normalizeFunctionCases,
     splitMiniGamePayload,
     projectLegacyRow,
+    migrateLegacyRows,
+    archiveExistingLegacyBackup,
+    ensureChildForeignKeyColumn,
+    runMigration,
     migrateProblems,
 };
-

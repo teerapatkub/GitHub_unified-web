@@ -47,7 +47,7 @@ const CONTENT_TABLES = [
     // The problem bank and its mode registrations
     'problems', 'problem_modes', 'exercises_files',
     // Developer-life mini game
-    'mini_game_locations', 'mini_game_npcs', 'mini_game_dialogues',
+    'mini_game_locations', 'mini_game_npcs', 'mini_game_dialogues', 'mini_game_choices',
     'mini_game_exercises_files',
     // Catalogue and rules
     'level_config', 'achievements', 'shop_sets', 'shop_items', 'cosmetics',

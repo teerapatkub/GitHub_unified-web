@@ -2147,7 +2147,7 @@ CREATE VIEW public.mini_game_exercises AS
     p.desc_en AS description_en,
     p.starter_code,
     p.solution_code,
-    (jsonb_build_object('expected_format', COALESCE((m.extra -> 'expected_format'::text), '""'::jsonb), 'rules', COALESCE((m.extra -> 'rules'::text), '[]'::jsonb), 'correctness', p.test_cases))::text AS test_cases_json,
+    (jsonb_build_object('expected_format', COALESCE((m.extra -> 'expected_format'::text), '""'::jsonb), 'rules', COALESCE((m.extra -> 'rules'::text), '[]'::jsonb), 'code_checks', COALESCE((m.extra -> 'code_checks'::text), '[]'::jsonb), 'isinstance', COALESCE((m.extra -> 'isinstance'::text), '[]'::jsonb), 'correctness', p.test_cases))::text AS test_cases_json,
     m.xp_reward,
     m.coin_reward AS currency_reward,
     p.created_at,

@@ -4,7 +4,10 @@ const createSupabaseAuthCheck = ({
   publishableKey,
   fetchImpl = fetch,
   cacheMs = 10000,
-  timeoutMs = 3000,
+  // Supabase can take several seconds to wake a paused project or recover
+  // from a transient network/DNS issue. Three seconds made a brief slowdown
+  // abort the entire server boot, even when the database itself was healthy.
+  timeoutMs = 15000,
   now = Date.now,
 }) => {
   let healthUrl;
@@ -25,12 +28,19 @@ const createSupabaseAuthCheck = ({
     if (lastReadyAt !== null && now() - lastReadyAt < cacheMs) return;
     if (!pendingProbe) {
       pendingProbe = (async () => {
-        const response = await fetchImpl(healthUrl, {
-          headers: { apikey: secretKey },
-          signal: AbortSignal.timeout(timeoutMs),
-        });
-        if (!response.ok) throw new Error(`Supabase Auth health returned ${response.status}`);
-        lastReadyAt = now();
+        try {
+          const response = await fetchImpl(healthUrl, {
+            headers: { apikey: secretKey },
+            signal: AbortSignal.timeout(timeoutMs),
+          });
+          if (!response.ok) throw new Error(`Supabase Auth health returned ${response.status}`);
+          lastReadyAt = now();
+        } catch (error) {
+          const detail = error?.name === 'TimeoutError'
+            ? `timed out after ${timeoutMs}ms`
+            : error?.message || 'request failed';
+          throw new Error(`Supabase Auth readiness check ${detail} (${healthUrl.origin})`, { cause: error });
+        }
       })().finally(() => { pendingProbe = undefined; });
     }
     await pendingProbe;

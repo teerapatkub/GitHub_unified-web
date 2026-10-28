@@ -1,5 +1,148 @@
 # ไฟล์ของ Person 1 ที่ Person 3 เข้าไปแก้
 
+## 2026-10-28 — ลบปุ่มไปด่านถัดไปและเชื่อมแผนที่เข้าฉากจบ
+
+- เอาปุ่มสีเขียว “ไปด่านถัดไป” ออกจาก Story Mode; คงการไปต่อด้วย Spacebar ตาม flow เดิม
+- ในแผนที่ เชื่อมทุก leaf node ที่เป็นปลายทางของ choice เข้ากับ node `end`; โหนด `end` ไม่มีเส้นต่อ
+- ตรวจ lesson 1 พบ choices ชี้ไปด่าน 1A/1B และ 1A_2A/1A_2B/1B_2A/1B_2B; ปลายสาขาจะเชื่อมไปฉากจบ
+- ไม่เปลี่ยน API, schema, choices หรือ progress
+- ESLint และ build ผ่าน; ยังควรตรวจการจัดวางแผนที่และ flow จริงหลัง login
+
+## 2026-10-28 — รอผลโจทย์ก่อนเปิด choices
+
+- ซ่อน post-submit dialogue และ choices จนผู้เล่นส่งโจทย์ในรอบปัจจุบันผ่านและได้รับผลตรวจแล้ว (progress สำเร็จเก่าจะไม่เปิด choices ล่วงหน้า); ก่อนถึงจุดนั้น Spacebar ยังเลื่อนบทสนทนาได้ แม้ dialogue จะมี choices ผูกอยู่
+- เมื่อผ่านโจทย์ จะเปิด dialogue ที่มี choices ด้วยข้อความเต็มทันที และคงปุ่ม choices ไว้ให้เลือก
+- เมื่อโมดูลสำเร็จ แสดงหน้าต่าง `MISSION CLEAR!` เดิมพร้อมรางวัล แม้มี choices รออยู่; กด Continue แล้วจึงเลือกต่อได้
+- ป้องกันการตั้ง skip-typing ref ค้างเมื่อ dialogue ที่เปิด choices เป็นบทสนทนาปัจจุบันอยู่แล้ว
+- ไม่เปลี่ยน API/schema หรือข้อมูล dialogue/choices
+- ESLint และ build ผ่าน; ยังควรทดสอบการทำโจทย์และเลือก branch จริงหลัง login
+
+## 2026-10-28 — คืนหน้าต่างผ่านและเอากล่องผลตรวจออก
+
+- ลบกล่องผลตรวจ/ stdout ที่เพิ่มใน Story Mode
+- คืนการแสดง `MISSION CLEAR!` เมื่อ API ยืนยันว่าโมดูลจบแล้ว โดยไม่ซ่อนเพราะมี choices รออยู่
+- ปุ่ม Continue ปิดหน้าต่างและกลับไปยัง choices ที่ปลดล็อกหลังส่งโจทย์ผ่าน
+- เพิ่ม Spacebar เพื่อปิดหน้าต่างพร้อมคำแนะนำใน modal
+- ไม่เปลี่ยน API, schema, grader หรือ progress
+- ESLint และ build ผ่าน; ยังควรทดสอบหลัง login
+
+## 2026-10-28 — ค้างผลลัพธ์ใน Story Mode จนกด Spacebar
+
+- เมื่อส่งโจทย์ผ่านและมี choices ให้แสดง output กับข้อความสำเร็จใน Story Mode โดยไม่ใช้กล่อง “ผลการตรวจ”
+- หลังปิด modal `MISSION CLEAR!` ผลลัพธ์ยังค้างอยู่; กด Spacebar จึงเปลี่ยนไปบทสนทนาเต็มและแสดง choices
+- ปุ่ม choices ยังคงให้ผู้เล่นเลือกเอง และ Spacebar ไม่เลือกแทน
+- ไม่เปลี่ยน API, schema, grader หรือ progress
+- ESLint และ build ผ่าน; ยังควรทดสอบ flow จริงหลัง login
+
+## 2026-10-28 — แสดงสถานะตรวจเป็นข้อความบทสนทนาปกติ
+
+- แสดงเฉพาะ output ที่รันได้ใน story bubble; ไม่ต่อ success message หรือข้อความตรวจเสร็จเข้าไปใน output
+- ระหว่าง API ตรวจคำตอบ แสดง “กำลังตรวจสอบผลลัพธ์” เป็นคำแนะนำบรรทัดปกติใต้ output
+- เมื่อตรวจเสร็จ modal รางวัลทำงานตามเดิม; หลังปิด modal คง output และเปลี่ยนคำแนะนำเป็น “กด Spacebar เพื่อไปบทสนทนาถัดไป”
+- กด Spacebar แล้วซ่อน output เพื่อแสดงบทสนทนาเต็มและ choices; Spacebar ไม่ปิด modal
+- ESLint และ build ผ่าน; ยังควรทดสอบ flow หลัง login
+
+## 2026-10-28 — แสดงโจทย์บนหน้าจอขนาดเล็ก
+
+- สาเหตุที่โจทย์ไม่เห็นบนจอเล็กคือแผงข้อมูลเดิมใช้ `hidden lg:block`
+- เพิ่มการ์ด responsive แสดงชื่อและคำสั่งโจทย์ในส่วน editor สำหรับจอเล็ก โดยใช้ข้อความ localized และ branch copy ชุดเดียวกับแผง desktop
+- การ์ดไม่แสดงในด่าน `end` ซึ่งไม่มีโจทย์; ไม่เปลี่ยน API, schema, dialogue phase หรือข้อมูล progress
+- `npx eslint src/pages/MiNi_Game.jsx` และ `npm run build` ผ่าน; ยังควรตรวจหน้าจอจริงหลัง login และที่ viewport เล็ก
+
+## 2026-10-28 — ใช้ Spacebar แทนปุ่ม Next Dialogue
+
+- เอาปุ่ม `Next Dialogue` ออกจากหน้า Mini Game; Spacebar ใช้แสดงข้อความที่กำลังพิมพ์ให้ครบ
+  และการกดครั้งถัดไปจะเลื่อนไปบทสนทนาถัดไป
+- หลังบทสนทนาสุดท้าย หากส่งโจทย์ผ่านและมีด่านถัดไป Spacebar จะพาไปด่านนั้น
+- เพิ่มข้อความแนะนำ Spacebar ตามสถานะบทสนทนา ทั้งภาษาไทยและอังกฤษ
+- choices ยังคงต้องเลือกด้วยปุ่มของตัวเลือก และ Spacebar ไม่ข้ามบทสนทนาที่มี choices
+- ไม่เปลี่ยน API, schema, choices หรือ progress
+- ESLint และ build ผ่าน; ยังต้องทดสอบ flow จริงหลัง login
+
+## 2026-10-28 — ใช้ Spacebar แทนปุ่มไปด่านถัดไป
+
+- ใน `client/src/pages/MiNi_Game.jsx` ผูก Spacebar ให้ทำงานเหมือนปุ่ม “ไปด่านถัดไป”
+  เมื่อผลตรวจเสร็จและข้อความบทสนทนาแสดงครบแล้ว
+- คงพฤติกรรมเดิมที่ Spacebar แสดงข้อความที่กำลังพิมพ์ให้ครบก่อน; การพิมพ์ใน editor และการกด choices
+  ยังไม่ถูกดักเป็นการเปลี่ยนด่าน
+- ไม่มีการเปลี่ยน API, schema, choices หรือ progress
+- รอตรวจ lint/build หลังแก้; ควรทดสอบ flow จริงหลัง login
+
+## 2026-10-28 — กู้หน้า Mini Game ที่จอดำ
+
+- พบว่า `client/src/pages/MiNi_Game.jsx` มีเนื้อหา backend จาก `server.js` แทน React component
+  ทำให้ `React.lazy()` โหลด default export ที่ไม่ใช่ component แม้ Vite build จะผ่าน
+- ตามคำยืนยันผู้ใช้ กู้ไฟล์จาก Git แล้วใส่การแก้ typewriter, choices, dialogue order และ navigation ด้วย `dialogue_id` กลับเข้าไป
+- ปรับภาพฉากจบให้ใช้ `classroom.png` และคง case ของชื่อ NPC asset ให้ตรงกับชื่อไฟล์
+- `npm run build` ผ่าน; ตรวจ ESLint ไม่มี error (เหลือ warning dependency ของ useEffect เดิม)
+- เปิด route ใน browser ได้ แต่ถูก redirect ไปหน้า login และไม่สามารถตรวจ flow หลังล็อกอินได้
+
+## 2026-10-28 — ซิงก์แผนที่นำทางกับเส้นทางจริง
+
+- แผนที่เดิมสร้างเส้นทางจาก `branch_key` แต่การเลือกบทสนทนาใช้ `next_dialogue_id` เป็นหลัก
+  ทำให้เส้นเชื่อมบนแผนที่อาจชี้คนละด่านกับที่การกด choice นำไปจริง
+- เปลี่ยน map ให้หา subtopic ปลายทางจาก `dialogue_id` ด้วย index ชุดเดียวกับ flow เลือก choice
+- ชื่อ node ปัจจุบันใช้ `currentMissionCopy.title` ให้ตรงกับหัวข้อโจทย์ปัจจุบัน; node ที่ยังไม่ถึงจะแสดงชื่อพร้อมไอคอนล็อกแทนการซ่อนชื่อทั้งหมด
+- Build ผ่าน; ยังต้องทดสอบ flow จริงหลัง login
+
+## 2026-10-28 — อัปเดตโจทย์บท 1 จาก CSV
+
+- นำข้อมูลจาก `Downloads/mini_game_exercises_rows.csv` ไปอัปเดตเนื้อหาโจทย์ canonical ใน `problems`
+  สำหรับ Mini Game `entry_id` 1–7 (คง `problem_id` และ `problem_modes` registration ไว้)
+- ลบ `rules` และ `expected_format` เก่าที่เป็นของโจทย์ VAT ออกจาก `problem_modes.extra`
+  ตามการยืนยันของผู้ใช้; คงค่าอื่นและตาราง `mini_game_dialogues`, `mini_game_choices`,
+  files, progress และ submissions ไว้
+- ตรวจ view `mini_game_exercises` แล้วชื่อ/คำอธิบาย/โค้ด/เทสเคสเป็นชุด Doki Doki ครบ 7 ด่าน
+  และเฉลยทั้ง 7 ข้อผ่าน `miniGameGrader`
+- `test:problems`/`test:bilingual` รันตามสคริปต์ไม่ได้ในสภาพแวดล้อมนี้ เพราะใช้ PGHOST localhost
+  แทน DATABASE_URL ที่ `db.js` ใช้; direct view/grader verification ผ่าน
+- `seed-content.sql` เป็น generated snapshot และยังไม่ถูก regenerate; fresh database ที่ติดตั้งจาก snapshot
+  นี้อาจยังได้โจทย์ชุดเดิม จึงควรส่งออก snapshot ใหม่จากฐานข้อมูลต้นทางเมื่อมีการทำ release
+- progress เดิมยังคงอยู่ตามที่ผู้ใช้เลือก; ผู้ที่ผ่านโจทย์ชุดเดิมอาจยังถูกแสดงว่าผ่านชุดใหม่
+
+## 2026-10-28 — กด Spacebar แล้วบทสนทนายังพิมพ์ต่อ
+
+ไฟล์: `client/src/pages/MiNi_Game.jsx` (ของ Person 1; แก้ตามคำขอผู้ใช้)
+
+- เมื่อกด Spacebar ระหว่างข้อความกำลังพิมพ์ จะยกเลิก interval ทันที ก่อนแสดงข้อความครบ
+  ป้องกัน timer เดิมเขียนข้อความบางส่วนกลับมาทับหลังจากข้ามแล้ว
+- หยุดเสียงพิมพ์ประกอบเมื่อแสดงข้อความครบด้วย Spacebar
+- ตรวจ `eslint` เฉพาะไฟล์แล้วไม่มี error (มี warning dependency ของ useEffect เดิมที่บรรทัด 732)
+  และ `npm run build` ผ่าน
+
+ไม่เปลี่ยนลำดับบทสนทนา การเลือกคำตอบ หรือการส่งคำตอบ
+
+## 2026-10-28 — choices ของมินิเกมไม่ขึ้นหลังส่ง DONE
+
+ไฟล์ที่เกี่ยวข้อง: `client/src/pages/MiNi_Game.jsx` และเส้นทาง API/schema ของมินิเกม
+
+- เส้นทาง API ที่อ่าน `mini_game_choices` เคยกลืน PostgreSQL `42P01` แล้วคืนรายการ choices ว่าง
+  ทั้งที่ตารางไม่มีใน schema bootstrap ทำให้ระบบไม่แจ้งว่าฐานข้อมูลยังขาดตาราง
+- เพิ่ม migration สร้างตาราง `mini_game_choices` และดัชนีเรียง choices ตามบทสนทนา
+  โดยไม่ลบหรือเปลี่ยนข้อมูลตารางที่มีอยู่แล้ว และให้ migration เปิดใช้ RLS ตามแนวทางเดิม
+- ลบ fallback ที่ซ่อนข้อผิดพลาดใน API; ถ้าตาราง/คอลัมน์หาย startup หรือ endpoint จะแจ้ง error แทนการสำเร็จแบบ choices ว่าง
+- เพิ่ม `mini_game_choices` ใน whitelist สำหรับข้อมูลเนื้อหาที่ dump เป็น seed
+- เพิ่ม regression test ตรวจ schema helper
+- ใช้ `dialogue_id` เป็นตัวผูก choices กับบทสนทนา: บทสนทนา `pre_submit` แสดง choices เมื่อพิมพ์ข้อความครบ;
+  ถ้าโจทย์ผ่านก่อนข้อความพิมพ์จบก็ปลดล็อก choices ได้ทันที; บทสนทนา `post_submit` ยังต้องรอให้โจทย์ผ่าน
+  ก่อน เพราะถูกกรองออกจากรายการบทสนทนาจนกว่าจะสำเร็จ
+- เมื่อผลตรวจผ่านและมีบทสนทนาที่มี choices จะไม่เปิด modal `MISSION CLEAR` มาทับปุ่มเหล่านั้น;
+  modal รางวัลยังแสดงเมื่อไม่มี choices รออยู่
+- หลังผลตรวจผ่านจะกลับไปยังบทสนทนาที่ผูก choices โดยแสดงข้อความที่อ่านจบแล้วทันที ไม่พิมพ์ข้อความโจทย์ซ้ำ
+- lookup choices รองรับทั้ง `dialogue.choices` และรายการ `dialogue_choices` ที่ match ด้วย `dialogue_id`;
+  เมื่อผลตรวจผ่านจะเลือก choices ของบทสนทนาปัจจุบันก่อน เพื่อไม่ข้ามไปข้อความโจทย์/บทสนทนาอื่น
+
+เปลี่ยนแปลง `server/server.js`, schema helper และ migration files ซึ่งอยู่นอกขอบเขต Arcade ของ Person 3
+แต่จำเป็นเพื่อให้ API ที่ serve MiNi_Game สร้างและอ่านตาราง choices ได้; ส่งต่อให้เจ้าของส่วนนี้ตรวจ
+การมีข้อมูล choice rows ใน environment จริงหลัง migration (migration สร้าง schema ไม่ได้แต่ง/เติมเนื้อหาใหม่)
+
+### ตรวจสอบลำดับบทสนทนาและ choices (04:09)
+
+- อ่านข้อมูล local แบบ read-only: API เรียงด่าน active ของบท 1 เป็น `START → 1A → 1A_2A → 1A_2B → 1B → 1B_2A → 1B_2B`
+- บทสนทนาในแต่ละด่านเรียงตาม `dialogue_order`; choices อยู่ท้ายลำดับ (`dialogue_order = 5`) ในด่าน START, 1A และ 1B
+- `choice_order` และ `next_dialogue_id` ตรงกับเส้นทาง: START → dialogue 7/13, 1A → 19/23, 1B → 27/31
+- ปรับ `getVisibleDialogues()` ให้กรองตาม branch/phase โดยคงลำดับต้นฉบับจาก API แทนการต่อ pre-submit แล้ว post-submit แยกก้อน
+
 ## 2026-10-15 — แบบทดสอบเลื่อนขั้น: เพิ่ม route ฝั่ง server ที่ไม่เคยมี
 
 `PromotionExamPage.jsx` เรียก `GET /api/learning/promotion-exam` และ `POST .../submit` มาตลอด

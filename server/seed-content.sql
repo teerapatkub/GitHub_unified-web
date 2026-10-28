@@ -3852,8 +3852,8 @@ INSERT INTO public.level_config (id, q_id, title, level_value, "order") VALUES (
 -- Data for Name: mini_game_locations; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.mini_game_locations (location_id, location_key, name, description, bg_image_url, created_at, updated_at) VALUES (1, 'python_lab', 'ห้องเรียน', 'ห้องเรียนปกติธรรมดาไม่มีอะไรเป็นพิเศษ', '/data_MiNiGame/locations/classroom.jpg', '2026-06-20 22:00:56+00', '2026-06-24 16:28:24+00');
-INSERT INTO public.mini_game_locations (location_id, location_key, name, description, bg_image_url, created_at, updated_at) VALUES (2, 'classroom', 'Python Classroom', 'Warm classroom for story mini games', '/data_MiNiGame/locations/classroom.jpg', '2026-07-03 23:43:38+00', '2026-07-03 23:43:38+00');
+INSERT INTO public.mini_game_locations (location_id, location_key, name, description, bg_image_url, created_at, updated_at) VALUES (1, 'python_lab', 'ห้องเรียน', 'ห้องเรียนปกติธรรมดาไม่มีอะไรเป็นพิเศษ', '/data_MiNiGame/locations/classroom.png', '2026-06-20 22:00:56+00', '2026-06-24 16:28:24+00');
+INSERT INTO public.mini_game_locations (location_id, location_key, name, description, bg_image_url, created_at, updated_at) VALUES (2, 'classroom', 'Python Classroom', 'Warm classroom for story mini games', '/data_MiNiGame/locations/classroom.png', '2026-07-03 23:43:38+00', '2026-07-03 23:43:38+00');
 
 
 --

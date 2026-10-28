@@ -58,7 +58,7 @@ const getDefaultEndDialogues = () => [
     dialogue_phase: "pre_submit",
     branch_key: "end",
     avatar_asset_url: LUMI_AVATAR_BASE,
-    bg_image_url: "/data_MiNiGame/locations/classroom.jpg",
+    bg_image_url: "/data_MiNiGame/locations/classroom.png",
   },
 ];
 
@@ -80,7 +80,7 @@ const getNpcAvatarSrc = (dialogue) => {
 
   const basePath = assetUrl.replace(/\/$/, "");
   const folderName = basePath.split("/").pop() || "NPC_lumi";
-  const npcKey = folderName.replace(/^NPC_/i, "").toLowerCase() || "lumi";
+  const npcKey = folderName.replace(/^NPC_/i, "") || "lumi";
   return `${basePath}/${npcKey}_${dialogue?.emotion || "smile"}.png`;
 };
 
@@ -132,7 +132,19 @@ const getVisibleDialogues = (rows = [], isCompleted = false, selectedBranchKey =
     ? branchPostSubmit
     : defaultPostSubmit;
 
-  return isCompleted ? [...preSubmit, ...postSubmit] : preSubmit;
+  const visibleDialogues = new Set(isCompleted ? [...preSubmit, ...postSubmit] : preSubmit);
+  return rows.filter((dialogue) => visibleDialogues.has(dialogue));
+};
+
+const getDialogueChoices = (subtopic, dialogue) => {
+  if (!dialogue) return [];
+
+  const attachedChoices = Array.isArray(dialogue.choices) ? dialogue.choices : [];
+  if (attachedChoices.length > 0) return attachedChoices;
+
+  const dialogueId = String(dialogue.dialogue_id);
+  return (Array.isArray(subtopic?.dialogue_choices) ? subtopic.dialogue_choices : [])
+    .filter((choice) => String(choice.dialogue_id) === dialogueId);
 };
 
 const getBranchMissionCopy = (subtopic, branchKey = "default") => {
@@ -203,6 +215,7 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
   const [terminalLines, setTerminalLines] = useState([]);
   const [rewardModal, setRewardModal] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDoneSubmitted, setIsDoneSubmitted] = useState(false);
   const [currentSubtopicIndex, setCurrentSubtopicIndex] = useState(0);
   const [submittedNextSubtopicIndex, setSubmittedNextSubtopicIndex] = useState(-1);
   const [progressBySubtopic, setProgressBySubtopic] = useState({});
@@ -236,7 +249,10 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
   const runOutputRef = useRef("");
   const storyInputRef = useRef("");
   const dialogueAudioRef = useRef(null);
+  const dialogueTypingTimerRef = useRef(null);
+  const skipDialogueTypingRef = useRef(false);
   const outputTargetRef = useRef("terminal");
+  const targetDialogueNavigationRef = useRef(null);
   const subtopics = useMemo(() => {
     if (!moduleData) return [];
     const list = Array.isArray(moduleData.subtopics) && moduleData.subtopics.length > 0
@@ -265,8 +281,21 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
 
     const hasEnd = normalizedList.some((subtopic) => String(subtopic.exercise_order ?? "") === "end");
     const realSubtopics = normalizedList.filter((subtopic) => String(subtopic.exercise_order ?? "") !== "end");
-    return hasEnd ? normalizedList : realSubtopics;
-  }, [moduleData, lang]);
+    if (hasEnd) return normalizedList;
+    if (!Array.isArray(moduleData.end_dialogues) || moduleData.end_dialogues.length === 0) return realSubtopics;
+    const endDialogues = getEndDialogues(moduleData.end_dialogues);
+    return [
+      ...realSubtopics,
+      {
+        exercise_id: "end",
+        lesson_id: moduleData.lesson_id ?? moduleId,
+        exercise_order: "end",
+        title: "จบบทเรียน",
+        starter_code: 'print("Hello")',
+        dialogues: endDialogues,
+      },
+    ];
+  }, [moduleData, lang, moduleId]);
 
   const currentSubtopic = subtopics[currentSubtopicIndex] ?? null;
   const getSubtopicIndexForBranch = (branchKey = "") => {
@@ -299,15 +328,22 @@ const isCurrentSubtopicCompleted = useMemo(() => {
     : null;
   const dialogues = useMemo(() => {
     const rows = currentSubtopic?.dialogues ?? [];
-    return getVisibleDialogues(rows, isCurrentSubtopicCompleted, selectedBranchKey);
-  }, [currentSubtopic, isCurrentSubtopicCompleted, selectedBranchKey]);
+    return getVisibleDialogues(rows, isDoneSubmitted, selectedBranchKey);
+  }, [currentSubtopic, isDoneSubmitted, selectedBranchKey]);
   const currentMissionCopy = useMemo(
     () => getBranchMissionCopy(currentSubtopic, selectedBranchKey),
     [currentSubtopic, selectedBranchKey]
   );
   const terminalLogic = currentSubtopic?.terminal_logic ?? [];
   const currentDialogue = dialogues[dialogueIndex] ?? null;
-  const currentDialogueChoices = programDialogue ? [] : currentDialogue?.choices ?? [];
+  const canShowCurrentDialogueChoices = isDoneSubmitted;
+  const currentDialogueChoices = programDialogue || !canShowCurrentDialogueChoices
+    ? []
+    : getDialogueChoices(currentSubtopic, currentDialogue);
+  const moduleHasDialogueChoices = useMemo(() => subtopics.some((subtopic) => (
+    (subtopic.dialogue_choices || []).length > 0
+    || (subtopic.dialogues || []).some((dialogue) => getDialogueChoices(subtopic, dialogue).length > 0)
+  )), [subtopics]);
   const currentDialogueText = programDialogue?.text
     ?? currentDialogue?.dialogue_text
     ?? (String(currentSubtopic?.exercise_order ?? "") === "end"
@@ -322,42 +358,70 @@ const isCurrentSubtopicCompleted = useMemo(() => {
       : `${API_BASE}/uploads/${sceneBackgroundImage}`
     : "/data_MiNiGame/cat.jpg";
 
-  const conversationMap = useMemo(() => subtopics.map((subtopic, index) => {
-    const branchKeys = new Set();
-    const addBranchKey = (value) => {
-      const key = String(value || "").trim();
-      if (key && key !== "default") branchKeys.add(key);
-    };
-
-    (subtopic.dialogues || []).forEach((dialogue) => addBranchKey(dialogue.branch_key));
-    (subtopic.dialogue_choices || []).forEach((choice) => {
-      addBranchKey(choice.branch_key || choice.next_branch_key);
+  const conversationMap = useMemo(() => {
+    const subtopicIndexByDialogueId = new Map();
+    subtopics.forEach((subtopic, index) => {
+      (subtopic.dialogues || []).forEach((dialogue) => {
+        subtopicIndexByDialogueId.set(String(dialogue.dialogue_id), index);
+      });
     });
-    (subtopic.dialogue_branches || []).forEach((branch) => addBranchKey(branch.branch_key));
 
-    return {
-      subtopic,
-      index,
-      isCurrent: index === currentSubtopicIndex,
-      isCompleted: isProgressCompleted(progressBySubtopic[String(subtopic.exercise_id)]),
-      isEnd: String(subtopic.exercise_order ?? "") === "end",
-      branches: [...branchKeys].map((branchKey) => ({
-        branchKey,
-        destinationIndex: subtopics.findIndex((item) =>
-          String(item.exercise_order ?? item.order_index ?? item.branch_key ?? "") === branchKey
-        ),
-      })),
-    };
-  }), [currentSubtopicIndex, progressBySubtopic, subtopics]);
+    return subtopics.map((subtopic, index) => {
+      const choices = new Map();
+      (subtopic.dialogue_choices || []).forEach((choice) => {
+        const key = choice.choice_id ?? `${choice.dialogue_id}:${choice.choice_order}:${choice.choice_text}`;
+        choices.set(String(key), choice);
+      });
+      (subtopic.dialogues || []).forEach((dialogue) => {
+        getDialogueChoices(subtopic, dialogue).forEach((choice) => {
+          const key = choice.choice_id ?? `${choice.dialogue_id}:${choice.choice_order}:${choice.choice_text}`;
+          choices.set(String(key), choice);
+        });
+      });
+
+      const branches = [...choices.values()].flatMap((choice) => {
+        const targetId = choice.next_dialogue_id;
+        if (targetId === null || targetId === undefined) return [];
+
+        const destinationIndex = subtopicIndexByDialogueId.get(String(targetId));
+        if (destinationIndex === undefined || destinationIndex === index) return [];
+        return [{
+          destinationIndex,
+          dialogueId: String(targetId),
+          choiceText: choice.choice_text,
+        }];
+      });
+
+      return {
+        subtopic,
+        title: index === currentSubtopicIndex
+          ? currentMissionCopy.title || subtopic.title
+          : subtopic.title,
+        index,
+        isCurrent: index === currentSubtopicIndex,
+        isCompleted: isProgressCompleted(progressBySubtopic[String(subtopic.exercise_id)]),
+        isEnd: String(subtopic.exercise_order ?? "") === "end",
+        branches,
+      };
+    });
+  }, [currentMissionCopy.title, currentSubtopicIndex, progressBySubtopic, subtopics]);
 
   const conversationLayers = useMemo(() => {
     if (conversationMap.length === 0) return [];
 
+    const branchTargetIndexes = new Set(
+      conversationMap.flatMap((node) =>
+        node.branches.map((branch) => branch.destinationIndex)
+      )
+    );
+    const endNodeIndex = conversationMap.findIndex((node) => node.isEnd);
     const getChildren = (node) => {
       const branchDestinations = node.branches
         .map((branch) => branch.destinationIndex)
         .filter((destinationIndex) => destinationIndex >= 0 && destinationIndex !== node.index);
       if (branchDestinations.length > 0) return [...new Set(branchDestinations)];
+      if (node.isEnd) return [];
+      if (endNodeIndex >= 0 && branchTargetIndexes.has(node.index)) return [endNodeIndex];
       return node.index + 1 < conversationMap.length ? [node.index + 1] : [];
     };
 
@@ -394,7 +458,7 @@ const isCurrentSubtopicCompleted = useMemo(() => {
   const canSubmit = Boolean(
     currentSubtopic
     && (isProgramDialogue || isAtLastDialogue)
-    && currentDialogueChoices.length === 0
+    && (currentDialogueChoices.length === 0 || !isCurrentSubtopicCompleted)
   );
 
   const getTerminalLineClassName = (line = "") => {
@@ -444,6 +508,11 @@ useEffect(() => {
     setDisplayedDialogueText(isProgramDialogue ? currentDialogueText : "");
 
     if (showTerminal || isProgramDialogue) return undefined;
+    if (skipDialogueTypingRef.current) {
+      skipDialogueTypingRef.current = false;
+      setDisplayedDialogueText(currentDialogueText);
+      return undefined;
+    }
 
     if (!dialogueAudioRef.current) {
       dialogueAudioRef.current = new Audio("/data_MiNiGame/universfield-morse-code-131798.mp3");
@@ -458,23 +527,110 @@ useEffect(() => {
     });
 
     let index = 0;
-    const timer = window.setInterval(() => {
+    dialogueTypingTimerRef.current = window.setInterval(() => {
       index += 1;
       setDisplayedDialogueText(currentDialogueText.slice(0, index));
 
       if (index >= currentDialogueText.length) {
-        window.clearInterval(timer);
+        window.clearInterval(dialogueTypingTimerRef.current);
+        dialogueTypingTimerRef.current = null;
         audio.pause();
         audio.currentTime = 0;
       }
     }, 28);
 
     return () => {
-      window.clearInterval(timer);
+      window.clearInterval(dialogueTypingTimerRef.current);
+      dialogueTypingTimerRef.current = null;
       audio.pause();
       audio.currentTime = 0;
     };
   }, [currentDialogueText, showTerminal, isProgramDialogue]);
+
+  useEffect(() => {
+    const handleStorySpacebar = (event) => {
+      if (event.code !== "Space") return;
+
+      if (rewardModal) {
+        event.preventDefault();
+        return;
+      }
+
+      if (programDialogue?.type === "submission-result") {
+        event.preventDefault();
+        if (isSubmitting) return;
+        if (!event.repeat) setProgramDialogue(null);
+        return;
+      }
+
+      if (programDialogue?.type === "grading-status") {
+        event.preventDefault();
+        return;
+      }
+
+      const target = event.target;
+      if (target instanceof HTMLElement && target.closest(
+        'input, textarea, select, button, a, [contenteditable="true"], .monaco-editor'
+      )) return;
+      if (isAiOpen || isMapOpen || showTutorial) return;
+      if (isSubmitting || event.repeat) {
+        event.preventDefault();
+        return;
+      }
+
+      if (!showTerminal && !isProgramDialogue && isDialogueTyping) {
+        event.preventDefault();
+        window.clearInterval(dialogueTypingTimerRef.current);
+        dialogueTypingTimerRef.current = null;
+        dialogueAudioRef.current?.pause();
+        if (dialogueAudioRef.current) dialogueAudioRef.current.currentTime = 0;
+        setDisplayedDialogueText(currentDialogueText);
+        return;
+      }
+
+      if (!showTerminal && !isProgramDialogue
+        && (currentDialogueChoices.length === 0 || !canShowCurrentDialogueChoices)
+        && dialogueIndex < dialogues.length - 1) {
+        event.preventDefault();
+        setDialogueIndex((index) => Math.min(index + 1, dialogues.length - 1));
+        return;
+      }
+
+      if (currentDialogueChoices.length > 0 && canShowCurrentDialogueChoices) {
+        event.preventDefault();
+      }
+
+      if (!showTerminal && !isProgramDialogue && isDoneSubmitted
+        && currentDialogueChoices.length === 0
+        && dialogueIndex >= dialogues.length - 1
+        && submittedNextSubtopicIndex >= 0) {
+        event.preventDefault();
+        setProgramDialogue(null);
+        setCurrentSubtopicIndex(submittedNextSubtopicIndex);
+        setIsDoneSubmitted(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleStorySpacebar);
+    return () => window.removeEventListener("keydown", handleStorySpacebar);
+  }, [
+    currentDialogueChoices.length,
+    currentDialogueText,
+    canShowCurrentDialogueChoices,
+    dialogueIndex,
+    dialogues.length,
+    isAiOpen,
+    isDialogueTyping,
+    isDoneSubmitted,
+    isMapOpen,
+    isProgramDialogue,
+    isSubmitting,
+    programDialogue,
+    rewardModal,
+    showTerminal,
+    showTutorial,
+    submittedNextSubtopicIndex,
+  ]);
 
   const appendTerminalLine = (text) => {
     setTerminalLines((prev) => [...prev, text]);
@@ -603,8 +759,25 @@ const loadGameData = async () => {
     setFileContents(extraFileContents);
     setActiveFile("main.py");
 
-    setDialogueIndex(0);
+    const targetNavigation = targetDialogueNavigationRef.current;
+    const activeBranchKey = targetNavigation?.branchKey
+      || (String(currentSubtopic.exercise_order ?? "") === "end"
+        ? "end"
+        : progress?.selected_branch_key || "default");
+    const availableDialogues = getVisibleDialogues(
+      currentSubtopic.dialogues || [],
+      false,
+      activeBranchKey
+    );
+    const targetDialogueIndex = targetNavigation
+      ? availableDialogues.findIndex(
+        (dialogue) => String(dialogue.dialogue_id) === targetNavigation.dialogueId
+      )
+      : -1;
+    setDialogueIndex(targetDialogueIndex >= 0 ? targetDialogueIndex : 0);
+    targetDialogueNavigationRef.current = null;
     setSubmittedNextSubtopicIndex(-1);
+    setIsDoneSubmitted(false);
     setShowTerminal(false);
     setTerminalLines([]);
     setCurrentInput("");
@@ -612,7 +785,7 @@ const loadGameData = async () => {
     setProgramDialogue(null);
     inputResolverRef.current = null;
     // Reset branch key เป็น progress ที่บันทึกไว้ หรือ default
-    setSelectedBranchKey(progress?.selected_branch_key || "default");
+    setSelectedBranchKey(activeBranchKey);
     setChatHistory([
       {
         role: "ai",
@@ -868,7 +1041,20 @@ const loadGameData = async () => {
       return;
     }
 
-    const nextBranchKey = choice.branch_key || choice.next_branch_key || selectedBranchKey || "default";
+    const targetSubtopicIndex = choice.next_dialogue_id
+      ? subtopics.findIndex((subtopic) => (subtopic.dialogues || []).some(
+        (dialogue) => String(dialogue.dialogue_id) === String(choice.next_dialogue_id)
+      ))
+      : -1;
+    const targetDialogue = targetSubtopicIndex >= 0
+      ? subtopics[targetSubtopicIndex].dialogues.find(
+        (dialogue) => String(dialogue.dialogue_id) === String(choice.next_dialogue_id)
+      )
+      : null;
+    const configuredBranchKey = choice.next_branch_key || choice.branch_key;
+    const nextBranchKey = configuredBranchKey && configuredBranchKey !== "default"
+      ? configuredBranchKey
+      : targetDialogue?.branch_key || configuredBranchKey || selectedBranchKey || "default";
     const previousHistory = parseJsonArray(
       pendingChoice?.choice_history_json || currentProgress?.choice_history_json
     );
@@ -907,15 +1093,28 @@ const loadGameData = async () => {
       },
     }));
 
+    if (targetSubtopicIndex >= 0 && targetSubtopicIndex !== currentSubtopicIndex) {
+      targetDialogueNavigationRef.current = {
+        dialogueId: String(choice.next_dialogue_id),
+        branchKey: nextBranchKey,
+      };
+      setIsDoneSubmitted(false);
+      setCurrentSubtopicIndex(targetSubtopicIndex);
+      return;
+    }
+
+    setSelectedBranchKey(nextBranchKey);
     const nextDialogues = getVisibleDialogues(
       currentSubtopic.dialogues || [],
-      isCurrentSubtopicCompleted,
+      isDoneSubmitted,
       nextBranchKey
     );
     const explicitNextIndex = nextDialogues.findIndex(
       (dialogue) =>
-        dialogue.dialogue_phase === choice.next_dialogue_phase
-        && Number(dialogue.step_index) === Number(choice.next_step_index)
+        choice.next_dialogue_id
+          ? String(dialogue.dialogue_id) === String(choice.next_dialogue_id)
+          : dialogue.dialogue_phase === choice.next_dialogue_phase
+            && Number(dialogue.step_index) === Number(choice.next_step_index)
     );
     const branchStartIndex = nextDialogues.findIndex(
       (dialogue) =>
@@ -933,7 +1132,6 @@ const loadGameData = async () => {
   };
 
   // เพิ่มเข้าไปในรายการ useState ของคุณ
-const [isDoneSubmitted, setIsDoneSubmitted] = useState(false);
 const handleSubmit = async () => {
   if (!currentSubtopic || isSubmitting || isRunning || !canSubmit) return;
 
@@ -958,6 +1156,10 @@ const handleSubmit = async () => {
   const output = storyRun.output || "(no output)";
   const currentExerciseId = currentSubtopic?.exercise_id || currentSubtopic?.id;
   const currentUserId = user?.user_id || user?.id || 1;
+  setProgramDialogue({
+    type: "grading-status",
+    text: output,
+  });
 
   try {
     const response = await fetch(`${API_BASE}/api/mini-game/modules/${moduleId}/progress`, {
@@ -979,7 +1181,54 @@ const handleSubmit = async () => {
 
     const nextBranchKey = result.selected_branch_key || "default";
     setSelectedBranchKey(nextBranchKey);
-    setSubmittedNextSubtopicIndex(getSubtopicIndexForBranch(nextBranchKey));
+    const explicitNextSubtopicIndex = getSubtopicIndexForBranch(nextBranchKey);
+    const completedDialogues = getVisibleDialogues(
+      currentSubtopic?.dialogues || [],
+      true,
+      nextBranchKey
+    );
+    let choiceDialogueIndex = completedDialogues.findIndex(
+      (dialogue) => String(dialogue.dialogue_id) === String(currentDialogue?.dialogue_id)
+        && getDialogueChoices(currentSubtopic, dialogue).length > 0
+    );
+    if (choiceDialogueIndex < 0) {
+      choiceDialogueIndex = completedDialogues.findIndex(
+        (dialogue) => getDialogueChoices(currentSubtopic, dialogue).length > 0
+      );
+    }
+    if (choiceDialogueIndex >= 0) {
+      const choiceDialogue = completedDialogues[choiceDialogueIndex];
+      if (choiceDialogueIndex !== dialogueIndex) {
+        skipDialogueTypingRef.current = true;
+      } else {
+        window.clearInterval(dialogueTypingTimerRef.current);
+        dialogueTypingTimerRef.current = null;
+        dialogueAudioRef.current?.pause();
+        if (dialogueAudioRef.current) dialogueAudioRef.current.currentTime = 0;
+        setDisplayedDialogueText(choiceDialogue.dialogue_text || "");
+      }
+    }
+    setProgramDialogue({
+      type: "submission-result",
+      text: output,
+    });
+    if (choiceDialogueIndex >= 0) {
+      setDialogueIndex(choiceDialogueIndex);
+    }
+    const endSubtopicIndex = subtopics.findIndex(
+      (subtopic) => String(subtopic.exercise_order ?? "") === "end"
+    );
+    const sequentialNextSubtopicIndex = currentSubtopicIndex + 1 < subtopics.length
+      ? currentSubtopicIndex + 1
+      : -1;
+    const nextSubtopicIndex = explicitNextSubtopicIndex >= 0
+      ? explicitNextSubtopicIndex
+      : moduleHasDialogueChoices
+        ? choiceDialogueIndex < 0
+          ? endSubtopicIndex >= 0 ? endSubtopicIndex : sequentialNextSubtopicIndex
+          : -1
+        : sequentialNextSubtopicIndex;
+    setSubmittedNextSubtopicIndex(nextSubtopicIndex);
     appendTerminalLine(`PASS Branch: ${nextBranchKey}`);
     setIsDoneSubmitted(true);
 
@@ -1023,6 +1272,10 @@ if (result?.is_module_completed) {
   });
 }
   } catch (submitError) {
+    setProgramDialogue({
+      type: "submission-error",
+      text: submitError.message,
+    });
     setTerminalLines((prev) => [...prev, `Submit Error: ${submitError.message}`]);
     // ในกรณีที่ error ก็จะหยุดอยู่ที่หน้านี้เพื่อให้ผู้เล่นแก้ไข ไม่มีการข้ามฉากอัตโนมัติเช่นกัน[cite: 1]
   } finally {
@@ -1219,24 +1472,19 @@ if (result?.is_module_completed) {
                         return (
                           <div key={node.subtopic.exercise_id ?? node.index} className="relative flex h-[112px] w-[190px] flex-col justify-between rounded-2xl border p-3 shadow-sm transition-colors">
                             <div className={`absolute inset-0 -z-10 rounded-2xl ${node.isCurrent ? "border border-indigo-300 bg-indigo-50 shadow-lg shadow-indigo-100" : node.isCompleted ? "border border-emerald-200 bg-emerald-50/80" : "border border-slate-200 bg-white"}`} />
-                            {isLocked ? (
-                              <div className="flex h-full items-center justify-center text-slate-300" title="ด่านนี้ยังไม่ผ่าน">
-                                <Lock size={28} strokeWidth={2.5} aria-label="ด่านที่ยังไม่ผ่าน" />
-                              </div>
-                            ) : (
-                              <>
-                                <div className="flex items-start justify-between gap-2">
-                                  <span className="text-[10px] font-black tracking-widest text-slate-400">#{node.index + 1}</span>
+                            <>
+                              <div className="flex items-start justify-between gap-2">
+                                <span className="text-[10px] font-black tracking-widest text-slate-400">#{node.index + 1}</span>
   <div className="flex items-center gap-1">
+    {isLocked ? <Lock size={12} className="text-slate-300" aria-label="ด่านที่ยังไม่ผ่าน" /> : null}
     {node.isCurrent ? <span className="rounded-lg bg-indigo-600 px-2 py-1 text-[9px] font-black text-white">ที่นี่</span> : null}
     {node.isCompleted ? <span className="rounded-lg bg-emerald-600 px-2 py-1 text-[9px] font-black text-white">ผ่านแล้ว</span> : null}
   </div>
 </div>
-                                <div className="flex min-h-0 flex-1 items-center justify-center text-center">
-                                  <h3 className="line-clamp-2 text-xs font-black leading-4 text-slate-800">{node.subtopic.title || "ด่านบทสนทนา"}</h3>
-                                </div>
-                              </>
-                            )}
+                              <div className="flex min-h-0 flex-1 items-center justify-center text-center">
+                                <h3 className="line-clamp-2 text-xs font-black leading-4 text-slate-800">{node.title || "ด่านบทสนทนา"}</h3>
+                              </div>
+                            </>
                           </div>
                         );
                       })}
@@ -1251,6 +1499,19 @@ if (result?.is_module_completed) {
 
       <div className="flex flex-1 overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-xl">
         <div className="grid flex-1 grid-cols-1 lg:grid-cols-[320px_1fr]">
+          {String(currentSubtopic?.exercise_order) !== "end" && (
+            <div className="max-h-40 shrink-0 overflow-y-auto border-b border-indigo-100 bg-indigo-50/70 p-4 lg:hidden">
+              <p className="text-[10px] font-black uppercase tracking-widest text-indigo-600">
+                โจทย์ปัจจุบัน
+              </p>
+              <h2 className="mt-1 text-base font-black text-slate-900">
+                {currentMissionCopy.title || moduleData.title}
+              </h2>
+              <p className="mt-2 whitespace-pre-line text-sm leading-5 text-slate-700">
+                {currentMissionCopy.hint || "Write code that matches this subtopic objective."}
+              </p>
+            </div>
+          )}
           <aside className="hidden border-r bg-slate-50/50 p-6 lg:block">
             <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600">
               ด่านปัจจุบัน
@@ -1344,7 +1605,7 @@ if (result?.is_module_completed) {
       : isCurrentSubtopicCompleted
         ? "This subtopic is already complete."
         : isDoneSubmitted
-          ? "กด ไปด่านถัดไป ก่อนเริ่มด่านใหม่"
+          ? "กด Spacebar เพื่อไปด่านถัดไป"
         : !canSubmit
           ? "Continue the dialogue to unlock submit."
           : "Submit this subtopic."
@@ -1483,7 +1744,11 @@ if (result?.is_module_completed) {
     )}
 
     {/* Choices Section */}
-    {!isDialogueTyping && currentDialogueChoices.length > 0 && (
+    {(!isDialogueTyping || canShowCurrentDialogueChoices)
+      && currentDialogueChoices.length > 0
+      && canShowCurrentDialogueChoices
+      && (currentDialogue?.dialogue_phase !== "post_submit" || isCurrentSubtopicCompleted)
+      && (
       <div className="grid gap-2 sm:grid-cols-2">
         {currentDialogueChoices.map((choice) => (
           <button
@@ -1499,29 +1764,26 @@ if (result?.is_module_completed) {
 
     {/* ส่วนปุ่ม Action */}
     <div className="flex gap-3">
-      {/* 1. ปุ่ม Next Dialogue */}
-      {!isProgramDialogue && dialogueIndex < dialogues.length - 1 && currentDialogueChoices.length === 0 && (
-        <button
-          onClick={() => isDialogueTyping ? setDisplayedDialogueText(currentDialogueText) : setDialogueIndex(prev => prev + 1)}
-          className="rounded-xl bg-indigo-600 px-6 py-2 text-sm font-bold text-white transition-all hover:bg-indigo-700"
-        >
-          Next Dialogue
-        </button>
-      )}
+      {programDialogue?.type === "grading-status" ? (
+        <span className="self-center text-xs font-medium text-slate-500">
+          {lang === "en" ? "Checking output..." : "กำลังตรวจสอบผลลัพธ์"}
+        </span>
+      ) : programDialogue?.type === "submission-result" ? (
+        <span className="self-center text-xs font-medium text-slate-500">
+          {lang === "en" ? "Press Space to go to the next dialogue" : "กด Spacebar เพื่อไปบทสนทนาถัดไป"}
+        </span>
+      ) : !isProgramDialogue && currentDialogueChoices.length === 0 ? (
+        <span className="self-center text-xs font-medium text-slate-500">
+          {dialogueIndex < dialogues.length - 1
+            ? lang === "en"
+              ? isDialogueTyping ? "Press Space to show the full message" : "Press Space for the next dialogue"
+              : isDialogueTyping ? "กด Spacebar เพื่อแสดงข้อความทั้งหมด" : "กด Spacebar เพื่อไปบทสนทนาถัดไป"
+            : isDoneSubmitted && submittedNextSubtopicIndex >= 0
+              ? lang === "en" ? "Press Space to go to the next stage" : "กด Spacebar เพื่อไปด่านถัดไป"
+              : null}
+        </span>
+      ) : null}
 
-      {/* 2. ปุ่ม ไปด่านถัดไป */}
-      {isDoneSubmitted && submittedNextSubtopicIndex >= 0 && (
-        <button
-          onClick={() => { 
-            setProgramDialogue(null); 
-            setCurrentSubtopicIndex(submittedNextSubtopicIndex); 
-            setIsDoneSubmitted(false); 
-          }}
-          className="rounded-xl bg-emerald-600 px-6 py-2 text-sm font-bold text-white transition-all hover:bg-emerald-700"
-        >
-          ไปด่านถัดไป →
-        </button>
-      )}
     </div>
   </div>
 

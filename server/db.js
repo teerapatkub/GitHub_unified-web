@@ -1764,6 +1764,39 @@ Object.defineProperty(db, 'ready', { get: () => db.initialize() });
 
 db.lockDownPublicSchema = lockDownPublicSchema;
 db.coreMigrations = coreMigrations;
+db.miniGameExercisesViewSql = problemMigrationInputs.VIEWS.mini_game_exercises;
+db.ensureMiniGameChoicesSchema = async () => {
+    const [relations] = await db.query(
+        `SELECT c.relkind
+           FROM pg_class c
+           JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE n.nspname = 'public' AND c.relname = 'mini_game_exercises'`
+    );
+    const relationKind = relations?.[0]?.relkind || null;
+    if (relationKind === 'r') {
+        await problemMigrationInputs.migrateProblems(db);
+    } else if (relationKind && relationKind !== 'v') {
+        throw new Error(`Cannot update mini_game_exercises view: found relation kind "${relationKind}"`);
+    }
+
+    await db.query(`
+        CREATE TABLE IF NOT EXISTS mini_game_choices (
+            choice_id BIGSERIAL PRIMARY KEY,
+            dialogue_id BIGINT NOT NULL
+                REFERENCES mini_game_dialogues(dialogue_id) ON DELETE CASCADE,
+            choice_text TEXT NOT NULL,
+            next_dialogue_id BIGINT
+                REFERENCES mini_game_dialogues(dialogue_id) ON DELETE SET NULL,
+            next_branch_key VARCHAR(80),
+            choice_order INTEGER NOT NULL DEFAULT 0
+        )
+    `);
+    await db.query(`
+        CREATE INDEX IF NOT EXISTS idx_mini_game_choices_dialogue_order
+        ON mini_game_choices(dialogue_id, choice_order)
+    `);
+    await db.query(db.miniGameExercisesViewSql.replace('CREATE VIEW', 'CREATE OR REPLACE VIEW'));
+};
 db.close = closePool;
 
 module.exports = db;
