@@ -47,3 +47,17 @@
   - ลบ `server/.supabase-management.env` และ `server/.tailscale.env`
   - ลบ access token ที่ supabase.com/dashboard/account/tokens
 - smoke test จากมือถือ 4G (ticket 10)
+
+## ติดตามผล 16:50: เว็บเปิดได้บ้างไม่ได้บ้าง → อัปเกรด Tailscale
+
+- **อาการ:** ผู้ใช้เปิดหน้าเว็บได้ แต่ API ขึ้น `ERR_CONNECTION_CLOSED` / `Failed to fetch` และบางครั้ง timeout ทั้งหน้า
+  - ส่วน `localhost:3001` ตอบปกติ
+- **สาเหตุ (จาก log ของ tailscale):** ingress ของ Funnel ต่อเข้า PeerAPI ของเครื่อง (`:65273`) แล้วได้ `CreateEndpoint error ... connection was refused` ทุกครั้ง
+  - เกิดบน `tailscale/tailscale:v1.90.9` ในโหมด `TS_USERSPACE=true`
+- **แก้:** `docker-compose.funnel.yml` ใช้ `tailscale/tailscale:v1.104.2` (stable ล่าสุดตอนนี้)
+  - state อยู่ใน volume เดิม จึงได้ที่อยู่เดิม
+- **ผลตรวจ:**
+  - ยิงซ้ำ 16 ครั้ง: 2 ครั้งแรกล้มระหว่าง container บูต จากนั้นได้ 200 ต่อเนื่อง 14 ครั้ง
+  - ไฟล์เพลง 6.6 MB โหลดครบผ่าน Funnel (11 วินาที)
+  - POST `/api/auth/sign-in` ถึง app (400 จาก body ว่าง ซึ่งเป็นผลที่ถูก)
+  - ไม่มี `CreateEndpoint` error หลังอัปเกรด

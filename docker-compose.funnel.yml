@@ -24,7 +24,7 @@
 # without this file.
 services:
   tailscale:
-    image: tailscale/tailscale:v1.90.9
+    image: tailscale/tailscale:v1.104.2
     hostname: ${TS_HOSTNAME:-pyarena}
     env_file:
       # Only the auth key, and only until the machine has joined.
