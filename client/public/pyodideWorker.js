@@ -15,6 +15,36 @@ let interruptBuffer = null;
 // promise that resolves when the page posts 'input_response' back. This is the
 // same bridge the pages used on the main thread, just moved in here.
 let pendingInputResolve = null;
+
+// A cap on what one run may print. Without it `while True: print(1)` posted a
+// message per line and the page re-rendered the whole growing log on every
+// one, so the tab froze long before the 10-second watchdog could stop the
+// loop. Past the cap nothing more is sent: one Thai notice goes out and the
+// run is stopped at once - through the interrupt buffer when there is one,
+// otherwise by asking the page to terminate this worker.
+const MAX_OUTPUT_CHARS = 50000;
+const MAX_OUTPUT_LINES = 2000;
+let outputChars = 0;
+let outputLines = 0;
+let outputLimitHit = false;
+const OUTPUT_LIMIT_MESSAGE = 'โปรแกรมพิมพ์ผลลัพธ์ออกมามากเกินไป ระบบจึงหยุดให้ (อาจมีลูปที่วนไม่รู้จบ)';
+
+function emitOutput(type, text) {
+    if (outputLimitHit) return;
+    const value = String(text == null ? '' : text);
+    const room = MAX_OUTPUT_CHARS - outputChars;
+    outputChars += value.length;
+    outputLines += 1;
+    if (outputChars <= MAX_OUTPUT_CHARS && outputLines <= MAX_OUTPUT_LINES) {
+        self.postMessage({ type, text: value });
+        return;
+    }
+    outputLimitHit = true;
+    if (room > 0) self.postMessage({ type, text: value.slice(0, room) });
+    self.postMessage({ type: 'stderr', text: OUTPUT_LIMIT_MESSAGE });
+    if (interruptBuffer) interruptBuffer[0] = 2;
+    else self.postMessage({ type: 'output_limit' });
+}
 self.requestInputFromJS = (prompt) => new Promise((resolve) => {
     pendingInputResolve = resolve;
     self.postMessage({ type: 'input_request', prompt: prompt || '' });
@@ -70,8 +100,8 @@ self.onmessage = async function (e) {
             importScripts('/pyodide/pyodide.js');
             pyodide = await loadPyodide({
                 indexURL: '/pyodide/',
-                stdout: (text) => self.postMessage({ type: 'stdout', text }),
-                stderr: (text) => self.postMessage({ type: 'stderr', text }),
+                stdout: (text) => emitOutput('stdout', text),
+                stderr: (text) => emitOutput('stderr', text),
             });
             if (interruptBuffer) {
                 try { pyodide.setInterruptBuffer(interruptBuffer); } catch { /* no SAB: falls back to hard terminate */ }
@@ -95,6 +125,9 @@ self.onmessage = async function (e) {
         // killed the instant it starts.
         if (interruptBuffer) interruptBuffer[0] = 0;
         pendingInputResolve = null;
+        outputChars = 0;
+        outputLines = 0;
+        outputLimitHit = false;
 
         try {
             // Setup virtual filesystem — create working directory
@@ -172,9 +205,18 @@ if "" not in sys.path:
             // A KeyboardInterrupt here is the watchdog stopping a runaway loop,
             // not a mistake in the learner's logic - say so in plain Thai.
             if (errMsg.includes('KeyboardInterrupt')) {
-                const msg = 'โค้ดรันนานเกินไป อาจมีลูปที่วนไม่รู้จบ ระบบจึงหยุดให้ — ลองตรวจเงื่อนไขที่ทำให้ลูปไม่จบ';
-                self.postMessage({ type: 'stderr', text: msg });
+                // The output cap already posted its own notice.
+                const msg = outputLimitHit
+                    ? OUTPUT_LIMIT_MESSAGE
+                    : 'โค้ดรันนานเกินไป อาจมีลูปที่วนไม่รู้จบ ระบบจึงหยุดให้ — ลองตรวจเงื่อนไขที่ทำให้ลูปไม่จบ';
+                if (!outputLimitHit) self.postMessage({ type: 'stderr', text: msg });
                 self.postMessage({ type: 'result', success: false, error: msg, interrupted: true });
+                return;
+            }
+            if (errMsg.includes('MemoryError')) {
+                const msg = 'โปรแกรมใช้หน่วยความจำมากเกินไป (เช่น เพิ่มข้อมูลในลูปไม่รู้จบ หรือสร้างตัวเลข/ลิสต์ขนาดใหญ่มาก)';
+                self.postMessage({ type: 'stderr', text: msg });
+                self.postMessage({ type: 'result', success: false, error: msg });
                 return;
             }
             // Extract just the Python traceback if available

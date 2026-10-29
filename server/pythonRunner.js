@@ -56,6 +56,34 @@ const resolvePythonBin = () => {
     return 'python';
 };
 
+// The timeout bounds time, not memory: `a = []; while True: a.append(...)` grew
+// to gigabytes before it fired. On Linux (the Docker image) every run goes
+// through `prlimit --as`, so such a program dies with MemoryError instead of
+// starving the server. 512 MB still imports pandas/matplotlib/flask - with
+// OpenBLAS kept to one thread, which otherwise reserves memory per core and
+// fails to start under the cap (measured 2026-10-29: a growing list stopped in
+// 3.4 s). PYTHON_MEMORY_LIMIT_MB=0 turns it off; Windows has no prlimit.
+const DEFAULT_MEMORY_LIMIT_MB = 512;
+const MEMORY_LIMIT_MESSAGE = 'โปรแกรมใช้หน่วยความจำมากเกินไป (เช่น เพิ่มข้อมูลในลูปไม่รู้จบ หรือสร้างตัวเลข/ลิสต์ขนาดใหญ่มาก)';
+const PRLIMIT_PATH = ['/usr/bin/prlimit', '/bin/prlimit'].find((candidate) => {
+    try { return fs.existsSync(candidate); } catch { return false; }
+}) || null;
+const memoryLimitMb = () => {
+    const configured = process.env.PYTHON_MEMORY_LIMIT_MB;
+    return configured === undefined || configured === '' ? DEFAULT_MEMORY_LIMIT_MB : Number(configured) || 0;
+};
+
+const pythonCommand = ({ pythonBin, filePath, platform = process.platform, prlimitPath = PRLIMIT_PATH, memoryLimitMb: limitMb = memoryLimitMb() }) => {
+    if (platform === 'linux' && prlimitPath && limitMb > 0) {
+        return {
+            command: prlimitPath,
+            args: [`--as=${Math.floor(limitMb * 1024 * 1024)}`, pythonBin, filePath],
+            env: { OPENBLAS_NUM_THREADS: '1' },
+        };
+    }
+    return { command: pythonBin, args: [filePath], env: {} };
+};
+
 /**
  * Run a script and hand back whatever it printed. Never rejects: a crash, a
  * syntax error and a timeout all come back as a resolved result with `error`
@@ -78,12 +106,14 @@ const runPythonScript = ({ code, input = '', timeoutMs = 4000, files = {}, mainF
 
     let child;
     try {
-        child = spawn(pythonBin, [filePath], {
+        const launch = pythonCommand({ pythonBin, filePath });
+        child = spawn(launch.command, launch.args, {
             cwd: tempDir,
             stdio: ['pipe', 'pipe', 'pipe'],
             windowsHide: true,
             env: {
                 ...process.env,
+                ...launch.env,
                 // Without this, Python encodes stdout with the console codepage,
                 // and on Windows that cannot represent Thai: every problem whose
                 // answer prints Thai died with UnicodeEncodeError and produced
@@ -155,11 +185,12 @@ const runPythonScript = ({ code, input = '', timeoutMs = 4000, files = {}, mainF
         // answer wrong. `error` still carries the traceback when the program
         // really did fail, because that is what the learner needs to read.
         const exitCode = Number.isInteger(code) ? code : 0;
+        const failure = stderr.trim() || `โปรแกรมจบด้วยรหัส ${exitCode}`;
         finish({
             stdout,
             stderr,
             exitCode,
-            error: exitCode === 0 ? '' : (stderr.trim() || `โปรแกรมจบด้วยรหัส ${exitCode}`),
+            error: exitCode === 0 ? '' : (/^MemoryError\b/m.test(stderr) ? MEMORY_LIMIT_MESSAGE : failure),
             timedOut: false,
         });
     });
@@ -202,4 +233,4 @@ const runPythonCase = async ({ code, input, expected, timeoutMs = 4000, files, m
     };
 };
 
-module.exports = { normalizeOutput, matchesExpected, resolvePythonBin, runPythonScript, runPythonCase };
+module.exports = { normalizeOutput, matchesExpected, resolvePythonBin, runPythonScript, runPythonCase, pythonCommand, MEMORY_LIMIT_MESSAGE };

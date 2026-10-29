@@ -84,6 +84,25 @@ export default function usePyodide() {
                     setStatus('running');
                     break;
 
+                case 'output_limit': {
+                    // The worker hit its output cap but has no interrupt buffer
+                    // (page not cross-origin isolated) to stop Python with, so
+                    // stop it here the same way the watchdog's last stage does.
+                    if (!resolveRef.current) break;
+                    const done = resolveRef.current;
+                    resolveRef.current = null;
+                    watchdogRef.current?.clear();
+                    watchdogRef.current = null;
+                    workerRef.current?.terminate();
+                    const nextWorker = new Worker('/pyodideWorker.js');
+                    nextWorker.onmessage = messageHandlerRef.current;
+                    workerRef.current = nextWorker;
+                    nextWorker.postMessage({ type: 'init', payload: { interruptBuffer: interruptRef.current } });
+                    setStatus('loading');
+                    done({ success: false, error: 'Output limit', interrupted: true });
+                    break;
+                }
+
                 case 'input_request': {
                     // The worker's input() is waiting. Pause the watchdog (typing
                     // is not running code), ask the page for a line, hand it back,
