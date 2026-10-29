@@ -644,7 +644,7 @@ const handleSubmit = async () => {
 
   <div
     data-tour="exercise-editor"
-    className="min-h-[160px] flex-1"
+    className="relative min-h-[160px] flex-1 overflow-hidden"
   >
     <Editor
       height="100%"
@@ -665,6 +665,9 @@ const handleSubmit = async () => {
         lineNumbersMinChars: 3,
         scrollBeyondLastLine: false,
         wordWrap: "on",
+        // Re-measure when the box resizes; Monaco otherwise keeps the pixel
+        // height it measured first and spills over the toolbar below.
+        automaticLayout: true,
       }}
     />
   </div>
