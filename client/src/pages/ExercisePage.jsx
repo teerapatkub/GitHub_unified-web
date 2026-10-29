@@ -609,8 +609,12 @@ const handleSubmit = async () => {
           
           <section className={`relative flex min-h-0 min-w-0 flex-col ${isAiOpen ? "xl:pr-[320px]" : ""}`}>
               <div className="flex min-h-0 flex-1 flex-col">
-<div className="min-h-0 flex-1 border-b border-slate-200">
-  <div className="border-b border-slate-200 bg-slate-50 px-3 py-2">
+{/* The editor takes whatever height is left, so the toolbar and terminal
+    below it always stay on screen - the same layout as CodingWorkspace
+    (Debug Lab / Challenge). A fixed-height editor here overflowed onto the
+    Run / Submit buttons at 100% zoom on a laptop screen. */}
+<div className="flex min-h-0 flex-1 flex-col overflow-hidden border-b border-slate-200">
+  <div className="shrink-0 border-b border-slate-200 bg-slate-50 px-3 py-2">
     <div className="flex gap-2">
       {/* 
         ปรับให้ map ตัวแปรเป็น fileObj (ซึ่งเป็น Object) 
@@ -640,7 +644,7 @@ const handleSubmit = async () => {
 
   <div
     data-tour="exercise-editor"
-    className="h-[190px] sm:h-[210px] lg:h-[240px] xl:h-[280px]"
+    className="min-h-[160px] flex-1"
   >
     <Editor
       height="100%"
@@ -665,7 +669,7 @@ const handleSubmit = async () => {
     />
   </div>
 </div>
-<div className="flex w-full border-b border-slate-200 bg-slate-50 px-2 py-1.5 sm:px-4">
+<div className="flex w-full shrink-0 border-b border-slate-200 bg-slate-50 px-2 py-1.5 sm:px-4">
   {/* เพิ่ม w-full ให้ div ลูก เพื่อให้มันขยายตัวเต็มพื้นที่ แล้ว justify-end จะดันปุ่มไปไว้ขวาสุด */}
   <div className="flex w-full gap-2">
         <button
@@ -749,7 +753,7 @@ const handleSubmit = async () => {
     </button>
   </div>
 </div>
-              <div className="h-[185px] flex shrink-0 flex-col bg-[#070d18]">
+              <div className="flex h-[150px] shrink-0 flex-col bg-[#070d18] xl:h-[185px]">
                 <div className="flex items-center gap-2 border-b border-gray-800/50 bg-gray-900/30 px-4 py-1.5">
                   <Terminal size={12} className="text-gray-500" />
                   <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">
