@@ -6,6 +6,7 @@ import usePyodide from "../hooks/usePyodide";
 import friendlyPyError from "../utils/friendlyPyError";
 import { sanitizePyErrorText } from "../utils/sanitizePyErrorText.js";
 import { API_BASE, assetUrl } from '../config/api.js';
+import { splitCodeSlide } from '../utils/codeSlide.js';
 import WebTutorialModal from "../components/WebTutorialModal";
 import { getWebTutorial } from "../data/webTutorials";
 import SkeletonLoading from "../components/ui/Skeleton";
@@ -65,8 +66,11 @@ export default function LessonPage({
   const codeSlideKey = slide?.code
     ? buildSlideCodeKey(slide, currentSlide)
     : null;
+  // Code slides mix an explanation, the code and its printed output; only the
+  // code goes into the editor and the runner (utils/codeSlide.js).
+  const codeParts = slide?.code ? splitCodeSlide(slide.content) : null;
   const currentCode = codeSlideKey
-    ? editableCodes[codeSlideKey] ?? slide?.content ?? ""
+    ? editableCodes[codeSlideKey] ?? codeParts?.code ?? ""
     : "";
 
   useEffect(() => {
@@ -480,9 +484,18 @@ export default function LessonPage({
                 </div>
               )}
 
+              {slide.code && codeParts?.intro && (
+                <div className="rounded-2xl border border-pysim-outline-variant/10 bg-pysim-surface-low p-6">
+                  <p className="whitespace-pre-line text-lg leading-8 text-pysim-on-surface">
+                    {codeParts.intro}
+                  </p>
+                </div>
+              )}
+
               {slide.code && (
                 <div className="rounded-xl bg-pysim-surface-low p-4">
                   <textarea
+                    aria-label="โค้ดตัวอย่าง แก้ไขแล้วกด Run Code ได้"
                     value={currentCode}
                     onChange={(event) =>
                       setEditableCodes((prev) => ({
@@ -529,6 +542,13 @@ export default function LessonPage({
                             : entry.text}
                         </div>
                       ))}
+                    </div>
+                  )}
+
+                  {codeParts?.output && (
+                    <div className="mt-3 rounded-lg border border-pysim-outline-variant/20 bg-white px-4 py-3">
+                      <p className="text-xs font-bold text-pysim-on-surface-variant">ผลลัพธ์ที่ควรได้</p>
+                      <pre className="mt-1 whitespace-pre-wrap font-mono text-sm text-pysim-on-surface">{codeParts.output}</pre>
                     </div>
                   )}
                 </div>

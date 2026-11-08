@@ -37,6 +37,25 @@ test('expected outputs are what the reference prints, not what the model wrote',
   assert.deepEqual(result.testCases.map(c => c.expected), wrong.testCases.map(c => String(Number(c.input) * 2)));
 });
 
+test('quotes the model wraps around a whole stdin line are removed before running', async () => {
+  // Seen 2026-11-09: the model wrote inputs as "Python", so len(input()) counted the quotes (8, not 6).
+  const words = ['Python', 'Code', 'A', 'Hello', 'PyArena', '123', 'Programming', 'Test'];
+  const quoted = {
+    title: 'นับตัวอักษร', description: 'อ่านข้อความหนึ่งบรรทัดแล้วพิมพ์จำนวนตัวอักษร', solution: 'print(len(input()))',
+    testCases: words.map((w, i) => ({ input: i % 2 ? `'${w}'` : `"${w}"` })),
+  };
+  const result = await generateChallenge({ topic: 'String', scope: 'community' }, { ask: async () => quoted });
+  assert.deepEqual(result.testCases.map(c => c.input), words);
+  assert.deepEqual(result.testCases.map(c => c.expected), words.map(w => String(w.length)));
+});
+
+test('quotes inside a line, or only on one side, are kept', async () => {
+  const lines = ['say "hi"', '"open', "it's", 'a "b" c', 'x', 'y', 'z', 'w'];
+  const kept = { title: 'สะท้อน', description: 'พิมพ์ข้อความที่อ่านได้', solution: 'print(input()[::-1])', testCases: lines.map(input => ({ input })) };
+  const result = await generateChallenge({ topic: 'String', scope: 'community' }, { ask: async () => kept });
+  assert.deepEqual(result.testCases.map(c => c.input), lines);
+});
+
 test('the local model is asked, never an external provider; its failures map to clear statuses', async () => {
   const asked = [];
   const fakeCaller = (reply) => (options) => ({

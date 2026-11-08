@@ -11,6 +11,7 @@ const {
   CORE_SCHEMA_VERSION,
   DATA_API_SECURITY_VERSION,
   MINI_GAME_CHOICES_VERSION,
+  SCHEMA_CLEANUP_VERSION,
   TUTORIALS_SEEN_VERSION,
 } = require('./versions');
 
@@ -103,7 +104,15 @@ const createMiniGameChoicesMigration = (up, signature) => defineMigration({
   up,
 });
 
+const createSchemaCleanupMigration = (up, signature) => defineMigration({
+  version: SCHEMA_CLEANUP_VERSION,
+  name: 'schema_cleanup_report_review',
+  signature: signatureFor(up, signature),
+  up,
+});
+
 module.exports = {
+  createSchemaCleanupMigration,
   createArcadeGuessPayoutsMigration,
   createArcadeSpectatorsMigration,
   createArcadeRoundKindsMigration,

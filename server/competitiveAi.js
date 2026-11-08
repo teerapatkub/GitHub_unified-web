@@ -59,10 +59,20 @@ function validateChallenge(value) {
   return value;
 }
 
+// The model often writes an stdin line the way it would write a Python
+// literal: "Python" instead of Python. input() then reads the quote marks too,
+// so the expected outputs counted them (seen 2026-11-09: "Python" -> 8).
+// Only a pair that wraps the whole line is removed.
+const unquoteStdinLine = line => {
+  const m = /^(["'])(.*)\1$/.exec(line.trim());
+  return m && !m[2].includes(m[1]) ? m[2] : line;
+};
+const unquoteStdin = input => input.split('\n').map(unquoteStdinLine).join('\n');
+
 // Run the reference on each input; its output becomes the expected output.
 // A crash, an empty output, or one output for every input rejects the draft.
 async function expectedFromReference(generated, grade) {
-  const inputs = generated.testCases.map(c => c.input);
+  const inputs = generated.testCases.map(c => unquoteStdin(c.input));
   const run = await grade({ problem: { test_kind: 'stdio', test_cases: inputs.map(input => ({ input, expected: '' })) }, code: restrictedSolution(generated.solution), timeoutMs: 2000 });
   const results = run.results || [];
   const broken = results.filter(r => r.error || !String(r.actual ?? '').trim());

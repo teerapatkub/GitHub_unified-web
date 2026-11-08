@@ -5070,14 +5070,14 @@ app.get('/api/survey', async (req, res) => {
     try {
         const [questions] = await db.execute(
             `SELECT id, question_key, title, description, image
-               FROM survey_questions WHERE is_active = 1 ORDER BY "order" ASC, id ASC`
+               FROM survey_questions WHERE is_active = 1 ORDER BY sort_order ASC, id ASC`
         );
         const [options] = await db.execute(
             `SELECT o.id, o.question_id, o.option_key, o.option_text AS label,
-                    o.option_description AS description, o."order", o.level_value AS level
+                    o.option_description AS description, o.sort_order, o.level_value AS level
                FROM survey_options o
                JOIN survey_questions q ON q.id = o.question_id AND q.is_active = 1
-              ORDER BY o."order" ASC, o.id ASC`
+              ORDER BY o.sort_order ASC, o.id ASC`
         );
         res.json(questions.map(q => ({
             id: q.id,
@@ -5186,7 +5186,7 @@ const ARCADE_SHOP_ITEMS = [
     { id: 'inkFog', nameTH: 'หมอกดำบังจอ (Ink Fog)', nameEN: 'Ink Fog', price: 400, icon: '🌫️', descTH: 'ทำให้จอพิมพ์โค้ดของเป้าหมายเบลอเป็นเวลา 15 วินาที', descEN: 'Blurs target editor screen for 15s.', type: 'attack' },
     { id: 'backspaceLock', nameTH: 'ล็อกปุ่มลบ (Backspace Lock)', nameEN: 'Backspace Lock', price: 500, icon: '🔒', descTH: 'เป้าหมายไม่สามารถกดลบตัวอักษรได้ 10 วินาที', descEN: 'Disables target backspace key for 10s.', type: 'attack' },
     { id: 'keyScrambler', nameTH: 'สลับแป้นพิมพ์ (Key Scrambler)', nameEN: 'Key Scrambler', price: 450, icon: '⌨️', descTH: 'พิมพ์แล้วตัวอักษรจะสลับตำแหน่งมั่วๆ 10 วินาที', descEN: 'Scrambles typed keys for 10s.', type: 'attack' },
-    { id: 'aiHelper', nameTH: 'AI บอกใบ้โค้ด (AI Helper)', nameEN: 'AI Helper', price: 600, icon: '🤖', descTH: 'ขอคำแนะนำและโครงสร้างโค้ดจากระบบ Gemini AI', descEN: 'Requests AI hint for the current task.', type: 'buff' },
+    { id: 'aiHelper', nameTH: 'AI บอกใบ้โค้ด (AI Helper)', nameEN: 'AI Helper', price: 600, icon: '🤖', descTH: 'เปิดคำใบ้ของโจทย์รอบนี้', descEN: 'Reveals the hint for this round\'s problem.', type: 'buff' },
     { id: 'screenShake', nameTH: 'แผ่นดินไหว (Earthquake)', nameEN: 'Earthquake', price: 300, icon: '🌋', descTH: 'เขย่าหน้าจอกล่องเขียนโค้ดของเป้าหมายอย่างรุนแรง 8 วินาที', descEN: 'Violently shakes target editor for 8s.', type: 'attack' },
     { id: 'typoGenerator', nameTH: 'Glitch ก่อกวน (Glitch Injector)', nameEN: 'Glitch Injector', price: 550, icon: '🐛', descTH: 'สุ่มพิมพ์ตัวอักษรแปลกปลอมแทรกในโค้ดเป้าหมาย 10 วินาที', descEN: 'Injects random typos into target editor.', type: 'attack' },
     { id: 'timeFreeze', nameTH: 'หยุดเวลาแช่แข็ง (Time Freeze)', nameEN: 'Time Freeze', price: 1200, icon: '❄️', descTH: 'หยุดศัตรูทั้งหมดไม่ให้แก้ไขโค้ดได้ชั่วคราว 5 วินาที', descEN: 'Freezes all active opponents for 5s.', type: 'aoe' },
@@ -7117,6 +7117,7 @@ const {
   createAuthProvisioningMigration,
   createDataApiSecurityMigration,
   createMiniGameChoicesMigration,
+  createSchemaCleanupMigration,
   createTutorialsSeenMigration,
   createArcadeQualityBreakdownMigration,
   createArcadeAchievementRewardsMigration,
@@ -7226,6 +7227,12 @@ const applicationMigrations = [
       require('./problemsSchema').runMigration.toString(),
       db.miniGameExercisesViewSql,
     ].join('\n-- migration input --\n'),
+  ),
+  // Integer achievement coins, sort_order instead of the reserved "order",
+  // the aiHelper description and two broken lesson code slides (report review).
+  createSchemaCleanupMigration(
+    () => require('./migrate-schema-cleanup').migrateSchemaCleanup(db),
+    require('fs').readFileSync(require.resolve('./migrate-schema-cleanup'), 'utf8'),
   ),
 ];
 
