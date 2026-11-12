@@ -19,36 +19,7 @@
 
 ---
 
-## 1. ติดตั้ง Docker บนเครื่อง มข.
-
-```bash
-ssh project@10.198.210.127
-```
-
-**[มข.]**
-
-```bash
-sudo apt-get update
-sudo apt-get install -y docker.io docker-compose-v2 git
-sudo usermod -aG docker project
-exit
-```
-
-`sudo` จะถามรหัสผ่าน ใช้รหัสเดียวกับตอน ssh จากนั้นให้ `ssh` เข้าใหม่ เพื่อให้สิทธิ์กลุ่ม docker มีผล แล้วตรวจ:
-
-**[มข.]**
-
-```bash
-docker version --format '{{.Server.Version}}'
-docker compose version
-```
-
-**ต้องได้:** compose เวอร์ชัน **2.24 ขึ้นไป** เพราะไฟล์ compose ใช้ `env_file: required: false`
-ถ้าต่ำกว่านี้ ให้ส่งผลมาก่อน แล้วค่อยลงจาก repo ของ Docker แทน
-
----
-
-## 2. ส่งโค้ดและไฟล์ env ขึ้นเครื่อง
+## 1. ส่งโค้ดและไฟล์ env ขึ้นเครื่อง
 
 ใช้ `git archive` ซึ่งเอาเฉพาะไฟล์ที่อยู่ใน git **จึงไม่มีไฟล์ลับหลุดไปด้วย**
 และไม่ต้องตั้งสิทธิ์ GitHub บนเครื่อง มข.
@@ -56,38 +27,61 @@ docker compose version
 **[โน๊ตบุ๊ก]**
 
 ```bash
-git archive --format=tar.gz -o pyarena.tar.gz HEAD
-scp pyarena.tar.gz project@10.198.210.127:~/
+git archive --format=tar.gz -o deploy/kku/pyarena.tar.gz HEAD
+scp deploy/kku/pyarena.tar.gz project@10.198.210.127:~/
 scp server/.env.production.local project@10.198.210.127:~/
 ```
 
-**[มข.]**
+`*.tar.gz` ถูก gitignore ไว้แล้ว ไฟล์นี้จึงไม่เข้า git
+
+**[มข.]** (เข้าด้วย `ssh project@10.198.210.127`)
 
 ```bash
 mkdir -p ~/pyarena && tar -xzf ~/pyarena.tar.gz -C ~/pyarena && rm ~/pyarena.tar.gz
 mv ~/.env.production.local ~/pyarena/server/.env.production.local
 chmod 600 ~/pyarena/server/.env.production.local
-cd ~/pyarena && ls Dockerfile docker-compose.yml docker-compose.funnel.yml
 ```
-
-**ต้องเห็น:** ไฟล์ทั้งสามขึ้นมา ไม่มี error
 
 > **ห้ามรัน `docker compose config` แบบไม่มี `--quiet`** เพราะจะพิมพ์ค่าลับทั้งหมดออกมา
 
 ---
 
-## 3. Build และเปิดแบบยังไม่มี Tailscale (ทดสอบในเครื่องก่อน)
+## 2. ดาวน์โหลดทุกอย่างที่ต้องใช้ (สคริปต์เดียว)
+
+**[มข.]**
+
+```bash
+cd ~/pyarena && bash deploy/kku/prepare-host.sh
+```
+
+`sudo` จะถามรหัสผ่านครั้งเดียว ใช้รหัสเดียวกับตอน ssh
+
+สคริปต์ทำ 4 อย่าง:
+1. ติดตั้ง Docker และ Compose จาก Ubuntu
+   - Ubuntu 24.04 ให้ Compose 2.40.3 ซึ่งต้องการ 2.24 ขึ้นไป
+2. ดึง image ที่ใช้: Ollama, busybox, Tailscale และ Node
+3. ดาวน์โหลดโมเดล AI ประมาณ 3 GB เข้า volume ที่เว็บจะใช้จริง
+4. build image ของ app (npm, pip และหน้าเว็บ) ใช้เวลา 5–15 นาที
+
+**ยังไม่เปิดเว็บ** รันซ้ำได้ถ้าหยุดกลางทาง
+
+**ต้องเห็นท้ายสุด:**
+- `Done`
+- รายการ image ทั้งหมด
+- พื้นที่ดิสก์ที่เหลือ
+
+จากนั้นให้ **`exit` แล้ว ssh เข้าใหม่ 1 ครั้ง** จะได้ใช้ `docker` ได้โดยไม่ต้อง sudo
+
+---
+
+## 3. เปิดแบบยังไม่มี Tailscale (ทดสอบในเครื่องก่อน)
 
 **[มข.]**
 
 ```bash
 cd ~/pyarena
-docker compose -p pyarena --env-file server/.env.production.local build
 docker compose -p pyarena --env-file server/.env.production.local up -d
 ```
-
-- build ครั้งแรกใช้เวลา 5–15 นาที
-- `up` ครั้งแรกจะโหลดโมเดล AI ประมาณ 3 GB ต้องรอให้เสร็จก่อน app จึงจะขึ้น
 
 ตรวจผล (รอจน app ขึ้น `healthy`):
 
@@ -161,7 +155,7 @@ $C start      # เปิด
 ```
 
 **อัปเดตโค้ด:**
-1. **[โน๊ตบุ๊ก]** ทำขั้นที่ 2 ซ้ำ เฉพาะ `git archive` และ `scp pyarena.tar.gz`
+1. **[โน๊ตบุ๊ก]** ทำขั้นที่ 1 ซ้ำ เฉพาะ `git archive` และ `scp deploy/kku/pyarena.tar.gz`
 2. **[มข.]** แตกไฟล์ทับ แล้ว build และเปิดใหม่:
 
 ```bash
