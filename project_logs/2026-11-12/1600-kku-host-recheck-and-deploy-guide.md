@@ -43,3 +43,23 @@
 - ยังไม่ได้ติดตั้งหรือรันอะไรบนเครื่อง มข. เพราะ Claude ไม่ล็อกอินด้วยรหัสผ่านแทนผู้ใช้
 - ยังไม่รู้เวอร์ชัน compose บนเครื่อง ต้องได้ 2.24 ขึ้นไป
 - ยังไม่ได้วัดว่า Lumi ตอบเร็วแค่ไหนบน CPU 16 core
+
+## เพิ่มเติม: สคริปต์เตรียมเครื่อง (commit a60fab6)
+
+- **`deploy/kku/prepare-host.sh`:** ทำ 4 อย่างในครั้งเดียว
+  - ติดตั้ง Docker และ Compose จาก apt ของ Ubuntu
+  - ดึง image ทุกตัว: ollama 0.30.0, busybox 1.37.0, tailscale v1.104.2, node:22-bookworm-slim
+  - ดาวน์โหลดโมเดลที่ระบุใน env เข้า volume `pyarena_ollama-models`
+  - build image ของ app
+  - ยังไม่เปิดเว็บ รันซ้ำได้
+- **`.gitattributes`:** `*.sh` ใช้ LF เพื่อให้ไฟล์ที่ pack บน Windows รันบน Ubuntu ได้
+- **`docs/deploy-kku.md`:** ขั้นที่ 1–2 ใช้สคริปต์นี้
+- **`deploy/kku/pyarena.tar.gz`:** ไฟล์ archive ขนาด 136 MB จาก a60fab6 ถูก gitignore ไว้
+
+**ตรวจแล้ว:**
+- `bash -n` ผ่าน
+- ทดสอบตรรกะเทียบเวอร์ชัน compose และการอ่านชื่อโมเดลแล้ว
+- ใน archive สคริปต์ไม่มี CR และไม่มีไฟล์ env จริง
+- packages.ubuntu.com: noble-updates มี docker-compose-v2 2.40.3 และ docker.io 29.1.3
+
+**ยังไม่ได้รันสคริปต์จริงบนเครื่อง มข.:** Docker Desktop บนโน๊ตบุ๊กปิดอยู่ จึงไม่ได้ลองใน container Ubuntu ด้วย
