@@ -8,6 +8,7 @@ const {
   ARCADE_SPECTATORS_VERSION,
   APPLICATION_SCHEMA_VERSION,
   AUTH_PROVISIONING_VERSION,
+  COMPETITIVE_POOL_VERSION,
   CORE_SCHEMA_VERSION,
   DATA_API_SECURITY_VERSION,
   MINI_GAME_CHOICES_VERSION,
@@ -111,7 +112,15 @@ const createSchemaCleanupMigration = (up, signature) => defineMigration({
   up,
 });
 
+const createCompetitivePoolMigration = (up, signature) => defineMigration({
+  version: COMPETITIVE_POOL_VERSION,
+  name: 'competitive_generated_pool',
+  signature: signatureFor(up, signature),
+  up,
+});
+
 module.exports = {
+  createCompetitivePoolMigration,
   createSchemaCleanupMigration,
   createArcadeGuessPayoutsMigration,
   createArcadeSpectatorsMigration,

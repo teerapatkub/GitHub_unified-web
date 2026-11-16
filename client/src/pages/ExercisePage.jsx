@@ -17,7 +17,10 @@ import {
   Loader2,
   ArrowLeft,
   CircleHelp,
+  Square,
 } from "lucide-react";
+import useLumiChat from "../hooks/useLumiChat";
+import { buildLumiMessages } from "../utils/lumiChat";
 import ProgressCelebration from "../components/learning/ProgressCelebration";
 import WebTutorialModal from "../components/WebTutorialModal";
 import { problemTitle, problemDescription } from "../utils/problemText";
@@ -101,7 +104,9 @@ export default function ExercisePage({ lessonId, user, onUserRefresh, onNavigate
     { role: "ai", text: "สวัสดีค่ะ เราคือ Lumi ผู้ช่วยของแบบฝึกหัดนี้ ถ้าอยากได้ hint หรืออยากให้ช่วยดูโค้ด ถามเราได้เลยนะคะ" },
   ]);
   const [chatInput, setChatInput] = useState("");
-  const [isAiResponding, setIsAiResponding] = useState(false);
+  const lumi = useLumiChat();
+  const isAiResponding = lumi.isResponding;
+  const stopLumi = lumi.stop;
   const [showTutorial, setShowTutorial] = useState(false);
 
   const inputResolverRef = useRef(null);
@@ -249,7 +254,7 @@ const loadExercises = async () => {
     const savedCode = submittedCodeByExerciseId[Number(currentEx.exercise_id)];
     setCode(savedCode ?? currentEx.starter_code ?? "");
     setTerminalLines([]);
-    setIsAiResponding(false);
+    stopLumi();
     setChatInput("");
     setChatHistory([
       {
@@ -257,7 +262,7 @@ const loadExercises = async () => {
         text: `เราพร้อมช่วยในโจทย์ "${problemTitle(lang, currentEx)}" ถ้าต้องการ hint หรือให้ดูโค้ดของคุณ ส่งข้อความมาได้เลย`,
       },
     ]);
-  }, [currentExIdx, currentEx, submittedCodeByExerciseId, lang]);
+  }, [currentExIdx, currentEx, submittedCodeByExerciseId, lang, stopLumi]);
 
 const handleRun = async () => {
     if (!pyReady || isRunning) return;
@@ -424,53 +429,27 @@ const handleSubmit = async () => {
     if (!messageToSend.trim() || isAiResponding) return;
 
     const nextHistory = [...chatHistory, { role: "user", text: messageToSend }];
-    setChatHistory([...nextHistory, { role: "ai", text: "Lumi กำลังดูโจทย์และโค้ดของคุณ..." }]);
+    setChatHistory([...nextHistory, { role: "ai", text: "Lumi กำลังดูโจทย์และโค้ดของคุณ...", pending: true }]);
     setChatInput("");
-    setIsAiResponding(true);
 
-    try {
-      const data = await requestJson('/api/ai/chat', {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // POST /api/ai/chat takes `messages`, an OpenAI-style array. This used
-        // to send `message` plus loose context fields, which the endpoint never
-        // read - so every question asked here came back 500 and the learner saw
-        // the "AI is unavailable" fallback, always. The exercise context rides
-        // in a system message instead.
-        body: JSON.stringify({
-          messages: [
-            {
-              role: 'system',
-              content: [
-                'คุณคือ Lumi ผู้ช่วยสอน Python ของผู้เรียนที่เพิ่งเริ่มต้น ตอบเป็นภาษาไทย สั้น ตรงประเด็น',
-                'อย่าเฉลยโค้ดทั้งข้อ ให้ชี้จุดที่ผิดและบอกแนวทางแก้',
-                `โจทย์: ${exTitle(currentEx)}`,
-                `คำอธิบายโจทย์: ${exDescription(currentEx)}`,
-                `ระดับของผู้เรียน: ${user?.level || 1}`,
-                `โค้ดล่าสุดของผู้เรียน:\n${code}`,
-              ].join('\n'),
-            },
-            ...chatHistory
-              .filter((m) => m.role === 'user' || m.role === 'ai')
-              .slice(-6)
-              .map((m) => ({ role: m.role === 'ai' ? 'assistant' : 'user', content: m.text })),
-            { role: 'user', content: messageToSend },
-          ],
-        }),
-      });
+    // The request is built in utils/lumiChat.js, shared with the Debug Lab /
+    // Challenge workspace and the mini game, and the answer streams in.
+    const result = await lumi.ask(
+      buildLumiMessages({
+        title: exTitle(currentEx),
+        description: exDescription(currentEx),
+        level: user?.level || 1,
+        code,
+        history: chatHistory,
+        userText: messageToSend,
+      }),
+      (text) => setChatHistory([...nextHistory, { role: "ai", text }]),
+    );
 
-      setChatHistory([
-        ...nextHistory,
-        { role: "ai", text: data?.reply || "Lumi ยังตอบกลับไม่ครบ ลองถามใหม่อีกครั้งได้เลย" },
-      ]);
-    } catch {
-      setChatHistory([
-        ...nextHistory,
-        { role: "ai", text: "ตอนนี้ระบบ AI ตอบกลับไม่ได้ชั่วคราว ลองใหม่อีกครั้งได้เลย" },
-      ]);
-    } finally {
-      setIsAiResponding(false);
-    }
+    let text = result.text;
+    if (result.stopped) text = text ? `${text} …` : "หยุดคำตอบแล้ว ถามใหม่ได้เลย";
+    else if (result.failed && !text) text = "ตอนนี้ระบบ AI ตอบกลับไม่ได้ชั่วคราว ลองใหม่อีกครั้งได้เลย";
+    setChatHistory([...nextHistory, { role: "ai", text }]);
   };
 
   // The short Thai message covers the ten or so mistakes beginners actually
@@ -867,13 +846,26 @@ const handleSubmit = async () => {
                       disabled={isAiResponding}
                       className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-2.5 pl-4 pr-11 text-sm text-slate-900 outline-none transition-colors focus:border-blue-500"
                     />
-                    <button
-                      type="submit"
-                      disabled={!chatInput.trim() || isAiResponding}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-600 disabled:opacity-40"
-                    >
-                      <Send size={18} />
-                    </button>
+                    {isAiResponding ? (
+                      <button
+                        type="button"
+                        onClick={lumi.stop}
+                        aria-label="หยุดคำตอบของ Lumi"
+                        title="หยุดคำตอบ"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-600"
+                      >
+                        <Square size={16} />
+                      </button>
+                    ) : (
+                      <button
+                        type="submit"
+                        aria-label="ส่งข้อความถึง Lumi"
+                        disabled={!chatInput.trim()}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-600 disabled:opacity-40"
+                      >
+                        <Send size={18} />
+                      </button>
+                    )}
                   </form>
                 </div>
               </aside>
@@ -900,7 +892,7 @@ const handleSubmit = async () => {
             onClick={() => setShowTutorial(true)}
             aria-label="เปิดวิธีใช้งานเว็บ"
             title="วิธีใช้งานเว็บ"
-            className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-xl border border-white/80 bg-pysim-primary text-white shadow-[0_12px_30px_rgba(15,23,42,0.22)] transition-all hover:-translate-y-1 hover:bg-pysim-primary/90 focus:outline-none focus:ring-4 focus:ring-pysim-primary/30 active:translate-y-0"
+            className="fixed bottom-6 left-6 z-40 flex h-14 w-14 items-center justify-center rounded-xl border border-white/80 bg-pysim-primary text-white shadow-[0_12px_30px_rgba(15,23,42,0.22)] transition-all hover:-translate-y-1 hover:bg-pysim-primary/90 focus:outline-none focus:ring-4 focus:ring-pysim-primary/30 active:translate-y-0"
           >
             <CircleHelp className="h-7 w-7" aria-hidden="true" />
           </button>

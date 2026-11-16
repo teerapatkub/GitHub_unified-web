@@ -4,6 +4,7 @@
 require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
@@ -21,7 +22,8 @@ const { publicArcadeTask } = require('./arcade/public-task');
 // The single answer-checker. See server/problemGrader.js for why there is only
 // one now, and server/problemsSchema.js for the problem bank it grades against.
 const { gradeSubmission, screenUnverifiedSubmission } = require('./problemGrader');
-const { createCompetitiveAiRouter } = require('./competitiveAi');
+const { createCompetitiveAiRouter, generateChallenge, TOPICS: COMPETITIVE_TOPICS } = require('./competitiveAi');
+const { createCompetitivePool, migrateCompetitivePool } = require('./competitivePool');
 const { gradeMiniGameSubmission } = require('./miniGameGrader');
 // The single definition of how far through a lesson a learner is - see the
 // header of server/lessonProgress.js for why it had to become one.
@@ -48,6 +50,10 @@ installHealthRoutes(app, { checkReadiness: () => checkReadiness(), state: startu
 app.use(cors({ origin: (origin, callback) => {
   callback(null, !origin || authOrigins(process.env).has(origin));
 }, credentials: true }));
+// gzip for every text response: JS, CSS, JSON and Pyodide's .asm.js went out
+// raw before, across a Tailscale Funnel link (2026-11-16). A response marked
+// `Cache-Control: no-transform` (Lumi's live answer) is left alone.
+app.use(compression());
 app.use(express.json());
 const { createClient } = require('@supabase/supabase-js');
 let supabase;
@@ -135,7 +141,16 @@ app.use('/api', createPlacementRouter(db, {
 }));
 app.use('/api/themes', createThemeRouter(db));
 app.use('/api/admin/lessons', createLessonAdminRouter(db));
-app.use('/api/competitive/challenges', createCompetitiveAiRouter());
+// Problems written ahead of time while the model is free (competitivePool.js);
+// the refill timer starts with the other background jobs.
+const competitivePool = createCompetitivePool({
+    db,
+    generate: (request, options) => generateChallenge(request, options),
+    isModelIdle: () => chatLlm.isIdle(),
+    topics: COMPETITIVE_TOPICS.filter((topic) => topic !== 'Python'),
+    perTopic: Number(process.env.COMPETITIVE_POOL_PER_TOPIC ?? 3),
+});
+app.use('/api/competitive/challenges', createCompetitiveAiRouter({ pool: competitivePool }));
 app.use('/api/admin/student-progress', createStudentProgressRouter(db));
 
 
@@ -264,7 +279,7 @@ if (!fs.existsSync(uploadsDir)) {
 
 // Theme and lesson images uploaded through /api/upload are referenced from the
 // database (shop_items.asset_url), so they have to be served back.
-app.use('/uploads', express.static(uploadsDir));
+app.use('/uploads', express.static(uploadsDir, { maxAge: '1d' }));
 
 // Images that ship WITH the app - the shop's seed themes and frames, and the
 // default profile pictures - live here rather than in uploadsDir, because
@@ -276,7 +291,7 @@ app.use('/uploads', express.static(uploadsDir));
 // asset_url in the seed data. The volume mount above wins for anything a user
 // actually uploaded; this is the fallback for everything that came with the app.
 const seedAssetsDir = path.join(__dirname, 'seed-assets');
-app.use('/uploads', express.static(seedAssetsDir));
+app.use('/uploads', express.static(seedAssetsDir, { maxAge: '1d' }));
 
 // Admin uploads (lesson media, cosmetic art). With ASSET_STORAGE_BUCKET set they
 // go to that Supabase Storage bucket, which outlives restarts on a host without
@@ -648,6 +663,21 @@ const ensureLessonExercisesSeeded = async () => {
     }
 };
 
+// The CREATE TABLE IF NOT EXISTS checks that routes ran on every request (the
+// presence ping alone every 30 s per signed-in learner) cost a round trip to
+// the database in Tokyo each time. The tables are created by the migrations at
+// boot; a route now checks once per process. A failed check is tried again.
+const schemaChecks = new Map();
+function schemaOnce(ensure) {
+    if (!schemaChecks.has(ensure)) {
+        schemaChecks.set(ensure, Promise.resolve().then(ensure).catch((error) => {
+            schemaChecks.delete(ensure);
+            throw error;
+        }));
+    }
+    return schemaChecks.get(ensure);
+}
+
 const ensureUserPresenceSchema = async () => {
     await db.execute(`
         CREATE TABLE IF NOT EXISTS user_presence (
@@ -726,6 +756,9 @@ const LUMI_LENGTH_RULE = 'ตอบเป็นภาษาไทย สั้�
 const LUMI_PERSONA_RULE = 'Lumi เป็นผู้หญิง แทนตัวเองว่า "ลูมี่" หรือ "เรา" ลงท้ายประโยคด้วย "ค่ะ" หรือ "คะ" เสมอ ห้ามใช้ "ครับ" หรือ "ผม"';
 const LUMI_RULES = `${LUMI_PERSONA_RULE}\n${LUMI_LENGTH_RULE}`;
 const LUMI_MAX_TOKENS = 400;
+// How long a streamed answer may take to start once the model has the request:
+// on the CPU-only host the prompt (problem + code) is read before the first word.
+const LUMI_FIRST_TOKEN_MS = Number(process.env.LLM_FIRST_TOKEN_MS) || 30000;
 const withLumiLengthRule = (messages) => {
     const list = Array.isArray(messages) ? messages : [];
     if (list[0]?.role === 'system') {
@@ -734,21 +767,81 @@ const withLumiLengthRule = (messages) => {
     return [{ role: 'system', content: `คุณคือ Lumi ผู้ช่วยสอน Python สำหรับผู้เริ่มต้น\n${LUMI_RULES}` }, ...list];
 };
 
+const LUMI_UNAVAILABLE = '✨ อ๊ะ! พลังเวทมนตร์ของ Lumi ขัดข้องชั่วคราว ลองถามใหม่อีกทีน้า~';
+// Two pages once sent `message` instead of `messages`, and the model, given only
+// a system prompt, introduced itself to every question (2026-11-12). A request
+// with no question in it is refused instead of reaching the model.
+const hasLearnerQuestion = (messages) => Array.isArray(messages)
+    && messages.some(m => m?.role === 'user' && String(m?.content ?? '').trim());
+
 app.post('/api/ai/chat', async (req, res) => {
-    const { messages } = req.body;
+    const { messages } = req.body || {};
+    if (!hasLearnerQuestion(messages)) {
+        return res.status(400).json({
+            error: 'messages must contain at least one user message',
+            reply: 'Lumi ยังไม่ได้รับคำถามเลย ลองพิมพ์คำถามอีกครั้งนะคะ',
+        });
+    }
+    const prompt = withLumiLengthRule(messages);
+
+    // A browser that asks for text/event-stream gets the answer as it is
+    // written (see ai/llm.js stream): on the CPU-only host a full answer takes
+    // tens of seconds, the first words a few. Anyone else gets one JSON reply.
+    if (!String(req.headers.accept || '').includes('text/event-stream')) {
+        try {
+            const reply = await callAiChat({
+                messages: prompt,
+                temperature: 0.7,
+                maxTokens: LUMI_MAX_TOKENS,
+                priority: 'interactive',
+            });
+            return res.json({ reply });
+        } catch (error) {
+            console.error('❌ Lumi Error:', error.message);
+            return res.status(500).json({ reply: LUMI_UNAVAILABLE });
+        }
+    }
+
+    if (!chatLlm.enabled) {
+        return res.status(500).json({ reply: LUMI_UNAVAILABLE });
+    }
+
+    // `no-transform` keeps the compression middleware from buffering the
+    // answer; X-Accel-Buffering does the same for a proxy in front.
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no',
+    });
+    const send = (payload) => {
+        if (!res.writableEnded) res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    };
+    // The learner pressed stop or left: free the model for the next person.
+    const gone = new AbortController();
+    res.on('close', () => {
+        if (!res.writableEnded) gone.abort();
+    });
+
     try {
-        const reply = await callAiChat({
-            messages: withLumiLengthRule(messages),
+        for await (const text of chatLlm.stream({
+            messages: prompt,
             temperature: 0.7,
             maxTokens: LUMI_MAX_TOKENS,
-            thinking: false
-        });
-        return res.json({ reply });
+            priority: 'interactive',
+            signal: gone.signal,
+            firstTokenMs: LUMI_FIRST_TOKEN_MS,
+        })) {
+            send({ text });
+        }
+        send({ done: true });
     } catch (error) {
-        console.error('❌ Lumi Error:', error.message);
-        return res.status(500).json({
-            reply: '✨ อ๊ะ! พลังเวทมนตร์ของ Lumi ขัดข้องชั่วคราว ลองถามใหม่อีกทีน้า~'
-        });
+        if (!gone.signal.aborted) {
+            console.error('❌ Lumi Error:', error.message);
+            send({ error: LUMI_UNAVAILABLE });
+        }
+    } finally {
+        if (!res.writableEnded) res.end();
     }
 });
 
@@ -770,9 +863,11 @@ if (chatLlm.enabled) {
 }
 
 // Callers still pass `thinking`; a local model's thinking is stripped from the
-// reply instead (ai/llm.js), so it is accepted and ignored here.
-const callAiChat = async ({ messages, systemInstruction = '', temperature = 1, maxTokens = 4096, json = false }) => (
-    chatLlm.call({ messages, systemInstruction, temperature, maxTokens, json })
+// reply instead (ai/llm.js), so it is accepted and ignored here. `priority` is
+// the call's place in the model's queue (ai/llm.js); a learner watching the
+// answer is 'interactive', a generation somebody waits for is 'normal'.
+const callAiChat = async ({ messages, systemInstruction = '', temperature = 1, maxTokens = 4096, json = false, priority = 'normal' }) => (
+    chatLlm.call({ messages, systemInstruction, temperature, maxTokens, json, priority })
 );
 
 
@@ -919,24 +1014,62 @@ async function computeAchievementMetrics(userId, username) {
         return Number(rows?.[0]?.n || 0);
     };
 
-    // A lesson counts as completed on exactly the terms the learning page and
-    // the profile page use, because all three ask evaluateLesson().
-    const [lessonRows] = await db.execute(
-        `SELECT l.lesson_id,
-                (SELECT COUNT(*) FROM exercises e WHERE e.lesson_id = l.lesson_id) AS ex_total,
-                (SELECT COUNT(DISTINCT s.exercise_id)
-                   FROM exercise_submissions s
-                   JOIN exercises e2 ON e2.exercise_id = s.exercise_id
-                  WHERE e2.lesson_id = l.lesson_id AND s.user_id = ? AND s.is_passed = 1) AS ex_passed,
-                (SELECT COUNT(*) FROM lesson_quizzes q
-                  WHERE q.lesson_id = l.lesson_id AND q.quiz_type = 'post') AS has_post_quiz,
-                (SELECT MAX(a.score) FROM lesson_quiz_attempts a
-                  WHERE a.user_id = ? AND a.lesson_id = l.lesson_id AND a.quiz_type = 'post') AS post_score,
-                (SELECT MAX(a.total_questions) FROM lesson_quiz_attempts a
-                  WHERE a.user_id = ? AND a.lesson_id = l.lesson_id AND a.quiz_type = 'post') AS post_total
-           FROM lessons l`,
-        [userId, userId, userId]
-    );
+    // Every query below is independent, so they go out together: run one after
+    // another they were eleven round trips to the database in Tokyo (~1 s added
+    // to every submission that unlocks nothing), measured 2026-11-16.
+    const [
+        [lessonRows],
+        [setRows],
+        [userRow],
+        [statRow],
+        exercisesPassed,
+        quizzesPerfect,
+        miniGamesCompleted,
+        arcadePerfectRounds,
+        streakDays,
+        cosmeticsOwned,
+    ] = await Promise.all([
+        // A lesson counts as completed on exactly the terms the learning page
+        // and the profile page use, because all three ask evaluateLesson().
+        db.execute(
+            `SELECT l.lesson_id,
+                    (SELECT COUNT(*) FROM exercises e WHERE e.lesson_id = l.lesson_id) AS ex_total,
+                    (SELECT COUNT(DISTINCT s.exercise_id)
+                       FROM exercise_submissions s
+                       JOIN exercises e2 ON e2.exercise_id = s.exercise_id
+                      WHERE e2.lesson_id = l.lesson_id AND s.user_id = ? AND s.is_passed = 1) AS ex_passed,
+                    (SELECT COUNT(*) FROM lesson_quizzes q
+                      WHERE q.lesson_id = l.lesson_id AND q.quiz_type = 'post') AS has_post_quiz,
+                    (SELECT MAX(a.score) FROM lesson_quiz_attempts a
+                      WHERE a.user_id = ? AND a.lesson_id = l.lesson_id AND a.quiz_type = 'post') AS post_score,
+                    (SELECT MAX(a.total_questions) FROM lesson_quiz_attempts a
+                      WHERE a.user_id = ? AND a.lesson_id = l.lesson_id AND a.quiz_type = 'post') AS post_total
+               FROM lessons l`,
+            [userId, userId, userId]
+        ),
+        // Owning every piece of at least one cosmetic set.
+        db.execute(
+            `SELECT i.set_key,
+                    COUNT(*) AS total,
+                    COUNT(inv.item_id) AS owned
+               FROM shop_items i
+               LEFT JOIN user_inventory inv ON inv.item_id = i.item_id AND inv.user_id = ?
+              WHERE i.set_key IS NOT NULL AND i.is_active = 1
+              GROUP BY i.set_key`,
+            [userId]
+        ),
+        db.execute('SELECT level, xp FROM users WHERE user_id = ? LIMIT 1', [userId]),
+        db.execute('SELECT matches_played, wins FROM arcade_player_stats WHERE user_name = ? LIMIT 1', [username]),
+        one(`SELECT COUNT(DISTINCT exercise_id) AS n FROM exercise_submissions WHERE user_id = ? AND is_passed = 1`, [userId]),
+        one(`SELECT COUNT(*) AS n FROM lesson_quiz_attempts
+              WHERE user_id = ? AND quiz_type = 'post' AND total_questions > 0 AND score >= total_questions`, [userId]),
+        one(`SELECT COUNT(*) AS n FROM mini_game_user_exercise_progress WHERE user_id = ? AND is_completed = 1`, [userId]),
+        one(`SELECT COUNT(*) AS n FROM arcade_round_history
+              WHERE user_name = ? AND total_count > 0 AND pass_count >= total_count`, [username]),
+        computeUserStreak(db, userId),
+        one('SELECT COUNT(*) AS n FROM user_inventory WHERE user_id = ?', [userId]),
+    ]);
+
     let lessonsCompleted = 0;
     for (const r of lessonRows) {
         const progress = evaluateLesson({
@@ -949,43 +1082,20 @@ async function computeAchievementMetrics(userId, username) {
         });
         if (progress.completed) lessonsCompleted += 1;
     }
-
-    // Owning every piece of at least one cosmetic set.
-    const [setRows] = await db.execute(
-        `SELECT i.set_key,
-                COUNT(*) AS total,
-                COUNT(inv.item_id) AS owned
-           FROM shop_items i
-           LEFT JOIN user_inventory inv ON inv.item_id = i.item_id AND inv.user_id = ?
-          WHERE i.set_key IS NOT NULL AND i.is_active = 1
-          GROUP BY i.set_key`,
-        [userId]
-    );
     const setsCompleted = setRows.filter(r => Number(r.owned) >= Number(r.total) && Number(r.total) > 0).length;
-
-    const [userRow] = await db.execute('SELECT level, xp FROM users WHERE user_id = ? LIMIT 1', [userId]);
-    const [statRow] = await db.execute(
-        'SELECT matches_played, wins FROM arcade_player_stats WHERE user_name = ? LIMIT 1', [username]
-    );
 
     return {
         lessons_completed: lessonsCompleted,
-        exercises_passed: await one(
-            `SELECT COUNT(DISTINCT exercise_id) AS n FROM exercise_submissions WHERE user_id = ? AND is_passed = 1`, [userId]),
-        quizzes_perfect: await one(
-            `SELECT COUNT(*) AS n FROM lesson_quiz_attempts
-              WHERE user_id = ? AND quiz_type = 'post' AND total_questions > 0 AND score >= total_questions`, [userId]),
-        mini_games_completed: await one(
-            `SELECT COUNT(*) AS n FROM mini_game_user_exercise_progress WHERE user_id = ? AND is_completed = 1`, [userId]),
+        exercises_passed: exercisesPassed,
+        quizzes_perfect: quizzesPerfect,
+        mini_games_completed: miniGamesCompleted,
         arcade_matches: Number(statRow?.[0]?.matches_played || 0),
         arcade_wins: Number(statRow?.[0]?.wins || 0),
-        arcade_perfect_rounds: await one(
-            `SELECT COUNT(*) AS n FROM arcade_round_history
-              WHERE user_name = ? AND total_count > 0 AND pass_count >= total_count`, [username]),
+        arcade_perfect_rounds: arcadePerfectRounds,
         level: Number(userRow?.[0]?.level || 0),
         xp_total: Number(userRow?.[0]?.xp || 0),
-        streak_days: await computeUserStreak(db, userId),
-        cosmetics_owned: await one('SELECT COUNT(*) AS n FROM user_inventory WHERE user_id = ?', [userId]),
+        streak_days: streakDays,
+        cosmetics_owned: cosmeticsOwned,
         sets_completed: setsCompleted,
     };
 }
@@ -1970,11 +2080,11 @@ app.get('/api/competitive/players/:userId/history', async (req, res) => {
 });
 
 app.get('/api/learning/ai-task', async (req, res) => {
-    const { userId, mode = 'exercise' } = req.query;
+    const { userId, mode = 'exercise', prewarm } = req.query;
     if (!userId) return res.status(400).json({ error: 'userId is required' });
     const normalizedMode = getLearningModeConfig(mode).mode;
     try {
-        await ensureLearningAiTaskSchema();
+        await schemaOnce(ensureLearningAiTaskSchema);
         const [existingRows] = await db.execute(
             `SELECT * FROM learning_ai_tasks
              WHERE user_id = ? AND mode = ? AND status = 'ACTIVE'
@@ -1985,6 +2095,10 @@ app.get('/api/learning/ai-task', async (req, res) => {
         if (existingRows.length > 0) {
             return res.json({ success: true, task: serializeLearningTask(existingRows[0]), source: 'existing' });
         }
+        // The app asks this on every load, before the learner has opened the
+        // page. Creating a task then could mean asking the model, which serves
+        // one request at a time on the CPU-only host, for every visitor.
+        if (prewarm) return res.json({ success: true, task: null, source: 'none' });
         const [users] = await db.execute('SELECT level FROM users WHERE user_id = ? LIMIT 1', [userId]);
         const level = Number(users[0]?.level || 1);
         const task = await createLearningTaskRecord(db, { userId, mode: normalizedMode, level });
@@ -2000,7 +2114,7 @@ app.post('/api/learning/ai-task/reroll', async (req, res) => {
     if (!userId) return res.status(400).json({ error: 'userId is required' });
     const normalizedMode = getLearningModeConfig(mode).mode;
     try {
-        await ensureLearningAiTaskSchema();
+        await schemaOnce(ensureLearningAiTaskSchema);
         const [taskRows] = await db.execute(
             `SELECT * FROM learning_ai_tasks
              WHERE user_id = ? AND mode = ? AND status = 'ACTIVE'
@@ -2074,7 +2188,7 @@ app.post('/api/learning/ai-task/submit', async (req, res) => {
     // per test case, serially, each with its own timeout, so doing it inside a
     // transaction pinned a pooled connection for the whole run - ten slow
     // submissions were enough to starve every other request on the site.
-    await ensureLearningAiTaskSchema();
+    await schemaOnce(ensureLearningAiTaskSchema);
     const [preTaskRows] = await db.execute(
         `SELECT * FROM learning_ai_tasks
          WHERE task_id = ? AND user_id = ? AND mode = ? AND status = 'ACTIVE'
@@ -3485,7 +3599,9 @@ const parseCompetitiveAdvice = (rawText) => {
 // Its own model name, LLM_JUDGE_MODEL, kept apart from the chatbot's so the two
 // can be split without a code change; empty turns it off and the rubric's own
 // feedback is shown instead, so no player's code leaves the machine.
-const judgeLlm = createLlmCaller({ ...llmSettingsFromEnv(), model: process.env.LLM_JUDGE_MODEL, job: 'judge' });
+// The learner is looking at the result screen waiting for this advice, so it
+// goes ahead of generation and Arcade advice in the model's queue (ai/llm.js).
+const judgeLlm = createLlmCaller({ ...llmSettingsFromEnv(), model: process.env.LLM_JUDGE_MODEL, job: 'judge', priority: 'interactive' });
 
 if (judgeLlm.enabled) {
     console.log(`✅ คำแนะนำโหมด Competitive ใช้โมเดลในเครื่อง: ${judgeLlm.model} (คะแนนมาจาก rubric)`);
@@ -3702,7 +3818,7 @@ const finalizeExpiredCompetitiveChallenges = async (userId) => {
 
 app.get('/api/dashboard/learning-progress', async (_req, res) => {
     try {
-        await ensureLessonQuizAttemptSchema();
+        await schemaOnce(ensureLessonQuizAttemptSchema);
 
         const safeSelect = async (sql, params = []) => {
             try {
@@ -3969,8 +4085,8 @@ app.get('/api/dashboard/learning-progress', async (_req, res) => {
 
 app.get('/api/admin/users', async (_req, res) => {
     try {
-        await ensureCompetitiveArenaSchema();
-        await ensureLearningProgressSchema();
+        await schemaOnce(ensureCompetitiveArenaSchema);
+        await schemaOnce(ensureLearningProgressSchema);
 
         const [rows] = await db.execute(
             `WITH competitive_scores AS (
@@ -6014,6 +6130,11 @@ const startBackgroundJobs = () => {
     for (const timer of [arcadeTickTimer, arcadeSweepTimer, arcadeHistoryTimer]) {
         if (timer.unref) timer.unref();
     }
+
+    // COMPETITIVE_POOL_PER_TOPIC=0 turns the refill off.
+    if (chatLlm.enabled && Number(process.env.COMPETITIVE_POOL_PER_TOPIC ?? 3) > 0) {
+        competitivePool.start();
+    }
 };
 
 // ==========================================
@@ -6064,7 +6185,7 @@ app.put('/api/admin/users/:id/recover', async (req, res) => {
 
 app.get('/api/dashboard/stats', async (_req, res) => {
     try {
-        await ensureUserPresenceSchema();
+        await schemaOnce(ensureUserPresenceSchema);
         const [[totalUsersRow]] = await db.execute(
             `SELECT COUNT(*) AS count
              FROM users
@@ -6112,7 +6233,7 @@ app.get('/api/dashboard/stats', async (_req, res) => {
 
 app.get('/api/dashboard/recent-activities', async (_req, res) => {
     try {
-        await ensureUserPresenceSchema();
+        await schemaOnce(ensureUserPresenceSchema);
         const [rows] = await db.execute(
             `SELECT *
              FROM (
@@ -7020,7 +7141,7 @@ app.post('/api/presence', async (req, res) => {
             return res.status(400).json({ error: 'userId is required' });
         }
 
-        await ensureUserPresenceSchema();
+        await schemaOnce(ensureUserPresenceSchema);
         await db.execute(
             `INSERT INTO user_presence (user_id, mode, activity_label, current_path, last_seen)
              VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -7125,6 +7246,7 @@ const {
   createArcadeRoundKindsMigration,
   createArcadeSpectatorsMigration,
   createArcadeGuessPayoutsMigration,
+  createCompetitivePoolMigration,
 } = require('./migrations/definitions');
 const { applyDataApiSecurity } = require('./security/data-api-security');
 const authProvisioningSchemaSql = fs.readFileSync(
@@ -7234,6 +7356,11 @@ const applicationMigrations = [
     () => require('./migrate-schema-cleanup').migrateSchemaCleanup(db),
     require('fs').readFileSync(require.resolve('./migrate-schema-cleanup'), 'utf8'),
   ),
+  // Competitive problems written ahead of time (competitivePool.js, 2026-11-16).
+  createCompetitivePoolMigration(
+    () => migrateCompetitivePool(db),
+    migrateCompetitivePool.toString(),
+  ),
 ];
 
 const supabasePublishableKey = String(
@@ -7278,6 +7405,21 @@ const prepareApplication = async ({ checkAuth = checkSupabaseAuth } = {}) => {
 //
 // Skipped silently when the build is absent: during development Vite serves the
 // front end on :5174 and proxies here, and there is no dist/ to serve.
+// How long a browser may keep each built file (2026-11-16). Every file used to
+// go out with max-age=0, so each visit re-asked the server for every script,
+// image and Pyodide file. index.html is always re-checked, so a new release is
+// picked up at once; Vite's hashed /assets files never change under the same
+// name, so they are kept a year.
+const HASHED_ASSET = /^assets\/[^/]+-(?=[A-Za-z0-9_-]*[A-Z0-9_])[A-Za-z0-9_-]{8}\.[a-z0-9]+$/;
+const clientCacheHeaders = (root) => (res, filePath) => {
+    const rel = path.relative(root, filePath).split(path.sep).join('/');
+    let policy = 'public, max-age=86400';
+    if (rel === 'index.html') policy = 'no-cache';
+    else if (HASHED_ASSET.test(rel)) policy = 'public, max-age=31536000, immutable';
+    else if (rel.startsWith('pyodide/')) policy = 'public, max-age=604800';
+    res.setHeader('Cache-Control', policy);
+};
+
 const clientDist = process.env.CLIENT_DIST
     ? path.resolve(process.env.CLIENT_DIST)
     : path.join(__dirname, '..', 'client', 'dist');
@@ -7297,7 +7439,7 @@ if (fs.existsSync(path.join(clientDist, 'index.html'))) {
         res.setHeader('Cross-Origin-Embedder-Policy', 'credentialless');
         next();
     });
-    app.use(express.static(clientDist));
+    app.use(express.static(clientDist, { setHeaders: clientCacheHeaders(clientDist) }));
 
     // Single-page app fallback. React Router owns every path that is not an API
     // route or a real file, so a hard reload on /leaderboard has to be answered
@@ -7305,6 +7447,7 @@ if (fs.existsSync(path.join(clientDist, 'index.html'))) {
     // case, it is how people use bookmarks.
     app.get(/^(?!\/api\/|\/uploads\/).*/, (req, res, next) => {
         if (req.method !== 'GET') return next();
+        res.setHeader('Cache-Control', 'no-cache');
         return res.sendFile(path.join(clientDist, 'index.html'));
     });
     console.log(`\u2705 เสิร์ฟหน้าเว็บที่ build แล้วจาก ${clientDist}`);

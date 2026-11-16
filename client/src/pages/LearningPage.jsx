@@ -75,7 +75,9 @@ export default function LearningPage({ onNavigate, user }) {
   useEffect(() => {
     if (!userId) return;
     let controller;
+    let lastLoadedAt = 0;
     const fetchData = async (initial = false) => {
+      lastLoadedAt = Date.now();
       controller?.abort();
       controller = new AbortController();
       const signal = controller.signal;
@@ -94,7 +96,12 @@ export default function LearningPage({ onNavigate, user }) {
         if (!signal.aborted) setLoading(false);
       }
     };
-    const refresh = () => { if (!document.hidden) fetchData(); };
+    // Coming back to the tab refreshes the list, but not more than once a
+    // minute: focus and visibilitychange both fire on the same return, and each
+    // fetch is several queries to a database in another country.
+    const refresh = () => {
+      if (!document.hidden && Date.now() - lastLoadedAt > 60000) fetchData();
+    };
     fetchData(true);
     window.addEventListener('focus', refresh);
     document.addEventListener('visibilitychange', refresh);

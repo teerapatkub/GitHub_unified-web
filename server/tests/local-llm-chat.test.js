@@ -78,6 +78,72 @@ test('Lumi answers through the local model, and falls back politely when it fail
     assert.match(res.body.reply, new RegExp(POLITE));
   });
 
+  // 2026-11-12: two pages sent `message` instead of `messages`; the model got
+  // only the system prompt and introduced itself to every question.
+  await t.test('a request with no question is refused before it reaches the model', async () => {
+    ollama.reset();
+    for (const body of [
+      { message: 'ช่วยอธิบายโจทย์ข้อนี้' },
+      { messages: [{ role: 'system', content: 'โจทย์: ทักทาย' }] },
+      { messages: [{ role: 'user', content: '   ' }] },
+    ]) {
+      const res = await server.call('/api/ai/chat', { body });
+      assert.equal(res.status, 400, JSON.stringify(body));
+    }
+    assert.equal(ollama.chatRequests().length, 0);
+  });
+
+  const askStreaming = async (question, { signal } = {}) => fetch(`${server.baseURL}/api/ai/chat`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${server.token}`,
+      'Content-Type': 'application/json',
+      'x-pyarena-request': '1',
+      Accept: 'text/event-stream',
+    },
+    body: JSON.stringify({ messages: [{ role: 'user', content: question }] }),
+    signal,
+  });
+  const readEvents = async (response) => (await response.text())
+    .split('\n\n')
+    .map(block => block.replace(/^data: /, '').trim())
+    .filter(Boolean)
+    .map(data => JSON.parse(data));
+
+  await t.test('a browser that asks for a stream gets the answer in pieces, without the reasoning', async () => {
+    ollama.reset();
+    ollama.respond(() => ({ chunks: ['<think>ผู้ใช้', 'ถามเรื่องลูป</think>', 'ลูปคือ', 'การทำซ้ำ'] }));
+    const res = await askStreaming('ลูปคืออะไร');
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /text\/event-stream/);
+    assert.match(res.headers.get('cache-control'), /no-transform/, 'compression must not buffer the stream');
+    const events = await readEvents(res);
+    const texts = events.filter(e => typeof e.text === 'string').map(e => e.text);
+    assert.ok(texts.length >= 2, `expected several pieces, got ${JSON.stringify(texts)}`);
+    assert.equal(texts.join(''), 'ลูปคือการทำซ้ำ');
+    assert.deepEqual(events.at(-1), { done: true });
+    const [sent] = ollama.chatRequests();
+    assert.equal(sent.body.stream, true);
+    // (reasoning_effort is not checked here: the test above taught this server
+    // to drop it, as a real one that rejects it would.)
+    assert.equal(sent.body.messages.at(-1).content, 'ลูปคืออะไร');
+  });
+
+  await t.test('a failing model ends the stream with a polite error event', async () => {
+    ollama.respond(() => ({ status: 500, body: { error: 'model crashed' } }));
+    const events = await readEvents(await askStreaming('ลูปคืออะไร'));
+    assert.match(events.at(-1).error, new RegExp(POLITE));
+  });
+
+  await t.test('a model that goes quiet mid-answer is cut off, keeping what it wrote', async () => {
+    ollama.respond(() => ({ chunks: ['ลูป', 'คือ'], chunkDelayMs: 4000 }));
+    const started = Date.now();
+    const events = await readEvents(await askStreaming('ลูปคืออะไร'));
+    assert.equal(events[0].text, 'ลูป');
+    assert.match(events.at(-1).error, new RegExp(POLITE));
+    assert.ok(Date.now() - started < 3500, 'the idle limit is LLM_TIMEOUT_MS');
+  });
+
   await t.test('a model slower than LLM_TIMEOUT_MS gets the same polite reply', async () => {
     ollama.respond(() => ({ delayMs: 4000, content: 'มาช้าเกินไป' }));
     const started = Date.now();

@@ -97,6 +97,9 @@ async function startServer(t, { url, env = {}, players = [], backgroundJobs = fa
     username: ready.username,
     players: signedIn,
     anonymous: callAs(null),
+    // For a test that needs its own headers (a streamed answer, for one).
+    baseURL: `http://127.0.0.1:${ready.port}`,
+    token: ready.token,
     logs: () => output,
   };
 }

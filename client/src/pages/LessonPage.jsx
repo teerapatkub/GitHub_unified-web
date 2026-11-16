@@ -10,6 +10,7 @@ import { splitCodeSlide } from '../utils/codeSlide.js';
 import WebTutorialModal from "../components/WebTutorialModal";
 import { getWebTutorial } from "../data/webTutorials";
 import SkeletonLoading from "../components/ui/Skeleton";
+import SlideImage from "../components/learning/SlideImage";
 
 const Motion = motion;
 
@@ -475,11 +476,7 @@ export default function LessonPage({
                   {slide.src && (slide.video ? (
                     <video key={slide.src} src={slide.src} controls preload="metadata" aria-label={slide.title} className="mx-auto max-h-[420px] w-full rounded-lg" />
                   ) : (
-                    <img
-                      src={slide.src}
-                      alt={slide.title || 'สไลด์บทเรียน'}
-                      className="mx-auto max-h-[420px] max-w-full rounded-lg object-contain"
-                    />
+                    <SlideImage key={slide.src} src={slide.src} alt={slide.title || 'สไลด์บทเรียน'} />
                   ))}
                 </div>
               )}

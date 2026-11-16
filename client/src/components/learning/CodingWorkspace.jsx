@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import usePyodide from '../../hooks/usePyodide';
 import friendlyPyError from '../../utils/friendlyPyError';
 import Editor from '@monaco-editor/react';
-import axios from 'axios';
 import {
   Play,
   CheckCircle2,
@@ -14,8 +13,11 @@ import {
   MessageSquareCode,
   Loader2,
   RefreshCcw,
+  Square,
 } from 'lucide-react';
 import { API_BASE } from '../../config/api.js';
+import useLumiChat from '../../hooks/useLumiChat';
+import { buildLumiMessages } from '../../utils/lumiChat';
 
 
 export default function CodingWorkspace({
@@ -58,7 +60,9 @@ export default function CodingWorkspace({
   const [isAiOpen, setIsAiOpen] = useState(false);
   const [chatHistory, setChatHistory] = useState([{ role: 'ai', text: starterMessage }]);
   const [chatInput, setChatInput] = useState('');
-  const [isAiResponding, setIsAiResponding] = useState(false);
+  const lumi = useLumiChat();
+  const isAiResponding = lumi.isResponding;
+  const stopLumi = lumi.stop;
 
   const inputResolverRef = useRef(null);
   const terminalRef = useRef(null);
@@ -105,8 +109,8 @@ export default function CodingWorkspace({
     setIsSuccess(false);
     setHasPassedTests(false);
     setChatHistory([{ role: 'ai', text: starterMessage }]);
-    setIsAiResponding(false);
-  }, [initialCode, starterMessage, taskId]);
+    stopLumi();
+  }, [initialCode, starterMessage, taskId, stopLumi]);
 
   // Interactive input() for the worker: show the prompt and resolve when the
   // learner presses Enter (see handleInputKeyDown).
@@ -249,33 +253,36 @@ export default function CodingWorkspace({
     const messageToSend = customMessage || chatInput;
     if (!messageToSend.trim() || isAiResponding) return;
 
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    const userLevel = user?.level || user?.user?.level || 'Beginner';
+    let storedUser = {};
+    try {
+      storedUser = JSON.parse(localStorage.getItem('user') || '{}');
+    } catch {
+      storedUser = {};
+    }
+    const userLevel = storedUser?.level || storedUser?.user?.level || 1;
     const newHistory = [...chatHistory, { role: 'user', text: messageToSend }];
 
-    setChatHistory([...newHistory, { role: 'ai', text: 'Lumi is reviewing your code...' }]);
+    setChatHistory([...newHistory, { role: 'ai', text: 'Lumi กำลังอ่านโจทย์และโค้ดของคุณ...', pending: true }]);
     setChatInput('');
-    setIsAiResponding(true);
 
-    try {
-      const response = await axios.post(`${API_BASE}/api/ai/chat`, {
-        message: messageToSend,
-        code,
+    // Sends the problem, the code and the chat so far. This used to send only
+    // `message`, which the server never reads: Lumi saw no question at all.
+    const result = await lumi.ask(
+      buildLumiMessages({
+        title,
+        description: instructions,
         level: userLevel,
-      });
+        code,
+        history: chatHistory,
+        userText: messageToSend,
+      }),
+      (text) => setChatHistory([...newHistory, { role: 'ai', text }]),
+    );
 
-      setChatHistory([
-        ...newHistory,
-        { role: 'ai', text: response.data.reply || 'Lumi did not receive a full answer. Please try again.' },
-      ]);
-    } catch (error) {
-      setChatHistory([
-        ...newHistory,
-        { role: 'ai', text: error?.response?.data?.reply || 'The AI connection is unavailable right now. Please try again.' },
-      ]);
-    } finally {
-      setIsAiResponding(false);
-    }
+    let text = result.text;
+    if (result.stopped) text = text ? `${text} …` : 'หยุดคำตอบแล้ว ถามใหม่ได้เลยนะคะ';
+    else if (result.failed && !text) text = 'ตอนนี้ Lumi ตอบไม่ได้ชั่วคราว ลองถามใหม่อีกครั้งนะคะ';
+    setChatHistory([...newHistory, { role: 'ai', text }]);
   };
 
   const copyCode = async () => {
@@ -635,13 +642,26 @@ export default function CodingWorkspace({
                       disabled={isAiResponding}
                       className={`w-full rounded-2xl border border-slate-200 bg-slate-50 py-2.5 pl-4 pr-11 text-sm text-slate-900 outline-none transition-colors ${accentStyles.panelRing}`}
                     />
-                    <button
-                      type="submit"
-                      disabled={!chatInput.trim() || isAiResponding}
-                      className={`absolute right-3 top-1/2 -translate-y-1/2 disabled:opacity-40 ${accentStyles.buttonSoft}`}
-                    >
-                      <Send size={18} />
-                    </button>
+                    {isAiResponding ? (
+                      <button
+                        type="button"
+                        onClick={lumi.stop}
+                        aria-label="หยุดคำตอบของ Lumi"
+                        title="หยุดคำตอบ"
+                        className={`absolute right-3 top-1/2 -translate-y-1/2 ${accentStyles.buttonSoft}`}
+                      >
+                        <Square size={16} />
+                      </button>
+                    ) : (
+                      <button
+                        type="submit"
+                        aria-label="ส่งข้อความถึง Lumi"
+                        disabled={!chatInput.trim()}
+                        className={`absolute right-3 top-1/2 -translate-y-1/2 disabled:opacity-40 ${accentStyles.buttonSoft}`}
+                      >
+                        <Send size={18} />
+                      </button>
+                    )}
                   </form>
                 </div>
               </aside>

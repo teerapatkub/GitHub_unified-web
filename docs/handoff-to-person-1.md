@@ -1,5 +1,61 @@
 # ไฟล์ของ Person 1 ที่ Person 3 เข้าไปแก้
 
+## 2026-11-16 — Lumi ได้รับคำถามจริง และคำตอบทยอยขึ้นทีละส่วน
+
+**ไฟล์ที่แก้:**
+- `client/src/components/learning/CodingWorkspace.jsx`
+- `client/src/pages/ExercisePage.jsx`
+- `client/src/pages/MiNi_Game.jsx`
+- `client/src/pages/LessonPage.jsx`: เปลี่ยนแค่ `<img>` ของสไลด์
+- `client/src/pages/LearningPage.jsx`: ส่วนที่ refetch เมื่อกลับมาที่แท็บ
+
+**ไฟล์ใหม่:**
+- `client/src/utils/lumiChat.js`
+- `client/src/hooks/useLumiChat.js`
+- `client/src/components/learning/SlideImage.jsx`
+
+**บั๊กที่แก้:**
+- `CodingWorkspace` (Debug Lab / Challenge) และ `MiNi_Game` ส่ง `{ message }` แต่ `POST /api/ai/chat` อ่านแค่ `messages`
+- โมเดลจึงได้แค่ system prompt ไม่มีคำถาม และตอบแนะนำตัวทุกครั้ง (ผู้ใช้เจอเมื่อ 2026-11-12)
+- ตอนนี้ทั้งสามหน้าสร้าง request ด้วย `buildLumiMessages()` ตัวเดียวกัน ซึ่งยกมาจากของ ExercisePage ที่ถูกอยู่แล้ว
+  - ส่งชื่อโจทย์, คำอธิบาย, ระดับ, โค้ด, ประวัติ 6 รอบ และคำถาม
+- server ตอบ 400 ถ้าไม่มีข้อความจาก user
+
+**คำตอบแบบ stream:**
+- `useLumiChat().ask()` ขอ `Accept: text/event-stream` แล้วอัปเดตฟองแชทระหว่างที่โมเดลเขียน
+- ปุ่มส่งเปลี่ยนเป็นปุ่มหยุด (■) ระหว่างตอบ
+- เปลี่ยนโจทย์หรือออกจากหน้า = หยุดคำตอบเก่า
+- **`setIsAiResponding` ไม่มีแล้ว:** ใช้ `isAiResponding = lumi.isResponding` แทน
+
+**สไลด์ GIF:**
+- `/gif/*.gif` ทั้ง 5 ไฟล์มี `.mp4` คู่กัน ขนาดรวมจาก 90 MB เหลือ 0.5 MB
+- `SlideImage` เล่น MP4 แบบวนเงียบแทน GIF และถ้าโหลด MP4 ไม่ได้จะกลับไปใช้ GIF
+- ข้อมูลสไลด์ในฐานยังชี้ `.gif` เหมือนเดิม
+
+**ทดสอบแล้ว:**
+- `server/tests/local-llm-chat.test.js`: เพิ่ม 4 เคส คือ request ที่ไม่มีคำถาม, stream, โมเดลล่ม, โมเดลเงียบกลางคำตอบ
+- client `npm run lint` และ `npm run build`
+- dev server: ดูหัวข้อ "ทดสอบ" ใน `project_logs/2026-11-16/`
+
+## 2026-11-16 — โหลด Pyodide เมื่อรันโค้ดครั้งแรก และใช้ worker ตัวเดียวทั้งแอป
+
+ไฟล์: `client/src/hooks/usePyodide.js` (เขียนใหม่ภายใน API เดิม) · `client/src/pages/Arcade/hooks/useRoundJudging.js` (เพิ่ม preload)
+
+- **เดิม**: ทุกหน้าที่เรียก `usePyodide()` (LessonPage, ExercisePage, MiNi_Game, CodingWorkspace, Arcade) สร้าง worker
+  ตอน mount และ terminate ตอน unmount — แค่เปิดหน้าอ่านบทเรียนก็โหลด Pyodide ~14 MB และทุกครั้งที่เปลี่ยนหน้าบูต Python ใหม่
+- **ตอนนี้**: worker ถูกสร้างตอน `runCode()` ครั้งแรก (หรือ `preload()`) เป็น singleton ระดับ module ไม่ถูกฆ่าตอน unmount
+- **API เดิมทุกตัว** (`status`, `runCode`, `stopRun`, `clearOutput`, `setOnOutput`) caller ไม่ต้องแก้ เพิ่ม `preload` และ export `preloadPyodide()`
+- **ความหมายของ `status` ที่ต้องรู้**: ก่อนบูต hook รายงาน `'ready'` (= "กดรันได้" เพราะ `runCode` บูตให้เอง) — caller ทุกตัวเปิดปุ่ม Run
+  เมื่อ `status === 'ready'` ตอนกดรันครั้งแรกจะเห็น `'loading'` → `'running'` → `'ready'` ข้อความ "⏳ Loading Python runtime" / "✅ Python 3.12 ready!"
+  จึงขึ้นในเทอร์มินัลตอนรันครั้งแรกแทนตอนเปิดหน้า
+- watchdog (interrupt 10 วิ / terminate 14 วิ) เริ่มนับ**หลัง**โหลด Python เสร็จ การโหลดครั้งแรกที่ช้าจึงไม่ถูกตัดว่าเป็นลูปค้าง
+  การ kill + สร้าง worker ใหม่ตอน timeout / `stopRun` / output limit ยังเหมือนเดิม
+- การรันจากหลายหน้าถูกต่อคิวทีละงาน (worker ตัวเดียว) ถ้าออกจากหน้าระหว่างรัน (เช่นค้าง `input()`) งานนั้นถูกหยุดเพื่อไม่ให้ค้างคิว
+- โหลดไม่สำเร็จ → `status` เป็น `'error'` เหมือนเดิม และจะลองโหลดใหม่เมื่อมีหน้าใหม่ mount
+- ไม่แตะการตรวจคำตอบ (ยังอยู่ที่ `server/problemGrader.js`) และไม่แตะ `public/pyodideWorker.js`
+- ทดสอบ: mount hook ใน dev server จริง (StrictMode) → ไม่มีการสร้าง worker เลย · รันครั้งแรกโหลด ~3.5 วิ · unmount แล้ว mount ใหม่ รันได้ใน 15 ms
+  โดยไม่สร้าง worker ใหม่ · ลูปไม่รู้จบถูกหยุดที่ 10 วิ · stopRun / input / unmount / สองหน้ารันพร้อมกัน ผ่าน · ยังไม่ได้กดผ่านหน้าบทเรียนจริงหลัง login
+
 ## 2026-10-28 — ลบปุ่มไปด่านถัดไปและเชื่อมแผนที่เข้าฉากจบ
 
 - เอาปุ่มสีเขียว “ไปด่านถัดไป” ออกจาก Story Mode; คงการไปต่อด้วย Spacebar ตาม flow เดิม

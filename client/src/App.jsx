@@ -68,6 +68,7 @@ export default function App() {
         src="/assets/music/Monplaisir.mp3"
         loop
         hidden
+        preload="none"
       />
       <AppContent />
     </BrowserRouter>
@@ -261,7 +262,7 @@ function AppContent() {
 
     const prewarmTasks = async () => {
       try {
-        const response = await fetch(`${API_BASE}/api/learning/ai-task?userId=${user.user_id}&mode=challenge`);
+        const response = await fetch(`${API_BASE}/api/learning/ai-task?userId=${user.user_id}&mode=challenge&prewarm=1`);
         if (response.ok) {
           const payload = await response.json();
           if (payload?.task) {

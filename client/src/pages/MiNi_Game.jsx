@@ -15,8 +15,11 @@ import {
   Send,
   X,
   CircleHelp,
+  Square,
 } from "lucide-react";
 import { API_BASE } from '../config/api.js';
+import useLumiChat from "../hooks/useLumiChat";
+import { buildLumiMessages } from "../utils/lumiChat";
 import WebTutorialModal from "../components/WebTutorialModal";
 import { getWebTutorial } from "../data/webTutorials";
 import usePyodide from "../hooks/usePyodide";
@@ -240,7 +243,8 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
     },
   ]);
   const [chatInput, setChatInput] = useState("");
-  const [isAiResponding, setIsAiResponding] = useState(false);
+  const lumi = useLumiChat();
+  const isAiResponding = lumi.isResponding;
   const [showTutorial, setShowTutorial] = useState(false);
 
   const terminalRef = useRef(null);
@@ -974,48 +978,27 @@ const loadGameData = async () => {
     if (!messageToSend || isAiResponding) return;
 
     const nextHistory = [...chatHistory, { role: "user", text: messageToSend }];
-    setChatHistory([...nextHistory, { role: "ai", text: "Lumi กำลังดูโจทย์กับโค้ดของคุณ..." }]);
+    setChatHistory([...nextHistory, { role: "ai", text: "Lumi กำลังดูโจทย์กับโค้ดของคุณ...", pending: true }]);
     setChatInput("");
-    setIsAiResponding(true);
 
-    try {
-      const response = await fetch(`${API_BASE}/api/ai/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contextMode: "miniGameTutor",
-          message: [
-            `Mission title: ${currentMissionCopy.title || currentSubtopic?.title || moduleData?.title || ""}`,
-            `Mission hint: ${currentMissionCopy.hint || currentSubtopic?.hint || ""}`,
-            `Player asks: ${messageToSend}`,
-          ].join("\n"),
-          code,
-          level: user?.level || 1,
-          lessonId: moduleId,
-          exerciseTitle: currentMissionCopy.title || currentSubtopic?.title || moduleData?.title || "",
-          instructions: currentMissionCopy.hint || currentSubtopic?.hint || "",
-        }),
-      });
+    // This used to send `message` and loose fields the server never read, so
+    // Lumi answered without seeing the question (2026-11-12).
+    const result = await lumi.ask(
+      buildLumiMessages({
+        title: currentMissionCopy.title || currentSubtopic?.title || moduleData?.title || "",
+        description: currentMissionCopy.hint || currentSubtopic?.hint || "",
+        level: user?.level || 1,
+        code,
+        history: chatHistory,
+        userText: messageToSend,
+      }),
+      (text) => setChatHistory([...nextHistory, { role: "ai", text }]),
+    );
 
-      const data = await response.json();
-      setChatHistory([
-        ...nextHistory,
-        {
-          role: "ai",
-          text: data?.reply || "I could not get a full answer yet. Try asking again with a little more detail.",
-        },
-      ]);
-    } catch {
-      setChatHistory([
-        ...nextHistory,
-        {
-          role: "ai",
-          text: getMiniGameChatFallback(messageToSend),
-        },
-      ]);
-    } finally {
-      setIsAiResponding(false);
-    }
+    let text = result.text;
+    if (result.stopped) text = text ? `${text} …` : "หยุดคำตอบแล้ว ถามใหม่ได้เลย";
+    else if (result.failed && !text) text = getMiniGameChatFallback(messageToSend);
+    setChatHistory([...nextHistory, { role: "ai", text }]);
   };
 
   const handleInputKeyDown = (event) => {
@@ -1395,14 +1378,27 @@ if (result?.is_module_completed) {
                     disabled={isAiResponding}
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-3 pr-10 text-sm text-slate-900 outline-none transition-colors focus:border-indigo-500"
                   />
-                  <button
-                    type="submit"
-                    disabled={!chatInput.trim() || isAiResponding}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg p-1 text-indigo-600 transition-colors hover:bg-indigo-50 disabled:opacity-40"
-                    title="Send message"
-                  >
-                    <Send size={18} />
-                  </button>
+                  {isAiResponding ? (
+                    <button
+                      type="button"
+                      onClick={lumi.stop}
+                      aria-label="หยุดคำตอบของ Lumi"
+                      title="หยุดคำตอบ"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg p-1 text-indigo-600 transition-colors hover:bg-indigo-50"
+                    >
+                      <Square size={16} />
+                    </button>
+                  ) : (
+                    <button
+                      type="submit"
+                      disabled={!chatInput.trim()}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg p-1 text-indigo-600 transition-colors hover:bg-indigo-50 disabled:opacity-40"
+                      title="Send message"
+                      aria-label="ส่งข้อความถึง Lumi"
+                    >
+                      <Send size={18} />
+                    </button>
+                  )}
                 </div>
               </form>
             </div>

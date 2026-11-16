@@ -34,8 +34,12 @@ function createLessonContentRouter(db, { ensureQuizSchema = async () => {}, eval
       // COUNT(DISTINCT ...) on both sides, not COUNT(*): the join fans out one
       // row per submission, so a learner who submits the same exercise twice
       // would otherwise be shown "ภาคปฏิบัติ 2/9" for a lesson that has five.
-      const [modules] = await db.execute('SELECT module_id, title, order_index, required_level FROM modules ORDER BY order_index, module_id');
-      const [lessons] = await db.execute(`
+      // The four reads are independent and go out together (2026-11-16): one
+      // after another they were four round trips to the database in Tokyo, and
+      // the learning page asks this again whenever the tab regains focus.
+      const [[modules], [lessons], [quizAttempts], [quizKindRows]] = await Promise.all([
+      db.execute('SELECT module_id, title, order_index, required_level FROM modules ORDER BY order_index, module_id'),
+      db.execute(`
         SELECT
           l.lesson_id,
           l.module_id,
@@ -50,18 +54,19 @@ function createLessonContentRouter(db, { ensureQuizSchema = async () => {}, eval
         LEFT JOIN exercise_submissions es ON e.exercise_id = es.exercise_id AND es.user_id = ?
         GROUP BY l.lesson_id, l.module_id, l.title, l.order_index, l.required_level
         ORDER BY l.order_index, l.lesson_id
-      `, [userId]);
+      `, [userId]),
 
       // What this learner has done in each lesson's quizzes, and - separately -
       // which quizzes each lesson even has. The learning page's badge and its
       // sub-lesson unlocking both hang off these, and until now the endpoint
       // returned neither, so every lesson on screen read "ยังไม่เริ่ม".
-      const [quizAttempts] = await db.execute(
+      db.execute(
         `SELECT lesson_id, quiz_type, score, total_questions
          FROM lesson_quiz_attempts WHERE user_id = ?`,
         [userId]
-      );
-      const [quizKindRows] = await db.execute('SELECT lesson_id, quiz_type FROM lesson_quizzes');
+      ),
+      db.execute('SELECT lesson_id, quiz_type FROM lesson_quizzes'),
+      ]);
 
       const attemptByLesson = new Map();
       for (const a of quizAttempts) {

@@ -36,7 +36,7 @@ function createLocalJsonAsker(env = process.env, { createCaller = createLlmCalle
 
   // `schema` is a JSON Schema; Ollama's JSON mode does not enforce one, so it
   // goes into the instruction and every caller validates the result itself.
-  return async function askLocalJson({ instruction, data, schema, maxTokens = 4096 }) {
+  return async function askLocalJson({ instruction, data, schema, maxTokens = 4096, priority = 'normal' }) {
     if (!llm.enabled) {
       throw fail(503, 'ยังไม่ได้ตั้งค่าโมเดลในเครื่อง (LLM_BASE_URL และ LLM_CHAT_MODEL) จึงสร้างด้วย AI ไม่ได้');
     }
@@ -49,8 +49,11 @@ function createLocalJsonAsker(env = process.env, { createCaller = createLlmCalle
         temperature: 0.4,
         maxTokens,
         json: true,
+        priority,
       });
     } catch (error) {
+      // Idle work cancelled for someone else: the caller tries again later.
+      if (error?.code === 'LLM_PREEMPTED') throw error;
       if (Number(error?.status) === 503 || Number(error?.status) === 429) throw fail(429, 'โมเดลในเครื่องกำลังทำงานอื่นอยู่ กรุณารอสักครู่แล้วลองใหม่');
       if (/timed? ?out|abort/i.test(String(error?.message))) throw fail(504, 'โมเดลในเครื่องใช้เวลานานเกินไป กรุณาลองใหม่');
       throw fail(502, 'โมเดลในเครื่องไม่พร้อมใช้งาน กรุณาลองใหม่ภายหลัง');
