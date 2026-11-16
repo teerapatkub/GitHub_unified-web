@@ -23,6 +23,80 @@ export const getShopThemePalette = (source) => {
         source?.theme_name,
     ].filter(Boolean).join(' ').toLowerCase();
 
+    // The four sets added 2026-11-17 (fix list item 8; ocean already had a
+    // branch below). Each accent is dark enough for white button text.
+    if (themeText.includes('monster')) {
+        return {
+            bg: '#fbf8ff',
+            bgSoft: '#f4edff',
+            text: '#3b1f5c',
+            textSoft: '#6b4a8f',
+            muted: '#a08bbd',
+            accent: '#a21caf',
+            accentSoft: 'rgba(162, 28, 175, 0.12)',
+            accentHover: '#86198f',
+            border: 'rgba(162, 28, 175, 0.18)',
+            surface: 'rgba(251, 248, 255, 0.9)',
+            navbarOverlay: 'rgba(251, 248, 255, 0.74)',
+            navbarBorder: 'rgba(162, 28, 175, 0.2)',
+            navBg: 'rgba(255, 255, 255, 0.8)',
+        };
+    }
+
+    if (themeText.includes('forest')) {
+        return {
+            bg: '#f5fbf1',
+            bgSoft: '#eaf5e2',
+            text: '#203b1c',
+            textSoft: '#466a3d',
+            muted: '#83a277',
+            accent: '#4d7c0f',
+            accentSoft: 'rgba(77, 124, 15, 0.13)',
+            accentHover: '#3f6212',
+            border: 'rgba(77, 124, 15, 0.2)',
+            surface: 'rgba(245, 251, 241, 0.9)',
+            navbarOverlay: 'rgba(245, 251, 241, 0.74)',
+            navbarBorder: 'rgba(77, 124, 15, 0.22)',
+            navBg: 'rgba(255, 255, 255, 0.8)',
+        };
+    }
+
+    if (themeText.includes('winter')) {
+        return {
+            bg: '#f5faff',
+            bgSoft: '#e9f4fd',
+            text: '#12324a',
+            textSoft: '#3d6582',
+            muted: '#7fa3bd',
+            accent: '#0369a1',
+            accentSoft: 'rgba(3, 105, 161, 0.12)',
+            accentHover: '#075985',
+            border: 'rgba(3, 105, 161, 0.18)',
+            surface: 'rgba(245, 250, 255, 0.9)',
+            navbarOverlay: 'rgba(245, 250, 255, 0.74)',
+            navbarBorder: 'rgba(3, 105, 161, 0.2)',
+            navBg: 'rgba(255, 255, 255, 0.82)',
+        };
+    }
+
+    if (themeText.includes('lantern')) {
+        return {
+            bg: '#fff8f1',
+            bgSoft: '#ffefe0',
+            text: '#4a2511',
+            textSoft: '#7c4a2a',
+            muted: '#b8876a',
+            accent: '#c2410c',
+            accentSoft: 'rgba(194, 65, 12, 0.12)',
+            accentHover: '#9a3412',
+            border: 'rgba(194, 65, 12, 0.18)',
+            surface: 'rgba(255, 248, 241, 0.9)',
+            navbarOverlay: 'rgba(255, 248, 241, 0.74)',
+            navbarBorder: 'rgba(194, 65, 12, 0.2)',
+            navBg: 'rgba(255, 255, 255, 0.8)',
+        };
+    }
+
     if (themeText.includes('ocean')) {
         return {
             bg: '#f1fdff',

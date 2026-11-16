@@ -14,6 +14,7 @@ import {
     CheckCircle2,
     CircleDot,
     Circle,
+    Palette,
 } from 'lucide-react';
 import ProfileAppearance from '../components/ProfileAppearance';
 import { assetUrl } from '../config/api.js';
@@ -312,6 +313,13 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                                         </div>
                                     )}
                                     {avatarError && <p className="max-w-[12rem] text-center text-[11px] font-semibold text-red-500">{tx(avatarError)}</p>}
+                                    <button
+                                        type="button"
+                                        onClick={() => navigate('/profile/appearance')}
+                                        className="inline-flex items-center gap-1.5 rounded-lg python-gradient px-4 py-2 text-xs font-black text-white shadow-sm hover:opacity-90"
+                                    >
+                                        <Palette size={14} /> {p('customize', { defaultValue: 'แต่งโปรไฟล์' })}
+                                    </button>
                                 </div>
                             )}
                         </div>
@@ -358,7 +366,15 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                 </div>
 
                 <section aria-label={p('cosmeticsInUse')} className="mt-4 rounded-xl bg-white/95 p-4 text-sm text-slate-600 whisper-shadow">
-                    <h2 className="font-bold text-slate-800">{p('cosmeticsInUse')}</h2>
+                    <div className="flex items-center justify-between gap-3">
+                        <h2 className="font-bold text-slate-800">{p('cosmeticsInUse')}</h2>
+                        {isOwner && (
+                            <button type="button" onClick={() => navigate('/profile/appearance')}
+                                className="text-xs font-bold text-pysim-primary hover:underline">
+                                {p('change', { defaultValue: 'เปลี่ยน' })}
+                            </button>
+                        )}
+                    </div>
                     <div className="mt-2 flex flex-wrap gap-x-6 gap-y-2">
                         <span>{p('themeLabel', { name: user.theme_name || p('defaultTheme') })}</span>
                         <span>{p('frameLabel', { name: user.profile_frame_name || p('notWorn') })}</span>

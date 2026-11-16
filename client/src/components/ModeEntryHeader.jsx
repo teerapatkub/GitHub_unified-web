@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
-import { BookOpen, CircleHelp, Coins, Gamepad2, Globe, Lock, LogOut, Medal, MoreHorizontal, Store, Terminal, Trophy } from 'lucide-react';
+import { BookOpen, CircleHelp, Coins, Gamepad2, Globe, Lock, LogOut, Medal, MoreHorizontal, Palette, Store, Terminal, Trophy } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { assetUrl } from '../config/api.js';
@@ -17,6 +17,7 @@ const pageLabels = {
   '/shop': ['ร้านค้าของตกแต่ง', 'Cosmetic shop'],
   '/leaderboard': ['ตารางอันดับ', 'Leaderboard'],
   '/profile': ['โปรไฟล์', 'Profile'],
+  '/profile/appearance': ['แต่งโปรไฟล์', 'Customize profile'],
   '/achievements': ['ความสำเร็จ', 'Achievements'],
 };
 
@@ -34,7 +35,8 @@ export default function ModeEntryHeader({ mode, user, children, onNavigate, onLo
   const moreId = useId();
   const unlocked = canEnterGameModes(user);
   const currentMode = modes.find((item) => item.id === mode);
-  const pageLabel = pageLabels['/' + pathname.split('/')[1]];
+  // The full path first (/profile/appearance), then its first segment.
+  const pageLabel = pageLabels[pathname] || pageLabels['/' + pathname.split('/')[1]];
   const label = currentMode
     ? (isThai ? currentMode.thaiLabel : currentMode.label)
     : (pageLabel?.[isThai ? 0 : 1] || 'PyArena');
@@ -109,6 +111,7 @@ export default function ModeEntryHeader({ mode, user, children, onNavigate, onLo
                 </summary>
                 <div className="app-profile-dropdown">
                   <Link to="/profile" onClick={(event) => handleLink(event, '/profile')}>{isThai ? 'ดูโปรไฟล์' : 'View profile'}</Link>
+                  <Link to="/profile/appearance" onClick={(event) => handleLink(event, '/profile/appearance')}><Palette aria-hidden="true" />{isThai ? 'แต่งโปรไฟล์' : 'Customize profile'}</Link>
                   <Link to="/achievements" onClick={(event) => handleLink(event, '/achievements')}><Medal aria-hidden="true" />{isThai ? 'ความสำเร็จ' : 'Achievements'}</Link>
                   {onLogout && <button type="button" onClick={(event) => { event.currentTarget.closest('details').open = false; onLogout(); }}><LogOut aria-hidden="true" />{isThai ? 'ออกจากระบบ' : 'Log out'}</button>}
                 </div>

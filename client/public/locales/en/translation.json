@@ -236,7 +236,26 @@
     "equip": "Equip",
     "buy": "Buy",
     "unequip": "Take off",
-    "back": "Back to home"
+    "back": "Back to home",
+    "tryEffect": "Try it",
+    "tryEffectHint": "Click to try, double-click for the other one",
+    "previewScene": "Preview",
+    "previewSceneHint": "Play this theme's moving scene for a moment",
+    "openWardrobe": "Customize with what you own",
+    "ownership": {
+      "label": "Show by ownership",
+      "all": "All",
+      "missing": "Not owned",
+      "owned": "Owned"
+    },
+    "ownedOf": "Owned {{owned}}/{{total}}",
+    "inUse": "In use",
+    "inWardrobe": "In your wardrobe",
+    "shortBy": "{{amount}} coins short",
+    "notEnough": "Not enough coins",
+    "emptyOwned": "Nothing owned in this category yet - see the \"Not owned\" tab",
+    "emptyMissing": "You own everything in this category",
+    "empty": "No items found"
   },
   "leaderboard": {
     "title": "Hall of fame",
@@ -395,6 +414,44 @@
       "none": "No achievements unlocked yet",
       "viewAll": "See all {{count}} achievements",
       "reward": "Reward {{reward}} · {{difficulty}}"
-    }
+    },
+    "customize": "Customize profile",
+    "change": "Change"
+  },
+  "appearance": {
+    "title": "Customize profile",
+    "subtitle": "Pick from what you own, preview it, then save",
+    "signIn": "Sign in to customize your profile",
+    "loading": "Loading your wardrobe...",
+    "loadFailed": "Could not load your cosmetics. Please try again.",
+    "backToProfile": "Back to profile",
+    "preview": "Preview",
+    "level": "Level {{level}}",
+    "clickToTry": "Click the preview to try the effect",
+    "playScene": "Play the theme's moving scene",
+    "tab": {
+      "theme": "Theme",
+      "picture": "Profile picture",
+      "frame": "Profile frame",
+      "effect": "Click effect"
+    },
+    "slot": {
+      "THEME": "theme",
+      "PROFILE_PICTURE": "profile picture",
+      "PROFILE_FRAME": "profile frame",
+      "MOUSE_EFFECT": "click effect"
+    },
+    "defaultTheme": "Default theme",
+    "none": "None",
+    "noFrame": "No frame",
+    "noEffect": "No effect",
+    "inUse": "In use",
+    "getMore": "Get more in the shop",
+    "unsaved": "You have unsaved changes ({{count}})",
+    "reset": "Reset",
+    "save": "Save",
+    "saving": "Saving...",
+    "saved": "Profile look saved",
+    "saveFailed": "Some changes were not saved: {{list}}"
   }
 }

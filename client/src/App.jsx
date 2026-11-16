@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { TheInfiniteGrid } from './components/ui/the-infinite-grid';
 import { NavBar } from './components/ui/tubelight-navbar';
 import MouseEffectLayer from './components/MouseEffectLayer';
+import ThemeSceneLayer from './components/ThemeSceneLayer';
 import ModeEntryHeader from './components/ModeEntryHeader';
 import TourHost from './components/tour/TourHost';
 import useModeTransition from './hooks/useModeTransition';
@@ -38,6 +39,7 @@ const ChallengePage = lazy(() => import('./pages/ChallengePage'));
 const AiTaskPage = lazy(() => import('./components/learning/AiTaskPage'));
 const PromotionExamPage = lazy(() => import('./pages/PromotionExamPage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
+const AppearancePage = lazy(() => import('./pages/AppearancePage'));
 const Dashboard = lazy(() => import('./admin/pages/Dashboard'));
 const ManageAccount = lazy(() => import('./admin/pages/ManageAccount'));
 const ThemePage = lazy(() => import('./admin/pages/ThemePage'));
@@ -413,6 +415,7 @@ function AppContent() {
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-transparent text-slate-800 font-sans transition-colors duration-300 relative">
       {authError && <div role="alert" className="relative z-50 bg-rose-50 p-4 text-center text-sm text-rose-700">{authError} <button className="underline" onClick={() => window.location.reload()}>ลองใหม่</button></div>}
       <MouseEffectLayer user={user} />
+      <ThemeSceneLayer />
       <ToastHost />
       <TheInfiniteGrid>
         {!hideNavbar && !isSimulationMode && (
@@ -511,6 +514,8 @@ function AppContent() {
 
                 {/* Student pages and direct mode routes */}
                 <Route path="/profile" element={requireStudent(<ProfilePage key={location.pathname} user={user} onUserRefresh={refreshUserProfile} />)} />
+                {/* Before /profile/:userId would take it as a user id; React Router ranks the static path first anyway. */}
+                <Route path="/profile/appearance" element={requireStudent(<AppearancePage onUserRefresh={refreshUserProfile} />)} />
                 <Route path="/profile/:userId" element={requireStudent(<ProfilePage key={location.pathname} user={user} onUserRefresh={refreshUserProfile} />)} />
                 <Route path="/menu" element={requireStudent(<Navigate to="/learn" replace />)} />
                 <Route path="/achievements" element={requireStudent(<Achievements user={user} />)} />

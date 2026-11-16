@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { API_BASE, assetUrl } from '../config/api.js';
+import { assetUrl } from '../config/api.js';
+import { isCanvasClickFx, playClickFx } from '../fx/index.js';
 
 
 function parseEffects(value) {
@@ -42,7 +43,14 @@ export default function MouseEffectLayer({ user, targetRef }) {
       const matching = effects.filter((effect) => String(effect?.trigger || 'click').toLowerCase() === trigger);
       if (!matching.length) return;
 
-      const next = matching.map((effect) => ({
+      // The newer sets name an effect the canvas draws (fx/clickBursts.js);
+      // the rest are the emoji bursts below.
+      const drawn = matching.filter((effect) => isCanvasClickFx(effect?.fx));
+      drawn.forEach((effect) => playClickFx(effect.fx, x, y));
+      const plain = matching.filter((effect) => !isCanvasClickFx(effect?.fx));
+      if (!plain.length) return;
+
+      const next = plain.map((effect) => ({
         id: `${Date.now()}-${Math.random()}`,
         x,
         y,

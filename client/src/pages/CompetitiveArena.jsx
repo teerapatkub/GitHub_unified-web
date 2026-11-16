@@ -652,8 +652,9 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
       }))
       .filter((testCase) => testCase.expected.trim() !== '');
 
-    if (normalizedTestCases.length === 0) {
-      alert('กรุณาสร้าง test case เองอย่างน้อย 1 ชุดก่อนโพสต์โจทย์');
+    // The server refuses the same: with one input, printing the answer passes.
+    if (new Set(normalizedTestCases.map((testCase) => testCase.input.trim())).size < 2) {
+      alert('ต้องมี test case อย่างน้อย 2 ชุดที่ข้อมูลที่รับเข้าต่างกัน ไม่อย่างนั้นแค่พิมพ์คำตอบไว้ตรงๆ ก็ผ่านได้');
       return;
     }
     
@@ -832,6 +833,9 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
 
                     <CompetitiveGenerator topic={selectedLessonTemplate?.category || 'Python'} onApply={draft => {
                       setPostTitle(draft.title); setPostDesc(draft.description); setPostTestCases(draft.testCases);
+                      // Drafts from before the server suggested terms have none.
+                      if (Number(draft.rewardCoins) > 0) setPostReward(Number(draft.rewardCoins));
+                      if (Number(draft.timeLimitSec) > 0) setPostTimeLimit(Number(draft.timeLimitSec));
                     }} />
 
                     <div>

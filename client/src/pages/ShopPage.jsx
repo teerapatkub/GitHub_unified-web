@@ -1,41 +1,22 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ShoppingBag, ShoppingCart, Coins, CheckCircle, Search } from 'lucide-react';
+import { ShoppingBag, ShoppingCart, Coins, CheckCircle, Search, Palette, Lock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast, friendlyError } from '../components/ui/toast.js';
 import { useTheme } from '../contexts/useTheme.js';
 import { API_BASE, assetUrl } from '../config/api.js';
-import { getShopThemePalette, shopThemeColors } from '../themes/shopPalette.js';
+import { applyCosmetic, createShopTheme, itemSlot } from '../shop/equipCosmetic.js';
 import SkeletonLoading from '../components/ui/Skeleton.jsx';
 import PurchaseSuccessPopup from '../components/shop/PurchaseSuccessPopup.jsx';
+import CosmeticTryButton from '../components/shop/CosmeticTryButton.jsx';
 
-
-const resolveAssetUrl = (value) => assetUrl(value);
-const userThemeKey = (user) => `game_theme:user:${user.user_id}`;
-const itemSlot = (type) => {
-    if (type === 'THEME') return 'THEME';
-    if (type === 'MOUSE_EFFECT') return 'MOUSE_EFFECT';
-    if (type === 'PROFILE_PICTURE') return 'PROFILE_PICTURE';
-    return 'PROFILE_FRAME';
-};
-
-const createShopTheme = (item) => {
-    const palette = getShopThemePalette(item);
-    return {
-        id: `shop-theme-${item.itemId}`,
-        name: item.name,
-        icon: 'Aa',
-        category: 'shop',
-        description: 'Theme Store',
-        backgroundImage: resolveAssetUrl(item.assetUrl || item.previewImage),
-        colors: shopThemeColors(palette),
-    };
-};
 
 export default function ShopPage() {
     const navigate = useNavigate();
     const { t, i18n } = useTranslation();
     const lang = i18n.language === 'en' ? 'en' : 'th';
+    // Prices reach five digits since fix list item 8; 15200 is hard to read.
+    const coins = (value) => Number(value || 0).toLocaleString(lang === 'en' ? 'en-US' : 'th-TH');
     const { registerTheme, setTheme } = useTheme();
     // registerTheme changes identity whenever the signed-in user resolves, and
     // fetchShop depended on it, so the shop loaded items/inventory/sets three
@@ -45,6 +26,17 @@ export default function ShopPage() {
     const [mounted, setMounted] = useState(false);
     const [selectedCategory, setSelectedCategory] = useState('all');
     const [searchTerm, setSearchTerm] = useState('');
+    // Owned or not is the first thing a returning shopper wants to sort by.
+    const [ownership, setOwnership] = useState('all');
+    const readWallet = () => {
+        try {
+            const user = JSON.parse(localStorage.getItem('user') || '{}');
+            return Number(user.virtual_currency ?? user.coins ?? 0);
+        } catch {
+            return 0;
+        }
+    };
+    const [wallet, setWallet] = useState(readWallet);
     const [items, setItems] = useState([]);
     const [ownedItemIds, setOwnedItemIds] = useState(new Set());
     const [loading, setLoading] = useState(true);
@@ -62,11 +54,18 @@ export default function ShopPage() {
                 THEME: Number(user.equipped_theme_id) || null,
                 MOUSE_EFFECT: Number(user.equipped_mouse_effect_id) || null,
                 PROFILE_FRAME: Number(user.equipped_profile_frame_id) || null,
+                PICTURE_URL: user.avatar?.url || '',
             };
         } catch {
             return {};
         }
     });
+    // Is this item the one being worn? A profile picture is not an equipped_*
+    // column - it is whatever the user's avatar resolves to (docs/adr 0002) -
+    // so it is matched by the picture's address instead of by id.
+    const isInUse = (item) => (item.type === 'PROFILE_PICTURE'
+        ? Boolean(equippedItems.PICTURE_URL) && equippedItems.PICTURE_URL === item.assetUrl
+        : equippedItems[itemSlot(item.type)] === item.itemId);
 
     useEffect(() => { setTimeout(() => setMounted(true), 100); }, []);
 
@@ -88,10 +87,15 @@ export default function ShopPage() {
                 THEME: Number(user.equipped_theme_id) || null,
                 MOUSE_EFFECT: Number(user.equipped_mouse_effect_id) || null,
                 PROFILE_FRAME: Number(user.equipped_profile_frame_id) || null,
+                PICTURE_URL: user.avatar?.url || '',
             });
         };
 
-        const onUserUpdated = (event) => syncEquippedFromUser(event.detail?.user);
+        const onUserUpdated = (event) => {
+            syncEquippedFromUser(event.detail?.user);
+            const balance = event.detail?.user?.virtual_currency;
+            if (balance !== undefined) setWallet(Number(balance));
+        };
         window.addEventListener('pysim:user-updated', onUserUpdated);
         window.addEventListener('pysim:user-cosmetic-equipped', onUserUpdated);
         return () => {
@@ -221,11 +225,29 @@ export default function ShopPage() {
         fetchShop();
     }, [fetchShop]);
 
-    const filteredItems = items.filter(item => {
+    const inCategory = items.filter(item => {
         const matchesCategory = selectedCategory === 'all' || item.category === selectedCategory;
         const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
         return matchesCategory && matchesSearch;
     });
+    const ownershipCounts = {
+        all: inCategory.length,
+        missing: inCategory.filter((item) => !item.owned).length,
+        owned: inCategory.filter((item) => item.owned).length,
+    };
+    const filteredItems = inCategory.filter((item) => (
+        ownership === 'all' || (ownership === 'owned' ? item.owned : !item.owned)
+    ));
+    // Sets you can still buy come first; finished ones sink to the bottom, and
+    // the "owned" view has no sets at all - there is nothing left to buy there.
+    const visibleSets = ownership === 'owned' ? [] : [...sets]
+        .filter((set) => ownership === 'all' || !set.fully_owned)
+        .sort((a, b) => Number(a.fully_owned) - Number(b.fully_owned));
+    const ownershipTabs = [
+        { id: 'all', label: t('shop.ownership.all', 'ทั้งหมด') },
+        { id: 'missing', label: t('shop.ownership.missing', 'ยังไม่มี') },
+        { id: 'owned', label: t('shop.ownership.owned', 'มีแล้ว') },
+    ];
 
     const handleBuy = async (item) => {
         if (purchaseBusyRef.current) return;
@@ -327,96 +349,29 @@ export default function ShopPage() {
         }
     };
 
+    // Equipping goes through shop/equipCosmetic.js, shared with the
+    // appearance page so the two can never disagree about what "worn" means.
     const handleEquip = async (item) => {
-        const user = JSON.parse(localStorage.getItem('user') || 'null');
-        if (!user?.user_id || user?.isGuest) return;
-
         try {
-            const res = await fetch(`${API_BASE}/api/shop/equip`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId: user.user_id, itemId: item.itemId, type: item.type }),
-            });
-            const data = await res.json();
-            if (!res.ok) {
-                toast(friendlyError(data.error, t('shop.equipFailed', 'สวมใส่ไม่สำเร็จ ลองอีกครั้ง'), lang));
+            const result = await applyCosmetic({ type: item.type, item, registerTheme, setTheme });
+            if (!result.ok) {
+                if (result.error !== 'signin') toast(friendlyError(result.error, t('shop.equipFailed', 'สวมใส่ไม่สำเร็จ ลองอีกครั้ง'), lang));
                 return;
             }
-
-            const slot = itemSlot(item.type);
-            const nextUser = { ...user };
-            if (slot === 'THEME') {
-                nextUser.equipped_theme_id = item.itemId;
-                nextUser.theme_asset_url = item.assetUrl || item.previewImage;
-                nextUser.theme_preview_image = item.previewImage || item.assetUrl;
-                nextUser.theme_name = item.name;
-                const theme = createShopTheme(item);
-                registerTheme(theme);
-                localStorage.setItem(userThemeKey(user), theme.id);
-                window.setTimeout(() => setTheme(theme.id), 0);
-            } else if (slot === 'MOUSE_EFFECT') {
-                nextUser.equipped_mouse_effect_id = item.itemId;
-                nextUser.mouse_effect_data = item.effectData;
-                window.dispatchEvent(new CustomEvent('pysim:mouse-effect-equipped', {
-                    detail: { effects: item.effectData },
-                }));
-            } else if (slot === 'PROFILE_PICTURE') {
-                // A picture becomes the shown avatar (via avatar_url), not the
-                // frame. The server already set it; carry its resolved avatar so
-                // the navbar picks it up on the refresh below.
-                nextUser.avatar = data.avatar || nextUser.avatar;
-            } else {
-                nextUser.equipped_profile_frame_id = item.itemId;
-                nextUser.profile_asset_url = item.assetUrl || item.previewImage;
-            }
-            localStorage.setItem('user', JSON.stringify(nextUser));
-            setEquippedItems((current) => ({ ...current, [slot]: item.itemId }));
-            window.dispatchEvent(new CustomEvent('pysim:user-cosmetic-equipped', {
-                detail: { user: nextUser },
-            }));
+            setEquippedItems((current) => (item.type === 'PROFILE_PICTURE'
+                ? { ...current, PICTURE_URL: result.user?.avatar?.url || item.assetUrl }
+                : { ...current, [itemSlot(item.type)]: item.itemId }));
         } catch {
-            toast(t('shop.unequipFailed', 'ถอดออกไม่สำเร็จ ลองอีกครั้ง'));
+            toast(t('shop.equipFailed', 'สวมใส่ไม่สำเร็จ ลองอีกครั้ง'));
         }
     };
 
     const handleUnequip = async (item) => {
-        const user = JSON.parse(localStorage.getItem('user') || 'null');
-        if (!user?.user_id || user?.isGuest) return;
-
         try {
-            const res = await fetch(`${API_BASE}/api/shop/equip`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId: user.user_id, itemId: null, type: item.type }),
-            });
-            if (!res.ok) return;
-
-            const slot = itemSlot(item.type);
-            const nextUser = { ...user };
-            if (slot === 'THEME') {
-                nextUser.equipped_theme_id = null;
-                nextUser.theme_asset_url = '';
-                nextUser.theme_preview_image = '';
-                nextUser.theme_name = '';
-                localStorage.setItem(userThemeKey(user), 'cyberpunk-light');
-                setTheme('cyberpunk-light');
-            } else if (slot === 'MOUSE_EFFECT') {
-                nextUser.equipped_mouse_effect_id = null;
-                nextUser.mouse_effect_data = [];
-                window.dispatchEvent(new CustomEvent('pysim:mouse-effect-equipped', {
-                    detail: { effects: [] },
-                }));
-            } else {
-                nextUser.equipped_profile_frame_id = null;
-                nextUser.profile_asset_url = '';
-            }
-            localStorage.setItem('user', JSON.stringify(nextUser));
-            setEquippedItems((current) => ({ ...current, [slot]: null }));
-            window.dispatchEvent(new CustomEvent('pysim:user-cosmetic-equipped', {
-                detail: { user: nextUser },
-            }));
+            const result = await applyCosmetic({ type: item.type, item: null, registerTheme, setTheme });
+            if (result.ok) setEquippedItems((current) => ({ ...current, [itemSlot(item.type)]: null }));
         } catch {
-            // The visual state remains unchanged if the request cannot be completed.
+            toast(t('shop.unequipFailed', 'ถอดออกไม่สำเร็จ ลองอีกครั้ง'));
         }
     };
 
@@ -435,7 +390,13 @@ export default function ShopPage() {
                         </div>
                         <h1 className="text-4xl font-black text-pysim-on-surface tracking-tight">{t('shop.title', 'Theme Store')}</h1>
                     </div>
-                    <p className="text-pysim-on-surface-variant ml-[52px]">{t('shop.subtitle', 'ปรับแต่งประสบการณ์ของคุณ')}</p>
+                    <div className="ml-[52px] flex flex-wrap items-center justify-between gap-3">
+                        <p className="text-pysim-on-surface-variant">{t('shop.subtitle', 'ปรับแต่งประสบการณ์ของคุณ')}</p>
+                        <button type="button" onClick={() => navigate('/profile/appearance')}
+                            className="inline-flex items-center gap-2 rounded-lg border border-pysim-primary/30 bg-white px-4 py-2 text-sm font-bold text-pysim-primary whisper-shadow transition-colors hover:bg-pysim-primary/10">
+                            <Palette size={16} /> {t('shop.openWardrobe', 'แต่งโปรไฟล์ด้วยของที่มี')}
+                        </button>
+                    </div>
                 </div>
 
                 <div className={`flex flex-col md:flex-row gap-4 mb-8 transition-all duration-700 delay-100 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
@@ -461,13 +422,24 @@ export default function ShopPage() {
                     </div>
                 </div>
 
+                <div role="tablist" aria-label={t('shop.ownership.label', 'แสดงตามการเป็นเจ้าของ')} className={`-mt-4 mb-8 inline-flex rounded-xl bg-white p-1 whisper-shadow transition-all duration-700 delay-100 ${mounted ? 'opacity-100' : 'opacity-0'}`}>
+                    {ownershipTabs.map((tab) => (
+                        <button key={tab.id} type="button" role="tab" aria-selected={ownership === tab.id}
+                            onClick={() => setOwnership(tab.id)}
+                            className={`rounded-lg px-4 py-2 text-sm font-bold transition-colors ${ownership === tab.id ? 'bg-pysim-primary text-white' : 'text-pysim-on-surface-variant hover:bg-pysim-surface-low'}`}>
+                            {tab.label}
+                            <span className={`ml-1.5 rounded-full px-1.5 text-xs ${ownership === tab.id ? 'bg-white/25' : 'bg-pysim-surface-low'}`}>{ownershipCounts[tab.id]}</span>
+                        </button>
+                    ))}
+                </div>
+
                 {error && (
                     <div className="mb-6 rounded-lg bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">
                         {error}
                     </div>
                 )}
 
-                {!loading && sets.length > 0 && selectedCategory === 'all' && !searchTerm && (
+                {!loading && visibleSets.length > 0 && selectedCategory === 'all' && !searchTerm && (
                     <div className={`mb-12 transition-all duration-700 delay-150 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
                         <div className="flex items-baseline gap-3 mb-4">
                             <h2 className="text-2xl font-black text-pysim-on-surface">{t('shop.setsTitle', 'เซ็ตธีม')}</h2>
@@ -475,19 +447,32 @@ export default function ShopPage() {
                         </div>
 
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            {sets.map((set) => (
+                            {visibleSets.map((set) => (
                                 <div key={set.set_key}
-                                    className="bg-white rounded-xl whisper-shadow overflow-hidden flex flex-col">
+                                    className={`bg-white rounded-xl whisper-shadow overflow-hidden flex flex-col ${set.fully_owned ? 'ring-2 ring-pysim-success-strong/40' : ''}`}>
                                     <div className="px-6 pt-5 pb-4 border-b border-pysim-outline/10">
                                         <div className="flex items-start justify-between gap-3">
                                             <div>
                                                 <h3 className="text-xl font-black text-pysim-on-surface">{lang === 'en' ? (set.name_en || set.name_th) : set.name_th}</h3>
                                                 <p className="mt-1 text-sm text-pysim-on-surface-variant">{set.description_th}</p>
                                             </div>
-                                            {set.savings > 0 && (
-                                                <span className="shrink-0 rounded-lg bg-pysim-primary/10 px-3 py-1.5 text-xs font-black text-pysim-primary">
-                                                    {t('shop.save', 'ประหยัด')} {set.savings}
+                                            {set.fully_owned ? (
+                                                <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-pysim-success-strong px-3 py-1.5 text-xs font-black text-white">
+                                                    <CheckCircle size={14} /> {t('shop.setComplete', 'มีครบแล้ว')}
                                                 </span>
+                                            ) : (
+                                                <div className="flex shrink-0 flex-col items-end gap-1.5">
+                                                    {set.savings > 0 && (
+                                                        <span className="rounded-lg bg-pysim-primary/10 px-3 py-1.5 text-xs font-black text-pysim-primary">
+                                                            {t('shop.save', 'ประหยัด')} {coins(set.savings)}
+                                                        </span>
+                                                    )}
+                                                    {set.owned_count > 0 && (
+                                                        <span className="rounded-lg bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
+                                                            {t('shop.ownedOf', { owned: set.owned_count, total: set.items.length, defaultValue: 'มีแล้ว {{owned}}/{{total}} ชิ้น' })}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             )}
                                         </div>
                                     </div>
@@ -515,7 +500,11 @@ export default function ShopPage() {
                                                     )}
                                                 </div>
                                                 <p className="mt-2 text-xs font-bold text-pysim-on-surface leading-tight">{item.name}</p>
-                                                <p className="text-[11px] text-pysim-outline">{item.price} {t('shop.coins', 'เหรียญ')}</p>
+                                                <p className={`text-[11px] ${item.owned ? 'font-bold text-emerald-700' : 'text-pysim-outline'}`}>
+                                                    {item.owned ? t('shop.owned', 'มีแล้ว') : `${coins(item.price)} ${t('shop.coins', 'เหรียญ')}`}
+                                                </p>
+                                                <CosmeticTryButton type={item.type} effects={item.preview_data}
+                                                    themeText={`${item.name} ${item.asset_url || ''}`} className="mt-1.5" />
                                             </div>
                                         ))}
                                     </div>
@@ -523,10 +512,10 @@ export default function ShopPage() {
                                     <div className="mt-auto flex items-end justify-between gap-4 px-6 pb-5">
                                         <div>
                                             <p className="text-xs text-pysim-outline line-through">
-                                                {t('shop.separately', 'แยกชิ้น')} {set.individual_total} {t('shop.coins', 'เหรียญ')}
+                                                {t('shop.separately', 'แยกชิ้น')} {coins(set.individual_total)} {t('shop.coins', 'เหรียญ')}
                                             </p>
                                             <p className="text-2xl font-black text-pysim-primary leading-tight">
-                                                {set.fully_owned ? set.price : set.price_for_user} {t('shop.coins', 'เหรียญ')}
+                                                {coins(set.fully_owned ? set.price : set.price_for_user)} {t('shop.coins', 'เหรียญ')}
                                             </p>
                                             {!set.fully_owned && set.owned_count > 0 && (
                                                 <p className="text-[11px] text-pysim-on-surface-variant">
@@ -557,9 +546,19 @@ export default function ShopPage() {
                     <SkeletonLoading variant="catalog" label={t('shop.loading', 'กำลังโหลดสินค้า...')} className="py-4" />
                 ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {filteredItems.length === 0 && (
+                            <p className="col-span-full rounded-xl bg-white p-8 text-center text-sm text-pysim-on-surface-variant whisper-shadow">
+                                {ownership === 'owned'
+                                    ? t('shop.emptyOwned', 'ยังไม่มีของในหมวดนี้ ลองดูในแท็บ "ยังไม่มี"')
+                                    : ownership === 'missing'
+                                        ? t('shop.emptyMissing', 'คุณมีของในหมวดนี้ครบแล้ว')
+                                        : t('shop.empty', 'ไม่พบสินค้า')}
+                            </p>
+                        )}
                         {filteredItems.map((item, index) => (
                             <div key={item.id}
                                 className={`bg-white rounded-xl whisper-shadow hover:translate-y-[-4px] transition-all duration-300 overflow-hidden group
+                                    ${isInUse(item) ? 'ring-2 ring-pysim-primary' : item.owned ? 'ring-2 ring-pysim-success-strong/40' : ''}
                                     ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
                                 style={{ transitionDelay: `${200 + index * 80}ms` }}>
                                 <div className="h-40 bg-pysim-surface-low flex items-center justify-center relative">
@@ -577,36 +576,56 @@ export default function ShopPage() {
                                     <span className={`absolute top-3 right-3 text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded bg-white/80 backdrop-blur-sm ${rarityColors[item.rarity] || rarityColors.common}`}>
                                         {item.rarity}
                                     </span>
+                                    {item.owned && (
+                                        <span className={`absolute top-3 left-3 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-black text-white shadow ${isInUse(item) ? 'bg-pysim-primary' : 'bg-pysim-success-strong'}`}>
+                                            <CheckCircle size={12} />
+                                            {isInUse(item) ? t('shop.inUse', 'กำลังใช้') : t('shop.owned', 'มีแล้ว')}
+                                        </span>
+                                    )}
                                 </div>
 
                                 <div className="p-5">
                                     <h3 className="text-lg font-bold text-pysim-on-surface mb-1">{item.name}</h3>
+                                    <CosmeticTryButton type={item.type} effects={item.effectData}
+                                        themeText={`${item.name} ${item.assetUrl || item.previewImage || ''}`} />
                                     <div className="mt-4 flex items-center justify-between gap-3">
-                                        <div className="flex shrink-0 items-center gap-1.5">
-                                            <Coins size={16} className="text-pysim-secondary-container" />
-                                            <span className="font-bold text-pysim-secondary text-sm">{item.price}</span>
-                                        </div>
+                                        {item.owned ? (
+                                            <span className="text-sm font-bold text-emerald-700">{t('shop.inWardrobe', 'อยู่ในตู้ของคุณ')}</span>
+                                        ) : (
+                                            <div className="min-w-0">
+                                                <div className="flex shrink-0 items-center gap-1.5">
+                                                    <Coins size={16} className="text-pysim-secondary-container" />
+                                                    <span className="font-bold text-pysim-secondary text-sm">{coins(item.price)}</span>
+                                                </div>
+                                                {wallet < item.price && (
+                                                    <p className="mt-0.5 text-[11px] font-semibold text-rose-600">
+                                                        {t('shop.shortBy', { amount: coins(item.price - wallet), defaultValue: 'ขาดอีก {{amount}} เหรียญ' })}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        )}
                                         {item.owned ? (
                                             <button
                                                 type="button"
                                                 onClick={() => handleEquip(item)}
-                                                className={`flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors ${equippedItems[itemSlot(item.type)] === item.itemId ? 'bg-pysim-success-strong hover:bg-pysim-success-strong/90' : 'bg-pysim-primary hover:bg-pysim-primary/90'}`}
+                                                className={`flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors ${isInUse(item) ? 'bg-pysim-success-strong hover:bg-pysim-success-strong/90' : 'bg-pysim-primary hover:bg-pysim-primary/90'}`}
                                             >
-                                                <CheckCircle size={17} /> {equippedItems[itemSlot(item.type)] === item.itemId ? t('shop.equipped', 'กำลังสวมใส่') : t('shop.equip', 'สวมใส่')}
+                                                <CheckCircle size={17} /> {isInUse(item) ? t('shop.equipped', 'กำลังสวมใส่') : t('shop.equip', 'สวมใส่')}
                                             </button>
                                         ) : (
                                             <button
                                                 type="button"
                                                 onClick={() => handleBuy(item)}
-                                                disabled={buyingItemId !== null || Boolean(buyingSet)}
-                                                className="flex items-center justify-center gap-2 rounded-lg bg-pysim-primary px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-pysim-primary/90 active:scale-[0.98] disabled:cursor-wait disabled:opacity-60"
+                                                disabled={buyingItemId !== null || Boolean(buyingSet) || wallet < item.price}
+                                                className="flex shrink-0 items-center justify-center gap-2 rounded-lg bg-pysim-primary px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-pysim-primary/90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
                                             >
-                                                <ShoppingCart size={17} />
-                                                {buyingItemId === item.itemId ? t('shopPurchase.buying', 'กำลังซื้อ...') : t('shop.buy', 'ซื้อ')}
+                                                {wallet < item.price ? <Lock size={16} /> : <ShoppingCart size={17} />}
+                                                {buyingItemId === item.itemId ? t('shopPurchase.buying', 'กำลังซื้อ...')
+                                                    : wallet < item.price ? t('shop.notEnough', 'เหรียญไม่พอ') : t('shop.buy', 'ซื้อ')}
                                             </button>
                                         )}
                                     </div>
-                                    {item.owned && equippedItems[itemSlot(item.type)] === item.itemId && (
+                                    {item.owned && isInUse(item) && item.type !== 'PROFILE_PICTURE' && (
                                         <button
                                             type="button"
                                             onClick={() => handleUnequip(item)}
