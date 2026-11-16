@@ -133,7 +133,13 @@ export default function useRoundJudging({ playerState, setPlayerState, currentRo
 
   // Reused as-is from Person 1's learning system (client/src/hooks/usePyodide.js)
   // to run player code for real instead of the old fake "always PASS" checker.
-  const { status: pyodideStatus, runCode: runPyCode, clearOutput: clearPyOutput, setOnOutput: setPyOnOutput } = usePyodide();
+  const { status: pyodideStatus, runCode: runPyCode, clearOutput: clearPyOutput, setOnOutput: setPyOnOutput, preload: preloadPython } = usePyodide();
+  // Python loads lazily now (first run), so warm it as soon as a round starts:
+  // a timed round should not spend its first trial run downloading Pyodide.
+  const roundPhase = currentRoom?.phase;
+  useEffect(() => {
+    if (/^ROUND_[1-4]$/.test(roundPhase || '')) preloadPython();
+  }, [roundPhase, preloadPython]);
   const pyOutputRef = useRef([]);
   useEffect(() => {
     setPyOnOutput((lines) => { pyOutputRef.current = lines; });
