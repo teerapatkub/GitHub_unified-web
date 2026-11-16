@@ -1174,7 +1174,8 @@ const getLearningModeConfig = (mode = 'exercise') => {
             subtitle: 'Challenge',
             accent: 'rose',
             rewardXpRange: [220, 420],
-            rewardCoinsRange: [60, 120],
+            // Coins x3 on 2026-11-17 with the shop price rise (fix list item 8).
+            rewardCoinsRange: [180, 360],
         };
     }
     return {
@@ -1183,7 +1184,7 @@ const getLearningModeConfig = (mode = 'exercise') => {
         subtitle: 'Debug Lab',
         accent: 'blue',
         rewardXpRange: [90, 180],
-        rewardCoinsRange: [20, 60],
+        rewardCoinsRange: [60, 180],
     };
 };
 
@@ -1225,7 +1226,7 @@ const buildFallbackLearningTask = (mode = 'exercise', level = 1) => {
                     { input: '1500', expected: 'Total price with VAT is 1605.0' },
                   ],
             rewardXp: numericLevel >= 4 ? 320 : 240,
-            rewardCoins: numericLevel >= 4 ? 95 : 70,
+            rewardCoins: numericLevel >= 4 ? 285 : 210,
         };
     }
 
@@ -1262,7 +1263,7 @@ const buildFallbackLearningTask = (mode = 'exercise', level = 1) => {
                 { input: '150000', expected: 'Tax is 10500.0' },
               ],
         rewardXp: numericLevel >= 3 ? 150 : 110,
-        rewardCoins: numericLevel >= 3 ? 45 : 25,
+        rewardCoins: numericLevel >= 3 ? 135 : 75,
     };
 };
 
@@ -1378,7 +1379,7 @@ Return ONLY valid JSON with this exact structure:
     { "input": "sample input", "expected": "exact expected output" }
   ],
   "rewardXp": 250,
-  "rewardCoins": 70
+  "rewardCoins": 210
 }
 
 Rules:
@@ -1431,6 +1432,8 @@ Rules:
 //
 // Returns null when the bank has nothing to offer, and the caller falls back to
 // the model.
+const DEBUG_LAB_INSTRUCTION = 'โค้ดด้านล่างมีบั๊ก 1 จุด: รันได้แต่ผลลัพธ์ผิด หาจุดที่ผิดแล้วแก้ให้ได้ผลลัพธ์ตามตัวอย่าง';
+const { plantBug } = require('./debugLab');
 const drawLearningTaskFromBank = async ({ userId, mode, level }) => {
     const config = getLearningModeConfig(mode);
     // Later chapters unlock as the learner levels up, so a beginner is not
@@ -1438,10 +1441,14 @@ const drawLearningTaskFromBank = async ({ userId, mode, level }) => {
     // dropped entirely if it leaves nothing to draw.
     const lessonCeiling = Math.max(3, Math.min(24, Number(level || 1) * 3));
 
+    // Debug Lab hands out a problem's solution with one bug planted in it
+    // (debugLab.js). Only some problems have a bug that changes their answer,
+    // so it draws several and uses the first that does.
+    const isDebugLab = config.mode === 'exercise';
     const select = async (useGate) => {
         const [rows] = await db.query(
             `SELECT m.problem_id, m.xp_reward, m.coin_reward, m.lesson_id,
-                    p.title_th, p.desc_th, p.starter_code, p.test_cases
+                    p.title_th, p.desc_th, p.starter_code, p.test_cases, p.solution_code
                FROM problem_modes m
                JOIN problems p ON p.problem_id = m.problem_id
               WHERE m.mode = 'lesson'
@@ -1456,17 +1463,36 @@ const drawLearningTaskFromBank = async ({ userId, mode, level }) => {
                      ORDER BY updated_at DESC LIMIT 8
                 )
               ORDER BY random()
-              LIMIT 1`,
+              LIMIT ${isDebugLab ? 12 : 1}`,
             useGate ? [lessonCeiling, userId] : [userId]
         );
-        return rows?.[0] || null;
+        return rows || [];
     };
 
-    const row = (await select(true)) || (await select(false));
-    if (!row) return null;
+    let candidates = await select(true);
+    if (candidates.length === 0) candidates = await select(false);
+    if (candidates.length === 0) return null;
 
-    const cases = Array.isArray(row.test_cases) ? row.test_cases : safeJsonParse(row.test_cases, []);
-    if (!Array.isArray(cases) || cases.length === 0) return null;
+    const casesOf = (candidate) => {
+        const parsed = Array.isArray(candidate.test_cases) ? candidate.test_cases : safeJsonParse(candidate.test_cases, []);
+        return Array.isArray(parsed) ? parsed : [];
+    };
+
+    let row = candidates[0];
+    let bug = null;
+    if (isDebugLab) {
+        for (const candidate of candidates) {
+            if (!String(candidate.solution_code || '').trim() || casesOf(candidate).length === 0) continue;
+            bug = await plantBug({ solution: candidate.solution_code, testCases: casesOf(candidate) });
+            if (bug) { row = candidate; break; }
+        }
+        // None of the drawn problems takes a bug: an ordinary exercise is
+        // still better than an error or a wait for the model.
+        if (!bug) console.warn('⚠️ Debug Lab: no planted bug for the drawn problems, serving a plain exercise');
+    }
+
+    const cases = casesOf(row);
+    if (cases.length === 0) return null;
 
     // The description is one block of prose; the page renders a numbered list.
     // Splitting on blank lines keeps the author's own paragraphing instead of
@@ -1485,13 +1511,18 @@ const drawLearningTaskFromBank = async ({ userId, mode, level }) => {
         sectionLabel: config.sectionLabel,
         subtitle: config.subtitle,
         accent: config.accent,
-        instructions: instructions.length ? instructions : [String(row.desc_th || '').trim()],
+        instructions: [
+            ...(bug ? [DEBUG_LAB_INSTRUCTION] : []),
+            ...(instructions.length ? instructions : [String(row.desc_th || '').trim()]),
+        ],
         example: {
             input: String(cases[0]?.input ?? ''),
             output: String(cases[0]?.expected ?? ''),
         },
-        starterCode: row.starter_code || '',
+        starterCode: bug ? bug.code : (row.starter_code || ''),
         testCases: cases,
+        // Server-side only (ai_payload); never sent to the page.
+        ...(bug ? { plantedBug: bug.kind } : {}),
         // The bank's own reward for the problem, so the same problem is worth
         // the same wherever it is met. Floored at the mode's minimum, since a
         // Hard Challenge paying a first-chapter lesson's six coins would read
@@ -2199,8 +2230,23 @@ app.post('/api/learning/ai-task/submit', async (req, res) => {
         return res.status(404).json({ error: 'Active task not found' });
     }
 
+    // A task drawn from the bank keeps its problem_id; with that problem's
+    // reference solution the grader can tell computing the answer from
+    // printing it (problemGrader.js). Generated tasks have none, but they are
+    // only kept with at least three different inputs, which already catch it.
+    let solutionCode = '';
+    if (preTaskRows[0].problem_id) {
+        const [solutionRows] = await db.execute(
+            'SELECT solution_code FROM problems WHERE problem_id = ?',
+            [preTaskRows[0].problem_id]
+        );
+        solutionCode = solutionRows[0]?.solution_code || '';
+    }
     const gradedVerdict = await judgeLearnerSubmission({
-        problem: learningTaskProblem(safeJsonParse(preTaskRows[0].test_cases_json, [])),
+        problem: {
+            ...learningTaskProblem(safeJsonParse(preTaskRows[0].test_cases_json, [])),
+            solution_code: solutionCode,
+        },
         code,
     });
     if (!gradedVerdict.accepted) {
@@ -4374,6 +4420,15 @@ app.post('/api/competitive/challenges', async (req, res) => {
         const tests = testCases
             ? (typeof testCases === 'string' ? testCases : JSON.stringify(testCases))
             : '[]';
+        // Competitive problems are posted without a reference solution, so the
+        // grader cannot check whether an answer computes or just prints. Two
+        // different inputs make a printed constant fail at least one case.
+        const postedCases = normalizeCompetitiveTestCases(parseCompetitiveTestCases(tests));
+        if (new Set(postedCases.map((testCase) => String(testCase.input ?? '').trim())).size < 2) {
+            return res.status(400).json({
+                error: 'ต้องมี test case อย่างน้อย 2 ข้อที่ input ต่างกัน ไม่อย่างนั้นแค่พิมพ์คำตอบไว้ตรงๆ ก็ผ่านได้',
+            });
+        }
 
         // Stored in the canonical shape: the expected side of a case is named
         // `expected`, whichever of the two spellings the caller sent.
@@ -4381,7 +4436,7 @@ app.post('/api/competitive/challenges', async (req, res) => {
             titleTh: title,
             descTh: description,
             testKind: 'stdio',
-            testCases: normalizeCompetitiveTestCases(parseCompetitiveTestCases(tests)),
+            testCases: postedCases,
             difficulty: difficulty || 'Easy',
             coinReward: Number(reward || 500),
             timeLimitSec: Number(timeLimit || 300),
@@ -6953,7 +7008,7 @@ app.post('/api/mini-game/modules/:moduleId/progress', async (req, res) => {
 
     try {
         const [exerciseRows] = await db.execute(
-            `SELECT exercise_id, lesson_id, xp_reward, currency_reward, test_cases_json
+            `SELECT exercise_id, lesson_id, xp_reward, currency_reward, test_cases_json, solution_code
              FROM mini_game_exercises
              WHERE lesson_id = ? AND exercise_id = ?
              LIMIT 1`,
@@ -6984,7 +7039,7 @@ app.post('/api/mini-game/modules/:moduleId/progress', async (req, res) => {
             [exercise.exercise_id]
         );
         const files = Object.fromEntries(fileRows.map((row) => [row.file_name, row.file_content || '']));
-        const verdict = await gradeMiniGameSubmission(submitted_code, config, files);
+        const verdict = await gradeMiniGameSubmission(submitted_code, config, files, { solutionCode: exercise.solution_code });
         if (!verdict.accepted) {
             return res.status(400).json({ error: 'ยังผ่านไม่ครบทุกเทสเคส',
                 passed: verdict.passed, total: verdict.total,
@@ -7247,6 +7302,11 @@ const {
   createArcadeSpectatorsMigration,
   createArcadeGuessPayoutsMigration,
   createCompetitivePoolMigration,
+  createCosmeticsRefreshMigration,
+  createClassicSetEffectsMigration,
+  createForestArtworkMigration,
+  createThemeArtworkMigration,
+  createThemeArtworkClassicMigration,
 } = require('./migrations/definitions');
 const { applyDataApiSecurity } = require('./security/data-api-security');
 const authProvisioningSchemaSql = fs.readFileSync(
@@ -7360,6 +7420,32 @@ const applicationMigrations = [
   createCompetitivePoolMigration(
     () => migrateCompetitivePool(db),
     migrateCompetitivePool.toString(),
+  ),
+  // Shop prices by rarity, five new cosmetic sets, lesson coins x3 (fix list
+  // item 8, 2026-11-17).
+  createCosmeticsRefreshMigration(
+    () => require('./migrate-cosmetics-refresh').migrateCosmeticsRefresh(db),
+    require('fs').readFileSync(require.resolve('./migrate-cosmetics-refresh'), 'utf8'),
+  ),
+  // Canvas click effects for the four original sets (2026-11-17).
+  createClassicSetEffectsMigration(
+    () => require('./migrate-classic-set-effects').migrateClassicSetEffects(db),
+    require('fs').readFileSync(require.resolve('./migrate-classic-set-effects'), 'utf8'),
+  ),
+  // The owner's own artwork for the forest theme (2026-11-17).
+  createForestArtworkMigration(
+    () => require('./migrate-forest-artwork').migrateForestArtwork(db),
+    require('fs').readFileSync(require.resolve('./migrate-forest-artwork'), 'utf8'),
+  ),
+  // The owner's artwork for the ocean, monster, winter and space themes.
+  createThemeArtworkMigration(
+    () => require('./migrate-theme-artwork').migrateThemeArtwork(db),
+    require('fs').readFileSync(require.resolve('./migrate-theme-artwork'), 'utf8'),
+  ),
+  // The owner's artwork for the sakura, cyber, pixel and lantern themes.
+  createThemeArtworkClassicMigration(
+    () => require('./migrate-theme-artwork-classic').migrateThemeArtworkClassic(db),
+    require('fs').readFileSync(require.resolve('./migrate-theme-artwork-classic'), 'utf8'),
   ),
 ];
 

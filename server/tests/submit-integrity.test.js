@@ -111,6 +111,64 @@ test('learning rewards are paid only for a correct answer', { timeout: 600_000 }
     assert.deepEqual(await wallet(), before);
   });
 
+  // Fix list item 1 (2026-11-12): on a problem with no input every case expects
+  // the same output, so printing that output used to pass and pay.
+  const { rows: [computed] } = await db.query(`
+    SELECT m.entry_id, p.problem_id, p.test_cases, p.solution_code
+      FROM problem_modes m JOIN problems p ON p.problem_id = m.problem_id
+     WHERE m.mode = 'lesson' AND p.is_auto_gradable = 1 AND p.test_kind = 'stdio'
+       AND p.solution_code ~ 'print\\(\\s*\\d+\\s*\\+\\s*\\d+\\s*\\)'
+       AND jsonb_array_length(p.test_cases) = 1
+     ORDER BY m.entry_id LIMIT 1`);
+  const printedAnswer = () => `print(${JSON.stringify(String(computed.test_cases[0].expected))})`;
+
+  await t.test('printing the expected output of a lesson exercise pays nothing', async () => {
+    assert.ok(computed, 'the seeded bank has a lesson exercise that adds two numbers');
+    const before = await wallet();
+    const res = await submit(computed.entry_id, printedAnswer());
+    assert.equal(res.status, 400, JSON.stringify(res.body));
+    assert.match(res.body.hint || res.body.error, /ไม่ได้คำนวณจากข้อมูลของโจทย์/);
+    assert.deepEqual(await wallet(), before);
+  });
+
+  await t.test('printing the expected output of a Debug Lab task pays nothing', async () => {
+    const drawn = await server.call(`/api/learning/ai-task?userId=${userId}&mode=exercise`, { method: 'GET' });
+    const { taskId } = drawn.body.task;
+    // Point the drawn task at the known problem, as a bank draw would.
+    await db.query('UPDATE learning_ai_tasks SET problem_id = $1, test_cases_json = $2 WHERE task_id = $3',
+      [computed.problem_id, JSON.stringify(computed.test_cases), taskId]);
+    const before = await wallet();
+    const cheat = await server.call('/api/learning/ai-task/submit', { body: { userId, taskId, mode: 'exercise', code: printedAnswer() } });
+    assert.equal(cheat.status, 400, JSON.stringify(cheat.body));
+    assert.match(cheat.body.hint, /ไม่ได้คำนวณจากข้อมูลของโจทย์/);
+    assert.deepEqual(await wallet(), before);
+
+    const honest = await server.call('/api/learning/ai-task/submit', { body: { userId, taskId, mode: 'exercise', code: computed.solution_code } });
+    assert.equal(honest.status, 200, JSON.stringify(honest.body));
+  });
+
+  // Fix list item 3: Debug Lab used to hand out an empty starter, so there was
+  // nothing to debug. Now it is the solution with one bug that changes the answer.
+  await t.test('a Debug Lab task starts from buggy code that fails, and fixing it pays', async () => {
+    // A fresh task, not the one an earlier test left active.
+    await db.query("UPDATE learning_ai_tasks SET status = 'COMPLETED' WHERE user_id = $1 AND status = 'ACTIVE'", [userId]);
+    const drawn = await server.call(`/api/learning/ai-task?userId=${userId}&mode=exercise`, { method: 'GET' });
+    assert.equal(drawn.status, 200, JSON.stringify(drawn.body));
+    const { task } = drawn.body;
+    assert.match(task.instructions[0], /มีบั๊ก 1 จุด/, JSON.stringify(task));
+    assert.equal(task.plantedBug, undefined, 'which bug was planted stays on the server');
+
+    const asIs = await server.call('/api/learning/ai-task/submit', { body: { userId, taskId: task.taskId, mode: 'exercise', code: task.starterCode } });
+    assert.equal(asIs.status, 400, `the buggy starter must not pass:
+${task.starterCode}`);
+
+    const { rows: [row] } = await db.query(
+      'SELECT p.solution_code FROM learning_ai_tasks t JOIN problems p ON p.problem_id = t.problem_id WHERE t.task_id = $1',
+      [task.taskId]);
+    const fixed = await server.call('/api/learning/ai-task/submit', { body: { userId, taskId: task.taskId, mode: 'exercise', code: row.solution_code } });
+    assert.equal(fixed.status, 200, JSON.stringify(fixed.body));
+  });
+
   // The problems that cannot be auto-graded are the other half of this hole.
   // They are accepted WITHOUT a verdict, so for a long time an empty string
   // collected the full reward on them.

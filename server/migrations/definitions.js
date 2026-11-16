@@ -9,6 +9,11 @@ const {
   APPLICATION_SCHEMA_VERSION,
   AUTH_PROVISIONING_VERSION,
   COMPETITIVE_POOL_VERSION,
+  COSMETICS_REFRESH_VERSION,
+  CLASSIC_SET_EFFECTS_VERSION,
+  FOREST_ARTWORK_VERSION,
+  THEME_ARTWORK_VERSION,
+  THEME_ARTWORK_CLASSIC_VERSION,
   CORE_SCHEMA_VERSION,
   DATA_API_SECURITY_VERSION,
   MINI_GAME_CHOICES_VERSION,
@@ -119,7 +124,47 @@ const createCompetitivePoolMigration = (up, signature) => defineMigration({
   up,
 });
 
+const createCosmeticsRefreshMigration = (up, signature) => defineMigration({
+  version: COSMETICS_REFRESH_VERSION,
+  name: 'cosmetic_prices_sets_and_rewards',
+  signature: signatureFor(up, signature),
+  up,
+});
+
+const createClassicSetEffectsMigration = (up, signature) => defineMigration({
+  version: CLASSIC_SET_EFFECTS_VERSION,
+  name: 'classic_set_click_effects',
+  signature: signatureFor(up, signature),
+  up,
+});
+
+const createForestArtworkMigration = (up, signature) => defineMigration({
+  version: FOREST_ARTWORK_VERSION,
+  name: 'forest_theme_artwork',
+  signature: signatureFor(up, signature),
+  up,
+});
+
+const createThemeArtworkMigration = (up, signature) => defineMigration({
+  version: THEME_ARTWORK_VERSION,
+  name: 'theme_artwork_ocean_monster_winter_space',
+  signature: signatureFor(up, signature),
+  up,
+});
+
+const createThemeArtworkClassicMigration = (up, signature) => defineMigration({
+  version: THEME_ARTWORK_CLASSIC_VERSION,
+  name: 'theme_artwork_sakura_cyber_pixel_lantern',
+  signature: signatureFor(up, signature),
+  up,
+});
+
 module.exports = {
+  createThemeArtworkClassicMigration,
+  createThemeArtworkMigration,
+  createForestArtworkMigration,
+  createClassicSetEffectsMigration,
+  createCosmeticsRefreshMigration,
   createCompetitivePoolMigration,
   createSchemaCleanupMigration,
   createArcadeGuessPayoutsMigration,

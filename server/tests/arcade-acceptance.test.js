@@ -157,7 +157,9 @@ test('twenty authenticated players finish four isolated rooms, retry safely, and
   const [[receiptSummary]] = await db.query(
     'SELECT COUNT(*)::int AS count, COALESCE(SUM(coins),0)::int AS coins FROM arcade_reward_receipts'
   );
-  assert.deepEqual(receiptSummary, { count: 20, coins: 540 });
+  // Four rooms of five, each paying ranks 1-5 once.
+  const perRoom = [1, 2, 3, 4, 5].reduce((sum, rank) => sum + arcadeConfig.coinRewardByRank[rank], 0);
+  assert.deepEqual(receiptSummary, { count: 20, coins: perRoom * 4 });
   const [historyRooms] = await db.query(
     'SELECT user_name, COUNT(DISTINCT room_id)::int AS rooms FROM arcade_round_history GROUP BY user_name'
   );

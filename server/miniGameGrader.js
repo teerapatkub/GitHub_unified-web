@@ -73,7 +73,7 @@ print("${marker}" + json.dumps(result))
 // Accept both the legacy bare correctness array and the current JSONB object:
 // { correctness, code_checks, isinstance }. Array input represents consecutive
 // calls to input(); array expected represents consecutive print() lines.
-async function gradeMiniGameSubmission(code, payload, files = {}) {
+async function gradeMiniGameSubmission(code, payload, files = {}, { solutionCode = '' } = {}) {
   const config = Array.isArray(payload) ? { correctness: payload } : (payload || {});
   const correctness = asList(config.correctness).map((testCase) => ({
     ...testCase,
@@ -86,7 +86,7 @@ async function gradeMiniGameSubmission(code, payload, files = {}) {
   const checkVerdict = snippets.every((snippet) => String(code || '').includes(snippet));
 
   const correctnessResult = correctness.length
-    ? await gradeSubmission({ problem: { test_kind: 'stdio', test_cases: correctness }, code, files })
+    ? await gradeSubmission({ problem: { test_kind: 'stdio', test_cases: correctness, solution_code: solutionCode }, code, files })
     : { allPassed: true, passed: 0, total: 0, results: [] };
 
   let typesPassed = 0;

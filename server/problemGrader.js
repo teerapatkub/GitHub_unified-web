@@ -249,7 +249,148 @@ async function gradeStdioProblem({ problem, code, timeoutMs, files = {} }) {
     }
 
     const passed = results.filter((r) => r.passed).length;
-    return { passed, total: results.length, allPassed: passed === results.length, results, error: '', runtimeMs: totalMs(results) };
+    const verdict = { passed, total: results.length, allPassed: passed === results.length, results, error: '', runtimeMs: totalMs(results) };
+    if (verdict.allPassed && casesCannotTellPrintingFromComputing(cases)
+        && await printsAnswerWithoutComputing({ problem, code, input: cases[0].input ?? '', actual: results[0].actual, files, timeoutMs })) {
+        return {
+            ...verdict,
+            passed: 0,
+            allPassed: false,
+            hardcoded: true,
+            results: results.map((r) => ({ ...r, passed: false, hint: HARDCODED_MESSAGE })),
+            error: HARDCODED_MESSAGE,
+        };
+    }
+    return verdict;
+}
+
+// ---------------------------------------------------------------------------
+// "Did they just print the answer?"
+//
+// Most lesson and mini-game problems read no input, so every test case expects
+// the same output and `print("<expected output>")` passed them all - on the
+// live site, a Debug Lab problem asking for re.split() paid out 90 XP for
+// printing the list it should have built (fix list item 1, 2026-11-12).
+//
+// More test cases cannot fix that: with no input, there is nothing to vary. So
+// the question becomes: when the problem's DATA changes, does the answer change
+// with it? The data is the stdin and the literals in the reference solution.
+// hardcode-probe.py writes copies of the solution and of the learner's code with
+// one literal changed; both run here through the same sandboxed runner as
+// grading. If the solution's output moves and the learner's does not, the
+// learner printed a constant.
+//
+// It errs toward passing. Any single change that moves the learner's output (or
+// makes it crash, which also shows it used the data) clears them. Only a problem
+// whose reference solution is known can be checked; without one, nothing
+// changes.
+// ---------------------------------------------------------------------------
+const HARDCODED_MESSAGE = 'ผลลัพธ์ตรงกับคำตอบ แต่โค้ดไม่ได้คำนวณจากข้อมูลของโจทย์ (เหมือนพิมพ์คำตอบไว้ตรงๆ) ลองเขียนโค้ดที่ทำตามโจทย์ดูนะ';
+const HARDCODE_PROBE_SOURCE = require('fs').readFileSync(require('path').join(__dirname, 'hardcode-probe.py'), 'utf8');
+const MAX_HARDCODE_RUNS = 32;
+
+// With different inputs, a constant output already fails a case. Only when
+// every case feeds the same stdin is a printed constant indistinguishable.
+const casesCannotTellPrintingFromComputing = (cases) => new Set(cases.map((c) => String(c.input ?? ''))).size <= 1;
+
+const flatOutput = (text) => normalizeOutput(text).replace(/\s+/g, ' ');
+
+// Several different inputs, because one is often not enough: `if x > 0` gives
+// the same answer for 5 and 8, so a printed "Positive" would survive +3 but not
+// a negative number. Numbers shift, flip sign and drop to zero; words gain a
+// letter or reverse. Each stays ordinary enough not to crash int() or split().
+const INPUT_CHANGES = [
+    { int: (n) => n + 3, float: (n) => n + 1.5, text: (s) => `${s}Q` },
+    { int: (n) => -n - 1, float: (n) => -n - 1, text: (s) => [...s].reverse().join('') },
+    { int: () => 0, float: () => 0, text: (s) => s.toUpperCase() === s ? s.toLowerCase() : s.toUpperCase() },
+    // `score >= 50` with 45: +3, a flipped sign and zero all still fail.
+    { int: (n) => n * 2 + 10, float: (n) => n * 2 + 10, text: (s) => `${s}${s}` },
+];
+const changedInputs = (input) => INPUT_CHANGES.map((change) => String(input ?? '').split('\n').map((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return line;
+    // Several numbers on one line (`3 4`, read with split()) change one by one.
+    if (/^-?\d+(?:\.\d+)?(?:\s+-?\d+(?:\.\d+)?)*$/.test(trimmed)) {
+        return trimmed.split(/\s+/).map((token) => (token.includes('.')
+            ? String(change.float(Number(token)))
+            : String(change.int(Number(token))))).join(' ');
+    }
+    return change.text(line);
+}).join('\n')).filter((changed, i, all) => changed !== String(input ?? '') && all.indexOf(changed) === i);
+
+const runForOutput = async ({ source, input, files, timeoutMs }) => {
+    const run = await runPythonScript({
+        code: RUN_WITH_INPUT_PATCHED,
+        files: { ...files, 'solution.py': source },
+        mainFileName: '__pysim_run.py',
+        input,
+        timeoutMs,
+    });
+    return { ok: !run.timedOut && run.exitCode === 0, output: flatOutput(run.stdout) };
+};
+
+async function printsAnswerWithoutComputing({ problem, code, input, actual, files = {}, timeoutMs = 6000 }) {
+    const solution = String(problem?.solution_code || '');
+    if (!solution.trim() || problem?.check_hardcoding === false) return false;
+
+    const marker = newRunMarker();
+    const b64 = Buffer.from(JSON.stringify({ solution, code: String(code || ''), marker }), 'utf8').toString('base64');
+    const planRun = await runPythonScript({ code: `__PAYLOAD = "${b64}"\n${HARDCODE_PROBE_SOURCE}`, timeoutMs });
+    const planLine = String(planRun.stdout || '').split('\n').filter((l) => l.startsWith(marker)).pop();
+    let plan = null;
+    try { plan = planLine ? JSON.parse(planLine.slice(marker.length)) : null; } catch { plan = null; }
+    if (!plan?.ok) return false;
+
+    const runTimeout = Math.min(timeoutMs, 3000);
+    const original = await runForOutput({ source: solution, input, files, timeoutMs: runTimeout });
+    if (!original.ok) return false;
+    const learnerOriginal = flatOutput(actual);
+
+    const candidates = [];
+    if (String(input ?? '').trim()) {
+        for (const changed of changedInputs(input)) candidates.push({ solution, code: String(code || ''), input: changed });
+    }
+    for (const variant of plan.variants || []) candidates.push({ ...variant, input });
+
+    // What one change says: 'skip' (the solution's answer did not move, or it
+    // broke), 'unshared' (it moved, but the learner's code has no such
+    // literal), 'moved' (the learner's answer followed), 'stuck' (it did not).
+    const judge = async (candidate) => {
+        const changed = await runForOutput({ source: candidate.solution, input: candidate.input, files, timeoutMs: runTimeout });
+        if (!changed.ok || changed.output === original.output) return 'skip';
+        if (candidate.code == null) return 'unshared';
+        const learner = await runForOutput({ source: candidate.code, input: candidate.input, files, timeoutMs: runTimeout });
+        // Crashing on the changed data also shows the code reads the data.
+        if (!learner.ok) return 'moved';
+        // The literal itself is what got printed, so the change came straight
+        // back out: `print(1)` ... `print(5)` shares the solution's 1. When
+        // that is also what the solution does (`print("Hello, Python!")`) it
+        // proves nothing either way.
+        const echoed = candidate.from != null
+            && learner.output === learnerOriginal.split(flatOutput(candidate.from)).join(flatOutput(candidate.to));
+        if (learner.output === changed.output) return echoed ? 'echo' : 'moved';
+        return learner.output !== learnerOriginal && !echoed ? 'moved' : 'stuck';
+    };
+
+    // A few at a time: each is two short Python processes, and this runs on
+    // the same machine as the local model.
+    const verdicts = [];
+    const queue = candidates.slice(0, MAX_HARDCODE_RUNS / 2);
+    await Promise.all(Array.from({ length: 3 }, async () => {
+        while (queue.length) verdicts.push(await judge(queue.shift()));
+    }));
+
+    // One change the answer ignored outweighs the ones it followed: printing
+    // "Positive" follows a change to the word "Positive" just as the real
+    // answer does, but only the real answer notices the input turning negative.
+    if (verdicts.includes('stuck')) return true;
+    if (verdicts.includes('moved') || !verdicts.includes('unshared')) return false;
+
+    // The answer depends on data the learner's code never mentions. That is
+    // printing a constant only if the constant is the answer itself.
+    const literals = new Set((plan.literals || []).map(flatOutput));
+    const expectedLines = normalizeOutput(actual).split('\n').map(flatOutput).filter(Boolean);
+    return literals.has(learnerOriginal) || expectedLines.some((line) => literals.has(line));
 }
 
 /**
@@ -341,5 +482,7 @@ module.exports = {
     targetFunctionName,
     buildFunctionHarness,
     normalizeOutput,
+    printsAnswerWithoutComputing,
+    HARDCODED_MESSAGE,
     MARKER,
 };

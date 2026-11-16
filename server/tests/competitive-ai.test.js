@@ -107,3 +107,17 @@ test('invalid draft and failed reference are repaired before returning a usable 
   assert.equal(calls, 3);
   assert.equal(result.verifiedCases, 8);
 });
+
+// Fix list item 6 (2026-11-12): the description's example came from the model
+// and could disagree with the tests ("สมชาย มีตรี" called 10 letters, tests said
+// 8), it said stdin/stdout to beginners, and the post form got no reward or time.
+test('the description example is the solution\'s real run, and the form gets terms', async () => {
+  const told = { ...draft(), description: 'อ่าน stdin หนึ่งบรรทัดแล้วพิมพ์สองเท่า\n\nตัวอย่าง\n5 -> 11' };
+  const result = await generateChallenge({ topic: 'Math', scope: 'community' }, { ask: async () => told });
+  assert.doesNotMatch(result.description, /5 -> 11/, 'the model\'s own example is dropped');
+  assert.doesNotMatch(result.description, /stdin/);
+  assert.match(result.description, /ตัวอย่างที่ 1\nข้อมูลที่รับเข้า:\n-3\nผลลัพธ์ที่ต้องแสดง:\n-6/);
+  assert.equal(result.topic, 'Math');
+  assert.equal(result.rewardCoins, 900);
+  assert.equal(result.timeLimitSec, 600);
+});

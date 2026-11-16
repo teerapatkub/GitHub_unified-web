@@ -1,5 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const { coinRewardByRank: COINS } = require('../../shared/arcadeConfig.json');
 const { arcadeFixture } = require('./helpers/arcade-fixture');
 
 test('host adds explicitly typed bots while a human named Bot_alice stays human', async t => {
@@ -109,7 +110,7 @@ test('Bot_ human answers are graded and receive normal wallet rewards', async t 
   // No test ran, so quality is half the judge's 34 (ADR 0006).
   await settleDueArcadeRooms({ db, judgeArcadeCode: async () => ({ score: 34 }) });
   assert.equal((await call('/api/arcade/rooms/1')).body.participants.find(p => p.user_name === 'Bot_alice').score, 17);
-  assert.equal((await call('/api/auth/me')).body.virtual_currency, 50);
+  assert.equal((await call('/api/auth/me')).body.virtual_currency, COINS[1]);
   assert.equal((await call('/api/arcade/players/Bot_alice/history')).body.matches[0].rounds[0].code, '# human answer');
 });
 

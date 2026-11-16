@@ -138,6 +138,14 @@ const DELIBERATE_RULES = [
         applies: (view, col) => view === 'arcade_tasks' && (col === 'title_th' || col === 'title_en'),
         allowed: (nowValue, oldValue) => String(oldValue).replace(/^[0-9]+\.\s*/, '') === String(nowValue),
     },
+    {
+        // migrate-cosmetics-refresh.js (fix list item 8, 2026-11-17) tripled
+        // lesson and mini-game coins when shop prices went up. Exactly x3, so a
+        // reward that changed by any other amount is still reported.
+        name: 'เหรียญบทเรียนและมินิเกม x3',
+        applies: (view, col) => (view === 'exercises' || view === 'mini_game_exercises') && col === 'currency_reward',
+        allowed: (nowValue, oldValue) => Number(nowValue) === Number(oldValue) * 3,
+    },
 ];
 const seenRules = new Set();
 

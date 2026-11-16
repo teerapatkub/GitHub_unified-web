@@ -1,5 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const { coinRewardByRank: COINS } = require('../../shared/arcadeConfig.json');
 const { arcadeFixture } = require('./helpers/arcade-fixture');
 const { createArcadePhaseFinalizer } = require('../arcade/phase-finalizer');
 
@@ -58,7 +59,7 @@ test('result and match history expose the persisted score breakdown, multiplier 
   const match = history.find(entry => entry.match_id === matchId);
   assert.equal(match.total_score, 80);
   assert.equal(match.final_rank, 1);
-  assert.equal(match.coins_awarded, 50);
+  assert.equal(match.coins_awarded, COINS[1]);
   assert.equal(match.rounds[0].score_multiplier, 2);
   assert.equal(match.rounds[0].quality_source, 'metrics');
   const historyId = match.rounds[0].history_id;

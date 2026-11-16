@@ -1,5 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const { coinRewardByRank: COINS } = require('../../shared/arcadeConfig.json');
 const { arcadeFixture } = require('./helpers/arcade-fixture');
 const { createArcadePhaseFinalizer } = require('../arcade/phase-finalizer');
 
@@ -18,11 +19,11 @@ test('finishing a match pays each account once despite concurrent and repeated w
   const restarted = createArcadePhaseFinalizer({ db });
   await Promise.all([first(room), restarted(room)]);
   await restarted(room);
-  assert.equal((await call('/api/auth/me')).body.virtual_currency, 50);
-  assert.equal((await call('/api/auth/me', { user: 'bob' })).body.virtual_currency, 35);
+  assert.equal((await call('/api/auth/me')).body.virtual_currency, COINS[1]);
+  assert.equal((await call('/api/auth/me', { user: 'bob' })).body.virtual_currency, COINS[2]);
   const state = (await call('/api/arcade/rooms/1')).body;
   assert.equal(state.room.phase, 'RESULT');
-  assert.deepEqual(state.participants.map(p => p.coins_awarded), [50, 35]);
+  assert.deepEqual(state.participants.map(p => p.coins_awarded), [COINS[1], COINS[2]]);
 });
 
 test('wallet, career statistics and match completion roll back together before a retry', async t => {
@@ -38,7 +39,7 @@ test('wallet, career statistics and match completion roll back together before a
   await db.query('DROP TRIGGER fail_stats ON arcade_player_stats');
   await createArcadePhaseFinalizer({ db })(room);
   await finalize(room);
-  assert.equal((await call('/api/auth/me')).body.virtual_currency, 50);
+  assert.equal((await call('/api/auth/me')).body.virtual_currency, COINS[1]);
   assert.deepEqual((await call('/api/arcade/players/alice/stats')).body.stats,
     { user_name: 'alice', matches_played: 1, wins: 1, best_rank: 1, total_score: 500, total_cash_earned: 500 });
   assert.deepEqual((await call('/api/arcade/players/bob/stats')).body.stats,
@@ -55,11 +56,11 @@ test('final standings include bots and break tied scores consistently without pa
   await createArcadePhaseFinalizer({ db })(room);
   const state = (await call('/api/arcade/rooms/1')).body;
   assert.deepEqual(state.room.final_standings.map(p => [p.name, p.rank, p.coins]),
-    [['Bot_Test', 1, 0], ['alice', 2, 35], ['bob', 3, 25]]);
+    [['Bot_Test', 1, 0], ['alice', 2, COINS[2]], ['bob', 3, COINS[3]]]);
   assert.equal((await call('/api/arcade/players/Bot_Test/stats')).body.stats.matches_played, 0);
   assert.equal((await call('/api/arcade/players/alice/stats')).body.stats.wins, 0);
-  assert.equal((await call('/api/auth/me')).body.virtual_currency, 35);
-  assert.equal((await call('/api/auth/me', { user: 'bob' })).body.virtual_currency, 25);
+  assert.equal((await call('/api/auth/me')).body.virtual_currency, COINS[2]);
+  assert.equal((await call('/api/auth/me', { user: 'bob' })).body.virtual_currency, COINS[3]);
 });
 
 test('a fault paying the second account leaves no partial payout or completed history', async t => {
@@ -78,7 +79,7 @@ test('a fault paying the second account leaves no partial payout or completed hi
   assert.ok(failed.participants.every(p => p.coins_awarded === 0));
   await db.query('DROP TRIGGER fail_wallet ON users');
   await createArcadePhaseFinalizer({ db })(room);
-  assert.equal((await call('/api/auth/me')).body.virtual_currency, 50);
+  assert.equal((await call('/api/auth/me')).body.virtual_currency, COINS[1]);
   assert.equal((await call('/api/arcade/players/alice/history')).body.matches.length, 1);
 });
 
@@ -90,15 +91,15 @@ test('rematches pay separately and retain rewards after players leave and the ro
   assert.equal((await call('/api/arcade/rooms/1/finish-choice', { user: 'bob', body: { choice: 'REMAIN' } })).status, 200);
   const second = await finishableMatch(db, call);
   await createArcadePhaseFinalizer({ db })(first);
-  assert.equal((await call('/api/auth/me')).body.virtual_currency, 50);
+  assert.equal((await call('/api/auth/me')).body.virtual_currency, COINS[1]);
   await createArcadePhaseFinalizer({ db })(second);
-  assert.equal((await call('/api/auth/me')).body.virtual_currency, 100);
+  assert.equal((await call('/api/auth/me')).body.virtual_currency, COINS[1] * 2);
   assert.equal((await call('/api/arcade/players/alice/stats')).body.stats.matches_played, 2);
   await db.query('DELETE FROM arcade_rooms WHERE room_id = 1');
   await require('../arcade/migrate-rewards').migrateArcadeRewards(db);
   await createArcadePhaseFinalizer({ db })(second);
-  assert.equal((await call('/api/auth/me')).body.virtual_currency, 100);
-  assert.equal((await call('/api/auth/me', { user: 'bob' })).body.virtual_currency, 70);
+  assert.equal((await call('/api/auth/me')).body.virtual_currency, COINS[1] * 2);
+  assert.equal((await call('/api/auth/me', { user: 'bob' })).body.virtual_currency, COINS[2] * 2);
   assert.equal((await call('/api/arcade/players/alice/stats')).body.stats.wins, 2);
 });
 
@@ -109,8 +110,8 @@ test('separate matches for the same accounts settle concurrently without lost cr
   await db.query("INSERT INTO arcade_participants (room_id,user_name,is_host) VALUES (2,'bob',0),(2,'alice',1)");
   const second = await finishableMatch(db, call, 2);
   await Promise.all([first, second].map(room => createArcadePhaseFinalizer({ db })(room)));
-  assert.equal((await call('/api/auth/me')).body.virtual_currency, 100);
-  assert.equal((await call('/api/auth/me', { user: 'bob' })).body.virtual_currency, 70);
+  assert.equal((await call('/api/auth/me')).body.virtual_currency, COINS[1] * 2);
+  assert.equal((await call('/api/auth/me', { user: 'bob' })).body.virtual_currency, COINS[2] * 2);
   assert.equal((await call('/api/arcade/players/alice/stats')).body.stats.matches_played, 2);
 });
 
@@ -122,6 +123,6 @@ test('a post-commit hook failure and a restarted ticker cannot repay a completed
   assert.equal(failures.length, 1);
   assert.equal((await call('/api/arcade/rooms/1')).body.room.phase, 'RESULT');
   await settleDueArcadeRooms({ db });
-  assert.equal((await call('/api/auth/me')).body.virtual_currency, 50);
+  assert.equal((await call('/api/auth/me')).body.virtual_currency, COINS[1]);
   assert.equal((await call('/api/arcade/players/alice/stats')).body.stats.matches_played, 1);
 });
