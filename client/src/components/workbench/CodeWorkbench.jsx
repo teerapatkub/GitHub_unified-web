@@ -127,7 +127,7 @@ export function FileTab({ name, active, onSelect }) {
       type="button"
       onClick={onSelect}
       aria-pressed={active}
-      className={`shrink-0 rounded-t-lg border border-b-0 px-3 py-1.5 font-mono text-xs font-bold transition-colors ${
+      className={`min-h-target shrink-0 rounded-t-lg border border-b-0 px-3 py-1.5 text-xs font-bold transition-colors ${
         active ? 'border-slate-200 bg-white text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-800'
       }`}
     >

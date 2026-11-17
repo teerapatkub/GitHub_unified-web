@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion as Motion } from 'framer-motion';
 import { FOCUSABLE_SELECTOR, wrapTabIndex } from './dialogFocus.js';
 
@@ -54,7 +55,7 @@ export default function Dialog({
   }, [open]);
 
   if (!open) return null;
-  return (
+  const dialog = (
     <Motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -73,4 +74,12 @@ export default function Dialog({
       </Motion.div>
     </Motion.div>
   );
+  // A fixed backdrop is drawn from <body>: inside a page whose wrapper is
+  // transformed (the mode transition), "fixed" is measured from that wrapper,
+  // and the Arcade create-room backdrop stopped short of the top of the window
+  // (UI review 2026-11-18, P3). An absolute overlay (the Arcade item guide)
+  // means "cover this area" and stays where it is.
+  return overlayClassName.split(/\s+/).includes('fixed') && typeof document !== 'undefined'
+    ? createPortal(dialog, document.body)
+    : dialog;
 }

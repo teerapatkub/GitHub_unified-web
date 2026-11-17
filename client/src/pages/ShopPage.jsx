@@ -2,6 +2,7 @@ import { useCallback, useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShoppingBag, ShoppingCart, Coins, CheckCircle, Search, Palette, Lock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { pickLocalized } from '../utils/problemText';
 import { toast, friendlyError } from '../components/ui/toast.js';
 import { useTheme } from '../contexts/useTheme.js';
 import { API_BASE, assetUrl } from '../config/api.js';
@@ -9,12 +10,16 @@ import { applyCosmetic, createShopTheme, itemSlot } from '../shop/equipCosmetic.
 import SkeletonLoading from '../components/ui/Skeleton.jsx';
 import PurchaseSuccessPopup from '../components/shop/PurchaseSuccessPopup.jsx';
 import CosmeticTryButton from '../components/shop/CosmeticTryButton.jsx';
+import PurchaseConfirmDialog from '../components/shop/PurchaseConfirmDialog.jsx';
 
 
 export default function ShopPage() {
     const navigate = useNavigate();
     const { t, i18n } = useTranslation();
     const lang = i18n.language === 'en' ? 'en' : 'th';
+    // A cosmetic's name on screen: English when it has one, Thai otherwise (fix
+    // list item 16.10). `name` stays Thai: themes are matched by keyword in it.
+    const shownName = (item) => pickLocalized(lang, item?.nameEn ?? item?.name_en, item?.name);
     // Prices reach five digits since fix list item 8; 15200 is hard to read.
     const coins = (value) => Number(value || 0).toLocaleString(lang === 'en' ? 'en-US' : 'th-TH');
     const { registerTheme, setTheme } = useTheme();
@@ -37,6 +42,9 @@ export default function ShopPage() {
         }
     };
     const [wallet, setWallet] = useState(readWallet);
+    // What the confirm dialog is asking about; nothing is bought until it is
+    // confirmed (UI review 2026-11-18, P1).
+    const [pendingPurchase, setPendingPurchase] = useState(null);
     const [items, setItems] = useState([]);
     const [ownedItemIds, setOwnedItemIds] = useState(new Set());
     const [loading, setLoading] = useState(true);
@@ -193,6 +201,7 @@ export default function ShopPage() {
                 id: Number(item.item_id),
                 itemId: Number(item.item_id),
                 name: item.name,
+                nameEn: item.name_en || '',
                 category: getCategoryFromType(item.type),
                 type: item.type,
                 price: Number(item.price || 0),
@@ -227,7 +236,8 @@ export default function ShopPage() {
 
     const inCategory = items.filter(item => {
         const matchesCategory = selectedCategory === 'all' || item.category === selectedCategory;
-        const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
+        const query = searchTerm.toLowerCase();
+        const matchesSearch = item.name.toLowerCase().includes(query) || String(item.nameEn || '').toLowerCase().includes(query);
         return matchesCategory && matchesSearch;
     });
     const ownershipCounts = {
@@ -290,7 +300,7 @@ export default function ShopPage() {
             }
             showPurchaseSuccess({
                 kind: 'item',
-                name: item.name,
+                name: shownName(item),
                 image: item.icon.type === 'image' ? item.icon.value : '',
                 icon: item.icon.type === 'text' ? item.icon.value : '',
             });
@@ -338,7 +348,7 @@ export default function ShopPage() {
             await fetchShop();
             showPurchaseSuccess({
                 kind: 'set',
-                name: i18n.language === 'en' ? set.name_en : set.name_th,
+                name: pickLocalized(lang, set.name_en, set.name_th),
                 image: set.items.find((item) => item.asset_url)?.asset_url || '',
             });
         } catch {
@@ -383,7 +393,7 @@ export default function ShopPage() {
             </div>
 
             <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-8 py-8">
-                <div className={`mb-10 transition-all duration-700 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'}`}>
+                <div className={`on-art on-art-block mb-10 transition-all duration-700 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'}`}>
                     <div className="flex items-center gap-3 mb-2">
                         <div className="w-10 h-10 python-gradient rounded-lg flex items-center justify-center">
                             <ShoppingBag size={20} className="text-white" />
@@ -400,10 +410,10 @@ export default function ShopPage() {
                 </div>
 
                 <div className={`flex flex-col md:flex-row gap-4 mb-8 transition-all duration-700 delay-100 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
-                    <div className="flex gap-2 flex-wrap">
+                    <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 no-scrollbar md:flex-wrap md:overflow-visible">
                         {categories.map(cat => (
                             <button key={cat.id} onClick={() => setSelectedCategory(cat.id)}
-                                className={`px-5 py-2.5 rounded-lg text-sm font-bold transition-all duration-200 ${
+                                className={`shrink-0 px-5 py-2.5 rounded-lg text-sm font-bold transition-all duration-200 ${
                                     selectedCategory === cat.id
                                         ? 'python-gradient text-white'
                                         : 'bg-white text-pysim-on-surface-variant hover:bg-pysim-surface-low whisper-shadow'
@@ -412,7 +422,7 @@ export default function ShopPage() {
                             </button>
                         ))}
                     </div>
-                    <div className="flex-1 md:max-w-xs ml-auto">
+                    <div className="order-first flex-1 md:order-none md:ml-auto md:max-w-xs">
                         <div className="relative">
                             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-pysim-outline" />
                             <input type="search" aria-label={t('shop.searchLabel', 'ค้นหาสินค้าในร้าน')} placeholder={t('shop.search', 'ค้นหา...')}
@@ -441,20 +451,22 @@ export default function ShopPage() {
 
                 {!loading && visibleSets.length > 0 && selectedCategory === 'all' && !searchTerm && (
                     <div className={`mb-12 transition-all duration-700 delay-150 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
-                        <div className="flex items-baseline gap-3 mb-4">
+                        <div className="on-art flex w-fit flex-wrap items-baseline gap-x-3 mb-4">
                             <h2 className="text-2xl font-black text-pysim-on-surface">{t('shop.setsTitle', 'เซ็ตธีม')}</h2>
                             <p className="text-sm text-pysim-on-surface-variant">{t('shop.setsSubtitle', 'ซื้อยกเซ็ตถูกกว่าเลือกทีละชิ้น')}</p>
                         </div>
 
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* A swipe row on a phone: nine set cards stacked made the shop
+                            about 18 screens tall (UI review 2026-11-18, P3). */}
+                        <div className="-mx-4 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-2 lg:mx-0 lg:grid lg:grid-cols-2 lg:gap-6 lg:overflow-visible lg:px-0 lg:pb-0">
                             {visibleSets.map((set) => (
                                 <div key={set.set_key}
-                                    className={`bg-white rounded-xl whisper-shadow overflow-hidden flex flex-col ${set.fully_owned ? 'ring-2 ring-pysim-success-strong/40' : ''}`}>
+                                    className={`w-[85%] shrink-0 snap-start sm:w-[60%] lg:w-auto bg-white rounded-xl whisper-shadow overflow-hidden flex flex-col ${set.fully_owned ? 'ring-2 ring-pysim-success-strong/40' : ''}`}>
                                     <div className="px-6 pt-5 pb-4 border-b border-pysim-outline/10">
                                         <div className="flex items-start justify-between gap-3">
                                             <div>
-                                                <h3 className="text-xl font-black text-pysim-on-surface">{lang === 'en' ? (set.name_en || set.name_th) : set.name_th}</h3>
-                                                <p className="mt-1 text-sm text-pysim-on-surface-variant">{set.description_th}</p>
+                                                <h3 className="text-xl font-black text-pysim-on-surface">{pickLocalized(lang, set.name_en, set.name_th)}</h3>
+                                                <p className="mt-1 text-sm text-pysim-on-surface-variant">{pickLocalized(lang, set.description_en, set.description_th)}</p>
                                             </div>
                                             {set.fully_owned ? (
                                                 <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-pysim-success-strong px-3 py-1.5 text-xs font-black text-white">
@@ -468,7 +480,7 @@ export default function ShopPage() {
                                                         </span>
                                                     )}
                                                     {set.owned_count > 0 && (
-                                                        <span className="rounded-lg bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
+                                                        <span className="rounded-lg bg-emerald-50 px-2.5 py-1 text-label font-bold text-emerald-700">
                                                             {t('shop.ownedOf', { owned: set.owned_count, total: set.items.length, defaultValue: 'มีแล้ว {{owned}}/{{total}} ชิ้น' })}
                                                         </span>
                                                     )}
@@ -482,7 +494,7 @@ export default function ShopPage() {
                                             <div key={item.item_id} className="text-center">
                                                 <div className="relative h-24 rounded-lg bg-pysim-surface-low flex items-center justify-center overflow-hidden">
                                                     {item.asset_url ? (
-                                                        <img src={item.asset_url} alt={item.name}
+                                                        <img src={item.asset_url} alt={shownName(item)}
                                                             className={item.type === 'THEME'
                                                                 ? 'h-full w-full object-cover'
                                                                 : 'h-16 w-16 object-contain'} />
@@ -499,8 +511,8 @@ export default function ShopPage() {
                                                         </span>
                                                     )}
                                                 </div>
-                                                <p className="mt-2 text-xs font-bold text-pysim-on-surface leading-tight">{item.name}</p>
-                                                <p className={`text-[11px] ${item.owned ? 'font-bold text-emerald-700' : 'text-pysim-outline'}`}>
+                                                <p className="mt-2 text-xs font-bold text-pysim-on-surface leading-tight">{shownName(item)}</p>
+                                                <p className={`text-label ${item.owned ? 'font-bold text-emerald-700' : 'text-pysim-outline'}`}>
                                                     {item.owned ? t('shop.owned', 'มีแล้ว') : `${coins(item.price)} ${t('shop.coins', 'เหรียญ')}`}
                                                 </p>
                                                 <CosmeticTryButton type={item.type} effects={item.preview_data}
@@ -518,13 +530,19 @@ export default function ShopPage() {
                                                 {coins(set.fully_owned ? set.price : set.price_for_user)} {t('shop.coins', 'เหรียญ')}
                                             </p>
                                             {!set.fully_owned && set.owned_count > 0 && (
-                                                <p className="text-[11px] text-pysim-on-surface-variant">
+                                                <p className="text-label text-pysim-on-surface-variant">
                                                     {t('shop.ownedDeducted', { count: set.owned_count, defaultValue: 'หักส่วนที่มีแล้ว {{count}} ชิ้นออก' })}
                                                 </p>
                                             )}
                                         </div>
                                         <button
-                                            onClick={() => handleBuySet(set)}
+                                            onClick={() => setPendingPurchase({
+                                                kind: 'set',
+                                                target: set,
+                                                name: pickLocalized(lang, set.name_en, set.name_th),
+                                                price: set.price_for_user,
+                                                image: set.items.find((entry) => entry.asset_url)?.asset_url || '',
+                                            })}
                                             disabled={set.fully_owned || Boolean(buyingSet) || buyingItemId !== null}
                                             className={`rounded-lg px-6 py-2.5 text-sm font-bold transition-all duration-200 ${
                                                 set.fully_owned
@@ -545,7 +563,7 @@ export default function ShopPage() {
                 {loading ? (
                     <SkeletonLoading variant="catalog" label={t('shop.loading', 'กำลังโหลดสินค้า...')} className="py-4" />
                 ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-2 gap-3 sm:gap-6 lg:grid-cols-3">
                         {filteredItems.length === 0 && (
                             <p className="col-span-full rounded-xl bg-white p-8 text-center text-sm text-pysim-on-surface-variant whisper-shadow">
                                 {ownership === 'owned'
@@ -561,11 +579,11 @@ export default function ShopPage() {
                                     ${isInUse(item) ? 'ring-2 ring-pysim-primary' : item.owned ? 'ring-2 ring-pysim-success-strong/40' : ''}
                                     ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
                                 style={{ transitionDelay: `${200 + index * 80}ms` }}>
-                                <div className="h-40 bg-pysim-surface-low flex items-center justify-center relative">
+                                <div className="h-28 sm:h-40 bg-pysim-surface-low flex items-center justify-center relative">
                                     {item.icon.type === 'image' ? (
                                         <img
                                             src={assetUrl(item.icon.value)}
-                                            alt={item.name}
+                                            alt={shownName(item)}
                                             className={item.type === 'THEME'
                                                 ? 'h-full w-full object-cover group-hover:scale-105 transition-transform duration-300'
                                                 : 'h-20 w-20 object-contain group-hover:scale-110 transition-transform duration-300'}
@@ -573,22 +591,22 @@ export default function ShopPage() {
                                     ) : (
                                         <span className="text-5xl group-hover:scale-110 transition-transform duration-300">{item.icon.value}</span>
                                     )}
-                                    <span className={`absolute top-3 right-3 text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded bg-white/80 backdrop-blur-sm ${rarityColors[item.rarity] || rarityColors.common}`}>
+                                    <span className={`absolute top-3 right-3 text-label font-bold uppercase tracking-widest px-2 py-1 rounded bg-white/80 backdrop-blur-sm ${rarityColors[item.rarity] || rarityColors.common}`}>
                                         {item.rarity}
                                     </span>
                                     {item.owned && (
-                                        <span className={`absolute top-3 left-3 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-black text-white shadow ${isInUse(item) ? 'bg-pysim-primary' : 'bg-pysim-success-strong'}`}>
+                                        <span className={`absolute top-3 left-3 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-label font-black text-white shadow ${isInUse(item) ? 'bg-pysim-primary' : 'bg-pysim-success-strong'}`}>
                                             <CheckCircle size={12} />
                                             {isInUse(item) ? t('shop.inUse', 'กำลังใช้') : t('shop.owned', 'มีแล้ว')}
                                         </span>
                                     )}
                                 </div>
 
-                                <div className="p-5">
-                                    <h3 className="text-lg font-bold text-pysim-on-surface mb-1">{item.name}</h3>
+                                <div className="p-3 sm:p-5">
+                                    <h3 className="text-base sm:text-lg font-bold text-pysim-on-surface mb-1">{shownName(item)}</h3>
                                     <CosmeticTryButton type={item.type} effects={item.effectData}
                                         themeText={`${item.name} ${item.assetUrl || item.previewImage || ''}`} />
-                                    <div className="mt-4 flex items-center justify-between gap-3">
+                                    <div className="mt-3 flex flex-col items-stretch gap-2 sm:mt-4 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                                         {item.owned ? (
                                             <span className="text-sm font-bold text-emerald-700">{t('shop.inWardrobe', 'อยู่ในตู้ของคุณ')}</span>
                                         ) : (
@@ -598,7 +616,7 @@ export default function ShopPage() {
                                                     <span className="font-bold text-pysim-secondary text-sm">{coins(item.price)}</span>
                                                 </div>
                                                 {wallet < item.price && (
-                                                    <p className="mt-0.5 text-[11px] font-semibold text-rose-600">
+                                                    <p className="mt-0.5 text-label font-semibold text-rose-600">
                                                         {t('shop.shortBy', { amount: coins(item.price - wallet), defaultValue: 'ขาดอีก {{amount}} เหรียญ' })}
                                                     </p>
                                                 )}
@@ -615,7 +633,14 @@ export default function ShopPage() {
                                         ) : (
                                             <button
                                                 type="button"
-                                                onClick={() => handleBuy(item)}
+                                                onClick={() => setPendingPurchase({
+                                                    kind: 'item',
+                                                    target: item,
+                                                    name: shownName(item),
+                                                    price: item.price,
+                                                    image: item.icon.type === 'image' ? item.icon.value : '',
+                                                    icon: item.icon.type === 'text' ? item.icon.value : '',
+                                                })}
                                                 disabled={buyingItemId !== null || Boolean(buyingSet) || wallet < item.price}
                                                 className="flex shrink-0 items-center justify-center gap-2 rounded-lg bg-pysim-primary px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-pysim-primary/90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
                                             >
@@ -641,10 +666,22 @@ export default function ShopPage() {
                 )}
 
                 <button onClick={() => navigate('/learn')}
-                    className={`mt-10 text-pysim-outline hover:text-pysim-primary text-sm font-bold transition-colors uppercase tracking-widest ${mounted ? 'opacity-100' : 'opacity-0'}`}>
+                    className={`on-art mt-10 inline-flex min-h-10 items-center text-pysim-on-surface-variant hover:text-pysim-primary text-sm font-bold transition-colors ${mounted ? 'opacity-100' : 'opacity-0'}`}>
                     ← {t('shop.back', 'กลับหน้าหลัก')}
                 </button>
             </div>
+            <PurchaseConfirmDialog
+                purchase={pendingPurchase}
+                wallet={wallet}
+                busy={buyingItemId !== null || Boolean(buyingSet)}
+                onCancel={() => setPendingPurchase(null)}
+                onConfirm={async () => {
+                    const { kind, target } = pendingPurchase;
+                    if (kind === 'set') await handleBuySet(target);
+                    else await handleBuy(target);
+                    setPendingPurchase(null);
+                }}
+            />
             <PurchaseSuccessPopup purchase={purchaseNotice} onDismiss={() => setPurchaseNotice(null)} />
         </div>
     );

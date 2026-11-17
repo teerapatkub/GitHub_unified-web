@@ -26,7 +26,7 @@ const OutputPanel = forwardRef(function OutputPanel(
         {title}
       </div>
       <div ref={ref} className="min-h-0 flex-1 overflow-y-auto px-3 py-2 font-mono text-[13px] leading-6">
-        {lines.length === 0 ? <p className="text-slate-500">{emptyText}</p> : null}
+        {lines.length === 0 ? <p className="font-sans text-slate-500">{emptyText}</p> : null}
         {lines.map((line, index) => (
           <div key={`${index}-${line}`} className={`whitespace-pre-wrap ${toneOf(line)}`}>{line}</div>
         ))}

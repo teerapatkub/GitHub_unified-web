@@ -16,8 +16,10 @@ const {
   THEME_ARTWORK_CLASSIC_VERSION,
   LEVEL_CURVE_VERSION,
   LEVEL_REWARDS_VERSION,
+  LEVEL_SYNC_VERSION,
   CORE_SCHEMA_VERSION,
   DATA_API_SECURITY_VERSION,
+  ENGLISH_NAMES_VERSION,
   MINI_GAME_CHOICES_VERSION,
   SCHEMA_CLEANUP_VERSION,
   TUTORIALS_SEEN_VERSION,
@@ -175,7 +177,23 @@ const createLevelRewardsMigration = (up, signature) => defineMigration({
   up,
 });
 
+const createLevelSyncMigration = (up, signature) => defineMigration({
+  version: LEVEL_SYNC_VERSION,
+  name: 'level_sync_with_xp',
+  signature: signatureFor(up, signature),
+  up,
+});
+
+const createEnglishNamesMigration = (up, signature) => defineMigration({
+  version: ENGLISH_NAMES_VERSION,
+  name: 'english_names_for_thai_only_content',
+  signature: signatureFor(up, signature),
+  up,
+});
+
 module.exports = {
+  createEnglishNamesMigration,
+  createLevelSyncMigration,
   createLevelRewardsMigration,
   createLevelCurveMigration,
   createThemeArtworkClassicMigration,

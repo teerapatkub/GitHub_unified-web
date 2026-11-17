@@ -1,11 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
 import { Shield, AlertTriangle, ChevronDown, ChevronUp, Eye, ArrowLeft } from 'lucide-react';
 import Editor from '@monaco-editor/react';
+import usePauseThemeScene from '../../../fx/usePauseThemeScene.js';
+import { EDITOR_FONT_FAMILY } from '../../../utils/editorFont.js';
 import ChoiceRoundPanel from './ChoiceRoundPanel.jsx';
 import { EXAMPLE_CASES_SHOWN, pyLiteral } from '../constants.js';
 import arcadeConfig from '../../../../../shared/arcadeConfig.json';
 import { editorFrameDebuffClass, debuffOverlayText } from '../debuffVisuals.js';
 import '../arcade-effects.css';
+import InlineCodeText from '../../../components/ui/InlineCodeText.jsx';
 
 // Whether the problem card and the output panel are folded away, remembered
 // across rounds and across matches. A player who folds the problem card to get
@@ -77,6 +80,8 @@ export default function BattleRoyaleGameplayView({
   setWatchedPlayer,
   watchedCode
 }) {
+  // The theme's moving scene is off during a round: it fell across the code.
+  usePauseThemeScene();
   const [collapsed, setCollapsed] = useState(readCollapsed);
   // Monaco registers its key handler once; read the current debuffs through a ref.
   const keyDownRef = useRef(handleEditorKeyDown);
@@ -169,7 +174,7 @@ export default function BattleRoyaleGameplayView({
               turned into a lookup table. */}
           {!collapsed.problem && (
             <div className="mt-2 max-h-[22vh] space-y-2 overflow-y-auto pr-1">
-              <p className="text-sm leading-relaxed text-pysim-on-surface-variant">{challengeDesc}</p>
+              <p className="text-sm leading-relaxed text-pysim-on-surface-variant"><InlineCodeText text={challengeDesc} /></p>
               {Array.isArray(challengeTestCases) && challengeTestCases.length > 0 && challengeFunctionName && (
                 <div>
                   <div className="mb-1 text-xs font-bold text-pysim-label">{t('exampleLabel')}</div>
@@ -345,7 +350,7 @@ export default function BattleRoyaleGameplayView({
                   minimap: { enabled: false },
                   fontSize: 14,
                   lineHeight: 22,
-                  fontFamily: 'Fira Code, monospace',
+                  fontFamily: EDITOR_FONT_FAMILY,
                   padding: { top: 10 },
                   scrollBeyondLastLine: false,
                   automaticLayout: true,
@@ -472,7 +477,7 @@ export default function BattleRoyaleGameplayView({
                     <span className="text-lg" aria-hidden="true">{item.icon}</span>
                     {t(item.nameKey)}
                   </span>
-                  <span className={`line-clamp-2 text-[11px] leading-snug ${targetingItem === item ? 'text-pysim-on-primary' : 'text-pysim-label'}`}>
+                  <span className={`line-clamp-2 text-label leading-snug ${targetingItem === item ? 'text-pysim-on-primary' : 'text-pysim-label'}`}>
                     {t(item.descKey)}
                   </span>
                 </button>
@@ -485,10 +490,10 @@ export default function BattleRoyaleGameplayView({
           <div className="mb-2 flex items-center justify-between gap-2">
             <h3 className="text-sm font-black text-pysim-on-surface">{t('playersTitle')}</h3>
             {spectating && !targetingItem && (
-              <span className="rounded-full border border-pysim-info-border bg-pysim-info-container px-2 py-0.5 text-[11px] font-bold text-pysim-info">👁 {t('watchHint')}</span>
+              <span className="rounded-full border border-pysim-info-border bg-pysim-info-container px-2 py-0.5 text-label font-bold text-pysim-info">👁 {t('watchHint')}</span>
             )}
             {targetingItem && (
-              <span className="rounded-full border border-pysim-accent-border bg-pysim-accent-container px-2 py-0.5 text-[11px] font-bold text-pysim-accent-strong motion-safe:animate-pulse">🎯 {t('pickTarget')}</span>
+              <span className="rounded-full border border-pysim-accent-border bg-pysim-accent-container px-2 py-0.5 text-label font-bold text-pysim-accent-strong motion-safe:animate-pulse">🎯 {t('pickTarget')}</span>
             )}
           </div>
 
@@ -504,7 +509,7 @@ export default function BattleRoyaleGameplayView({
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-pysim-accent-strong text-xs font-black text-pysim-on-primary">{(playerState.name || '?').charAt(0).toUpperCase()}</span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-black text-pysim-on-surface">{playerState.name} ({t('youLabel')})</span>
-                <span className="block text-[11px] font-semibold text-pysim-label">{playerState.eliminated ? t('eliminated') : t('lived')}</span>
+                <span className="block text-label font-semibold text-pysim-label">{playerState.eliminated ? t('eliminated') : t('lived')}</span>
               </span>
               {checkEffectActive('shield') && <Shield className="h-4 w-4 shrink-0 text-pysim-info" aria-label={t('firewallActive')} />}
               <span className="shrink-0 rounded-lg border border-pysim-success-border bg-pysim-success-container px-2 py-0.5 text-xs font-black text-pysim-success-strong">⭐ {playerState.score} {t('ptsUnit')}</span>
@@ -539,11 +544,11 @@ export default function BattleRoyaleGameplayView({
                     <span className="min-w-0 flex-1">
                       <span className={`block truncate text-sm font-bold ${bot.eliminated ? 'text-pysim-label line-through' : 'text-pysim-on-surface-variant'}`}>{bot.name}</span>
                       {bot.eliminated ? (
-                        <span className="block text-[11px] font-bold text-pysim-accent-strong">{t('eliminated')}</span>
+                        <span className="block text-label font-bold text-pysim-accent-strong">{t('eliminated')}</span>
                       ) : canTarget ? (
-                        <span className="block text-[11px] font-black text-pysim-accent-strong">⚡ {t('clickToAttack')}</span>
+                        <span className="block text-label font-black text-pysim-accent-strong">⚡ {t('clickToAttack')}</span>
                       ) : isUnselectableTarget ? (
-                        <span className="block text-[11px] font-bold text-pysim-label">🚫 {t('targetAlreadyHit')}</span>
+                        <span className="block text-label font-bold text-pysim-label">🚫 {t('targetAlreadyHit')}</span>
                       ) : bot.isBot ? (
                         // A bot's bar comes from the local bot simulation; a
                         // human opponent only reports whether the answer is in.
@@ -554,10 +559,10 @@ export default function BattleRoyaleGameplayView({
                               style={{ width: `${progress}%` }}
                             />
                           </span>
-                          <span className="w-9 text-right text-[11px] font-bold tabular-nums text-pysim-label">{bot.hasSubmitted ? '✅' : `${progress}%`}</span>
+                          <span className="w-9 text-right text-label font-bold tabular-nums text-pysim-label">{bot.hasSubmitted ? '✅' : `${progress}%`}</span>
                         </span>
                       ) : (
-                        <span className={`block text-[11px] font-bold ${bot.hasSubmitted ? 'text-pysim-success-strong' : 'text-pysim-label'}`}>
+                        <span className={`block text-label font-bold ${bot.hasSubmitted ? 'text-pysim-success-strong' : 'text-pysim-label'}`}>
                           {bot.hasSubmitted ? `✅ ${t('submittedBadge')}` : `✍️ ${t('watchingTyping')}`}
                         </span>
                       )}

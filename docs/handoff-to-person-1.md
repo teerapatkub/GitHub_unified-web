@@ -1072,3 +1072,85 @@ Arcade ย้ายครบแล้ว (ticket 18) ตอนนี้สวม
   - `POST /api/competitive/challenges/generate` รับ `topics: []`
   - ยังรับ `topic` แบบเดิมได้
   - หมวดเดียวยังหยิบจากคลังโจทย์ที่สร้างไว้ล่วงหน้า หลายหมวดสร้างสดทุกครั้ง
+
+## 2026-11-18 00:20 — หน้าโปรไฟล์ไม่มีตัวเลือกรูปแล้ว (`ProfilePage.jsx`)
+- เอาแถวรูปให้เลือกใต้รูปโปรไฟล์ออก ผู้ใช้เลือกรูปที่หน้าแต่งโปรไฟล์ (`/profile/appearance`) แทน
+- `ProfilePage` ไม่รับ prop `onUserRefresh` แล้ว
+- API เลือกและรีเซ็ตรูปไม่ได้เปลี่ยน
+
+## 2026-11-18 02:00 — แก้ P0 + P1 จากผลตรวจ UI (ไฟล์ของ Person 1 และ 2)
+- **`pages/ShopPage.jsx`:**
+  - ปุ่ม "ซื้อ" และ "ซื้อเซ็ต" เปิดหน้าต่างยืนยัน (`components/shop/PurchaseConfirmDialog.jsx`) ก่อนส่งคำสั่งซื้อ
+  - หัวหน้าร้านและหัวข้อ "เซ็ตธีม" ใช้คลาส `on-art`
+- **`pages/CompetitiveArena.jsx`:**
+  - ปุ่ม "สรุปผลทันที" แสดงเฉพาะแอดมิน (server กันไว้อยู่แล้ว)
+  - ไม่มีเอฟเฟกต์ธีมตอนเปิด editor
+  - หัวข้อรายการโจทย์ใช้ `on-art`
+- **`pages/LessonPage.jsx`:** แถบความคืบหน้า หัวข้อ และคำอธิบายรวมอยู่ในกล่อง `on-art` เดียว
+- **`pages/LeaderboardPage.jsx`, `pages/Achievements.jsx`, `pages/ProfilePage.jsx`:**
+  - ปุ่มย้อนกลับ หัวข้อ และคำบรรยายใช้ `on-art`
+  - ปุ่มย้อนกลับสูงขั้นต่ำ 40px
+- **`App.jsx`:** ปิดเอฟเฟกต์ธีม (กลีบไม้ หิมะ ฯลฯ) ในหน้าเขียนโค้ดและหน้าบทเรียน ผ่าน `fx/usePauseThemeScene.js`
+- **`.on-art` (`index.css`):** มีผลเฉพาะตอนใส่ธีมร้านค้า ถ้าไม่ใส่ธีม หน้าตาเหมือนเดิม
+
+## 2026-11-18 04:00 — แก้ P2 จากผลตรวจ UI (หลายไฟล์ของ Person 1 และ 2)
+- **ตัวหนังสือเล็กกว่า 12px:** `text-[9px]`, `text-[10px]`, `text-[11px]` เปลี่ยนเป็น `text-label` (12px) ใน 14 ไฟล์ฝั่งผู้เรียน (ไม่แตะ admin)
+  - ไฟล์ที่แตะมาก: `CompetitiveArena.jsx` 28 จุด, `MiNi_Game.jsx` 20, `BattleRoyaleGameplayView.jsx` 9, `ShopPage.jsx` 6
+- **ป้ายภาษาไทยแทนอังกฤษใน `CompetitiveArena.jsx` / `CompetitiveGenerator.jsx`:**
+  - "สร้างโจทย์อัตโนมัติ", "ชุดทดสอบ", "ข้อมูลที่รับเข้า", "ผลลัพธ์ที่ต้องแสดง"
+  - ตัวอย่างชุดทดสอบ: "ชุดที่ / รับเข้า / ต้องได้"
+- **Arcade:**
+  - "Survival Cash" ในภาษาไทยเปลี่ยนเป็น "เงินในแมตช์"
+  - ระดับ "ดั้งเดิม" เปลี่ยนเป็น "ผสมง่าย-กลาง" (EN: "Mixed easy–medium" เพราะ "Classic" ชนกับรูปแบบห้องคลาสสิก)
+- **`ProfilePage.jsx`:**
+  - ประวัติ Arcade แปลระดับและความเร็วเป็นคำไทย (`profile.history.difficultyValue.*`, `paceValue.*`)
+  - ปุ่ม "เปลี่ยน" และแท็บประวัติสูงขั้นต่ำ 32px
+- **`LessonPage.jsx`:**
+  - สีน้ำเงินตายตัวเปลี่ยนเป็นสีธีม (`pysim-primary`)
+  - ตัวเลือกในแบบทดสอบเป็น radio (`role="radiogroup"` / `role="radio"` + `aria-checked`)
+  - มีหมายเหตุว่าแบบทดสอบก่อนเรียนไม่มีผลต่อคะแนน
+  - บอกเหตุผลใต้ลูกศรถัดไปและปุ่มด้านล่างที่ยังล็อกอยู่
+- **`LearningPage.jsx`:** หมวดที่ 0% ขึ้น "ยังไม่เริ่ม" แทน "กำลังเรียน"
+- **`server/lessonProgress.js`:**
+  - บทที่ไม่มีทั้งแบบทดสอบและแบบฝึกหัด ไม่นับว่า "เรียนจบ" แล้ว (เดิมขึ้นเรียนจบแล้ว 0%)
+  - ยังไม่ขวางบทถัดไป (`opensNext` ยังเป็น true)
+- **ปุ่มเล็ก:** `CosmeticTryButton`, แถบชื่อไฟล์และลิงก์ย้อนกลับในหน้าเขียนโค้ด สูงขั้นต่ำ 32px
+
+## 2026-11-18 05:30 — P3 จากผลตรวจ UI และหัวหน้า Competitive (ไฟล์ของ Person 1 และ 2)
+- **`pages/CompetitiveArena.jsx` (ผู้ใช้ขอ):**
+  - หัว "กระดานโจทย์" คำบรรยาย และเกณฑ์คะแนน รวมอยู่ในการ์ดเดียวกับ "โพสต์โจทย์ใหม่"
+  - เอากล่อง "ผู้นำตอนนี้" และหัวข้อ "โจทย์ที่เปิดให้ทำ · n ข้อ" ออก
+    - การเรียก `/api/competitive/leaderboard` ในหน้านี้ถูกลบด้วย endpoint ยังอยู่ และหน้าตารางอันดับรวมยังมีแท็บ Competitive
+  - `data-tour="competitive-intro"`, `competitive-scoring`, `competitive-post` ย้ายตามเนื้อหา ทัวร์ยังชี้ถูก
+- **`components/ui/Dialog.jsx`:** dialog ที่ overlay เป็น `fixed` ถูก render ผ่าน portal ไปที่ `<body>` เดิมพื้นหลังมืดของหน้าต่างสร้างห้อง Arcade คลุมไม่ถึงขอบบน
+- **`components/ui/InlineCodeText.jsx` + `utils/inlineCode.js`:** แสดง `` `โค้ด` `` ในโจทย์เป็นโค้ด ใช้ใน `CodingWorkspace`, `ExercisePage`, การ์ดโจทย์ Competitive และโจทย์ Arcade
+- **`pages/LeaderboardPage.jsx`:** เหลือ 4 แท็บ (เอา "เลเวล" และ "ไอเทมตกแต่ง" ออก) endpoint ฝั่ง server ยังอยู่
+- **`pages/ShopPage.jsx` บนมือถือ:**
+  - แท็บหมวดเป็นแถวเลื่อนแนวนอน และช่องค้นหาขึ้นก่อน
+  - เซ็ตธีมเป็นแถวปัดแนวนอน
+  - การ์ดของเป็น 2 คอลัมน์ ส่วนท้ายการ์ดเรียงลงล่าง
+  - จอใหญ่เหมือนเดิม
+- **`pages/ProfilePage.jsx`:** อัตราการชนะแสดง "—" ถ้ายังไม่เคยแข่ง
+
+## 2026-11-18 — ชื่อภาษาอังกฤษของบทเรียน หมวด ของตกแต่ง และความสำเร็จ (ข้อ 16.10)
+- **migration ใหม่ `202611180002 english_names_for_thai_only_content` (`server/migrate-english-names.js`):**
+  - เพิ่มคอลัมน์ `modules.title_en/description_en`, `lessons.title_en/description_en`,
+    `shop_items.name_en/description_en`, `shop_sets.description_en`, `achievements.name_en/description_en`
+  - เติมคำแปลให้ 9 หมวด 24 บท ของตกแต่งทุกชิ้นที่ seed 9 เซ็ต และความสำเร็จ 31 รายการ
+  - จับคู่ด้วยชื่อไทย (หมวด/บท), `item_type` + ชื่อไทย (ของตกแต่ง), `set_key`, `code` — ไม่ใช้ id
+  - ไม่ทับคำแปลที่มีอยู่แล้ว ถ้าแอดมินแก้ชื่อไทยเอง แถวนั้นจะไม่มีอังกฤษและแสดงไทยต่อ
+- **คอลัมน์ไทยเดิมไม่ได้เปลี่ยนชื่อหรือความหมาย** — `title`, `name`, `description` ยังเป็นไทยทุกที่
+- **API (ส่งฟิลด์ `_en` เพิ่ม ไม่ได้ลบอะไร):**
+  - `server/lessonContentRoutes.js`: `/api/course-content`, `/api/lessons/:id`
+  - `server/server.js`: `/api/profile/:id`, `/api/shop/items`, `/api/shop/inventory/:id`, `/api/shop/sets`,
+    `/api/achievements/:id`, `/api/achievement-unlocks/unseen`
+  - `server/avatar.js`: ตัวเลือกรูปโปรไฟล์มี `label_en`
+- **ฝั่ง client:** `client/src/utils/contentText.js` (`contentTitle/contentName/contentDescription`)
+  ใช้กฎเดียวกับ `problemText.js` — ไม่มีอังกฤษก็ได้ไทย ไม่ใช่ช่องว่าง
+  - ไฟล์ที่แก้: `LearningPage.jsx`, `LessonPage.jsx`, `ProfilePage.jsx`, `AppearancePage.jsx`, `ShopPage.jsx`,
+    `Achievements.jsx`, `components/AchievementUnlockPopup.jsx`
+  - **`name` ของธีมต้องเป็นไทยต่อไป** — `getShopThemePalette` / `ProfileAppearance` / `CosmeticTryButton`
+    เลือกสีและฉากจากคำในชื่อนั้น หน้าจึงแปลเฉพาะข้อความที่แสดง ไม่ได้แทนค่า `name`
+- **`MiNi_Game.jsx`:** ปุ่ม Back, Lumi Chat, RUN, DONE, View Terminal / Story Mode และหัว Hint เป็นไทยตอน UI ภาษาไทย
+  - คำใบ้ภารกิจ 101 และทัวร์ใน `data/webTutorials.js` ที่เขียนว่า "กด RUN/DONE" เปลี่ยนเป็น "กด รันโค้ด/ส่งคำตอบ" ให้ตรงปุ่ม
+- **ยังไม่ได้ทำ:** หน้าแอดมินเพิ่มบทเรียนยังไม่มีช่องกรอกชื่ออังกฤษ บทที่เพิ่มใหม่จึงแสดงไทยในโหมด EN

@@ -59,7 +59,7 @@ export default function PublicRoomBrowser({
       {/* Rooms Grid */}
       <div className="space-y-3" data-tour="arcade-rooms">
         <div className="flex justify-between items-center px-2">
-          <span className="text-sm font-bold text-pysim-on-surface-variant">
+          <span className="on-art text-sm font-bold text-pysim-on-surface-variant">
             {t('openRoomsLabel')} ({roomsLoaded ? rooms.length : '…'} {t('roomsUnit')})
           </span>
           <button type="button" onClick={() => fetchRooms(true)} className="inline-flex min-h-target-primary items-center rounded-xl px-3 text-xs font-bold text-pysim-accent-strong hover:bg-pysim-accent-container hover:underline">

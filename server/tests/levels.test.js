@@ -3,6 +3,17 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const levels = require('../levels');
 
+// UI review 2026-11-18 (P0): the header showed the stored level (12) while the
+// lesson and profile pages showed the level the XP had reached (52). One rule
+// now: the higher of the two, and level 0 (placement not done) stays 0.
+test('currentLevel is the stored level or the level the XP reached, whichever is higher', () => {
+  assert.equal(levels.currentLevel(12, levels.xpForLevel(52) + 15), 52);
+  assert.equal(levels.currentLevel(30, 0), 30, 'a level won by an exam is kept');
+  assert.equal(levels.currentLevel(0, 5000), 0, 'placement not done yet');
+  assert.equal(levels.currentLevel(150, 0), 100);
+  assert.equal(levels.currentLevel(5, 10_000_000), 100);
+});
+
 test('each level costs 60 XP more than the one before', () => {
   assert.deepEqual([1, 2, 3, 10].map(levels.xpToNext), [100, 160, 220, 640]);
   assert.equal(levels.xpToNext(100), 0);

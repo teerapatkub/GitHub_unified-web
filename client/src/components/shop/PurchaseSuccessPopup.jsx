@@ -51,7 +51,7 @@ export default function PurchaseSuccessPopup({ purchase, onDismiss }) {
                 </Motion.span>
               </div>
               <div className="min-w-0 pt-0.5">
-                <p className="flex items-center gap-1 text-[10px] font-black uppercase tracking-[0.18em] text-emerald-700">
+                <p className="flex items-center gap-1 text-label font-black uppercase tracking-[0.18em] text-emerald-700">
                   <Sparkles size={12} aria-hidden="true" /> PyArena Shop
                 </p>
                 <h2 className="mt-1 text-xl font-black text-slate-900">{t('shopPurchase.success')}</h2>

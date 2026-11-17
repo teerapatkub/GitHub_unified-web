@@ -8,18 +8,19 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { useTranslation } from "react-i18next";
+import { contentTitle } from "../utils/contentText";
 import { API_BASE } from '../config/api.js';
 import WebTutorialModal from "../components/WebTutorialModal";
 import { getWebTutorial } from "../data/webTutorials";
 import SkeletonLoading from "../components/ui/Skeleton";
 
 export default function LearningPage({ onNavigate, user }) {
-  const [modules, setModules] = useState([]);
+  const [courseModules, setModules] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
   const openGuide = () => setShowTutorial(true);
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const learningTutorial = getWebTutorial("learning-overview");
   const userId = user?.user_id;
   const userLevel = user?.level;
@@ -90,6 +91,15 @@ export default function LearningPage({ onNavigate, user }) {
       document.removeEventListener('visibilitychange', refresh);
     };
   }, [userId, userLevel]);
+
+  // Chapter and lesson titles in the chosen language, Thai when a row has no
+  // English yet (fix list item 16.10). Everything below reads `modules`.
+  const language = i18n.language;
+  const modules = useMemo(() => courseModules.map((module) => ({
+    ...module,
+    title: contentTitle(language, module),
+    lessons: (module.lessons || []).map((lesson) => ({ ...lesson, title: contentTitle(language, lesson) })),
+  })), [courseModules, language]);
 
   // The one lesson the page leads with: the first unfinished lesson this
   // level can open, in course order.
@@ -181,7 +191,7 @@ export default function LearningPage({ onNavigate, user }) {
                     style={{ width: `${xpProgressPercent}%` }}
                   ></div>
                 </div>
-                <div className="mt-2 flex items-center justify-between text-[11px] font-semibold text-pysim-outline">
+                <div className="mt-2 flex items-center justify-between text-label font-semibold text-pysim-outline">
                   <span>LV. {currentLevel}</span>
                   <span>
                     {atMaxLevel ? 'MAX' : `${currentLevelXp.toLocaleString()} / ${xpNeededThisLevel.toLocaleString()} XP`}
@@ -421,14 +431,20 @@ const ModuleAccordion = ({
             </h3>
 
             {isLocked ? (
-              <span className="flex items-center gap-1 rounded bg-pysim-surface-high px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-pysim-outline">
+              <span className="flex items-center gap-1 rounded bg-pysim-surface-high px-2 py-1 text-label font-bold text-pysim-outline">
                 ต้องการเลเวล {required_level}
               </span>
             ) : progress >= 100 ? (
               <CheckCircle2 className="h-5 w-5 text-pysim-primary" />
-            ) : (
+            ) : progress > 0 ? (
               <span className="rounded bg-pysim-primary-fixed px-2 py-1 text-xs font-bold text-pysim-on-primary-fixed">
                 กำลังเรียน
+              </span>
+            ) : (
+              /* Every open chapter used to say กำลังเรียน even at 0%, so the
+                 badge said nothing (UI review 2026-11-18). */
+              <span className="rounded px-2 py-1 text-xs font-bold text-pysim-on-surface-variant ring-1 ring-pysim-outline-variant">
+                ยังไม่เริ่ม
               </span>
             )}
           </div>
@@ -548,7 +564,7 @@ const ModuleAccordion = ({
                           {lessonStatus.label}
                         </span>
                         <span
-                          className="min-w-[3.25rem] select-none rounded-lg border px-3 py-1 text-center text-xs font-mono font-black shadow-sm"
+                          className="min-w-[3.25rem] select-none rounded-lg border px-3 py-1 text-center text-xs font-bold tabular-nums shadow-sm"
                           style={{
                             backgroundColor: "#e5e7eb",
                             borderColor: "#9ca3af",

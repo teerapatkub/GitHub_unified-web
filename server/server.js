@@ -1653,7 +1653,9 @@ app.get('/api/user/profile/:userId', async (req, res) => {
 
         res.json({
             ...user,
-            level: Number(user.level ?? 1),
+            // The header reads this; the bar below reads progression. Both are
+            // the same level now (levels.currentLevel, UI review 2026-11-18).
+            level: Number(user.level) >= 1 ? progress.level : Number(user.level ?? 1),
             xp: Number(user.xp || 0),
             virtual_currency: Number(user.virtual_currency || 0),
             streak_days: streakDays,
@@ -1696,7 +1698,7 @@ app.get('/api/profile/:userId', async (req, res) => {
         const user = userRows[0];
 
         const [equippedItems] = await db.execute(
-            'SELECT item_id, name, asset_url, preview_image, effects FROM shop_items WHERE item_id IN (?, ?, ?)',
+            'SELECT item_id, name, name_en, asset_url, preview_image, effects FROM shop_items WHERE item_id IN (?, ?, ?)',
             [user.equipped_profile_frame_id || 0, user.equipped_theme_id || 0, user.equipped_mouse_effect_id || 0]
         );
         const equipped = (id) => equippedItems.find(item => Number(item.item_id) === Number(id));
@@ -1706,7 +1708,7 @@ app.get('/api/profile/:userId', async (req, res) => {
 
         // Every picture this player could switch the avatar to (avatar.js).
         const [ownedPics] = await db.execute(
-            `SELECT si.item_id, si.name, si.asset_url FROM user_inventory ui
+            `SELECT si.item_id, si.name, si.name_en, si.asset_url FROM user_inventory ui
                 JOIN shop_items si ON si.item_id = ui.item_id
                WHERE ui.user_id = ? AND si.item_type = 'PROFILE_PICTURE' AND si.is_active = 1
                ORDER BY si.item_id`,
@@ -1719,10 +1721,10 @@ app.get('/api/profile/:userId', async (req, res) => {
         // pre-quiz, the post-quiz, and however many exercises hang off it. There
         // is no per-slide tracking in the schema, so those are the honest steps.
         const [modules] = await db.execute(
-            'SELECT module_id, title, order_index, required_level FROM modules ORDER BY order_index, module_id'
+            'SELECT module_id, title, title_en, order_index, required_level FROM modules ORDER BY order_index, module_id'
         );
         const [lessons] = await db.execute(
-            'SELECT lesson_id, module_id, title, order_index FROM lessons ORDER BY order_index, lesson_id'
+            'SELECT lesson_id, module_id, title, title_en, order_index FROM lessons ORDER BY order_index, lesson_id'
         );
         const [exerciseCounts] = await db.execute(
             'SELECT lesson_id, COUNT(*) AS total FROM exercises GROUP BY lesson_id'
@@ -1800,6 +1802,7 @@ app.get('/api/profile/:userId', async (req, res) => {
                 lesson_id: id,
                 module_id: Number(lesson.module_id),
                 title: lesson.title,
+                title_en: lesson.title_en || null,
                 order_index: Number(lesson.order_index || 0),
                 status,
                 percent,
@@ -1816,6 +1819,7 @@ app.get('/api/profile/:userId', async (req, res) => {
             return {
                 module_id: Number(m.module_id),
                 title: m.title,
+                title_en: m.title_en || null,
                 required_level: Number(m.required_level || 0),
                 lessons_total: own.length,
                 lessons_done: done,
@@ -1837,8 +1841,8 @@ app.get('/api/profile/:userId', async (req, res) => {
 
         // --- achievements ---------------------------------------------------
         const [achievements] = await db.execute(
-            `SELECT a.achievement_id, a.code, a.icon, a.name, a.description, a.difficulty,
-                    a.reward_money, a.metric, a.threshold, ua.unlocked_at
+            `SELECT a.achievement_id, a.code, a.icon, a.name, a.description, a.name_en, a.description_en,
+                    a.difficulty, a.reward_money, a.metric, a.threshold, ua.unlocked_at
                FROM achievements a
                LEFT JOIN user_achievements ua
                       ON ua.achievement_id = a.achievement_id AND ua.user_id = ?
@@ -1859,6 +1863,8 @@ app.get('/api/profile/:userId', async (req, res) => {
             icon: a.icon || '🏆',
             name: a.name,
             description: a.description,
+            name_en: a.name_en || null,
+            description_en: a.description_en || null,
             difficulty: a.difficulty,
             reward: Number(a.reward_money || 0),
             metric: a.metric,
@@ -1906,9 +1912,12 @@ app.get('/api/profile/:userId', async (req, res) => {
                 virtual_currency: Number(user.virtual_currency || 0),
                 profile_frame_url: frameRow?.asset_url || frameRow?.preview_image || null,
                 profile_frame_name: frameRow?.name || null,
+                profile_frame_name_en: frameRow?.name_en || null,
                 theme_name: themeRow?.name || null,
+                theme_name_en: themeRow?.name_en || null,
                 theme_asset_url: themeRow?.asset_url || themeRow?.preview_image || null,
                 mouse_effect_name: mouseRow?.name || null,
+                mouse_effect_name_en: mouseRow?.name_en || null,
                 mouse_effect_data: safeJsonParse(mouseRow?.effects, []) || [],
                 avatar: resolveAvatar(user),
                 avatar_options: avatarOptions,
@@ -2638,9 +2647,10 @@ app.get(['/achievements/:userId', '/api/achievements/:userId'], async (req, res)
         SELECT a.*,
             (SELECT COUNT(*) FROM user_achievements ua WHERE ua.achievement_id = a.achievement_id) * 100.0 / NULLIF((SELECT COUNT(*) FROM users), 0) as global_percent,
             CASE WHEN ua_me.id IS NOT NULL THEN 1 ELSE 0 END as is_unlocked,
-            ri.asset_url AS reward_item_url, ri.name AS reward_item_name,
+            ri.asset_url AS reward_item_url, ri.name AS reward_item_name, ri.name_en AS reward_item_name_en,
             -- Every item the achievement gives, the extra ones included (item 12).
-            (SELECT COALESCE(json_agg(json_build_object('name', si.name, 'url', si.asset_url, 'type', si.item_type)
+            (SELECT COALESCE(json_agg(json_build_object('name', si.name, 'name_en', si.name_en,
+                                                        'url', si.asset_url, 'type', si.item_type)
                                       ORDER BY si.item_type DESC), '[]'::json)
                FROM shop_items si
               WHERE si.item_id = a.reward_item_id
@@ -2669,8 +2679,10 @@ app.get('/api/achievement-unlocks/unseen', async (req, res) => {
     if (!req.player) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
     try {
         const [rows] = await db.execute(
-            `SELECT ua.achievement_id, a.code, a.name, a.description, a.icon, a.reward_money, a.metric, a.threshold,
-                    (SELECT COALESCE(json_agg(json_build_object('name', si.name, 'url', si.asset_url, 'type', si.item_type)
+            `SELECT ua.achievement_id, a.code, a.name, a.description, a.name_en, a.description_en,
+                    a.icon, a.reward_money, a.metric, a.threshold,
+                    (SELECT COALESCE(json_agg(json_build_object('name', si.name, 'name_en', si.name_en,
+                                                                'url', si.asset_url, 'type', si.item_type)
                                               ORDER BY si.item_type DESC), '[]'::json)
                        FROM shop_items si
                       WHERE si.item_id = a.reward_item_id
@@ -5485,7 +5497,7 @@ const shopPath = (suffix) => [`/api/shop${suffix}`, `/shop${suffix}`];
 app.get(shopPath('/items'), async (req, res) => {
     const { type } = req.query;
     let sql = `
-        SELECT item_id, name, description, item_type AS type, price, asset_url, preview_image,
+        SELECT item_id, name, description, name_en, description_en, item_type AS type, price, asset_url, preview_image,
                effects AS preview_data, is_active AS is_available, rarity, set_key
         FROM shop_items
         WHERE is_active = 1 AND is_available = 1
@@ -5511,7 +5523,8 @@ app.get(shopPath('/inventory/:userId'), async (req, res) => {
     const { userId } = req.params;
     try {
         const [items] = await db.execute(`
-            SELECT si.item_id, si.name, si.description, si.item_type AS type, si.price, si.asset_url, si.preview_image,
+            SELECT si.item_id, si.name, si.description, si.name_en, si.description_en,
+                   si.item_type AS type, si.price, si.asset_url, si.preview_image,
                    si.effects AS preview_data, si.is_active AS is_available, ui.purchased_at
             FROM user_inventory ui
             JOIN shop_items si ON ui.item_id = si.item_id
@@ -5534,11 +5547,11 @@ app.get(shopPath('/sets'), async (req, res) => {
     const { userId } = req.query;
     try {
         const [sets] = await db.execute(
-            `SELECT set_key, name_th, name_en, description_th, price
+            `SELECT set_key, name_th, name_en, description_th, description_en, price
                FROM shop_sets WHERE is_active = 1 ORDER BY set_key`
         );
         const [items] = await db.execute(
-            `SELECT item_id, set_key, name, description, item_type AS type, price,
+            `SELECT item_id, set_key, name, description, name_en, description_en, item_type AS type, price,
                     asset_url, preview_image, effects AS preview_data
                FROM shop_items
               WHERE is_active = 1 AND set_key IS NOT NULL
@@ -7378,6 +7391,8 @@ const {
   createThemeArtworkClassicMigration,
   createLevelCurveMigration,
   createLevelRewardsMigration,
+  createLevelSyncMigration,
+  createEnglishNamesMigration,
 } = require('./migrations/definitions');
 const { applyDataApiSecurity } = require('./security/data-api-security');
 const authProvisioningSchemaSql = fs.readFileSync(
@@ -7531,6 +7546,17 @@ const applicationMigrations = [
   createLevelRewardsMigration(
     () => require('./migrate-level-rewards').migrateLevelRewards(db),
     require('fs').readFileSync(require.resolve('./migrate-level-rewards'), 'utf8'),
+  ),
+  // Stored levels left behind their XP catch up once (UI review 2026-11-18).
+  createLevelSyncMigration(
+    () => require('./migrate-level-sync').migrateLevelSync(db),
+    require('fs').readFileSync(require.resolve('./migrate-level-sync'), 'utf8'),
+  ),
+  // English names for lessons, chapters, cosmetics and achievements, which
+  // were stored only in Thai (fix list item 16.10, 2026-11-18).
+  createEnglishNamesMigration(
+    () => require('./migrate-english-names').migrateEnglishNames(db),
+    require('fs').readFileSync(require.resolve('./migrate-english-names'), 'utf8'),
   ),
 ];
 

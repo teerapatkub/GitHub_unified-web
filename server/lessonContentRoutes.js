@@ -38,12 +38,13 @@ function createLessonContentRouter(db, { ensureQuizSchema = async () => {}, eval
       // after another they were four round trips to the database in Tokyo, and
       // the learning page asks this again whenever the tab regains focus.
       const [[modules], [lessons], [quizAttempts], [quizKindRows]] = await Promise.all([
-      db.execute('SELECT module_id, title, order_index, required_level FROM modules ORDER BY order_index, module_id'),
+      db.execute('SELECT module_id, title, title_en, order_index, required_level FROM modules ORDER BY order_index, module_id'),
       db.execute(`
         SELECT
           l.lesson_id,
           l.module_id,
           l.title,
+          l.title_en,
           l.order_index,
           l.required_level,
           COUNT(DISTINCT e.exercise_id) as total_count,
@@ -52,7 +53,7 @@ function createLessonContentRouter(db, { ensureQuizSchema = async () => {}, eval
         FROM lessons l
         LEFT JOIN exercises e ON l.lesson_id = e.lesson_id
         LEFT JOIN exercise_submissions es ON e.exercise_id = es.exercise_id AND es.user_id = ?
-        GROUP BY l.lesson_id, l.module_id, l.title, l.order_index, l.required_level
+        GROUP BY l.lesson_id, l.module_id, l.title, l.title_en, l.order_index, l.required_level
         ORDER BY l.order_index, l.lesson_id
       `, [userId]),
 
@@ -87,6 +88,8 @@ function createLessonContentRouter(db, { ensureQuizSchema = async () => {}, eval
       const data = moduleRows.map((m) => ({
         module_id: m.module_id,
         title: m.title,
+        // English when it exists; the client falls back to Thai (problemText.js).
+        title_en: m.title_en || null,
         order_index: m.order_index,
         required_level: m.required_level || 0,
         is_locked: currentLevel < Number(m.required_level || 0),
@@ -109,6 +112,7 @@ function createLessonContentRouter(db, { ensureQuizSchema = async () => {}, eval
               lesson_id: l.lesson_id,
               id: l.lesson_id,
               title: l.title,
+              title_en: l.title_en || null,
               order_index: l.order_index,
               required_level: l.required_level || 0,
               is_locked: currentLevel < Number(l.required_level || 0),
@@ -140,7 +144,7 @@ function createLessonContentRouter(db, { ensureQuizSchema = async () => {}, eval
 
   router.get('/lessons/:lessonId', async (req, res) => {
     try {
-      const [rows] = await db.execute('SELECT lesson_id, module_id, title, description, order_index, required_level FROM lessons WHERE lesson_id = ?', [req.params.lessonId]);
+      const [rows] = await db.execute('SELECT lesson_id, module_id, title, description, title_en, description_en, order_index, required_level FROM lessons WHERE lesson_id = ?', [req.params.lessonId]);
       if (!rows.length) return res.status(404).json({ error: 'ไม่พบบทเรียนนี้' });
       res.json(rows[0]);
     } catch (error) { res.status(500).json({ error: 'โหลดข้อมูลบทเรียนไม่สำเร็จ' }); }

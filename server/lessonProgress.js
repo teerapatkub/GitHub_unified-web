@@ -73,11 +73,16 @@ const evaluateLesson = ({
 
     // Finished means the required quizzes are complete. Exercises are practice
     // and must not keep a learner in "กำลังเรียน" after both quizzes are done.
-    const completed = hasPostQuiz
-        ? postPassed && (!hasPreQuiz || preTaken)
-        : total > 0
-            ? passed >= total
-            : true;
+    // A lesson with nothing in it yet (no quiz, no exercise) is not "done":
+    // it showed เรียนจบแล้ว at 0% with exercises 0/0 and counted towards the
+    // profile's lessons-done before the learner had opened it (UI review
+    // 2026-11-18). It still never blocks the next lesson - see opensNext.
+    const empty = stepsTotal === 0;
+    const completed = empty
+        ? false
+        : hasPostQuiz
+            ? postPassed && (!hasPreQuiz || preTaken)
+            : passed >= total;
 
     // The gate for the NEXT lesson, which is deliberately gentler than
     // `completed`. The taught material ends at the post-test - the exercises
@@ -85,7 +90,7 @@ const evaluateLesson = ({
     // "you have been through this lesson". Holding the rest of the curriculum
     // hostage to five practice problems would strand a beginner who is stuck on
     // one of them, which is the person this app exists for.
-    const opensNext = hasPostQuiz ? postPassed : completed;
+    const opensNext = empty ? true : hasPostQuiz ? postPassed : completed;
 
     return {
         status: completed ? 'done' : started ? 'in_progress' : 'not_started',

@@ -256,7 +256,18 @@
     "notEnough": "Not enough coins",
     "emptyOwned": "Nothing owned in this category yet - see the \"Not owned\" tab",
     "emptyMissing": "You own everything in this category",
-    "empty": "No items found"
+    "empty": "No items found",
+    "confirm": {
+      "title": "Buy this item?",
+      "titleSet": "Buy this set?",
+      "price": "Price",
+      "balance": "Your coins",
+      "after": "Left after buying",
+      "note": "Coins cannot be refunded after buying.",
+      "cancel": "Cancel",
+      "buy": "Confirm purchase",
+      "buying": "Buying…"
+    }
   },
   "leaderboard": {
     "title": "Hall of fame",
@@ -391,7 +402,17 @@
       "arcadeTotals": "Total score {{score}} · Survival Cash earned {{cash}}",
       "loadingCompetitive": "Loading Competitive history...",
       "retry": "Try again",
-      "noCompetitive": "No Competitive history yet"
+      "noCompetitive": "No Competitive history yet",
+      "difficultyValue": {
+        "default": "Mixed easy–medium",
+        "easy": "Easy",
+        "medium": "Medium",
+        "hard": "Hard"
+      },
+      "paceValue": {
+        "standard": "Standard",
+        "quick": "Quick"
+      }
     },
     "lessons": {
       "title": "All lessons",

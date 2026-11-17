@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Trophy, Lock, CheckCircle2, Coins } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { contentDescription, contentName } from '../utils/contentText';
 import { assetUrl } from '../config/api.js';
 import { requestJson } from '../config/api-client.js';
 import SkeletonLoading from '../components/ui/Skeleton.jsx';
@@ -9,7 +10,7 @@ import SkeletonLoading from '../components/ui/Skeleton.jsx';
 
 export default function Achievements({ user }) {
     const navigate = useNavigate();
-    const { t } = useTranslation();
+    const { t, i18n } = useTranslation();
     const [mounted, setMounted] = useState(false);
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -47,7 +48,7 @@ export default function Achievements({ user }) {
             </div>
 
             <div className="relative z-10 max-w-4xl mx-auto px-4 sm:px-8 py-8">
-                <div className={`mb-10 transition-all duration-700 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'}`}>
+                <div className={`on-art on-art-block mb-10 transition-all duration-700 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'}`}>
                     <div className="flex items-center gap-3 mb-2">
                         <div className="w-10 h-10 python-gradient rounded-lg flex items-center justify-center">
                             <Trophy size={20} className="text-white" />
@@ -95,13 +96,13 @@ export default function Achievements({ user }) {
 
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2 mb-1">
-                                                <h3 className="text-lg font-bold text-pysim-on-surface">{ach.name}</h3>
+                                                <h3 className="text-lg font-bold text-pysim-on-surface">{contentName(i18n.language, ach)}</h3>
                                                 {unlocked && <CheckCircle2 size={16} className="text-emerald-500" />}
-                                                <span className="rounded-full bg-pysim-surface-low px-2 py-0.5 text-[10px] font-bold text-pysim-outline">
+                                                <span className="rounded-full bg-pysim-surface-low px-2 py-0.5 text-label font-bold text-pysim-outline">
                                                     {t(`achievements.difficulty.${ach.difficulty}`, ach.difficulty)}
                                                 </span>
                                             </div>
-                                            <p className="text-sm text-pysim-on-surface-variant">{ach.description}</p>
+                                            <p className="text-sm text-pysim-on-surface-variant">{contentDescription(i18n.language, ach)}</p>
                                             <div className="mt-2 flex flex-wrap items-center gap-3">
                                                 {Number(ach.reward_money) > 0 && (
                                                     <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-600">
@@ -112,13 +113,13 @@ export default function Achievements({ user }) {
                                                     a frame and a picture (fix list item 12). */}
                                                 {(Array.isArray(ach.reward_items) && ach.reward_items.length > 0
                                                     ? ach.reward_items
-                                                    : ach.reward_item_url ? [{ url: ach.reward_item_url, name: ach.reward_item_name, type: 'PROFILE_PICTURE' }] : []
+                                                    : ach.reward_item_url ? [{ url: ach.reward_item_url, name: ach.reward_item_name, name_en: ach.reward_item_name_en, type: 'PROFILE_PICTURE' }] : []
                                                 ).map((item) => (
-                                                    <span key={item.url} className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-2 py-1 text-[11px] font-bold text-violet-700">
+                                                    <span key={item.url} className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-2 py-1 text-label font-bold text-violet-700">
                                                         <img src={assetUrl(item.url)} alt="" className={`h-5 w-5 ${item.type === 'PROFILE_PICTURE' ? 'rounded-full object-cover' : 'object-contain'}`} />
                                                         {item.type === 'PROFILE_PICTURE'
                                                             ? t('achievements.specialPicture', 'รูปพิเศษ')
-                                                            : t('achievements.specialFrame', 'กรอบพิเศษ')}: {item.name}
+                                                            : t('achievements.specialFrame', 'กรอบพิเศษ')}: {contentName(i18n.language, item)}
                                                     </span>
                                                 ))}
                                             </div>

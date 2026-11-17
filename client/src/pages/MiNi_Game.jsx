@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Editor from "@monaco-editor/react";
+import { EDITOR_FONT_FAMILY } from '../utils/editorFont.js';
 import { useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { problemTitle, problemDescription } from "../utils/problemText";
@@ -158,11 +159,11 @@ const getBranchMissionCopy = (subtopic, branchKey = "default") => {
     101: {
       mood_good: {
         title: "PRINT: ตอบว่าเราพร้อมเรียน",
-        hint: 'เขียน print("ฉันสบายดี") แล้วกด DONE เพื่อส่งคำตอบให้ Lumi',
+        hint: 'เขียน print("ฉันสบายดี") แล้วกด ส่งคำตอบ ให้ Lumi',
       },
       mood_confused: {
         title: "PRINT: ขอให้ Lumi ช่วยอธิบาย",
-        hint: 'เขียน print("ยังงงอยู่") แล้วกด DONE เพื่อบอก Lumi ว่ายังต้องการความช่วยเหลือ',
+        hint: 'เขียน print("ยังงงอยู่") แล้วกด ส่งคำตอบ เพื่อบอก Lumi ว่ายังต้องการความช่วยเหลือ',
       },
     },
     102: {
@@ -1291,7 +1292,7 @@ if (result?.is_module_completed) {
             onClick={() => onNavigate?.("lesson", moduleId)}
             className="flex items-center text-sm font-bold text-slate-500 transition-colors hover:text-indigo-600"
           >
-            <ArrowLeft size={16} className="mr-2" /> Back
+            <ArrowLeft size={16} className="mr-2" /> {lang === "en" ? "Back" : "กลับ"}
           </button>
           <button
             type="button"
@@ -1310,10 +1311,10 @@ if (result?.is_module_completed) {
                 ? "border-indigo-200 bg-indigo-600 text-white shadow-md shadow-indigo-100"
                 : "border-slate-200 bg-white text-indigo-600 hover:bg-indigo-50"
             }`}
-            title="Ask Lumi for help"
+            title={lang === "en" ? "Ask Lumi for help" : "ถาม Lumi ให้ช่วย"}
           >
             <MessageSquareCode size={14} />
-            Lumi Chat
+            {lang === "en" ? "Lumi Chat" : "แชทกับ Lumi"}
           </button>
 
           {isAiOpen ? (
@@ -1325,7 +1326,7 @@ if (result?.is_module_completed) {
                   </div>
                   <div>
                     <p className="text-sm font-black text-slate-900">Lumi AI Assistant</p>
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Mini game helper</p>
+                    <p className="text-label font-bold uppercase tracking-wide text-slate-400">Mini game helper</p>
                   </div>
                 </div>
                 <button
@@ -1439,7 +1440,7 @@ if (result?.is_module_completed) {
             </div>
 
             <div className="min-h-0 overflow-y-auto bg-slate-50/70 p-5 sm:p-7">
-              <div className="mb-5 flex flex-wrap items-center gap-3 text-[11px] font-bold text-slate-500">
+              <div className="mb-5 flex flex-wrap items-center gap-3 text-label font-bold text-slate-500">
                 <span className="text-indigo-600">อยู่ที่นี่</span>
                 <span className="text-emerald-600">ผ่านแล้ว </span>
                 <span className="text-slate-400">ยังไม่ถึง</span>
@@ -1470,11 +1471,11 @@ if (result?.is_module_completed) {
                             <div className={`absolute inset-0 -z-10 rounded-2xl ${node.isCurrent ? "border border-indigo-300 bg-indigo-50 shadow-lg shadow-indigo-100" : node.isCompleted ? "border border-emerald-200 bg-emerald-50/80" : "border border-slate-200 bg-white"}`} />
                             <>
                               <div className="flex items-start justify-between gap-2">
-                                <span className="text-[10px] font-black tracking-widest text-slate-400">#{node.index + 1}</span>
+                                <span className="text-label font-black tracking-widest text-slate-400">#{node.index + 1}</span>
   <div className="flex items-center gap-1">
     {isLocked ? <Lock size={12} className="text-slate-300" aria-label="ด่านที่ยังไม่ผ่าน" /> : null}
-    {node.isCurrent ? <span className="rounded-lg bg-indigo-600 px-2 py-1 text-[9px] font-black text-white">ที่นี่</span> : null}
-    {node.isCompleted ? <span className="rounded-lg bg-emerald-600 px-2 py-1 text-[9px] font-black text-white">ผ่านแล้ว</span> : null}
+    {node.isCurrent ? <span className="rounded-lg bg-indigo-600 px-2 py-1 text-label font-black text-white">ที่นี่</span> : null}
+    {node.isCompleted ? <span className="rounded-lg bg-emerald-600 px-2 py-1 text-label font-black text-white">ผ่านแล้ว</span> : null}
   </div>
 </div>
                               <div className="flex min-h-0 flex-1 items-center justify-center text-center">
@@ -1497,7 +1498,7 @@ if (result?.is_module_completed) {
         <div className="grid flex-1 grid-cols-1 lg:grid-cols-[320px_1fr]">
           {String(currentSubtopic?.exercise_order) !== "end" && (
             <div className="max-h-40 shrink-0 overflow-y-auto border-b border-indigo-100 bg-indigo-50/70 p-4 lg:hidden">
-              <p className="text-[10px] font-black uppercase tracking-widest text-indigo-600">
+              <p className="text-label font-black uppercase tracking-widest text-indigo-600">
                 โจทย์ปัจจุบัน
               </p>
               <h2 className="mt-1 text-base font-black text-slate-900">
@@ -1509,7 +1510,7 @@ if (result?.is_module_completed) {
             </div>
           )}
           <aside className="hidden border-r bg-slate-50/50 p-6 lg:block">
-            <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600">
+            <span className="text-label font-black uppercase tracking-widest text-indigo-600">
               ด่านปัจจุบัน
             </span>
             <h1 className="mt-2 text-2xl font-black text-slate-900 italic underline decoration-indigo-200">
@@ -1518,7 +1519,7 @@ if (result?.is_module_completed) {
 {String(currentSubtopic?.exercise_order) !== "end" && (
     <>
       <div className="mt-8 rounded-2xl border border-indigo-100 bg-white p-5 shadow-sm">
-        <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-400">Hint</p>
+        <p className="text-label font-bold uppercase tracking-wider text-indigo-400">{lang === "en" ? "Hint" : "คำใบ้"}</p>
         <p className="mt-2 text-sm font-medium text-slate-600">
           {currentMissionCopy.hint || "Write code that matches this subtopic objective."}
         </p>
@@ -1526,28 +1527,28 @@ if (result?.is_module_completed) {
 
       {isCurrentSubtopicCompleted ? (
         <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
-          <p className="text-[10px] font-black uppercase tracking-wider text-emerald-500">✅ ผ่านแล้ว</p>
+          <p className="text-label font-black uppercase tracking-wider text-emerald-500">✅ ผ่านแล้ว</p>
           <div className="mt-3 flex gap-3">
             <div className="flex-1 rounded-xl bg-amber-50 border border-amber-100 px-3 py-2 text-center">
-              <p className="text-[9px] font-bold uppercase text-amber-400">XP ที่ได้</p>
+              <p className="text-label font-bold uppercase text-amber-400">XP ที่ได้</p>
               <p className="text-base font-black text-amber-600">+{currentProgress?.xp_reward ?? currentSubtopic?.reward_xp ?? 0}</p>
             </div>
             <div className="flex-1 rounded-xl bg-emerald-50 border border-emerald-100 px-3 py-2 text-center">
-              <p className="text-[9px] font-bold uppercase text-emerald-400">Coins ที่ได้</p>
+              <p className="text-label font-bold uppercase text-emerald-400">Coins ที่ได้</p>
               <p className="text-base font-black text-emerald-600">+{currentProgress?.currency_reward ?? currentSubtopic?.reward_coins ?? 0}</p>
             </div>
           </div>
         </div>
       ) : (
         <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-          <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">⏳ ยังไม่ผ่าน</p>
+          <p className="text-label font-black uppercase tracking-wider text-slate-400">⏳ ยังไม่ผ่าน</p>
           <div className="mt-3 flex gap-3">
             <div className="flex-1 rounded-xl bg-amber-50 border border-amber-100 px-3 py-2 text-center">
-              <p className="text-[9px] font-bold uppercase text-amber-400">XP</p>
+              <p className="text-label font-bold uppercase text-amber-400">XP</p>
               <p className="text-base font-black text-amber-500">{currentSubtopic?.reward_xp ?? 0}</p>
             </div>
             <div className="flex-1 rounded-xl bg-slate-100 border border-slate-200 px-3 py-2 text-center">
-              <p className="text-[9px] font-bold uppercase text-slate-400">Coins</p>
+              <p className="text-label font-bold uppercase text-slate-400">Coins</p>
               <p className="text-base font-black text-slate-500">{currentSubtopic?.reward_coins ?? 0}</p>
             </div>
           </div>
@@ -1565,7 +1566,7 @@ if (result?.is_module_completed) {
                     <button
                       key={fileName}
                       onClick={() => setActiveFile(fileName)}
-                      className={`rounded-lg px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest transition-colors ${
+                      className={`rounded-lg px-3 py-1 font-mono text-label font-bold uppercase tracking-widest transition-colors ${
                         activeFile === fileName
                           ? "bg-indigo-600 text-white"
                           : "border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
@@ -1583,7 +1584,7 @@ if (result?.is_module_completed) {
                     className="flex items-center gap-2 rounded-xl border bg-white px-4 py-1.5 text-xs font-bold text-slate-600 transition-all hover:bg-slate-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <Play size={12} className="text-emerald-500" />
-                    RUN
+                    {lang === "en" ? "RUN" : "รันโค้ด"}
                   </button>
 <button
   onClick={handleSubmit}
@@ -1609,7 +1610,9 @@ if (result?.is_module_completed) {
   className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-1.5 text-xs font-bold text-white shadow-md transition-all hover:bg-indigo-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
 >
   <CheckCircle2 size={12} />
-  {isCurrentSubtopicCompleted ? "DONE AGAIN" : "DONE"}
+  {lang === "en"
+    ? (isCurrentSubtopicCompleted ? "DONE AGAIN" : "DONE")
+    : (isCurrentSubtopicCompleted ? "ส่งอีกครั้ง" : "ส่งคำตอบ")}
 </button>
                 </div>
               </div>
@@ -1629,6 +1632,7 @@ if (result?.is_module_completed) {
                 }}
                 options={{
                   fontSize: 16,
+                  fontFamily: EDITOR_FONT_FAMILY,
                   minimap: { enabled: false },
                   readOnly: isDoneSubmitted,
                 }}
@@ -1657,14 +1661,16 @@ if (result?.is_module_completed) {
               <div className="absolute left-8 top-6 z-30">
                 <button
                   onClick={handleViewToggle}
-                  className={`flex items-center gap-2 rounded-full px-5 py-2 text-[10px] font-black uppercase shadow-md transition-all ${
+                  className={`flex items-center gap-2 rounded-full px-5 py-2 text-label font-black uppercase shadow-md transition-all ${
                     showTerminal
                       ? "bg-slate-900 text-white"
                       : "border border-indigo-100 bg-white text-indigo-600"
                   }`}
                 >
                   {showTerminal ? <MessageSquareCode size={14} /> : <TerminalIcon size={14} />}
-                  {showTerminal ? "Story Mode" : "View Terminal"}
+                  {lang === "en"
+                    ? (showTerminal ? "Story Mode" : "View Terminal")
+                    : (showTerminal ? "โหมดเนื้อเรื่อง" : "ดูเทอร์มินัล")}
                 </button>
               </div>
 
@@ -1673,7 +1679,7 @@ if (result?.is_module_completed) {
                   <div className="flex h-full flex-col bg-[#070d18]">
                     <div className="flex items-center gap-2 border-b border-gray-800/50 bg-gray-900/30 px-4 py-1.5">
                       <TerminalIcon size={12} className="text-gray-500" />
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">
+                      <span className="text-label font-bold uppercase tracking-widest text-gray-500">
                         Terminal
                       </span>
                     </div>
@@ -1713,7 +1719,7 @@ if (result?.is_module_completed) {
   {/* ส่วนเนื้อหาข้อความ */}
   <div className="flex-1 space-y-4">
     {!isProgramDialogue && (
-      <div className="absolute -top-3 left-8 rounded-lg bg-pink-500 px-4 py-1 text-[10px] font-black uppercase tracking-widest text-white shadow-md">
+      <div className="absolute -top-3 left-8 rounded-lg bg-pink-500 px-4 py-1 text-label font-black uppercase tracking-widest text-white shadow-md">
         {currentDialogue?.speaker === "user" ? "You" : currentDialogue?.speaker === "system" ? "System" : "Lumi"}
       </div>
     )}
@@ -1819,11 +1825,11 @@ if (result?.is_module_completed) {
             <h2 className="text-3xl font-black italic text-slate-900">MISSION CLEAR!</h2>
             <div className="my-8 flex gap-4">
               <div className="flex-1 rounded-3xl border border-amber-100 bg-amber-50 p-5">
-                <p className="text-[10px] font-bold uppercase text-amber-400">XP</p>
+                <p className="text-label font-bold uppercase text-amber-400">XP</p>
                 <p className="text-2xl font-black text-amber-600">+{rewardModal.xp}</p>
               </div>
               <div className="flex-1 rounded-3xl border border-emerald-100 bg-emerald-50 p-5">
-                <p className="text-[10px] font-bold uppercase text-emerald-400">Coins</p>
+                <p className="text-label font-bold uppercase text-emerald-400">Coins</p>
                 <p className="text-2xl font-black text-emerald-600">+{rewardModal.currency}</p>
               </div>
             </div>

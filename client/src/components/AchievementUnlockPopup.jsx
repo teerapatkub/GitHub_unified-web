@@ -4,6 +4,7 @@ import { Coins, Palette, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { requestJson } from '../config/api-client.js';
 import { assetUrl } from '../config/api.js';
+import { contentDescription, contentName } from '../utils/contentText';
 import { playClickFx } from '../fx/index.js';
 
 // Announces achievement unlocks - level rewards included (fix list item 12).
@@ -18,7 +19,7 @@ const POLL_MS = 60_000;
 
 export default function AchievementUnlockPopup({ user, pathname, onUserRefresh }) {
   const navigate = useNavigate();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const a = (key, fallback, options) => t(`achievementPopup.${key}`, { defaultValue: fallback, ...options });
   const [queue, setQueue] = useState([]);
   const busy = useRef(false);
@@ -102,8 +103,10 @@ export default function AchievementUnlockPopup({ user, pathname, onUserRefresh }
           <div className="mx-auto mt-4 flex h-20 w-20 items-center justify-center rounded-full bg-white/20 text-5xl ring-4 ring-white/40">
             <span aria-hidden="true">{current.icon || '🏆'}</span>
           </div>
-          <h2 id="achievement-popup-title" className="mt-4 text-2xl font-black">{current.name}</h2>
-          {current.description && <p className="mt-1 text-sm text-white/90">{current.description}</p>}
+          <h2 id="achievement-popup-title" className="mt-4 text-2xl font-black">{contentName(i18n.language, current)}</h2>
+          {contentDescription(i18n.language, current) && (
+            <p className="mt-1 text-sm text-white/90">{contentDescription(i18n.language, current)}</p>
+          )}
         </div>
 
         <div className="-mt-6 space-y-3 px-6 pb-6">
@@ -117,8 +120,8 @@ export default function AchievementUnlockPopup({ user, pathname, onUserRefresh }
               {items.map((item) => (
                 <div key={item.url} className="rounded-2xl bg-slate-50 p-3 shadow ring-1 ring-slate-200">
                   <img src={assetUrl(item.url)} alt="" className={`mx-auto h-24 w-24 ${item.type === 'PROFILE_PICTURE' ? 'rounded-full object-cover' : 'object-contain'}`} />
-                  <p className="mt-2 text-sm font-black text-slate-800">{item.name}</p>
-                  <p className="text-[11px] font-bold text-pysim-primary">
+                  <p className="mt-2 text-sm font-black text-slate-800">{contentName(i18n.language, item)}</p>
+                  <p className="text-label font-bold text-pysim-primary">
                     {item.type === 'PROFILE_PICTURE' ? a('newPicture', 'รูปโปรไฟล์ใหม่') : a('newFrame', 'กรอบโปรไฟล์ใหม่')}
                   </p>
                 </div>

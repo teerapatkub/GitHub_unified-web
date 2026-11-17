@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import usePyodide from '../../hooks/usePyodide';
 import friendlyPyError from '../../utils/friendlyPyError';
 import Editor from '@monaco-editor/react';
+import { EDITOR_FONT_FAMILY } from '../../utils/editorFont.js';
 import { Link } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -26,6 +27,7 @@ import { API_BASE } from '../../config/api.js';
 import useLumiChat from '../../hooks/useLumiChat';
 import { buildLumiMessages } from '../../utils/lumiChat';
 import { useTranslation } from 'react-i18next';
+import InlineCodeText from '../ui/InlineCodeText.jsx';
 
 // Labels for a beginner: what each button does, in their language. The
 // grader's log lines start with a mark (✓ / ✗) the terminal colours by.
@@ -329,7 +331,7 @@ export default function CodingWorkspace({
       <div className="px-5 pb-4 pt-4">
         <Link
           to="/learn"
-          className="mb-3 inline-flex items-center gap-1.5 rounded-lg py-1 text-sm font-semibold text-slate-500 transition-colors hover:text-slate-900"
+          className="mb-3 inline-flex min-h-target items-center gap-1.5 rounded-lg py-1 text-sm font-semibold text-slate-500 transition-colors hover:text-slate-900"
         >
           <ArrowLeft size={16} aria-hidden="true" />
           {w.backToLearn}
@@ -341,7 +343,7 @@ export default function CodingWorkspace({
       <BriefHeading>{w.instructions}</BriefHeading>
       <div className="space-y-3 px-5 py-4 text-[15px] leading-7 text-slate-800">
         {instructions.map((instruction) => (
-          <p key={instruction}>{instruction}</p>
+          <p key={instruction}><InlineCodeText text={instruction} /></p>
         ))}
         {example && String(example.output ?? '').trim() ? (
           <div className="rounded-xl border border-slate-200 bg-white p-3 font-mono text-[13px] leading-6">
@@ -402,6 +404,7 @@ export default function CodingWorkspace({
               }}
               options={{
                 fontSize: 15,
+                fontFamily: EDITOR_FONT_FAMILY,
                 minimap: { enabled: false },
                 padding: { top: 12 },
                 scrollBeyondLastLine: false,

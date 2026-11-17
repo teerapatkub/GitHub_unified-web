@@ -1,4 +1,5 @@
 import CompetitiveGenerator from '../components/CompetitiveGenerator';
+import usePauseThemeScene from '../fx/usePauseThemeScene.js';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { 
@@ -30,11 +31,13 @@ import {
 } from 'lucide-react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import Editor from '@monaco-editor/react';
+import { EDITOR_FONT_FAMILY } from '../utils/editorFont.js';
 import { requestJson } from '../config/api-client.js';
 import ModeEntryHeader from '../components/ModeEntryHeader';
 import TourHost from '../components/tour/TourHost.jsx';
 import SkeletonLoading from '../components/ui/Skeleton.jsx';
 import { toast } from '../components/ui/toast.js';
+import InlineCodeText from '../components/ui/InlineCodeText.jsx';
 
 const arenaFallbacks = {
   acceptChallenge: 'Accept Challenge',
@@ -229,11 +232,8 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
 
   // States for Challenges Feed
   const [challenges, setChallenges] = useState([]);
-  const [leaderboard, setLeaderboard] = useState([]);
   const [feedError, setFeedError] = useState('');
   const [feedLoaded, setFeedLoaded] = useState(false);
-  const [leaderboardError, setLeaderboardError] = useState('');
-  const [leaderboardLoaded, setLeaderboardLoaded] = useState(false);
   const [actionError, setActionError] = useState('');
 
   // Mailbox States
@@ -245,6 +245,8 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
 
   // Editor Workspace Drawer States
   const [isEditorOpen, setIsEditorOpen] = useState(false);
+  // No theme scene over the code editor (UI review 2026-11-18).
+  usePauseThemeScene(isEditorOpen);
   const [activeTabs, setActiveTabs] = useState([]); // Array of challenge objects
   const [activeTabId, setActiveTabId] = useState(null);
   const [editorCode, setEditorCode] = useState("");
@@ -413,24 +415,9 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
     }
   };
 
-  const fetchLeaderboard = async () => {
-    if (!user) return;
-    try {
-      const data = await requestJson(`/api/competitive/leaderboard?userId=${encodeURIComponent(user.user_id)}`);
-      if (!Array.isArray(data)) throw new Error('Invalid arena leaderboard response');
-      setLeaderboard(data);
-      setLeaderboardError('');
-      setLeaderboardLoaded(true);
-    } catch (e) {
-      console.error("Error fetching arena leaderboard:", e);
-      setLeaderboardError(getLoadErrorKey(e, 'leaderboardLoadError'));
-    }
-  };
-
   useEffect(() => {
     if (user) {
       fetchChallenges();
-      fetchLeaderboard();
     }
   }, [user]);
 
@@ -568,7 +555,6 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
           res.feedback ? `Feedback: ${res.feedback}` : '',
         ].filter(Boolean).join('\n'));
         await fetchChallenges();
-        await fetchLeaderboard();
         await fetchMailbox(user.user_id);
         setIsEditorOpen(false);
         setMailboxOpen(true);
@@ -762,48 +748,51 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
       <ModeEntryHeader mode="competitive" user={user} onLogout={onLogout}>
         <button type="button" className="mode-entry-button relative" data-tour="competitive-mailbox" onClick={() => setMailboxOpen(true)} aria-label={`${t('arena.mailboxTitle')} (${unreadCount})`} title={t('arena.mailboxTitle')}>
           <Mail aria-hidden="true" /><span className="app-action-label">{t('arena.mailboxTitle')}</span>
-          {unreadCount > 0 && <span className="absolute -right-1 -top-1 rounded-full bg-rose-600 px-1.5 text-[10px] text-white">{unreadCount}</span>}
+          {unreadCount > 0 && <span className="absolute -right-1 -top-1 rounded-full bg-rose-600 px-1.5 text-label text-white">{unreadCount}</span>}
         </button>
       </ModeEntryHeader>
-
-      <div data-mode-transition-content className="mode-entry-intro mx-auto mb-6 flex w-full max-w-6xl flex-wrap items-center justify-between gap-4 px-4">
-        <div data-tour="competitive-intro" className="flex items-center gap-3 rounded-2xl border border-blue-100 bg-white px-4 py-3 shadow-sm">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white">
-            <Trophy className="h-5 w-5" />
-          </span>
-          <div>
-            <h1 className={!isEditorOpen ? "mode-entry-title text-slate-800" : "text-sm font-black text-slate-800"}>{isThaiUi ? 'กระดานโจทย์' : 'Competitive Arena'}</h1>
-            <p className="text-xs font-semibold text-blue-600">{isThaiUi ? 'โจทย์จากเพื่อนผู้เล่น ทำให้ผ่านแล้วรับเหรียญ' : 'Challenges posted by players. Solve one to earn coins.'}</p>
-          </div>
-        </div>
-
-        <div data-tour="competitive-scoring" className={`${!isEditorOpen ? 'flex flex-wrap' : 'grid grid-cols-3'} gap-2 text-[11px] font-bold text-slate-600`}>
-          {scoringRubric.map((item) => {
-            const Icon = item.icon;
-            return (
-              <div key={item.key} className={`flex items-center gap-2 rounded-xl px-3 py-2 ${item.bg}`}>
-                <Icon className={`h-3.5 w-3.5 ${item.color}`} />
-                <span>{isThaiUi ? `คะแนน${item.th} ${item.weight}%` : `${item.weight}% ${item.label}`}</span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
 
       {/* Lumi's first-visit tour (Person 3, docs/handoff-to-person-1.md); kept
           off while the editor drawer is open. */}
       <TourHost tourId="competitive-feed" user={user} autoStart={!isEditorOpen && feedLoaded} />
 
       {/* 2. BODY CONTENT (SPLIT-SCREEN DRAWER LAYOUT) */}
-      <div data-mode-transition-content className="mode-entry-feed max-w-6xl mx-auto w-full flex-1 flex relative px-4">
+      <div data-mode-transition-content className="mode-entry-feed max-w-6xl mx-auto w-full flex-1 flex relative px-4 pt-6">
         
         {/* LEFT COLUMN: SOCIAL FEED (50% or 100%) */}
         <div className={`transition-all duration-300 flex flex-col items-center overflow-y-auto ${isEditorOpen ? 'w-full md:w-1/2 pr-0 md:pr-4' : 'w-full'}`}>
           <div className="w-full space-y-6">
             
             {/* POST CHALLENGE BOX (like Facebook write post) */}
-            <div data-tour="competitive-post" className="mode-entry-card bg-white border border-slate-200 rounded-3xl p-5 shadow-sm">
-              <div className={`flex flex-wrap items-center justify-between gap-3 ${showPostForm ? 'mb-4' : ''}`}>
+            {/* The page title, the scoring rule and "post a problem" are one
+                card: the title used to be a separate floating chip above it,
+                and a "top players" box and a count heading sat between it and
+                the problems (UI review 2026-11-18, user's request). The full
+                ranking is on the site leaderboard page. */}
+            <div className="mode-entry-card bg-white border border-slate-200 rounded-3xl p-5 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 pb-4">
+                <div data-tour="competitive-intro" className="flex min-w-0 items-center gap-3">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white">
+                    <Trophy className="h-5 w-5" aria-hidden="true" />
+                  </span>
+                  <div className="min-w-0">
+                    <h1 className={!isEditorOpen ? "mode-entry-title text-slate-800" : "text-lg font-black text-slate-800"}>{isThaiUi ? 'กระดานโจทย์' : 'Competitive Arena'}</h1>
+                    <p className="text-sm font-semibold text-blue-600">{isThaiUi ? 'โจทย์จากเพื่อนผู้เล่น ทำให้ผ่านแล้วรับเหรียญ' : 'Challenges posted by players. Solve one to earn coins.'}</p>
+                  </div>
+                </div>
+                <div data-tour="competitive-scoring" className="flex flex-wrap gap-2 text-label font-bold text-slate-600">
+                  {scoringRubric.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <div key={item.key} className={`flex items-center gap-2 rounded-xl px-3 py-2 ${item.bg}`}>
+                        <Icon className={`h-3.5 w-3.5 ${item.color}`} aria-hidden="true" />
+                        <span>{isThaiUi ? `คะแนน${item.th} ${item.weight}%` : `${item.weight}% ${item.label}`}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div data-tour="competitive-post" className={`flex flex-wrap items-center justify-between gap-3 pt-4 ${showPostForm ? 'mb-4' : ''}`}>
                 <div className="min-w-0">
                   <p className="text-sm font-bold text-slate-800">{isThaiUi ? 'มีโจทย์อยากให้คนอื่นลอง?' : 'Have a task for others to try?'}</p>
                   <p className="text-xs text-slate-500">{isThaiUi ? 'โพสต์แล้วได้โบนัสทุกครั้งที่มีคนส่งคำตอบ' : 'You earn a bonus each time someone submits.'}</p>
@@ -831,14 +820,14 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                     <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4">
                       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                         <div>
-                          <p id="topic-picker-label" className="text-[10px] font-black uppercase tracking-widest text-blue-600">{isThaiUi ? 'หมวดบทเรียน' : 'Python lesson topic'}</p>
-                          <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                          <p id="topic-picker-label" className="text-label font-black uppercase tracking-widest text-blue-600">{isThaiUi ? 'หมวดบทเรียน' : 'Python lesson topic'}</p>
+                          <p className="mt-1 text-label font-semibold text-slate-500">
                             {isThaiUi
                               ? `เลือกได้ 1-${MAX_TOPICS} หมวด เช่น List + Loop แล้วเขียนโจทย์เอง หรือให้ระบบสร้างโจทย์ที่ใช้ทุกหมวดที่เลือก`
                               : `Pick 1-${MAX_TOPICS} topics, e.g. List + Loop, then write the problem or generate one that uses all of them.`}
                           </p>
                         </div>
-                        <div className="rounded-xl bg-white px-3 py-2 text-[10px] font-black uppercase tracking-widest text-blue-600 ring-1 ring-blue-100" aria-live="polite">
+                        <div className="rounded-xl bg-white px-3 py-2 text-label font-black uppercase tracking-widest text-blue-600 ring-1 ring-blue-100" aria-live="polite">
                           {topicLabel}
                         </div>
                       </div>
@@ -851,7 +840,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                               type="button"
                               aria-pressed={picked}
                               onClick={() => toggleTopic(template.category)}
-                              className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-[10px] font-black transition-colors ${picked ? 'border-blue-500 bg-blue-600 text-white' : 'border-blue-100 bg-white text-slate-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700'}`}
+                              className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-label font-black transition-colors ${picked ? 'border-blue-500 bg-blue-600 text-white' : 'border-blue-100 bg-white text-slate-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700'}`}
                             >
                               {picked ? <Check className="h-3 w-3" aria-hidden="true" /> : null}
                               {template.category}
@@ -860,11 +849,11 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                         })}
                       </div>
                       {topicLimitHit ? (
-                        <p role="status" className="mt-2 text-[11px] font-bold text-amber-700">
+                        <p role="status" className="mt-2 text-label font-bold text-amber-700">
                           {isThaiUi ? `เลือกได้สูงสุด ${MAX_TOPICS} หมวด เอาหมวดที่เลือกไว้ออกก่อนแล้วค่อยเลือกหมวดใหม่` : `Up to ${MAX_TOPICS} topics. Remove one before adding another.`}
                         </p>
                       ) : null}
-                      <ul className="mt-3 space-y-1 rounded-xl bg-white/80 px-3 py-2 text-[11px] font-semibold leading-relaxed text-slate-500 ring-1 ring-blue-100">
+                      <ul className="mt-3 space-y-1 rounded-xl bg-white/80 px-3 py-2 text-label font-semibold leading-relaxed text-slate-500 ring-1 ring-blue-100">
                         {selectedTemplates.map((template) => (
                           <li key={template.category}><span className="font-black text-slate-700">{template.category}:</span> {template.guide}</li>
                         ))}
@@ -879,7 +868,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                     }} />
 
                     <div>
-                      <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">{t('arena.postTitle')}</label>
+                      <label className="block text-label font-black uppercase text-slate-400 mb-1">{t('arena.postTitle')}</label>
                       <input 
                         type="text" 
                         required 
@@ -890,7 +879,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                       />
                     </div>
                     <div>
-                      <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">{t('arena.postDesc')}</label>
+                      <label className="block text-label font-black uppercase text-slate-400 mb-1">{t('arena.postDesc')}</label>
                       <textarea 
                         required
                         value={postDesc}
@@ -903,7 +892,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">{t('arena.rewardCoins')}</label>
+                        <label className="block text-label font-black uppercase text-slate-400 mb-1">{t('arena.rewardCoins')}</label>
                         <input 
                           type="number" 
                           value={postReward}
@@ -912,7 +901,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">{t('arena.timeRemaining')} (s)</label>
+                        <label className="block text-label font-black uppercase text-slate-400 mb-1">{t('arena.timeRemaining')} (s)</label>
                         <input 
                           type="number" 
                           value={postTimeLimit}
@@ -922,7 +911,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                       </div>
                     </div>
 
-                    <div className="rounded-2xl border border-amber-100 bg-amber-50/70 px-4 py-3 text-[11px] font-bold leading-relaxed text-amber-800">
+                    <div className="rounded-2xl border border-amber-100 bg-amber-50/70 px-4 py-3 text-label font-bold leading-relaxed text-amber-800">
                       {i18n.language === 'th'
                         ? `คนโพสต์จะได้รับโบนัส ${Math.max(10, Math.round(Number(postReward || 0) * 0.15))} เหรียญต่อ 1 คนที่ส่งงานสำเร็จ`
                         : `Poster bonus: ${Math.max(10, Math.round(Number(postReward || 0) * 0.15))} coins for each successful solver.`}
@@ -935,8 +924,8 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                             <ListChecks className="h-5 w-5" />
                           </div>
                           <div>
-                            <h3 className="text-lg font-black text-slate-900">Test cases</h3>
-                            <p className="mt-0.5 text-xs font-bold text-slate-400">ตรวจ input และคำตอบก่อนโพสต์ แก้ไขเองหรือใช้ Generated โจทย์ได้</p>
+                            <h3 className="text-lg font-black text-slate-900">{isThaiUi ? 'ชุดทดสอบ' : 'Test cases'}</h3>
+                            <p className="mt-0.5 text-xs font-bold text-slate-400">ตรวจ input และคำตอบก่อนโพสต์ แก้ไขเองหรือกด "สร้างโจทย์อัตโนมัติ" ได้</p>
                           </div>
                         </div>
                         <button
@@ -971,7 +960,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                               <div className="min-h-[266px] rounded-2xl border border-slate-200 bg-white p-5">
                                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                                   <div>
-                                    <p className="text-xs font-black uppercase tracking-widest text-blue-600">Input</p>
+                                    <p className="text-xs font-black text-blue-600">{isThaiUi ? 'ข้อมูลที่รับเข้า' : 'Input'}</p>
                                   </div>
                                   <button
                                     type="button"
@@ -1009,8 +998,8 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
 
                               <div className="min-h-[266px] rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
                                 <label className="block">
-                                  <span className="mb-4 block text-xs font-black uppercase tracking-widest text-emerald-700">
-                                    Expected output
+                                  <span className="mb-4 block text-xs font-black text-emerald-700">
+                                    {isThaiUi ? 'ผลลัพธ์ที่ต้องแสดง' : 'Expected output'}
                                   </span>
                                   <textarea
                                     rows={6}
@@ -1041,40 +1030,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
             </div>
 
             {actionError && <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-700">{t(`arena.${actionError}`)}</div>}
-            {leaderboardError && <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-700">{t(`arena.${leaderboardError}`)} <button type="button" className="underline" onClick={fetchLeaderboard}>{t('arena.retry')}</button></div>}
-            {!leaderboardError && !leaderboardLoaded && <SkeletonLoading variant="cards" label={t('arena.leaderboardLoading')} />}
-            {!leaderboardError && leaderboardLoaded && leaderboard.length === 0 && <div className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-500">{t('arena.leaderboardEmpty')}</div>}
-            {!leaderboardError && leaderboard.length > 0 && (
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="mb-2 flex items-center gap-2 text-sm font-bold text-slate-800">
-                  <Trophy className="h-4 w-4 text-amber-500" aria-hidden="true" />
-                  {isThaiUi ? 'ผู้นำตอนนี้' : 'Top players'}
-                </p>
-                <ol className="divide-y divide-slate-100">
-                  {leaderboard.slice(0, 3).map((entry, index) => (
-                    <li key={`${entry.user_id}-${entry.challenge_id}-${index}`} className="flex items-center gap-3 py-2">
-                      <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-black ${index === 0 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>{index + 1}</span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-bold text-slate-800">{entry.username || 'Coder'}</span>
-                        <span className="block truncate text-[11px] text-slate-500">
-                          {isThaiUi
-                            ? `ทำแล้ว ${Number(entry.challenge_count || 0)} โจทย์ • เฉลี่ย ${Number(entry.avg_score || 0)}/100`
-                            : `${Number(entry.challenge_count || 0)} solved • avg ${Number(entry.avg_score || 0)}/100`}
-                        </span>
-                      </span>
-                      <span className="shrink-0 text-sm font-black text-blue-600">{Number(entry.score || 0).toLocaleString()} {isThaiUi ? 'คะแนน' : 'pts'}</span>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            )}
-
             {/* FEED ACTIVE POSTS LIST */}
-            {feedLoaded && !feedError && challenges.length > 0 && (
-              <h2 className="px-1 pt-2 text-lg font-black text-slate-800">
-                {isThaiUi ? `โจทย์ที่เปิดให้ทำ · ${challenges.length} ข้อ` : `Open challenges · ${challenges.length}`}
-              </h2>
-            )}
             {!feedLoaded ? (
               <SkeletonLoading variant="list" label={t('arena.feedLoading')} />
             ) : feedError ? (
@@ -1102,12 +1058,12 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                         </div>
                         <div>
                           <span className="block text-xs font-bold text-slate-700">{c.creator_name}</span>
-                          <span className="block text-[11px] text-slate-400 font-semibold">
+                          <span className="block text-label text-slate-400 font-semibold">
                             {isThaiUi ? 'โจทย์' : 'Challenge'} #{c.challenge_id} • {c.is_test ? (isThaiUi ? 'โจทย์ทดสอบระบบ' : 'System test') : String(c.creator_role || '').toLowerCase() === 'admin' ? (isThaiUi ? 'โจทย์จากผู้ดูแล' : 'From an admin') : (isThaiUi ? 'โจทย์จากผู้เล่น' : 'From a player')}
                           </span>
                         </div>
                       </div>
-                      <div className="flex flex-wrap items-center justify-end gap-2 text-[10px] font-black uppercase">
+                      <div className="flex flex-wrap items-center justify-end gap-2 text-label font-black uppercase">
                         {scopeMeta && ScopeIcon && (
                           <span className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 ${scopeMeta.className}`}>
                             <ScopeIcon className="h-3 w-3" />
@@ -1126,9 +1082,9 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                     {/* Challenge contents */}
                     <div className="p-5 space-y-4">
                       <h3 className="text-sm font-black text-slate-800">{getLocalizedTitle(c)}</h3>
-                      <p className="text-xs text-slate-500 leading-relaxed font-medium whitespace-pre-wrap">{getLocalizedDesc(c)}</p>
+                      <p className="text-xs text-slate-500 leading-relaxed font-medium whitespace-pre-wrap"><InlineCodeText text={getLocalizedDesc(c)} /></p>
                       
-                      <div className="flex items-center space-x-6 text-[10px] text-slate-400 font-bold">
+                      <div className="flex items-center space-x-6 text-label text-slate-400 font-bold">
                         <span className="flex items-center space-x-1">
                           <Award className="h-3.5 w-3.5 text-yellow-500" />
                           <span className="text-slate-600">{c.reward} {i18n.language === 'th' ? 'เหรียญ' : 'Coins'}</span>
@@ -1161,16 +1117,16 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                       </div>
                       {testCases.length > 0 && (
                         <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-3">
-                          <div className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-blue-600">
+                          <div className="mb-2 flex items-center gap-2 text-label font-black uppercase tracking-widest text-blue-600">
                             <ListChecks className="h-3.5 w-3.5" />
                             {isThaiUi ? `ตัวอย่างสำหรับตรวจ ${testCases.length} ชุด` : `${testCases.length} test case${testCases.length > 1 ? 's' : ''}`}
                           </div>
                           <div className="grid gap-2 md:grid-cols-2">
                             {testCases.slice(0, 2).map((testCase, index) => (
-                              <div key={index} className="rounded-xl bg-white/80 p-3 text-[11px] font-semibold text-slate-500 ring-1 ring-blue-100">
-                                <div className="mb-1 text-slate-400">Case {index + 1}</div>
-                                <div className="truncate">Input: {testCase.input || '(empty)'}</div>
-                                <div className="truncate">Expected: {testCase.expected || testCase.output || '(empty)'}</div>
+                              <div key={index} className="rounded-xl bg-white/80 p-3 text-label font-semibold text-slate-500 ring-1 ring-blue-100">
+                                <div className="mb-1 text-slate-400">{isThaiUi ? `ชุดที่ ${index + 1}` : `Case ${index + 1}`}</div>
+                                <div className="truncate">{isThaiUi ? 'รับเข้า' : 'Input'}: {testCase.input || (isThaiUi ? '(ว่าง)' : '(empty)')}</div>
+                                <div className="truncate">{isThaiUi ? 'ต้องได้' : 'Expected'}: {testCase.expected || testCase.output || (isThaiUi ? '(ว่าง)' : '(empty)')}</div>
                               </div>
                             ))}
                           </div>
@@ -1206,8 +1162,10 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                           </button>
                         )}
 
-                        {/* INSTANT SUMMARY BUTTON (Only visible on test challenges) */}
-                        {Number(c.is_test) === 1 && (
+                        {/* Ends a test challenge at once. An admin tool: the server only
+                            accepts it from an admin (auth middleware, /force-summary),
+                            so students no longer see a red button they cannot use. */}
+                        {Number(c.is_test) === 1 && user?.role === 'admin' && (
                           <button
                             onClick={() => handleForceSummary(c.challenge_id)}
                             className="px-4 py-2 bg-rose-600 hover:bg-rose-500 active:scale-[0.98] text-white rounded-xl text-xs font-black flex items-center space-x-1 transition-all shadow-sm"
@@ -1221,7 +1179,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
 
                       {/* Solver count */}
                       <div className="flex items-center">
-                        <span className="text-[10px] text-slate-400 font-bold">
+                        <span className="text-label text-slate-400 font-bold">
                           #{c.challenge_id} • รับงานแล้ว {Number(c.active_count || 0)} คน • ส่งสำเร็จ {Number(c.submission_count || 0)} คน
                         </span>
                       </div>
@@ -1263,9 +1221,9 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                       >
                         <span className="max-w-[120px] truncate">{getLocalizedTitle(tab)}</span>
                         {Number(tab.is_test) === 1 ? (
-                          <span className="text-[9px] text-amber-600 font-bold">(Test)</span>
+                          <span className="text-label text-amber-600 font-bold">(Test)</span>
                         ) : (
-                          <span className={`text-[9px] font-black ${tabExpired ? 'text-rose-600' : 'text-blue-600'}`}>
+                          <span className={`text-label font-black ${tabExpired ? 'text-rose-600' : 'text-blue-600'}`}>
                             {tabExpired ? '(Time up)' : `(${formatRemainingTime(tabRemaining)})`}
                           </span>
                         )}
@@ -1275,7 +1233,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                 </div>
 
                 {activeTabId && (
-                  <div className={`mr-2 rounded-lg px-3 py-1.5 text-[10px] font-black uppercase tracking-widest ${isActiveExpired ? 'bg-rose-50 text-rose-600' : 'bg-blue-50 text-blue-600'}`}>
+                  <div className={`mr-2 rounded-lg px-3 py-1.5 text-label font-black uppercase tracking-widest ${isActiveExpired ? 'bg-rose-50 text-rose-600' : 'bg-blue-50 text-blue-600'}`}>
                     {isActiveExpired ? (isThaiUi ? 'หมดเวลา' : 'Time up') : `${isThaiUi ? 'เหลือ' : 'Time'} ${formatRemainingTime(remainingSeconds)}`}
                   </div>
                 )}
@@ -1299,7 +1257,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                     
                     {/* Draft status */}
                     {saveStatus && (
-                      <span className="absolute right-4 top-4 z-40 px-2.5 py-1 rounded bg-slate-50/90 border border-slate-200 text-[9px] font-bold tracking-widest text-slate-400 uppercase select-none shadow-sm">
+                      <span className="absolute right-4 top-4 z-40 px-2.5 py-1 rounded bg-slate-50/90 border border-slate-200 text-label font-bold tracking-widest text-slate-400 uppercase select-none shadow-sm">
                         {saveStatus === 'saving' ? t('arena.saving') : saveStatus === 'error' ? t('arena.draftSaveError') : t('arena.saved')}
                       </span>
                     )}
@@ -1316,7 +1274,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                         domReadOnly: isActiveExpired,
                         fontSize: 13,
                         lineHeight: 20,
-                        fontFamily: 'Fira Code, Source Code Pro, monospace',
+                        fontFamily: EDITOR_FONT_FAMILY,
                         padding: { top: 16 }
                       }}
                     />
@@ -1333,7 +1291,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                   {/* Test Console Log Output area */}
                   <div className="h-44 bg-slate-50 border-t border-slate-200 flex flex-col">
                     <div className="h-8 border-b border-slate-200 px-4 flex items-center justify-between bg-slate-100/60">
-                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                      <span className="text-label font-black text-slate-400 uppercase tracking-widest">
                         {t('arena.codeOutput')}
                       </span>
                     </div>
@@ -1440,7 +1398,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                           <span className={`text-xs font-black ${isClaimed ? 'text-slate-400' : 'text-slate-700'}`}>
                             {getLocalizedMailTitle(mail)}
                           </span>
-                          <span className="text-[9px] text-slate-400 font-bold">
+                          <span className="text-label text-slate-400 font-bold">
                             {new Date(mail.created_at).toLocaleDateString()}
                           </span>
                         </div>
@@ -1450,11 +1408,11 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                           <div className="flex justify-between items-center pt-3 border-t border-slate-100">
                             <span className="text-xs font-bold text-yellow-600 bg-yellow-50 px-2 py-0.5 rounded border border-yellow-100">+{mail.attachment_coins} {i18n.language === 'th' ? 'เหรียญ' : 'Coins'}</span>
                             {isClaimed ? (
-                              <span className="text-[9px] text-emerald-600 font-black tracking-widest uppercase select-none">{t('arena.claimed')}</span>
+                              <span className="text-label text-emerald-600 font-black tracking-widest uppercase select-none">{t('arena.claimed')}</span>
                             ) : (
                               <button 
                                 onClick={() => handleClaimMailReward(mail)}
-                                className="px-4 py-1.5 bg-yellow-500 hover:bg-yellow-400 active:scale-[0.98] text-slate-950 font-black rounded-lg text-[10px] tracking-wider uppercase transition-all shadow-md shadow-yellow-500/10"
+                                className="px-4 py-1.5 bg-yellow-500 hover:bg-yellow-400 active:scale-[0.98] text-slate-950 font-black rounded-lg text-label tracking-wider uppercase transition-all shadow-md shadow-yellow-500/10"
                               >
                                 {t('arena.claimBtn')}
                               </button>

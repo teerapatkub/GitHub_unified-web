@@ -141,8 +141,10 @@ export default {
         'target-primary': 'var(--target-primary)',
       },
       fontFamily: {
-        'mono': ['JetBrains Mono', 'Fira Code', 'monospace'],
-        'sans': ['Inter', 'system-ui', 'sans-serif'],
+        // The faces themselves are set once in index.css (--font-*).
+        'mono': ['var(--font-code)'],
+        'sans': ['var(--font-body)'],
+        'display': ['var(--font-display)'],
       },
       keyframes: {
         fadeIn: {

@@ -50,7 +50,7 @@ export default function GameModeLocked({ user }) {
               style={{ width: `${progress}%` }}
             />
           </div>
-          <div className="flex justify-between mt-1.5 text-[10px] font-bold text-slate-400">
+          <div className="flex justify-between mt-1.5 text-label font-bold text-slate-400">
             <span>เลเวล 1</span>
             <span>เลเวล {GAME_MODE_MIN_LEVEL}</span>
           </div>
@@ -65,7 +65,7 @@ export default function GameModeLocked({ user }) {
           <ArrowRight className="h-4 w-4" />
         </button>
 
-        <p className="text-[11px] text-slate-400 mt-4 leading-relaxed">
+        <p className="text-label text-slate-400 mt-4 leading-relaxed">
           ทำแบบฝึกหัดและโจทย์ท้าทายให้ผ่านเพื่อรับ XP — ทุกครั้งที่ XP เต็มหลอด เลเวลจะเพิ่มขึ้นหนึ่งขั้น
         </p>
       </div>

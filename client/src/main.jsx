@@ -6,10 +6,12 @@ import './index.css';
 import './i18n';
 import { installAuthTransport, restoreOAuthReturn } from './auth/session';
 import SkeletonLoading from './components/ui/Skeleton.jsx';
+import { installEditorFontRemeasure } from './utils/editorFont.js';
 
 // Before the router reads the address bar on the way back from Google.
 restoreOAuthReturn();
 installAuthTransport();
+installEditorFontRemeasure();
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

@@ -6,6 +6,7 @@ const { createClient } = require('@supabase/supabase-js');
 const { normalizeEmail, validEmail, hashToken, accountEnabled, strongPassword, actorMatches } = require('./policy');
 const { authOrigins } = require('./origins');
 const { createProvisioningService } = require('./provisioning');
+const levels = require('../levels');
 const LEGACY_GOOGLE_COOKIE = 'pyarena_google_session';
 const message = (res, status, text, code) => res.status(status).json({ message: text, code });
 const authSchemaSql = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
@@ -54,7 +55,9 @@ function installAuth(app, db, admin, env = process.env, options = {}) {
     return `${origin}/login?auth=${kind}`;
   };
   const safeUser = user => ({ user_id: user.user_id, username: user.username, email: user.email,
-    role: user.role || 'user', level: Number(user.level ?? 0), xp: Number(user.xp || 0),
+    // The level the header shows and the game modes gate on: the same rule as
+    // the progress bars (levels.currentLevel), never the raw column alone.
+    role: user.role || 'user', level: levels.currentLevel(user.level, user.xp), xp: Number(user.xp || 0),
     virtual_currency: Number(user.virtual_currency || 0), isGuest: false });
   const findPlayer = async (identifier, executor = db) => {
     const [rows] = await executor.execute(

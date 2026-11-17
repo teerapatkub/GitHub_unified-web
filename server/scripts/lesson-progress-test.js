@@ -131,6 +131,15 @@ check(
     'ไม่มีอะไรให้ทำ ก็ไม่ควรมีอะไรให้ติด'
 );
 
+// UI review 2026-11-18: an empty lesson showed "เรียนจบแล้ว" at 0% with
+// exercises 0/0, and made the profile read 1/25 lessons done for a new player.
+const emptyLesson = evaluateLesson({ hasPreQuiz: false, hasPostQuiz: false, exercisesTotal: 0 });
+check(
+    'บทที่ยังไม่มีเนื้อหาให้ทำ ไม่นับว่าเรียนจบ',
+    emptyLesson.status === 'not_started' && !emptyLesson.completed && emptyLesson.percent === 0,
+    `status ${emptyLesson.status}`
+);
+
 // --- counting -------------------------------------------------------------
 
 // เผื่อกรณีที่ตารางส่งคำตอบมีแถวซ้ำ: ต้องไม่ได้ "ภาคปฏิบัติ 9/5"

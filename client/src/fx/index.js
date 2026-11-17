@@ -19,6 +19,7 @@ let sceneLayer = null;
 let equippedScene = { key: '', factory: null };
 let profileScene = null; // { factory } while a profile is showing its owner's theme
 let previewTimer = 0;
+let pauseCount = 0; // pages that need the scene off while they are open
 
 const getClickLayer = () => (clickLayer ||= createFxLayer({ zIndex: 9999, label: 'click' }));
 const getSceneLayer = () => (sceneLayer ||= createFxLayer({ zIndex: 30, label: 'scene' }));
@@ -27,6 +28,7 @@ const factoryFor = (themeText) => (reducedMotion() ? null : sceneForTheme(themeT
 
 // Put on whichever of 2 and 3 applies now.
 const playBase = () => {
+  if (pauseCount) { sceneLayer?.setScene(null); return; }
   const factory = profileScene ? profileScene.factory : equippedScene.factory;
   if (factory) getSceneLayer().setScene(factory());
   else sceneLayer?.setScene(null);
@@ -83,4 +85,25 @@ export function previewThemeScene(themeText, ms = 12000) {
     playBase();
   }, ms);
   return true;
+}
+
+/**
+ * Turn the moving scene off while a working surface is open: the code editor,
+ * its output, a quiz, an Arcade round (UI review 2026-11-18, P1). Leaves fell
+ * across the code and the answer choices; the theme's background art stays.
+ * Returns the function that hands the scene back. Several pages may pause at
+ * once; the scene comes back when the last one lets go.
+ */
+export function pauseThemeScene() {
+  pauseCount += 1;
+  clearTimeout(previewTimer);
+  previewTimer = 0;
+  sceneLayer?.setScene(null);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    pauseCount -= 1;
+    if (!pauseCount) playBase();
+  };
 }

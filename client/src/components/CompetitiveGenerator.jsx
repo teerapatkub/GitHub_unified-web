@@ -36,7 +36,7 @@ export default function CompetitiveGenerator({ topics = ['Python'], scope = 'com
   const cases = Array.isArray(draft?.testCases) ? draft.testCases : [];
   const otherTopic = draft && (draft.topic !== topic || draft.scope !== scope);
   return <section className="space-y-3 rounded-2xl border border-blue-100 bg-blue-50/50 p-4" aria-busy={busy}>
-    <button type="button" disabled={busy || disabled} onClick={generate} className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white disabled:opacity-50"><Sparkles size={18} />{busy ? 'กำลังสร้างและตรวจโจทย์…' : 'Generated โจทย์'}</button>
+    <button type="button" disabled={busy || disabled} onClick={generate} className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white disabled:opacity-50"><Sparkles size={18} />{busy ? 'กำลังสร้างและตรวจโจทย์…' : 'สร้างโจทย์อัตโนมัติ'}</button>
     <p className="text-sm text-slate-600">สร้างตามหมวด {topic} · {scopeLabel(scope)} · กรอกเองได้ตามเดิม{topics.length > 1 ? ' · หลายหมวดรวมกันต้องสร้างใหม่ทุกครั้ง อาจใช้เวลานานกว่าหมวดเดียว' : ''}</p>
     {busy && <p role="status" className="text-sm text-slate-600">กำลังตรวจโค้ดเฉลยกับ test cases กรุณารอสักครู่ (ถ้าเปลี่ยนหมวดระหว่างรอ โจทย์จะยังสร้างจากหมวดเดิม)</p>}
     {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
@@ -45,7 +45,7 @@ export default function CompetitiveGenerator({ topics = ['Python'], scope = 'com
       <h3 className="break-words font-bold">{draft.title}</h3>
       <p className="whitespace-pre-wrap break-words text-sm text-slate-700">{draft.description}</p>
       {cases.length > 0 && <div className="space-y-2">
-        <p className="text-sm font-bold text-slate-700">Test cases ({cases.length} ชุด)</p>
+        <p className="text-sm font-bold text-slate-700">ชุดทดสอบ ({cases.length} ชุด)</p>
         <ol className="grid gap-2 sm:grid-cols-2">
           {cases.map((testCase, index) => <li key={index} className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs">
             <p className="font-bold text-slate-500">ชุดที่ {index + 1}</p>

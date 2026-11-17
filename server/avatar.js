@@ -34,9 +34,17 @@ const resolveAvatar = (user) => {
 // `selected` marks the one shown now.
 const avatarOptions = ({ user, ownedPictures }) => {
   const options = [
-    { source: AVATAR_SOURCE.DEFAULT, url: levelDefault(user.level).url, label: 'รูปเริ่มต้น' },
-    ...(user.google_picture_url ? [{ source: AVATAR_SOURCE.GOOGLE, url: user.google_picture_url, label: 'รูปจาก Google' }] : []),
-    ...ownedPictures.map((picture) => ({ source: AVATAR_SOURCE.SHOP, itemId: Number(picture.item_id), url: picture.asset_url, label: picture.name })),
+    { source: AVATAR_SOURCE.DEFAULT, url: levelDefault(user.level).url, label: 'รูปเริ่มต้น', label_en: 'Default picture' },
+    ...(user.google_picture_url ? [{ source: AVATAR_SOURCE.GOOGLE, url: user.google_picture_url, label: 'รูปจาก Google', label_en: 'Google picture' }] : []),
+    // label_en is the English name (migrate-english-names.js); the client falls
+    // back to the Thai label when it is missing.
+    ...ownedPictures.map((picture) => ({
+      source: AVATAR_SOURCE.SHOP,
+      itemId: Number(picture.item_id),
+      url: picture.asset_url,
+      label: picture.name,
+      label_en: picture.name_en || null,
+    })),
   ];
   const current = resolveAvatar(user).url;
   return options.map((option) => ({ ...option, selected: option.url === current }));

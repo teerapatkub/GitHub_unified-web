@@ -256,7 +256,18 @@
     "notEnough": "เหรียญไม่พอ",
     "emptyOwned": "ยังไม่มีของในหมวดนี้ ลองดูในแท็บ \"ยังไม่มี\"",
     "emptyMissing": "คุณมีของในหมวดนี้ครบแล้ว",
-    "empty": "ไม่พบสินค้า"
+    "empty": "ไม่พบสินค้า",
+    "confirm": {
+      "title": "ซื้อชิ้นนี้ไหม?",
+      "titleSet": "ซื้อเซ็ตนี้ไหม?",
+      "price": "ราคา",
+      "balance": "เหรียญที่มี",
+      "after": "เหลือหลังซื้อ",
+      "note": "ซื้อแล้วคืนเหรียญไม่ได้",
+      "cancel": "ยกเลิก",
+      "buy": "ยืนยันการซื้อ",
+      "buying": "กำลังซื้อ…"
+    }
   },
   "leaderboard": {
     "title": "ตารางเกียรติยศ",
@@ -388,10 +399,20 @@
       "score": "คะแนน",
       "tests": "เทสต์",
       "when": "เมื่อ",
-      "arcadeTotals": "คะแนนสะสมทั้งหมด {{score}} · Survival Cash สะสม {{cash}}",
+      "arcadeTotals": "คะแนนสะสมทั้งหมด {{score}} · เงินในแมตช์สะสม {{cash}}",
       "loadingCompetitive": "กำลังโหลดประวัติ Competitive...",
       "retry": "ลองใหม่",
-      "noCompetitive": "ยังไม่มีประวัติการแข่ง Competitive"
+      "noCompetitive": "ยังไม่มีประวัติการแข่ง Competitive",
+      "difficultyValue": {
+        "default": "ผสมง่าย-กลาง",
+        "easy": "ง่าย",
+        "medium": "ปานกลาง",
+        "hard": "ยาก"
+      },
+      "paceValue": {
+        "standard": "มาตรฐาน",
+        "quick": "โหมดเร็ว"
+      }
     },
     "lessons": {
       "title": "บทเรียนทั้งหมด",

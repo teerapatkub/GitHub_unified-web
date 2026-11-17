@@ -88,9 +88,12 @@ function PodiumCard({ row, board, isMe, lb }) {
 
 // Board text comes from the locale files (Spec 0005 #13); the page was Thai
 // even in English mode. `lb` is t() bound to the leaderboard namespace.
+// Four boards (UI review 2026-11-18, P3: six tabs was too many choices).
+// "Level" ranked in the same order as XP, which already shows each player's
+// level, and "cosmetics owned" was the weakest ranking; the server still
+// answers both if they come back.
 const BOARD_DEFS = [
     { key: 'xp', tone: 'text-emerald-600', format: (row) => `${row.metric.toLocaleString()} XP` },
-    { key: 'level', tone: 'text-indigo-600', format: (row, lb) => lb('boards.level.format', { value: row.metric }) },
     {
         key: 'arcade_winrate', tone: 'text-rose-600', format: (row) => `${row.metric}%`,
         detail: (row, lb) => (row.metric_detail
@@ -100,7 +103,6 @@ const BOARD_DEFS = [
     { key: 'competitive', tone: 'text-blue-600', format: (row, lb) => lb('boards.competitive.format', { value: row.metric }) },
     // Balances stop at 99,999 on screen (utils/coins.js); the order is still by the real amount.
     { key: 'coins', tone: 'text-amber-600', format: (row) => `🪙 ${displayCoins(row.metric)}` },
-    { key: 'cosmetics', tone: 'text-purple-600', format: (row, lb) => lb('boards.cosmetics.format', { value: row.metric }) },
 ];
 
 function boardsFor(lb) {
@@ -175,13 +177,13 @@ export default function LeaderboardPage({ user }) {
 
                 <button
                     onClick={() => navigate('/learn')}
-                    className="mb-6 inline-flex items-center gap-2 text-sm font-bold text-pysim-on-surface-variant hover:text-pysim-on-surface"
+                    className="on-art mb-6 inline-flex min-h-10 items-center gap-2 text-sm font-bold text-pysim-on-surface-variant hover:text-pysim-on-surface"
                 >
                     <ArrowLeft size={16} /> {lb('back')}
                 </button>
 
                 <div className="flex items-center justify-between gap-4 mb-5">
-                    <div className="flex items-center gap-3">
+                    <div className="on-art flex items-center gap-3">
                         <div className="w-10 h-10 python-gradient rounded-lg flex items-center justify-center">
                             <Trophy size={20} className="text-white" />
                         </div>
@@ -216,7 +218,7 @@ export default function LeaderboardPage({ user }) {
                     ))}
                 </div>
 
-                <p className="text-[11px] text-pysim-on-surface-variant mb-4 leading-relaxed">
+                <p className="on-art w-fit text-xs text-pysim-on-surface-variant mb-4 leading-relaxed">
                     {board.subtitle}
                     {board.key === 'arcade_winrate' && minMatches
                         ? lb('minMatches', { count: minMatches })
@@ -240,7 +242,7 @@ export default function LeaderboardPage({ user }) {
                 {!loading && !error && rows.length > 0 && (
                   <>
                     <section aria-label={lb('topThree')} className="mb-9 pt-4">
-                      <div className="mb-6 flex items-center gap-2 text-pysim-on-surface">
+                      <div className="on-art mb-6 flex w-fit items-center gap-2 text-pysim-on-surface">
                         <Trophy size={18} className="text-amber-600" aria-hidden="true" />
                         <h2 className="text-lg font-black">{lb('topPlayers')}</h2>
                       </div>
@@ -288,7 +290,7 @@ export default function LeaderboardPage({ user }) {
                                   <span className={`block truncate text-sm ${isMe ? 'font-black text-pysim-primary' : 'font-bold text-pysim-on-surface'}`}>
                                     {row.username}{isMe ? lb('you') : ''}
                                   </span>
-                                  <span className="block text-[11px] text-pysim-on-surface-variant">
+                                  <span className="block text-label text-pysim-on-surface-variant">
                                     {playerDetail(board, row, lb)}
                                   </span>
                                 </div>

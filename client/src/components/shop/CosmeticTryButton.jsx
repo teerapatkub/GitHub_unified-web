@@ -21,7 +21,7 @@ export default function CosmeticTryButton({ type, effects, themeText, className 
   const list = parseEffects(effects);
   const click = list.find((e) => String(e?.trigger || 'click') === 'click' && isCanvasClickFx(e?.fx));
   const dbl = list.find((e) => String(e?.trigger) === 'dblclick' && isCanvasClickFx(e?.fx));
-  const base = `inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-pysim-primary/30 bg-white/90 px-3 py-1.5 text-xs font-bold text-pysim-primary transition-colors hover:bg-pysim-primary/10 ${className}`;
+  const base = `inline-flex min-h-target items-center gap-1.5 whitespace-nowrap rounded-lg border border-pysim-primary/30 bg-white/90 px-3 py-1.5 text-xs font-bold text-pysim-primary transition-colors hover:bg-pysim-primary/10 ${className}`;
 
   if (type === 'MOUSE_EFFECT' && click) {
     const at = (event) => {

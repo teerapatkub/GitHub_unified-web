@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, ChevronRight, Play } from "lucide-react";
 import { useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
+import { contentDescription, contentTitle } from "../utils/contentText";
 import usePyodide from "../hooks/usePyodide";
 import friendlyPyError from "../utils/friendlyPyError";
 import { sanitizePyErrorText } from "../utils/sanitizePyErrorText.js";
@@ -26,6 +28,7 @@ export default function LessonPage({
   user,
 }) {
   const params = useParams();
+  const { i18n } = useTranslation();
   const resolvedLessonId = lessonId ?? params.lessonId;
   lessonId = resolvedLessonId;
   const lessonSource = moduleData ?? module;
@@ -34,9 +37,14 @@ export default function LessonPage({
   );
   const [lessonDetails, setLessonDetails] = useState(null);
   const displayedLesson = lessonDetails || lessonInfo;
+  // English title and description when the lesson has them, Thai otherwise
+  // (fix list item 16.10). The slides themselves are still Thai-only.
+  const lessonWord = i18n.language === "en" ? "Lesson" : "บทเรียน";
+  const lessonTitle = contentTitle(i18n.language, displayedLesson);
+  const lessonDescription = contentDescription(i18n.language, displayedLesson);
   const lessonFullTitle = displayedLesson
-    ? `บทเรียน ${displayedLesson.order_index ?? lessonId} ${displayedLesson.title}`
-    : `บทเรียน ${lessonId}`;
+    ? `${lessonWord} ${displayedLesson.order_index ?? lessonId} ${lessonTitle}`
+    : `${lessonWord} ${lessonId}`;
 
   const [slides, setSlides] = useState([]);
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -429,6 +437,9 @@ export default function LessonPage({
   return (
     <div className="min-h-screen bg-pysim-surface text-pysim-on-surface">
       <div className="mx-auto mt-10 max-w-4xl p-6">
+        {/* Progress, title and description sit on one backing so a busy
+            theme does not run through them (UI review 2026-11-18). */}
+        <div className="on-art on-art-block mb-5">
         <div className="mb-6 flex items-center gap-4">
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-pysim-surface-container">
             <div
@@ -446,7 +457,8 @@ export default function LessonPage({
         <h1 className="mb-4 text-3xl font-bold text-pysim-on-surface">
           {lessonFullTitle}
         </h1>
-        {displayedLesson?.description && <p className="mb-5 whitespace-pre-line text-pysim-on-surface-variant">{displayedLesson.description}</p>}
+        {lessonDescription && <p className="mb-5 whitespace-pre-line text-pysim-on-surface-variant">{lessonDescription}</p>}
+        </div>
 
         <div
           data-tour="lesson-content"
@@ -464,6 +476,12 @@ export default function LessonPage({
               <h2 className="text-2xl font-bold text-pysim-on-surface">
                 {slide.title}
               </h2>
+              {isQuiz && quizId === "pre" && !quizLocked.pre ? (
+                <p className="rounded-lg bg-pysim-primary/5 px-4 py-3 text-sm text-pysim-on-surface">
+                  ยังไม่ต้องรู้คำตอบก็ได้ แบบทดสอบนี้ไม่มีผลต่อคะแนนหรือรางวัล
+                  ใช้เทียบกับแบบทดสอบหลังเรียน ว่าเรียนจบแล้วคุณเข้าใจขึ้นแค่ไหน
+                </p>
+              ) : null}
 
               {!isQuiz && !slide.code && (
                 <div className="space-y-5">
@@ -558,20 +576,24 @@ export default function LessonPage({
                     key={index}
                     className={`rounded-lg p-4 transition-colors ${
                       quizLocked[quizId]
-                        ? "border border-blue-200 bg-blue-50"
+                        ? "border border-pysim-primary/25 bg-pysim-primary/5"
                         : quizErrors[index]
                           ? "border border-red-200 bg-red-50"
                           : "bg-pysim-surface-low"
                     }`}
                   >
-                    <p className="mb-3 font-bold text-pysim-on-surface">
+                    <p id={`q-${quizId}-${index}`} className="mb-3 font-bold text-pysim-on-surface">
                       {index + 1}. {question.question}
                     </p>
 
-                    {question.type === "choice" &&
-                      question.choices.map((choice, choiceIndex) => (
+                    {question.type === "choice" && (
+                      <div role="radiogroup" aria-labelledby={`q-${quizId}-${index}`}>
+                      {question.choices.map((choice, choiceIndex) => (
                         <button
                           key={choiceIndex}
+                          type="button"
+                          role="radio"
+                          aria-checked={answers[index] === choice}
                           disabled={isLocked}
                           onClick={() =>
                             {
@@ -584,13 +606,15 @@ export default function LessonPage({
                           }
                           className={`mb-2 block w-full rounded-lg px-4 py-3 text-left text-base font-medium transition-all ${
                             answers[index] === choice
-                              ? "bg-blue-700 text-white"
+                              ? "bg-pysim-primary text-white"
                               : "bg-white text-pysim-on-surface hover:bg-slate-50"
                           }`}
                         >
                           {choice}
                         </button>
                       ))}
+                      </div>
+                    )}
 
                     {question.type === "fill" && (
                       <input
@@ -620,7 +644,7 @@ export default function LessonPage({
                     )}
 
                     {quizLocked[quizId] && (
-                      <p className="mt-2 text-sm font-bold text-blue-700">
+                      <p className="mt-2 text-sm font-bold text-pysim-primary">
                         บันทึกคำตอบแล้ว
                       </p>
                     )}
@@ -641,8 +665,8 @@ export default function LessonPage({
                     isLocked
                       ? "bg-emerald-100 text-emerald-700"
                       : savingQuiz
-                        ? "cursor-wait bg-blue-300 text-white"
-                        : "bg-blue-700 text-white hover:bg-blue-800"
+                        ? "cursor-wait bg-pysim-primary/50 text-white"
+                        : "bg-pysim-primary text-white hover:bg-pysim-primary/90"
                   }`}
                 >
                   {isLocked
@@ -653,6 +677,9 @@ export default function LessonPage({
             </Motion.div>
           </AnimatePresence>
 
+          {isQuiz && hasNext && !canGoNext() ? (
+            <p className="mt-6 text-right text-sm text-pysim-on-surface-variant">ตอบให้ครบทุกข้อก่อน แล้วจึงไปหน้าถัดไปได้</p>
+          ) : null}
           <div className="mt-6 flex items-center justify-between">
             {hasPrev ? (
               <button
@@ -672,8 +699,8 @@ export default function LessonPage({
                 disabled={!canGoNext()}
                 className={`flex h-12 w-12 items-center justify-center rounded-xl transition-all ${
                   canGoNext()
-                    ? "bg-blue-700 text-white shadow-sm hover:bg-blue-800"
-                    : "cursor-not-allowed bg-slate-200 text-slate-400"
+                    ? "bg-pysim-primary text-white shadow-sm hover:bg-pysim-primary/90"
+                    : "cursor-not-allowed bg-slate-200 text-slate-500"
                 }`}
                 aria-label="ถัดไป"
               >
@@ -699,10 +726,10 @@ export default function LessonPage({
     <button
       onClick={() => (postTestPassed ? onNavigate?.("mini-game", lessonId) : restartLesson())}
       disabled={!postTestFinished}
-      className={`rounded-lg px-6 py-3 text-sm font-bold text-white transition-colors ${
+      className={`rounded-lg px-6 py-3 text-sm font-bold transition-colors ${
         postTestFinished
-          ? "bg-blue-600 hover:bg-blue-700"
-          : "cursor-not-allowed bg-slate-200 text-slate-400"
+          ? "bg-pysim-primary text-white hover:bg-pysim-primary/90"
+          : "cursor-not-allowed bg-slate-200 text-slate-500"
       }`}
     >
       เริ่มโจทย์แบบเนื้อเรื่อง
@@ -712,16 +739,23 @@ export default function LessonPage({
       onClick={() => (postTestPassed ? onNavigate("exercise", resolvedLessonId) : restartLesson())}
       disabled={!postTestFinished}
       data-tour="lesson-exercise"
-      className={`rounded-lg px-6 py-3 text-sm font-bold text-white transition-colors ${
+      className={`rounded-lg px-6 py-3 text-sm font-bold transition-colors ${
         postTestFinished
-          ? "bg-emerald-600 hover:bg-emerald-700"
-          : "cursor-not-allowed bg-slate-200 text-slate-400"
+          ? "bg-emerald-600 text-white hover:bg-emerald-700"
+          : "cursor-not-allowed bg-slate-200 text-slate-500"
       }`}
     >
       ไปทำแบบภาคปฏิบัติ
     </button>
   </div>
 </div>
+{/* The two buttons above stay greyed out until the post-test is done;
+    say so instead of leaving them silently dead (UI review 2026-11-18). */}
+{!postTestFinished ? (
+  <p className="mt-3 text-right text-sm text-pysim-on-surface-variant">
+    ทำแบบทดสอบหลังเรียนให้เสร็จก่อน ปุ่มโจทย์แบบเนื้อเรื่องและแบบภาคปฏิบัติจะเปิดให้กด
+  </p>
+) : null}
       </div>
 
       {lessonTutorial ? (
@@ -749,7 +783,7 @@ export default function LessonPage({
             <div className="flex justify-center gap-4 pt-4">
               <button
                 onClick={restartLesson}
-                className="rounded-lg bg-blue-700 px-5 py-2 text-sm font-bold text-white transition-all hover:bg-blue-800"
+                className="rounded-lg bg-pysim-primary px-5 py-2 text-sm font-bold text-white transition-all hover:bg-pysim-primary/90"
               >
                 กลับไปเรียนใหม่
               </button>
@@ -800,7 +834,7 @@ export default function LessonPage({
                   restartLesson();
                 }}
                 data-label={postTestPassed ? "ไปทำแบบภาคปฏิบัติ" : "กลับไปเรียนใหม่"}
-                className="relative rounded-lg bg-blue-700 px-5 py-2 text-sm font-bold text-transparent transition-all hover:bg-blue-800 before:absolute before:inset-0 before:flex before:items-center before:justify-center before:text-white before:content-[attr(data-label)]"
+                className="relative rounded-lg bg-pysim-primary px-5 py-2 text-sm font-bold text-transparent transition-all hover:bg-pysim-primary/90 before:absolute before:inset-0 before:flex before:items-center before:justify-center before:text-white before:content-[attr(data-label)]"
               >
                 ไปทำแบบภาคปฏิบัติ
               </button>

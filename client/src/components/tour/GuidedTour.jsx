@@ -152,7 +152,7 @@ export default function GuidedTour({ steps, onClose, isThai }) {
         />
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
-            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-sky-600">
+            <p className="text-label font-black uppercase tracking-[0.18em] text-sky-600">
               Lumi · {index + 1} / {shown.length}
             </p>
             <button type="button" onClick={() => onClose('skip')} aria-label={words.close}

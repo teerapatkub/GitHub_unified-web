@@ -22,6 +22,8 @@ import { displayCoins } from '../utils/coins.js';
 import { requestJson } from '../config/api-client.js';
 import SkeletonLoading from '../components/ui/Skeleton.jsx';
 import { useTranslation } from 'react-i18next';
+import { contentDescription, contentName, contentTitle } from '../utils/contentText';
+import { pickLocalized } from '../utils/problemText';
 
 
 // Labels live in the locale files under `profile` (Spec 0005 #13).
@@ -63,7 +65,7 @@ const StatTile = ({ icon, label, value, hint }) => (
     </div>
 );
 
-export default function ProfilePage({ user: propUser, onUserRefresh }) {
+export default function ProfilePage({ user: propUser }) {
     const navigate = useNavigate();
     const params = useParams();
     const { t, i18n } = useTranslation();
@@ -81,8 +83,6 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
     const [picked, setPicked] = useState([]);
     const [savingShowcase, setSavingShowcase] = useState(false);
     const [showcaseError, setShowcaseError] = useState('');
-    const [avatarBusy, setAvatarBusy] = useState(false);
-    const [avatarError, setAvatarError] = useState('');
     const [historyTab, setHistoryTab] = useState('arcade');
     const [compHistory, setCompHistory] = useState(null);
     const [compLoading, setCompLoading] = useState(false);
@@ -124,6 +124,28 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
     }, [userId]);
 
     useEffect(() => { load(); }, [load]);
+
+    // Chapter, lesson and achievement names in the chosen language, Thai when a
+    // row has no English yet (fix list item 16.10). The page reads `shown`.
+    const shown = useMemo(() => {
+        if (!data) return data;
+        const titled = (row) => (row ? { ...row, title: contentTitle(lang, row) } : row);
+        const named = (row) => ({ ...row, name: contentName(lang, row), description: contentDescription(lang, row) });
+        return {
+            ...data,
+            learning: {
+                ...data.learning,
+                modules: (data.learning.modules || []).map(titled),
+                lessons: (data.learning.lessons || []).map(titled),
+                summary: { ...data.learning.summary, current_lesson: titled(data.learning.summary?.current_lesson) || null },
+            },
+            achievements: {
+                ...data.achievements,
+                items: (data.achievements.items || []).map(named),
+                showcase: (data.achievements.showcase || []).map(named),
+            },
+        };
+    }, [data, lang]);
 
     // Competitive history is its own endpoint and only fetched when the tab is
     // opened, so a profile that never looks at it costs nothing extra.
@@ -180,42 +202,6 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
         }
     };
 
-    // Select and reset are the same shape: POST, then reload the profile and ask
-    // the navbar to refresh so the new picture shows everywhere at once. Only the
-    // request and the failure wording differ, so they share one runner.
-    const runAvatarChange = async (request, failMessage) => {
-        setAvatarBusy(true);
-        setAvatarError('');
-        try {
-            await request();
-            await load();
-            onUserRefresh?.();
-        } catch (err) {
-            setAvatarError(err.detail || failMessage);
-        } finally {
-            setAvatarBusy(false);
-        }
-    };
-
-    const handleAvatarReset = () => runAvatarChange(
-        () => requestJson(`/api/profile/${userId}/avatar/reset`, { method: 'POST' }),
-        'profile.errors.resetPictureFailed');
-
-    // Picking a picture the player already has. "Back to default" is the reset
-    // route; the rest go through the select route with their source (and, for a
-    // shop picture, the itemId the server checks ownership of).
-    const handleSelectOption = (opt) => {
-        if (opt.selected) return;
-        if (opt.source === 'default') { handleAvatarReset(); return; }
-        runAvatarChange(
-            () => requestJson(`/api/profile/${userId}/avatar/select`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ source: opt.source, itemId: opt.itemId }),
-            }),
-            'profile.errors.selectPictureFailed');
-    };
-
     if (loading) {
         return (
             <div className="min-h-screen bg-pysim-surface px-4 py-8">
@@ -240,7 +226,12 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
         );
     }
 
-    const { user, progression, learning, achievements, arcade } = data;
+    const { user, progression, learning, achievements, arcade } = shown;
+    // theme_name itself stays Thai: ProfileAppearance picks the theme's colours
+    // by keyword in it. Only what is shown as text is localized.
+    const themeName = pickLocalized(lang, user.theme_name_en, user.theme_name);
+    const frameName = pickLocalized(lang, user.profile_frame_name_en, user.profile_frame_name);
+    const effectName = pickLocalized(lang, user.mouse_effect_name_en, user.mouse_effect_name);
     const current = learning.summary.current_lesson;
     const lessons = showAllLessons ? learning.lessons : learning.lessons.filter(l => l.status !== 'not_started');
     const initial = String(user.username || '?').trim().charAt(0).toUpperCase();
@@ -259,7 +250,7 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
 
                 <button
                     onClick={() => navigate(-1)}
-                    className="mb-6 inline-flex items-center gap-2 text-sm font-bold text-pysim-on-surface-variant hover:text-pysim-on-surface"
+                    className="on-art mb-6 inline-flex min-h-10 items-center gap-2 text-sm font-bold text-pysim-on-surface-variant hover:text-pysim-on-surface"
                 >
                     <ArrowLeft size={16} /> {p('back')}
                 </button>
@@ -291,29 +282,11 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                                 )}
                             </div>
 
-                            {/* Only the owner can change their own picture. The picker
-                                shows every picture they can switch to: the level
-                                default, Google, and pictures from the shop or
-                                achievements. Players cannot upload their own. */}
+                            {/* The picture itself is chosen on the wardrobe page
+                                (/profile/appearance); a second picker here showed the
+                                same choices twice, so only the way there is left. */}
                             {isOwner && (
                                 <div className="flex flex-col items-center gap-2">
-                                    {user.avatar_options?.length > 1 && (
-                                        <div className="flex max-w-[13rem] flex-wrap justify-center gap-2">
-                                            {user.avatar_options.map((opt) => (
-                                                <button
-                                                    key={`${opt.source}-${opt.itemId || opt.url}`}
-                                                    onClick={() => handleSelectOption(opt)}
-                                                    disabled={avatarBusy}
-                                                    title={opt.label}
-                                                    className={`h-11 w-11 overflow-hidden rounded-full border-2 transition disabled:opacity-60 ${opt.selected ? 'border-pysim-primary ring-2 ring-pysim-primary/30' : 'border-transparent hover:border-pysim-outline/40'}`}
-                                                >
-                                                    {/* Google's picture host refuses requests that carry a Referer. */}
-                                                    <img src={assetUrl(opt.url)} alt={opt.label} referrerPolicy="no-referrer" className="h-full w-full bg-pysim-surface-low object-cover" />
-                                                </button>
-                                            ))}
-                                        </div>
-                                    )}
-                                    {avatarError && <p className="max-w-[12rem] text-center text-[11px] font-semibold text-red-500">{tx(avatarError)}</p>}
                                     <button
                                         type="button"
                                         onClick={() => navigate('/profile/appearance')}
@@ -373,15 +346,15 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                         <h2 className="font-bold text-slate-800">{p('cosmeticsInUse')}</h2>
                         {isOwner && (
                             <button type="button" onClick={() => navigate('/profile/appearance')}
-                                className="text-xs font-bold text-pysim-primary hover:underline">
+                                className="inline-flex min-h-target items-center rounded-lg px-2 text-xs font-bold text-pysim-primary hover:bg-pysim-primary/10 hover:underline">
                                 {p('change', { defaultValue: 'เปลี่ยน' })}
                             </button>
                         )}
                     </div>
                     <div className="mt-2 flex flex-wrap gap-x-6 gap-y-2">
-                        <span>{p('themeLabel', { name: user.theme_name || p('defaultTheme') })}</span>
-                        <span>{p('frameLabel', { name: user.profile_frame_name || p('notWorn') })}</span>
-                        <span>{p('effectLabel', { name: user.mouse_effect_name || p('notWorn') })}</span>
+                        <span>{p('themeLabel', { name: themeName || p('defaultTheme') })}</span>
+                        <span>{p('frameLabel', { name: frameName || p('notWorn') })}</span>
+                        <span>{p('effectLabel', { name: effectName || p('notWorn') })}</span>
                     </div>
                     {user.mouse_effect_name && <p className="mt-2 text-xs">{p('effectHint')}</p>}
                 </section>
@@ -405,7 +378,9 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                     />
                     <StatTile
                         icon={<Trophy size={16} className="text-amber-500" />} label={p('stats.winRate')}
-                        value={`${arcade.win_rate}%`}
+                        // No matches yet: a big "0%" read as a verdict on someone who
+                        // has simply not played (UI review 2026-11-18, P3).
+                        value={Number(arcade.matches_played) > 0 ? `${arcade.win_rate}%` : '—'}
                         hint={arcade.best_rank ? p('stats.bestRank', { rank: arcade.best_rank }) : p('stats.noStats')}
                     />
                 </div>
@@ -461,13 +436,13 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                         <div className="flex gap-2">
                             <button
                                 onClick={() => setHistoryTab('arcade')}
-                                className={`rounded-lg px-3 py-1.5 text-xs font-black transition ${historyTab === 'arcade' ? 'python-gradient text-white' : 'bg-pysim-surface-low text-pysim-on-surface-variant hover:bg-pysim-surface'}`}
+                                className={`min-h-target rounded-lg px-3 py-1.5 text-xs font-black transition ${historyTab === 'arcade' ? 'python-gradient text-white' : 'bg-pysim-surface-low text-pysim-on-surface-variant hover:bg-pysim-surface'}`}
                             >
                                 {p('history.arcade')}
                             </button>
                             <button
                                 onClick={() => setHistoryTab('competitive')}
-                                className={`rounded-lg px-3 py-1.5 text-xs font-black transition ${historyTab === 'competitive' ? 'python-gradient text-white' : 'bg-pysim-surface-low text-pysim-on-surface-variant hover:bg-pysim-surface'}`}
+                                className={`min-h-target rounded-lg px-3 py-1.5 text-xs font-black transition ${historyTab === 'competitive' ? 'python-gradient text-white' : 'bg-pysim-surface-low text-pysim-on-surface-variant hover:bg-pysim-surface'}`}
                             >
                                 {p('history.competitive')}
                             </button>
@@ -492,10 +467,10 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                                             <tbody className="text-pysim-on-surface">
                                                 {arcade.recent_matches.map((m) => (
                                                     <tr key={m.room_id} className="border-t border-pysim-outline/10">
-                                                        <td className="py-2 font-mono font-bold">{m.room_code}</td>
+                                                        <td className="py-2 font-bold tabular-nums">{m.room_code}</td>
                                                         <td className="py-2">
-                                                            {m.difficulty || '-'}
-                                                            <span className="text-pysim-outline"> · {m.round_duration_mode || '-'}</span>
+                                                            {p(`history.difficultyValue.${m.difficulty}`, { defaultValue: m.difficulty || '-' })}
+                                                            <span className="text-pysim-outline"> · {p(`history.paceValue.${m.round_duration_mode}`, { defaultValue: m.round_duration_mode || '-' })}</span>
                                                         </td>
                                                         <td className="py-2 text-right font-bold">{m.match_score}</td>
                                                         <td className="py-2 text-right">{m.tests_passed}/{m.tests_total}</td>
@@ -646,7 +621,7 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                                             <span className="shrink-0 text-2xl">{a.icon}</span>
                                             <span className="min-w-0 flex-1">
                                                 <span className="block truncate text-sm font-bold text-pysim-on-surface">{a.name}</span>
-                                                <span className="block text-[11px] text-pysim-outline">
+                                                <span className="block text-label text-pysim-outline">
                                                     {on ? p('achievements.showAt', { n: picked.indexOf(a.achievement_id) + 1 }) : p('achievements.tapToPick')}
                                                 </span>
                                             </span>
@@ -693,7 +668,7 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                                                 {a.description && (
                                                     <p className="mt-0.5 line-clamp-2 text-xs text-pysim-on-surface-variant">{a.description}</p>
                                                 )}
-                                                <p className="mt-1 text-[11px] text-pysim-outline">
+                                                <p className="mt-1 text-label text-pysim-outline">
                                                     {p('achievements.unlockedOn', { date: fmt(a.unlocked_at) })}
                                                 </p>
                                             </div>
@@ -730,7 +705,7 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                                                 {a.description && (
                                                     <p className="mt-0.5 line-clamp-2 text-xs text-pysim-on-surface-variant">{a.description}</p>
                                                 )}
-                                                <p className="mt-1 text-[11px] text-pysim-outline">
+                                                <p className="mt-1 text-label text-pysim-outline">
                                                     {a.unlocked ? p('achievements.unlockedOn', { date: fmt(a.unlocked_at) }) : p('achievements.reward', { reward: a.reward, difficulty: t(`achievements.difficulty.${a.difficulty}`, a.difficulty) })}
                                                 </p>
                                             </div>

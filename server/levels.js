@@ -80,4 +80,16 @@ const progressFor = (level, xp) => {
     };
 };
 
-module.exports = { MAX_LEVEL, BASE_XP, STEP_XP, xpToNext, xpForLevel, levelForXp, effectiveXp, addXp, progressFor };
+/**
+ * The level to show and to gate on: the stored level, or the level the XP has
+ * reached if that is higher (the same rule progressFor uses). Level 0 means the
+ * sign-up placement is not done and stays 0. UI review 2026-11-18: the header
+ * read the stored level and the pages read progressFor, so a stored level left
+ * behind its XP showed two different levels on one screen.
+ */
+const currentLevel = (level, xp) => {
+    if (!(Number(level) >= 1)) return 0;
+    return progressFor(level, xp).level;
+};
+
+module.exports = { MAX_LEVEL, BASE_XP, STEP_XP, xpToNext, xpForLevel, levelForXp, effectiveXp, addXp, progressFor, currentLevel };

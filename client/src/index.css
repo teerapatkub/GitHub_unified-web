@@ -3,6 +3,21 @@
 /* The one colour layer. Must load before anything that reads --c-*. */
 @import './styles/tokens.css';
 
+/* The three faces of the site (fix list item 10). Set once here; Tailwind's
+   font-sans / font-display / font-mono and every stylesheet read these, so no
+   page picks its own. The old Outfit and Inter had no Thai, so Thai text fell
+   back to whatever the device had (Leelawadee, Tahoma, ...) and looked
+   different on every machine and next to the English in the same line. */
+:root {
+    --font-body: 'IBM Plex Sans Thai Looped', 'Leelawadee UI', Tahoma, sans-serif;
+    /* Headings use the same face as the text, only heavier: a second face
+       for headings (Mitr) made each part of the page look like a different
+       site. Kept as its own variable so headings can still be styled apart. */
+    --font-display: var(--font-body);
+    /* Thai in a code comment falls through to the reading face. */
+    --font-code: 'IBM Plex Mono', 'IBM Plex Sans Thai Looped', ui-monospace, monospace;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -52,7 +67,7 @@
 }
 
 body {
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: var(--font-body);
     background: var(--t-bg);
     color: var(--t-text);
     overflow-x: hidden;
@@ -60,8 +75,21 @@ body {
 }
 
 h1, h2, h3, h4, h5, h6 {
-    font-family: 'Outfit', sans-serif;
-    letter-spacing: -0.02em;
+    font-family: var(--font-display);
+    font-weight: 700;
+}
+
+/* Thai has marks above and below the line, so it needs more room between
+   lines than Latin; and letter-spacing pulls its stacked vowels and tone marks
+   away from their consonants. Most labels were styled for English (uppercase,
+   tracking-widest) - uppercase does nothing to Thai, the tracking breaks it. */
+html[lang="th"] body {
+    line-height: 1.65;
+}
+html[lang="th"] :is(.tracking-widest, .tracking-wider, .tracking-wide,
+    .tracking-\[0\.18em\], .tracking-\[0\.2em\], .tracking-\[0\.22em\],
+    .tracking-\[0\.24em\], .tracking-\[0\.32em\]) {
+    letter-spacing: normal;
 }
 
 /* ===== Custom Scrollbar ===== */
@@ -183,7 +211,7 @@ h1, h2, h3, h4, h5, h6 {
 
     /* ===== Boot Text Typing ===== */
     .boot-text {
-        font-family: 'JetBrains Mono', monospace;
+        font-family: var(--font-code);
         overflow: hidden;
         white-space: nowrap;
         animation: typing 0.8s steps(40) forwards;
@@ -427,6 +455,24 @@ html[data-theme^="shop-theme-"] .pysim-theme-nav {
     background-color: var(--shop-theme-nav-bg, rgba(255, 255, 255, 0.76)) !important;
     border-color: var(--shop-theme-navbar-border, rgba(236, 72, 153, 0.2)) !important;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+/* Text placed straight on the theme art (page titles, back links, section
+   labels) could not be read where the art was busy - white petals under white
+   text, a park bench under the subtitle (UI review 2026-11-18, P1). With a shop
+   theme on, these get a light frosted backing; with no theme there is no art
+   and nothing changes. Put it on the block that holds the text, add w-fit for
+   a single label. */
+html[data-theme^="shop-theme-"] .on-art {
+    background-color: rgb(var(--c-card) / 0.86);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    border-radius: 0.875rem;
+    padding: 0.5rem 0.875rem;
+    box-shadow: 0 1px 2px rgb(15 23 42 / 0.06);
+}
+html[data-theme^="shop-theme-"] .on-art-block {
+    padding: 1rem 1.25rem;
 }
 
 /* A scroll container whose scrollbar is not part of the design.

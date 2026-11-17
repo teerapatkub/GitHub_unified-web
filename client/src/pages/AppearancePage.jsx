@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Check, Image as ImageIcon, MousePointerClick, Palette, Play, ShoppingBag, Sparkles, Ban } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { pickLocalized } from '../utils/problemText';
 import { API_BASE, assetUrl } from '../config/api.js';
 import { requestJson } from '../config/api-client.js';
 import { useTheme } from '../contexts/useTheme.js';
@@ -58,7 +59,7 @@ const Tile = ({ selected, isSaved, inUseLabel, onClick, label, children, wide = 
         </span>
       )}
       {isSaved && (
-        <span className="absolute left-2 top-2 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-black text-pysim-success-strong shadow-sm">
+        <span className="absolute left-2 top-2 rounded-full bg-white/90 px-2 py-0.5 text-label font-black text-pysim-success-strong shadow-sm">
           {inUseLabel}
         </span>
       )}
@@ -103,6 +104,7 @@ export default function AppearancePage({ onUserRefresh }) {
       const items = (Array.isArray(inventory) ? inventory : []).map((row) => ({
         itemId: Number(row.item_id),
         name: row.name,
+        nameEn: row.name_en || '',
         type: row.type,
         assetUrl: row.asset_url || '',
         previewImage: row.preview_image || '',
@@ -165,6 +167,11 @@ export default function AppearancePage({ onUserRefresh }) {
     PROFILE_PICTURE: pictures.find((o) => pictureKey(o) === draft.PROFILE_PICTURE) || null,
   };
   const changed = SLOTS.filter((slot) => draft[slot] !== saved[slot]);
+  // What a cosmetic is called on screen: English when it has one, Thai
+  // otherwise (fix list item 16.10). `name` itself stays Thai, because the
+  // theme's colours and scene are picked by keyword in it.
+  const shownName = (item) => pickLocalized(lang, item?.nameEn, item?.name);
+  const shownLabel = (opt) => pickLocalized(lang, opt?.label_en, opt?.label);
   const themeText = chosen.THEME ? `${chosen.THEME.name} ${chosen.THEME.assetUrl}` : '';
   const palette = chosen.THEME ? getShopThemePalette({ name: chosen.THEME.name, assetUrl: chosen.THEME.assetUrl }) : null;
   const clickFx = (chosen.MOUSE_EFFECT?.effectData || []).find((e) => String(e?.trigger || 'click') === 'click' && isCanvasClickFx(e?.fx));
@@ -297,10 +304,10 @@ export default function AppearancePage({ onUserRefresh }) {
               </div>
               <dl className="mt-4 space-y-1.5 rounded-xl bg-pysim-surface-low p-4 text-sm">
                 {[
-                  ['THEME', a('tab.theme', 'ธีม'), chosen.THEME?.name || a('defaultTheme', 'ธีมเริ่มต้น')],
-                  ['PROFILE_PICTURE', a('tab.picture', 'รูปโปรไฟล์'), chosen.PROFILE_PICTURE?.label || '-'],
-                  ['PROFILE_FRAME', a('tab.frame', 'กรอบโปรไฟล์'), chosen.PROFILE_FRAME?.name || a('none', 'ไม่ใช้')],
-                  ['MOUSE_EFFECT', a('tab.effect', 'เอฟเฟกต์คลิก'), chosen.MOUSE_EFFECT?.name || a('none', 'ไม่ใช้')],
+                  ['THEME', a('tab.theme', 'ธีม'), shownName(chosen.THEME) || a('defaultTheme', 'ธีมเริ่มต้น')],
+                  ['PROFILE_PICTURE', a('tab.picture', 'รูปโปรไฟล์'), shownLabel(chosen.PROFILE_PICTURE) || '-'],
+                  ['PROFILE_FRAME', a('tab.frame', 'กรอบโปรไฟล์'), shownName(chosen.PROFILE_FRAME) || a('none', 'ไม่ใช้')],
+                  ['MOUSE_EFFECT', a('tab.effect', 'เอฟเฟกต์คลิก'), shownName(chosen.MOUSE_EFFECT) || a('none', 'ไม่ใช้')],
                 ].map(([slot, label, value]) => (
                   <div key={slot} className="flex justify-between gap-3">
                     <dt className="text-pysim-on-surface-variant">{label}</dt>
@@ -328,7 +335,7 @@ export default function AppearancePage({ onUserRefresh }) {
                 {noneTile('THEME', a('defaultTheme', 'ธีมเริ่มต้น'))}
                 {byType.THEME.map((item) => (
                   <Tile inUseLabel={a('inUse', 'ใช้อยู่')} key={item.itemId} wide selected={draft.THEME === item.itemId} isSaved={saved.THEME === item.itemId}
-                    onClick={() => pick('THEME', item.itemId)} label={item.name}>
+                    onClick={() => pick('THEME', item.itemId)} label={shownName(item)}>
                     <img src={assetUrl(item.assetUrl || item.previewImage)} alt="" className="absolute inset-0 h-full w-full object-cover" />
                   </Tile>
                 ))}
@@ -340,7 +347,7 @@ export default function AppearancePage({ onUserRefresh }) {
               <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
                 {pictures.map((opt) => (
                   <Tile inUseLabel={a('inUse', 'ใช้อยู่')} key={pictureKey(opt)} selected={draft.PROFILE_PICTURE === pictureKey(opt)} isSaved={saved.PROFILE_PICTURE === pictureKey(opt)}
-                    onClick={() => pick('PROFILE_PICTURE', pictureKey(opt))} label={opt.label}>
+                    onClick={() => pick('PROFILE_PICTURE', pictureKey(opt))} label={shownLabel(opt)}>
                     <img src={assetUrl(opt.url)} alt="" referrerPolicy="no-referrer" className="h-3/4 w-3/4 rounded-full bg-white object-cover" />
                   </Tile>
                 ))}
@@ -353,7 +360,7 @@ export default function AppearancePage({ onUserRefresh }) {
                 {noneTile('PROFILE_FRAME', a('noFrame', 'ไม่ใส่กรอบ'))}
                 {byType.PROFILE_FRAME.map((item) => (
                   <Tile inUseLabel={a('inUse', 'ใช้อยู่')} key={item.itemId} selected={draft.PROFILE_FRAME === item.itemId} isSaved={saved.PROFILE_FRAME === item.itemId}
-                    onClick={() => pick('PROFILE_FRAME', item.itemId)} label={item.name}>
+                    onClick={() => pick('PROFILE_FRAME', item.itemId)} label={shownName(item)}>
                     {avatarUrl && <img src={avatarUrl} alt="" referrerPolicy="no-referrer" className="absolute inset-[22%] h-[56%] w-[56%] rounded-full object-cover opacity-80" />}
                     <img src={assetUrl(item.assetUrl || item.previewImage)} alt="" className="relative h-[88%] w-[88%]" />
                   </Tile>
@@ -374,7 +381,7 @@ export default function AppearancePage({ onUserRefresh }) {
                       const box = previewRef.current?.getBoundingClientRect();
                       if (fx && box) playClickFx(fx.fx, box.left + box.width / 2, box.top + box.height / 2);
                     }}
-                    label={item.name}>
+                    label={shownName(item)}>
                     <span className="text-4xl">{item.effectData?.[0]?.visual || '*'}</span>
                   </Tile>
                 ))}

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Editor from "@monaco-editor/react";
+import { EDITOR_FONT_FAMILY } from '../utils/editorFont.js';
 import { useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
@@ -30,6 +31,7 @@ import WorkbenchMenu from "../components/workbench/WorkbenchMenu";
 import WorkbenchFooter from "../components/workbench/WorkbenchFooter";
 import LumiPanel from "../components/workbench/LumiPanel";
 import OutputPanel, { InputPrompt } from "../components/workbench/OutputPanel";
+import InlineCodeText from '../components/ui/InlineCodeText.jsx';
 
 function RewardModal({ xp, currency, hasNext, onClose, onNext }) {
   return (
@@ -44,12 +46,12 @@ function RewardModal({ xp, currency, hasNext, onClose, onNext }) {
         <div className="mb-8 flex gap-4">
           <div className="flex-1 rounded-xl border border-amber-200 bg-amber-50 p-4">
             <Star size={20} className="mx-auto mb-1 text-amber-500" />
-            <p className="text-[11px] text-slate-500">XP ที่ได้รับ</p>
+            <p className="text-label text-slate-500">XP ที่ได้รับ</p>
             <p className="text-2xl font-black text-amber-600">+{xp}</p>
           </div>
           <div className="flex-1 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
             <Coins size={20} className="mx-auto mb-1 text-emerald-500" />
-            <p className="text-[11px] text-slate-500">เหรียญที่ได้รับ</p>
+            <p className="text-label text-slate-500">เหรียญที่ได้รับ</p>
             <p className="text-2xl font-black text-emerald-600">+{currency}</p>
           </div>
         </div>
@@ -494,7 +496,7 @@ const handleSubmit = async () => {
         <button
           type="button"
           onClick={backToLesson}
-          className="mb-3 inline-flex items-center gap-1.5 rounded-lg py-1 text-sm font-semibold text-slate-500 transition-colors hover:text-slate-900"
+          className="mb-3 inline-flex min-h-target items-center gap-1.5 rounded-lg py-1 text-sm font-semibold text-slate-500 transition-colors hover:text-slate-900"
         >
           <ArrowLeft size={16} aria-hidden="true" />
           กลับไปบทเรียน
@@ -508,7 +510,7 @@ const handleSubmit = async () => {
 
       <BriefHeading>โจทย์</BriefHeading>
       <div className="px-5 py-4">
-        <p className="whitespace-pre-line text-[15px] leading-7 text-slate-800">{exDescription(currentEx)}</p>
+        <p className="whitespace-pre-line text-[15px] leading-7 text-slate-800"><InlineCodeText text={exDescription(currentEx)} /></p>
         <ol className="mt-4 space-y-1.5 text-sm text-slate-600">
           <li><span className="font-bold text-slate-800">1.</span> เขียนโค้ดในช่องทางขวา</li>
           <li><span className="font-bold text-slate-800">2.</span> กด <span className="font-bold text-slate-800">ลองรัน</span> เพื่อดูผลลัพธ์ ลองได้ไม่จำกัด</li>
@@ -586,6 +588,7 @@ const handleSubmit = async () => {
               value={fileContents[activeFile] || ""}
               onChange={(value) => setFileContents((prev) => ({ ...prev, [activeFile]: value || "" }))}
               options={{
+                fontFamily: EDITOR_FONT_FAMILY,
                 minimap: { enabled: false },
                 fontSize: 15,
                 lineNumbersMinChars: 3,

@@ -39,7 +39,7 @@ test('the picker offers the default, Google and owned shop pictures, never an up
   const options = avatarOptions({ user, ownedPictures: [{ item_id: 7, name: 'Cat', asset_url: '/uploads/avatar-shop-cat.svg' }] });
   assert.deepEqual(options.map((option) => option.source), ['default', 'google', 'shop']);
   assert.deepEqual(options.filter((option) => option.selected).map((option) => option.source), ['google']);
-  assert.deepEqual(options[2], { source: 'shop', itemId: 7, url: '/uploads/avatar-shop-cat.svg', label: 'Cat', selected: false });
+  assert.deepEqual(options[2], { source: 'shop', itemId: 7, url: '/uploads/avatar-shop-cat.svg', label: 'Cat', label_en: null, selected: false });
 });
 
 test('a player still pointing at an old upload sees the default selected', () => {

@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { TheInfiniteGrid } from './components/ui/the-infinite-grid';
 import MouseEffectLayer from './components/MouseEffectLayer';
 import ThemeSceneLayer from './components/ThemeSceneLayer';
+import usePauseThemeScene from './fx/usePauseThemeScene.js';
 import AchievementUnlockPopup from './components/AchievementUnlockPopup';
 import ModeEntryHeader from './components/ModeEntryHeader';
 import TourHost from './components/tour/TourHost';
@@ -394,6 +395,9 @@ function AppContent() {
     .some(route => location.pathname === route || location.pathname.startsWith(`${route}/`));
   const isCodingWorkspace = ['/exercise', '/mini-game', '/challenge', '/debug', '/promotion-exam']
     .some(route => location.pathname.startsWith(route));
+  // No falling leaves or snow over the code, its output or a lesson quiz
+  // (UI review 2026-11-18); the theme's background art stays.
+  usePauseThemeScene(isCodingWorkspace || location.pathname.startsWith('/lesson'));
   // Lessons / Debug Lab / Challenge, shown as the header's second row on every
   // learning page - the coding pages included (สิ่งที่ต้องแก้ไข.md ข้อ 4).
   const learningSubnav = isLearningRoute ? [
@@ -518,10 +522,10 @@ function AppContent() {
                 } />
 
                 {/* Student pages and direct mode routes */}
-                <Route path="/profile" element={requireStudent(<ProfilePage key={location.pathname} user={user} onUserRefresh={refreshUserProfile} />)} />
+                <Route path="/profile" element={requireStudent(<ProfilePage key={location.pathname} user={user} />)} />
                 {/* Before /profile/:userId would take it as a user id; React Router ranks the static path first anyway. */}
                 <Route path="/profile/appearance" element={requireStudent(<AppearancePage onUserRefresh={refreshUserProfile} />)} />
-                <Route path="/profile/:userId" element={requireStudent(<ProfilePage key={location.pathname} user={user} onUserRefresh={refreshUserProfile} />)} />
+                <Route path="/profile/:userId" element={requireStudent(<ProfilePage key={location.pathname} user={user} />)} />
                 <Route path="/menu" element={requireStudent(<Navigate to="/learn" replace />)} />
                 <Route path="/achievements" element={requireStudent(<Achievements user={user} />)} />
                 <Route path="/leaderboard" element={requireStudent(<LeaderboardPage user={user} />)} />
