@@ -144,7 +144,8 @@
       "Medium": "Medium",
       "Hard": "Hard",
       "Very Hard": "Very hard"
-    }
+    },
+    "specialFrame": "Special frame"
   },
   "arena": {
     "backToHub": "Back to Hub",
@@ -416,7 +417,8 @@
       "reward": "Reward {{reward}} · {{difficulty}}"
     },
     "customize": "Customize profile",
-    "change": "Change"
+    "change": "Change",
+    "maxLevel": "MAX"
   },
   "appearance": {
     "title": "Customize profile",
@@ -453,5 +455,17 @@
     "saving": "Saving...",
     "saved": "Profile look saved",
     "saveFailed": "Some changes were not saved: {{list}}"
+  },
+  "achievementPopup": {
+    "close": "Close",
+    "levelUp": "Level {{level}} reached!",
+    "unlocked": "Achievement unlocked!",
+    "coins": "coins",
+    "newPicture": "New profile picture",
+    "newFrame": "New profile frame",
+    "exclusive": "Exclusive - not sold in the shop",
+    "wearNow": "Wear it now",
+    "next": "Next ({{left}})",
+    "great": "Great!"
   }
 }

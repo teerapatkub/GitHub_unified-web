@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="กรอบเลเวล 50">
+  <title>กรอบเงิน Lv.50 — Silver Level Frame</title>
+  <!-- Level reward, not for sale. A polished silver ring with small wings and
+       a "50" plate; a highlight sweeps round the ring (SMIL). -->
+  <defs>
+    <linearGradient id="l50Ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/><stop offset="40%" stop-color="#cbd5e1"/><stop offset="100%" stop-color="#475569"/>
+    </linearGradient>
+    <path id="l50Wing" d="M0 0 C-14 -4 -26 -14 -32 -26 C-22 -22 -14 -20 -6 -18 C-16 -24 -22 -32 -24 -40 C-12 -32 -4 -24 2 -14Z"/>
+  </defs>
+  <circle cx="100" cy="100" r="85" fill="none" stroke="#1e293b" stroke-width="15" opacity="0.35"/>
+  <circle cx="100" cy="100" r="85" fill="none" stroke="url(#l50Ring)" stroke-width="10"/>
+  <circle cx="100" cy="100" r="85" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-dasharray="40 494" opacity="0.9">
+    <animate attributeName="stroke-dashoffset" from="0" to="-534" dur="3.5s" repeatCount="indefinite"/>
+  </circle>
+  <g fill="url(#l50Ring)" stroke="#475569" stroke-width="1.5" stroke-linejoin="round">
+    <use href="#l50Wing" transform="translate(30 150)"/>
+    <use href="#l50Wing" transform="translate(170 150) scale(-1 1)"/>
+  </g>
+  <g transform="translate(100 180)">
+    <rect x="-24" y="-14" width="48" height="26" rx="8" fill="url(#l50Ring)" stroke="#334155" stroke-width="2.5"/>
+    <text x="0" y="6" text-anchor="middle" font-family="Arial Black, Arial, sans-serif" font-size="17" font-weight="900" fill="#1e293b">50</text>
+  </g>
+  <g fill="#ffffff">
+    <path d="M100 6 l2 -5 l2 5 l5 2 l-5 2 l-2 5 l-2 -5 l-5 -2Z"><animate attributeName="opacity" values="0.2;1;0.2" dur="2s" repeatCount="indefinite"/></path>
+  </g>
+</svg>

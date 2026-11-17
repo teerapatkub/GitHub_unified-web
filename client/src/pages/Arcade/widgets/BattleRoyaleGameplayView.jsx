@@ -99,154 +99,123 @@ export default function BattleRoyaleGameplayView({
     });
   };
 
+  // What the item bag can do right now, in one line above the items.
+  const itemsLocked = !draftReady || playerState.hasSubmittedThisRound || playerState.eliminated || phase === PHASES.ROUND_1;
+  const itemsHint = targetingItem
+    ? t('itemsHintPick')
+    : phase === PHASES.ROUND_1
+      ? t('itemsHintRound1')
+      : playerState.hasSubmittedThisRound
+        ? t('itemsHintSubmitted')
+        : playerState.inventory.length === 0
+          ? t('itemsEmpty')
+          : t('itemsHintUse');
+  const timeLow = Number(timeLeft) <= 10;
+
+  // Fits the screen on a laptop: nothing in a round lives below the fold. The
+  // page used to scroll, with Run / Submit, the output and the item bag under
+  // a 160px problem card and five 100px player cards - at 1366x768 none of the
+  // three was visible while coding. Now the problem text scrolls inside its own
+  // capped box, the editor takes what is left, the actions sit on the editor's
+  // bottom edge, and the players are one compact row each. On a phone the
+  // columns stack and the page scrolls; there is no height to fit into.
   return (
-    <div className="h-full w-full overflow-y-auto no-scrollbar p-4 flex flex-col lg:flex-row gap-4 max-w-[1850px] mx-auto">
+    <div className="mx-auto flex h-full w-full max-w-[1850px] flex-col gap-3 overflow-y-auto p-3 no-scrollbar lg:flex-row lg:gap-4 lg:overflow-hidden lg:p-4">
 
-      {/* LEFT AREA: Coding Workspace */}
-      {/* Scrolls rather than hides its overflow. With overflow-hidden this
-          column silently cut ~170px off the bottom of the editor once the
-          problem card grew (measured live 2026-08-19 at 1280x720, after worked
-          examples were added to the card): the card is shrink-0 and the editor
-          frame has a min-h-[300px] floor, so their combined height can exceed
-          the column and the excess simply vanished - taking part of the code
-          area with it. min-h-0 is required alongside, or a flex item refuses to
-          shrink below its content and scrolls nothing. */}
-      <div className="flex-1 lg:w-3/5 min-h-0 flex flex-col gap-3 overflow-y-auto no-scrollbar">
+      {/* MAIN: the round's problem, the editor and its output */}
+      {/* Fits the screen when there is room. When there is not (a short
+          window, the description and output both open, browser zoom) the
+          column scrolls instead of clipping: overflow-hidden here used to
+          push the Run/Submit row and the output below the window with no way
+          to reach them, and the editor shrank to nothing first. */}
+      <div className="flex shrink-0 flex-col gap-3 lg:min-h-0 lg:min-w-0 lg:flex-1 lg:shrink lg:overflow-y-auto">
 
-        {/* Challenge Description Card. Foldable: once a player has read the
-            problem it is 200+ pixels of screen they would rather give to the
-            editor, and the title/timer/coins row stays visible either way. */}
-        <div className="bg-pysim-card px-4 py-3 rounded-2xl shadow-sm border border-pysim-outline-variant relative overflow-hidden shrink-0">
-          {/* flex-wrap matters here: the timer/cash chips are shrink-0, so on a
-              narrow screen they cannot give up any width and were pushed 45px
-              past the card, which sets overflow-hidden - the player lost sight
-              of their own clock and coin count entirely (measured 2026-08-19 at
-              375px). Wrapping puts the chips on their own line instead. */}
-          <div className="flex flex-wrap justify-between items-start gap-4">
-            <div className="space-y-1">
-              <span className="px-2 py-0.5 text-label font-black uppercase tracking-widest text-pysim-accent-strong bg-pysim-accent-container rounded border border-pysim-accent-border">
-                Active Problem
-              </span>
-              <h2 className="text-base font-black text-pysim-on-surface">
-                {challengeTitle}
-              </h2>
-              {/* Stays visible when the problem card is folded: it is what the
-                  round asks for, and how far the AI's answer already gets. */}
-              {fixRound && (
-                <div role="note" className="flex flex-wrap items-center gap-2 rounded-xl border border-pysim-info-border bg-pysim-info-container px-3 py-2 text-xs font-bold text-pysim-info-strong max-w-2xl">
-                  <span className="rounded-md bg-pysim-info-strong px-2 py-0.5 text-label font-black text-pysim-on-primary">{t('roundKindFix')}</span>
-                  <span>
-                    {t('fixRoundBanner').replace('{{passed}}', String(fixRound.passed)).replace('{{total}}', String(fixRound.total))}
-                  </span>
-                  <span className="basis-full font-medium text-pysim-on-surface-variant">{t('fixRoundScoreNote')}</span>
-                </div>
-              )}
-              {!collapsed.problem && (
-                <p className="text-xs text-pysim-label leading-relaxed max-w-2xl font-medium">
-                  {challengeDesc}
-                </p>
-              )}
+        <section className="shrink-0 rounded-2xl border border-pysim-outline-variant bg-pysim-card px-4 py-3 shadow-sm">
+          <div className="flex items-start gap-3">
+            <h2 className="min-w-0 flex-1 pt-1 text-base font-black leading-snug text-pysim-on-surface lg:text-lg">
+              {challengeTitle}
+            </h2>
+            <div
+              role="timer"
+              aria-label={t('timeLeftLabel')}
+              title={t('timeLeftLabel')}
+              className={`flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-1.5 text-sm font-black tabular-nums ${
+                timeLow
+                  ? 'border-pysim-error bg-pysim-error text-pysim-on-primary motion-safe:animate-pulse'
+                  : 'border-pysim-accent-border bg-pysim-accent-container text-pysim-accent-strong'
+              }`}
+            >
+              <span aria-hidden="true">⏱️</span>{timeLeft}s
+            </div>
+            <div title={t('cashLabel')} aria-label={t('cashLabel')} className="flex shrink-0 items-center gap-1.5 rounded-xl border border-pysim-success-border bg-pysim-success-container px-3 py-1.5 text-sm font-black tabular-nums text-pysim-success-strong">
+              <span aria-hidden="true">🪙</span>{playerState.cash}
+            </div>
+            <PanelToggle open={!collapsed.problem} label={t('togglePanel')} onToggle={() => togglePanel('problem')} />
+          </div>
 
-              {/* Worked examples. A problem statement in prose alone leaves a
-                  beginner guessing at the exact shape of the return value —
-                  whether it is a list or a count, True or the string "True".
-                  Deliberately only a couple of the cases: the rest stay hidden
-                  so the examples cannot be turned into a lookup table that
-                  passes without solving anything. */}
-              {!collapsed.problem && Array.isArray(challengeTestCases) && challengeTestCases.length > 0 && challengeFunctionName && (
-                <div className="pt-2">
-                  <div className="text-label font-black uppercase tracking-widest text-pysim-label mb-1">
-                    {t('exampleLabel')}
-                  </div>
-                  <div className="space-y-1">
+          {/* Stays visible when the problem card is folded: it is what the
+              round asks for, and how far the AI's answer already gets. */}
+          {fixRound && (
+            <div role="note" className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-pysim-info-border bg-pysim-info-container px-3 py-2 text-xs font-bold text-pysim-info-strong">
+              <span className="rounded-md bg-pysim-info-strong px-2 py-0.5 text-label font-black text-pysim-on-primary">{t('roundKindFix')}</span>
+              <span>{t('fixRoundBanner').replace('{{passed}}', String(fixRound.passed)).replace('{{total}}', String(fixRound.total))}</span>
+              <span className="basis-full font-medium text-pysim-on-surface-variant">{t('fixRoundScoreNote')}</span>
+            </div>
+          )}
+
+          {/* The statement and worked examples scroll inside a capped box, so
+              a long problem cannot push the editor down. Only a couple of the
+              cases are shown: the rest stay hidden so the examples cannot be
+              turned into a lookup table. */}
+          {!collapsed.problem && (
+            <div className="mt-2 max-h-[22vh] space-y-2 overflow-y-auto pr-1">
+              <p className="text-sm leading-relaxed text-pysim-on-surface-variant">{challengeDesc}</p>
+              {Array.isArray(challengeTestCases) && challengeTestCases.length > 0 && challengeFunctionName && (
+                <div>
+                  <div className="mb-1 text-xs font-bold text-pysim-label">{t('exampleLabel')}</div>
+                  <div className="grid gap-1 xl:grid-cols-2">
                     {challengeTestCases.slice(0, EXAMPLE_CASES_SHOWN).map((c, i) => (
-                      <div key={i} className="font-mono text-label text-pysim-label bg-pysim-surface border border-pysim-outline-variant rounded-lg px-3 py-1.5 overflow-x-auto whitespace-nowrap">
-                        <span className="text-pysim-label">
-                          {challengeFunctionName}({(c.input || []).map(pyLiteral).join(', ')})
-                        </span>
-                        <span className="text-pysim-label px-2">→</span>
-                        <span className="text-pysim-success-strong font-bold">{pyLiteral(c.output)}</span>
+                      <div key={i} className="overflow-x-auto whitespace-nowrap rounded-lg border border-pysim-outline-variant bg-pysim-surface px-3 py-1.5 font-mono text-xs text-pysim-label">
+                        {challengeFunctionName}({(c.input || []).map(pyLiteral).join(', ')})
+                        <span className="px-2">→</span>
+                        <span className="font-bold text-pysim-success-strong">{pyLiteral(c.output)}</span>
                       </div>
                     ))}
                   </div>
                   {challengeHiddenCaseCount > 0 && (
-                    <div className="text-label text-pysim-label font-bold mt-1">{t('exampleHint')}</div>
+                    <div className="mt-1 text-xs font-semibold text-pysim-label">{t('exampleHint')}</div>
                   )}
                 </div>
               )}
             </div>
+          )}
 
-            <div className="flex items-center gap-2 sm:gap-4 shrink-0">
-              <div className="bg-pysim-accent-container border border-pysim-accent-border rounded-xl px-4 py-2 flex items-center space-x-2">
-                <span className="text-pysim-accent-strong text-sm">⏱️</span>
-                <span className="text-xs font-black text-pysim-accent-strong">
-                  {timeLeft}s
-                </span>
-              </div>
-
-              <div className="bg-pysim-success-container border border-pysim-success-border rounded-xl px-4 py-2 flex items-center space-x-2">
-                <span className="text-pysim-success-strong text-sm">🪙</span>
-                <span className="text-xs font-black text-pysim-success-strong">
-                  {playerState.cash}
-                </span>
-              </div>
-
-              <PanelToggle
-                open={!collapsed.problem}
-                label={t('togglePanel')}
-                onToggle={() => togglePanel('problem')}
-              />
-            </div>
-          </div>
-
-          {/* AI Hint Display */}
           {playerState.hint && (
-            <div className="mt-4 p-3 bg-pysim-warning-container border border-pysim-warning-border text-pysim-warning-strong text-xs font-bold rounded-xl flex items-center gap-2">
-              <span>💡</span>
+            <div className="mt-2 flex items-center gap-2 rounded-xl border border-pysim-warning-border bg-pysim-warning-container p-2.5 text-xs font-bold text-pysim-warning-strong">
+              <span aria-hidden="true">💡</span>
               <span>{playerState.hint}</span>
             </div>
           )}
 
-          {phase === PHASES.ROUND_1 && (
-            <div className="mt-3 text-label text-pysim-label font-bold">
-              ⚠️ {t('round1Note')}
-            </div>
-          )}
-
-          {/* Phase 8.1 — heads-up that the round is about to submit itself.
-              A player who never presses Submit gets their work sent
-              automatically at autoSubmitLeadSeconds so the round can't score
-              0, but that also locks the editor earlier than anyone would
-              expect. This warns first (at autoSubmitWarnSeconds) and leaves a
-              real gap to react in, then switches to a "submitting now"
-              message once the auto-submit actually fires. Hidden entirely
-              once they've submitted, or if they're out of the match. */}
+          {/* Heads-up that the round is about to submit itself, then a
+              "submitting now" message once it does. `autoFiring` is tested
+              without the hasSubmittedThisRound guard: submitMyRound() sets
+              that flag the instant the auto-submit fires, so gating on it hid
+              the "submitting now" message entirely. */}
           {(() => {
             if (!String(phase).startsWith('ROUND_') || playerState.eliminated) return null;
-
-            // Two distinct states, and they must be tested in this order.
-            // `autoFiring` has to be checked WITHOUT the
-            // !hasSubmittedThisRound guard used below: submitMyRound() sets
-            // that flag synchronously the instant the auto-submit fires, so
-            // gating the whole banner on it meant the "submitting now"
-            // message could never render at all (caught on screen — the
-            // warning showed from 16s down to 9s and then simply vanished).
-            // Pairing isGrading with the lead window is what distinguishes an
-            // automatic submission from the player pressing Submit themselves
-            // earlier in the round, which needs no banner.
             const autoFiring = isGrading && timeLeft <= autoSubmitLeadSeconds;
             const warning = !playerState.hasSubmittedThisRound
               && timeLeft <= autoSubmitWarnSeconds
               && timeLeft > autoSubmitLeadSeconds;
             if (!autoFiring && !warning) return null;
-
             return (
               <div
                 role="status"
-                className={`mt-3 p-3 rounded-xl text-xs font-black flex items-center gap-2 border ${
+                className={`mt-2 flex items-center gap-2 rounded-xl border p-2.5 text-xs font-black ${
                   autoFiring
-                    ? 'bg-pysim-accent-container border-pysim-accent-border text-pysim-accent-strong'
-                    : 'bg-pysim-warning-container border-pysim-warning-border text-pysim-warning-strong motion-safe:animate-pulse'
+                    ? 'border-pysim-accent-border bg-pysim-accent-container text-pysim-accent-strong'
+                    : 'border-pysim-warning-border bg-pysim-warning-container text-pysim-warning-strong motion-safe:animate-pulse'
                 }`}
               >
                 <AlertTriangle className="h-4 w-4 shrink-0" />
@@ -258,21 +227,18 @@ export default function BattleRoyaleGameplayView({
               </div>
             );
           })()}
-        </div>
+        </section>
 
-        {/* Spectator banner. Above the editor rather than inside the problem
-            card, because the problem card folds away and this has to explain
-            why the editor stopped accepting keystrokes wherever the player
-            has put their panels. */}
+        {/* Why the editor stopped taking keystrokes, wherever the panels are. */}
         {spectating && (
-          <div className="shrink-0 rounded-2xl border border-pysim-info-border bg-pysim-info-container px-4 py-3 text-xs font-bold text-pysim-info-strong flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2 rounded-2xl border border-pysim-info-border bg-pysim-info-container px-4 py-2.5 text-xs font-bold text-pysim-info-strong">
             <Eye className="h-4 w-4 shrink-0" />
             <span>{t('spectatorBanner')}</span>
           </div>
         )}
 
-        {/* Code Editor Frame with Debuff Effects */}
-        <div className={`flex-1 min-h-[300px] relative rounded-3xl border-2 overflow-hidden bg-pysim-card flex flex-col shadow-sm transition-all duration-300
+        {/* Code editor frame with debuff effects, Run / Submit on its edge */}
+        <div className={`relative flex min-h-[280px] flex-col overflow-hidden rounded-2xl border-2 bg-pysim-card shadow-sm transition-all duration-300 lg:min-h-[220px] lg:flex-1
           ${checkEffectActive('inkFog') ? 'border-pysim-on-surface-variant' : 'border-pysim-outline-variant'}
           ${checkEffectActive('keyScrambler') || checkEffectActive('typoGenerator') || checkEffectActive('capsLockLock') ? 'border-pysim-error' : ''}
           ${editorFrameDebuffClass(checkEffectActive)}
@@ -280,7 +246,7 @@ export default function BattleRoyaleGameplayView({
 
           {/* Self buffs and incoming debuffs use the same effect list. */}
           {playerState.activeEffects.length > 0 && (
-            <div className={`${playerState.activeEffects.some(e => !['shield', 'scoreMultiplier', 'aiHelper'].includes(e.type)) ? 'bg-pysim-error' : 'bg-pysim-info-strong'} text-pysim-on-primary py-2 px-4 text-center font-black text-xs tracking-wider flex items-center justify-center gap-2 z-20 shrink-0`}>
+            <div className={`${playerState.activeEffects.some(e => !['shield', 'scoreMultiplier', 'aiHelper'].includes(e.type)) ? 'bg-pysim-error' : 'bg-pysim-info-strong'} z-20 flex shrink-0 items-center justify-center gap-2 px-4 py-1.5 text-center text-xs font-black text-pysim-on-primary`}>
               <AlertTriangle className="h-3.5 w-3.5 motion-safe:animate-spin" aria-hidden="true" />
               <span>{t('activeEffects')} ({
                 playerState.activeEffects.map(e => {
@@ -291,21 +257,15 @@ export default function BattleRoyaleGameplayView({
             </div>
           )}
 
-          {/* Monaco Editor Container */}
-          <div className="flex-1 w-full h-full relative overflow-hidden flex flex-col">
-            {/* Tab header */}
-            <div className="h-10 bg-pysim-surface border-b border-pysim-outline-variant px-4 flex items-center justify-between text-xs text-pysim-label font-bold shrink-0">
+          <div className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden">
+            <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-pysim-outline-variant bg-pysim-surface px-3 text-xs font-bold text-pysim-label">
               {watchedPlayer ? (
-                <button
-                  type="button"
-                  onClick={() => setWatchedPlayer(null)}
-                  className="flex items-center gap-2 text-pysim-info hover:text-pysim-info-strong"
-                >
+                <button type="button" onClick={() => setWatchedPlayer(null)} className="flex items-center gap-2 text-pysim-info hover:text-pysim-info-strong">
                   <ArrowLeft className="h-3.5 w-3.5" />
                   {t('backToMyCode')}
                 </button>
               ) : (
-                <span>{t('pythonFile')}</span>
+                <span className="font-mono">{t('pythonFile')}</span>
               )}
 
               {watchedPlayer ? (
@@ -313,50 +273,52 @@ export default function BattleRoyaleGameplayView({
                   <Eye className="h-3.5 w-3.5" />
                   {t('watchingTitle')} {watchedPlayer}
                   {watchedCode && !watchedCode.error && (
-                    <span className="text-pysim-label font-medium">
+                    <span className="font-medium text-pysim-label">
                       · {watchedCode.has_submitted ? t('watchingSubmitted') : t('watchingTyping')}
                     </span>
                   )}
                 </span>
-              ) : checkEffectActive('shield') && (
-                <span className="flex items-center gap-1 text-pysim-info">
-                  <Shield className="h-3.5 w-3.5" /> Firewall Active
+              ) : (
+                <span className="flex items-center gap-3">
+                  {!choiceRound && (
+                    <span
+                      role="status"
+                      aria-live="polite"
+                      className={['error', 'restoreError', 'conflict'].includes(draftStatus) ? 'text-pysim-warning-strong' : 'font-medium'}
+                    >
+                      {t(`draft_${draftStatus}`)}
+                      {['error', 'restoreError', 'conflict'].includes(draftStatus) && (
+                        <button type="button" onClick={retryDraft} className="ml-2 font-bold underline">
+                          {t(draftStatus === 'conflict' ? 'draftReload' : 'draftRetry')}
+                        </button>
+                      )}
+                    </span>
+                  )}
+                  {checkEffectActive('shield') && (
+                    <span className="flex items-center gap-1 text-pysim-info">
+                      <Shield className="h-3.5 w-3.5" /> {t('firewallActive')}
+                    </span>
+                  )}
                 </span>
               )}
             </div>
 
-            {!watchedPlayer && !choiceRound && (
-              <div role="status" aria-live="polite" className={`flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-xs border-b ${['error', 'restoreError', 'conflict'].includes(draftStatus) ? 'bg-pysim-warning-container text-pysim-warning-strong' : 'bg-pysim-surface text-pysim-label'}`}>
-                <span>{t(`draft_${draftStatus}`)}</span>
-                {['error', 'restoreError', 'conflict'].includes(draftStatus) && (
-                  <button type="button" onClick={retryDraft} className="font-bold underline">
-                    {t(draftStatus === 'conflict' ? 'draftReload' : 'draftRetry')}
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* Someone else's editor. Read-only by construction: this is a
-                <pre>, not a Monaco instance, so there is nothing here that
-                could write back into the watched player's answer. Debuff
-                classes are deliberately not applied - a debuff belongs to the
-                player who was hit by it, and blurring someone else's code
-                while watching would just look like a bug. */}
+            {/* Someone else's editor. Read-only by construction: a <pre>, not
+                a Monaco instance, so nothing here can write back into the
+                watched player's answer. Debuff classes are not applied - a
+                debuff belongs to the player who was hit by it. */}
             {watchedPlayer ? (
-              <div className="flex-1 w-full relative overflow-auto no-scrollbar bg-pysim-surface">
+              <div className="relative w-full flex-1 overflow-auto bg-pysim-surface no-scrollbar">
                 {watchedCode?.error ? (
                   <div className="p-6 text-xs font-bold text-pysim-label">{watchedCode.error}</div>
                 ) : watchedCode?.code ? (
-                  <pre className="p-4 text-[13px] leading-[22px] font-mono text-pysim-on-surface-variant whitespace-pre">
-                    {watchedCode.code}
-                  </pre>
+                  <pre className="whitespace-pre p-4 font-mono text-[13px] leading-[22px] text-pysim-on-surface-variant">{watchedCode.code}</pre>
                 ) : (
                   <div className="p-6 text-xs font-bold text-pysim-label">{t('watchingEmpty')}</div>
                 )}
               </div>
             ) : (
-            /* Monaco Editor Component */
-            <div className={`flex-1 w-full relative overflow-hidden transition-all duration-300
+            <div className={`relative w-full flex-1 overflow-hidden transition-all duration-300
               ${checkEffectActive('inkFog') ? 'blur-md pointer-events-none' : ''}
               ${checkEffectActive('blackout') ? 'brightness-[0.05] pointer-events-none' : ''}
               ${checkEffectActive('mirrorMode') ? 'scale-x-[-1]' : ''}
@@ -384,45 +346,42 @@ export default function BattleRoyaleGameplayView({
                   fontSize: 14,
                   lineHeight: 22,
                   fontFamily: 'Fira Code, monospace',
-                  padding: { top: 12 },
+                  padding: { top: 10 },
+                  scrollBeyondLastLine: false,
+                  automaticLayout: true,
                   domReadOnly: editorLocked,
                   readOnly: editorLocked
                 }}
               />
               )}
 
-              {/* Visual Overlay: Blackout / Fog Alert */}
               {checkEffectActive('blackout') && (
-                <div className="absolute inset-0 bg-pysim-inverse-surface-high flex flex-col items-center justify-center z-30 select-none pointer-events-auto">
-                  <span role="status" className="text-pysim-inverse-accent font-mono font-bold text-lg tracking-widest motion-safe:animate-pulse">
+                <div className="pointer-events-auto absolute inset-0 z-30 flex select-none flex-col items-center justify-center bg-pysim-inverse-surface-high">
+                  <span role="status" className="font-mono text-lg font-bold tracking-widest text-pysim-inverse-accent motion-safe:animate-pulse">
                     {debuffOverlayText('blackout', t, arcadeConfig.effectDurations).title}
                   </span>
-                  <span className="text-pysim-on-inverse text-xs font-mono mt-2">
+                  <span className="mt-2 font-mono text-xs text-pysim-on-inverse">
                     {debuffOverlayText('blackout', t, arcadeConfig.effectDurations).desc}
                   </span>
                 </div>
               )}
 
               {checkEffectActive('inkFog') && (
-                <div className="absolute inset-0 bg-pysim-inverse-surface-high/85 flex flex-col items-center justify-center z-25 text-pysim-on-inverse pointer-events-auto">
-                  <span role="status" className="text-pysim-inverse-accent text-xl font-black tracking-wider motion-safe:animate-pulse">
+                <div className="pointer-events-auto absolute inset-0 z-25 flex flex-col items-center justify-center bg-pysim-inverse-surface-high/85 text-pysim-on-inverse">
+                  <span role="status" className="text-xl font-black tracking-wider text-pysim-inverse-accent motion-safe:animate-pulse">
                     {debuffOverlayText('inkFog', t, arcadeConfig.effectDurations).title}
                   </span>
-                  <p className="text-xs text-pysim-on-inverse mt-1 max-w-sm text-center">
+                  <p className="mt-1 max-w-sm text-center text-xs text-pysim-on-inverse">
                     {debuffOverlayText('inkFog', t, arcadeConfig.effectDurations).desc}
                   </p>
                 </div>
               )}
 
-              {/* Submitted this round: the editor is locked on purpose, so say so
-                  plainly instead of letting the player type into a silent box. A
-                  debuff overlay (blackout/inkFog) takes the screen when active, so
-                  this only shows when the lock is the player's own submission. It
-                  is pointer-events-none so the player list stays clickable for
-                  watching other players' code. */}
+              {/* Submitted this round: the editor is locked on purpose. Not
+                  clickable, so the player list stays usable for watching. */}
               {spectating && !checkEffectActive('blackout') && !checkEffectActive('inkFog') && (
-                <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-pysim-inverse-surface/80 text-center pointer-events-none select-none">
-                  <div className="rounded-full border border-pysim-inverse-code/50 bg-pysim-inverse-code/20 px-4 py-1.5 text-sm font-black uppercase tracking-wider text-pysim-inverse-success">
+                <div className="pointer-events-none absolute inset-0 z-20 flex select-none flex-col items-center justify-center gap-2 bg-pysim-inverse-surface/80 text-center">
+                  <div className="rounded-full border border-pysim-inverse-code/50 bg-pysim-inverse-code/20 px-4 py-1.5 text-sm font-black text-pysim-inverse-success">
                     ✓ ส่งคำตอบรอบนี้แล้ว
                   </div>
                   <p className="text-sm font-bold text-pysim-on-inverse">แก้โค้ดไม่ได้จนจบรอบ · รอผลแล้วไปต่อรอบถัดไป</p>
@@ -433,19 +392,36 @@ export default function BattleRoyaleGameplayView({
             )}
           </div>
 
+          <div className="flex shrink-0 items-center justify-between gap-2 border-t border-pysim-outline-variant bg-pysim-surface px-3 py-2">
+            {choiceRound ? <span /> : (
+              <button
+                type="button"
+                onClick={runCodeTests}
+                className="inline-flex min-h-10 items-center rounded-xl border border-pysim-outline-variant bg-pysim-card px-4 text-sm font-bold text-pysim-on-surface-variant transition-colors hover:bg-pysim-surface-container"
+              >
+                {t('runTests')}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleManualSubmit}
+              disabled={!draftReady || isGrading || spectating || playerState.eliminated || (choiceRound && !selectedChoice)}
+              className="inline-flex min-h-10 items-center rounded-xl bg-pysim-accent-strong px-6 text-sm font-black text-pysim-on-primary shadow-md transition-colors hover:bg-pysim-accent-strong/90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isGrading ? t('judgingCode') : spectating ? t('submittedBadge') : t('submitCode')}
+            </button>
+          </div>
         </div>
 
-        {/* Console log outputs. Foldable like the problem card: between rounds
-            there is nothing in it worth 112 pixels of a laptop screen, and the
-            editor takes the space back. Folded it keeps its title bar, so it is
-            still obvious where output will appear. */}
+        {/* Output, foldable: between rounds there is nothing in it worth the
+            space, and folded it keeps its title bar. */}
         {!choiceRound && (
-        <div className={`bg-pysim-inverse-surface border border-pysim-inverse-outline rounded-2xl flex flex-col overflow-hidden shadow-inner shrink-0 ${collapsed.output ? '' : 'h-28'}`}>
+        <div className={`flex shrink-0 flex-col overflow-hidden rounded-2xl border border-pysim-inverse-outline bg-pysim-inverse-surface ${collapsed.output ? '' : 'h-24 xl:h-28'}`}>
           <button
             type="button"
             onClick={() => togglePanel('output')}
             aria-expanded={!collapsed.output}
-            className="h-8 bg-pysim-inverse-surface-high border-b border-pysim-inverse-outline px-4 flex items-center justify-between text-label font-black text-pysim-on-inverse-muted uppercase tracking-wider shrink-0 hover:text-pysim-on-inverse transition-colors"
+            className="flex h-8 shrink-0 items-center justify-between border-b border-pysim-inverse-outline bg-pysim-inverse-surface-high px-4 text-xs font-bold text-pysim-on-inverse-muted transition-colors hover:text-pysim-on-inverse"
           >
             <span>{t('codeOutput')}</span>
             {collapsed.output ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
@@ -453,209 +429,147 @@ export default function BattleRoyaleGameplayView({
           {!collapsed.output && (
             <textarea
               readOnly
-              value={consoleOutput || "Python Interpreter online. Press Run Local Tests."}
-              className="flex-1 bg-transparent text-pysim-inverse-code px-4 py-3 text-xs font-mono resize-none focus:outline-none placeholder-pysim-on-inverse-muted no-scrollbar"
+              value={consoleOutput || t('consoleEmpty')}
+              className="flex-1 resize-none bg-transparent px-4 py-2 font-mono text-xs text-pysim-inverse-code no-scrollbar focus:outline-none"
             />
           )}
         </div>
         )}
-
-        {/* Actions Footer */}
-        <div className="h-14 bg-pysim-card border border-pysim-outline-variant rounded-2xl px-5 flex items-center justify-between shrink-0 shadow-sm">
-          {choiceRound ? <span /> : (
-          <button
-            onClick={runCodeTests}
-            className="px-6 py-2.5 bg-pysim-surface-container hover:bg-pysim-surface-high text-pysim-label rounded-xl text-xs font-black transition-all hover:scale-[1.02] active:scale-[0.98]"
-          >
-            {t('runTests')}
-          </button>
-          )}
-
-          <button
-            onClick={handleManualSubmit}
-            disabled={!draftReady || isGrading || spectating || playerState.eliminated || (choiceRound && !selectedChoice)}
-            className="px-8 py-2.5 bg-pysim-accent-strong hover:bg-pysim-accent-strong/90 active:scale-[0.98] text-pysim-on-primary rounded-xl text-xs font-black transition-all shadow-md shadow-pysim-accent-strong/10 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-          >
-            {isGrading ? t('judgingCode') : spectating ? t('submittedBadge') : t('submitCode')}
-          </button>
-        </div>
       </div>
 
-      {/* RIGHT AREA: Lobby Status (Active Players and inventory) */}
-      <div className="w-full lg:w-2/5 xl:w-[360px] flex flex-col gap-3 shrink-0">
+      {/* SIDE: the item bag first (it is what a player acts with), then the
+          players, who are also the targets. */}
+      <aside className="flex w-full shrink-0 flex-col gap-3 lg:min-h-0 lg:w-[320px] lg:overflow-y-auto xl:w-[360px]">
 
-        {/* BATTLE ROYALE LOBBY STATUS */}
-        <div className={`bg-pysim-card p-5 rounded-3xl shadow-sm border-2 flex-1 flex flex-col transition-all duration-300
-          ${targetingItem ? 'border-pysim-accent shadow-lg shadow-pysim-accent-strong/5' : 'border-pysim-outline-variant'}
-        `}>
-          <h3 className="text-sm font-black text-pysim-on-surface border-b border-pysim-outline-variant pb-3 mb-4 flex justify-between items-center tracking-wider uppercase">
-            <span>{t('lobbyStatus')}</span>
-            {spectating && !targetingItem && (
-              <span className="text-label text-pysim-info font-black bg-pysim-info-container border border-pysim-info-border px-2.5 py-1 rounded-full normal-case tracking-normal">
-                👁 {t('watchHint')}
-              </span>
-            )}
+        <section className={`shrink-0 rounded-2xl border-2 bg-pysim-card p-3 shadow-sm transition-colors ${targetingItem ? 'border-pysim-accent' : 'border-pysim-outline-variant'}`}>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h3 className="text-sm font-black text-pysim-on-surface">{t('itemsTitle')}</h3>
             {targetingItem && (
-              <span className="text-label text-pysim-accent-strong font-black motion-safe:animate-pulse bg-pysim-accent-container border border-pysim-accent-border px-2.5 py-1 rounded-full">
-                🎯 {t('pickTarget')}
-              </span>
-            )}
-          </h3>
-
-          {/* You Info Card */}
-          <div className={`p-4 rounded-2xl mb-4 border transition-all ${
-            playerState.eliminated
-              ? 'bg-pysim-accent-container border-pysim-accent-border opacity-60'
-              : checkEffectActive('shield')
-                ? 'bg-pysim-info-container border-pysim-info-border shadow-md'
-                : 'bg-pysim-surface border-pysim-outline-variant shadow-sm'
-          }`}>
-            <div className="flex justify-between items-center">
-              <div className="flex items-center space-x-2">
-                <div className="w-8 h-8 rounded-xl bg-pysim-accent-strong text-pysim-on-primary flex items-center justify-center font-black text-xs">
-                  U
-                </div>
-                <div>
-                  <span className="text-xs font-black text-pysim-on-surface">{playerState.name} (You)</span>
-                  <span className="block text-label font-black text-pysim-label uppercase tracking-widest">
-                    {playerState.eliminated ? t('eliminated') : t('lived')}
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                {checkEffectActive('shield') && <Shield className="h-4 w-4 text-pysim-info fill-pysim-info-container motion-safe:animate-pulse" />}
-                <span className="text-label font-black text-pysim-success-strong bg-pysim-success-container border border-pysim-success-border px-2.5 py-1 rounded-xl">
-                  ⭐ {playerState.score} {t('ptsUnit')}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Opponents List */}
-          <div className="space-y-3 overflow-y-auto no-scrollbar pr-1 flex-1 min-h-0">
-            {opponents.map((bot, i) => {
-              const isUnselectableTarget = Boolean(targetingItem) && !bot.eliminated && bot.isDebuffed;
-              return (
-              <div
-                key={i}
-                onClick={() => {
-                  if (targetingItem) { handleTargetClick(i); return; }
-                  if (spectating) setWatchedPlayer(bot.name);
-                }}
-                title={isUnselectableTarget ? t('targetAlreadyHit') : undefined}
-                className={`p-4 rounded-2xl border transition-all relative overflow-hidden
-                  ${bot.eliminated ? 'bg-pysim-surface border-pysim-outline-variant opacity-60 grayscale' : 'bg-pysim-card border-pysim-outline-variant shadow-sm hover:border-pysim-outline-variant'}
-                  ${targetingItem && !bot.eliminated && !bot.isDebuffed ? 'cursor-crosshair bg-pysim-accent-container/50 border-pysim-accent-border hover:bg-pysim-accent-container hover:border-pysim-accent shadow-md hover:scale-[1.02]' : ''}
-                  ${!targetingItem && spectating ? 'cursor-pointer hover:border-pysim-info-border' : ''}
-                  ${watchedPlayer === bot.name ? 'ring-2 ring-pysim-info border-pysim-info-border' : ''}
-                  ${isUnselectableTarget ? 'opacity-50 grayscale cursor-not-allowed' : ''}
-                `}
-              >
-                <div className="flex justify-between items-center mb-2">
-                  <div className="flex items-center space-x-2">
-                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs ${bot.eliminated ? 'bg-pysim-surface-high text-pysim-label' : 'bg-pysim-surface-container text-pysim-label'}`}>
-                      {bot.isBot ? 'B' : (bot.name || '?').charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <span className={`text-xs font-black ${bot.eliminated ? 'text-pysim-label line-through' : 'text-pysim-on-surface-variant'}`}>
-                        {bot.name}
-                      </span>
-                      {bot.eliminated && (
-                        <span className="block text-label font-bold text-pysim-accent-strong uppercase tracking-wider">{t('eliminated')}</span>
-                      )}
-                    </div>
-                  </div>
-
-                  <span className="text-label font-black text-pysim-success-strong font-mono">🪙 {bot.cash}</span>
-                </div>
-
-                {/* The progress bar is a BOT's bar and only a bot's: its value
-                    comes from the local bot simulation, which knows nothing
-                    about a human opponent and would show every real player
-                    frozen at 0% forever. A human gets the one fact that is
-                    actually known about them - whether their answer is in. */}
-                {!bot.eliminated && bot.isBot && (
-                  <div className="space-y-1">
-                    <div className="w-full bg-pysim-surface-container rounded-full h-1.5 overflow-hidden">
-                      <div
-                        className={`h-1.5 rounded-full transition-all duration-500 ${bot.hasSubmitted ? 'bg-pysim-success' : 'bg-pysim-accent-strong'}`}
-                        style={{ width: `${bot.hasSubmitted ? 100 : Math.round(Math.min(100, bot.progress))}%` }}
-                      ></div>
-                    </div>
-                    <div className="flex justify-between text-label font-bold text-pysim-label uppercase tracking-wider">
-                      <span>{bot.hasSubmitted ? t('submittedBadge') : 'Round Progress'}</span>
-                      <span>{bot.hasSubmitted ? '✅' : `${Math.round(Math.min(100, bot.progress))}%`}</span>
-                    </div>
-                  </div>
-                )}
-
-                {!bot.eliminated && !bot.isBot && (
-                  <div className={`text-label font-black uppercase tracking-wider ${bot.hasSubmitted ? 'text-pysim-success-strong' : 'text-pysim-label'}`}>
-                    {bot.hasSubmitted ? `✅ ${t('submittedBadge')}` : `✍️ ${t('watchingTyping')}`}
-                  </div>
-                )}
-
-                {targetingItem && !bot.eliminated && !bot.isDebuffed && (
-                  <div className="absolute inset-x-0 bottom-0 bg-pysim-accent-strong py-1 text-center text-label font-black text-pysim-on-primary uppercase tracking-wider motion-safe:animate-pulse select-none">
-                    ⚡ {t('clickToAttack')}
-                  </div>
-                )}
-                {isUnselectableTarget && (
-                  <div className="absolute inset-x-0 bottom-0 bg-pysim-outline py-1 text-center text-label font-black text-pysim-on-primary uppercase tracking-wider select-none">
-                    🚫 {t('targetAlreadyHit')}
-                  </div>
-                )}
-              </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* INVENTORY CARD */}
-        <div className="bg-pysim-card p-5 rounded-3xl shadow-sm border border-pysim-outline-variant flex flex-col gap-3 min-h-[140px] relative overflow-hidden shrink-0">
-          <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-pysim-accent-strong"></div>
-          <h4 className="text-label font-black text-pysim-label uppercase tracking-widest pl-2">
-            {t('inventory')}
-          </h4>
-
-          <div className="flex flex-wrap gap-2.5 pl-2">
-            {playerState.inventory.length === 0 && (
-              <span className="text-pysim-label italic text-xs bg-pysim-surface px-4 py-2 rounded-xl border border-pysim-outline-variant">
-                {t('empty')}
-              </span>
-            )}
-
-            {playerState.inventory.map((item, idx) => (
-              <button
-                key={idx}
-                onClick={() => initiateItemUse(item)}
-                disabled={!draftReady || playerState.hasSubmittedThisRound || playerState.eliminated || targetingItem || phase === PHASES.ROUND_1}
-                className={`px-4 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 transition-all shadow-sm border
-                  ${targetingItem === item ? 'bg-pysim-accent-strong text-pysim-on-primary border-pysim-accent-strong motion-safe:animate-pulse' : 'bg-pysim-card hover:bg-pysim-surface border-pysim-outline-variant text-pysim-on-surface-variant'}
-                  disabled:opacity-40 hover:scale-105 active:scale-95
-                `}
-                title={t(item.descKey)}
-              >
-                <span className="text-sm">{item.icon}</span>
-                <span>{t(item.nameKey)}</span>
-                {targetingItem === item && <span className="text-label bg-pysim-on-surface/20 px-2 py-0.5 rounded">{t('pickTarget')}</span>}
-              </button>
-            ))}
-
-            {targetingItem && (
-              <button
-                onClick={() => setTargetingItem(null)}
-                className="text-xs text-pysim-accent-strong hover:text-pysim-accent-strong underline font-bold px-3 ml-auto"
-              >
+              <button type="button" onClick={() => setTargetingItem(null)} className="rounded-lg px-2 py-1 text-xs font-bold text-pysim-accent-strong underline hover:bg-pysim-accent-container">
                 {t('cancelTargeting')}
               </button>
             )}
           </div>
-        </div>
+          <p className={`mb-2 text-xs font-semibold ${targetingItem ? 'text-pysim-accent-strong motion-safe:animate-pulse' : 'text-pysim-label'}`}>{itemsHint}</p>
+          {playerState.inventory.length > 0 && (
+            <div className="grid max-h-[30vh] grid-cols-2 gap-2 overflow-y-auto no-scrollbar">
+              {playerState.inventory.map((item, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  // The chosen item stays pressable: pressing it again puts it back.
+                  onClick={() => (targetingItem === item ? setTargetingItem(null) : initiateItemUse(item))}
+                  disabled={itemsLocked || (Boolean(targetingItem) && targetingItem !== item)}
+                  aria-pressed={targetingItem === item}
+                  title={t(item.descKey)}
+                  className={`flex min-h-[64px] flex-col items-start gap-0.5 rounded-xl border p-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-45
+                    ${targetingItem === item
+                      ? 'border-pysim-accent-strong bg-pysim-accent-strong text-pysim-on-primary'
+                      : 'border-pysim-outline-variant bg-pysim-surface text-pysim-on-surface hover:border-pysim-accent-border hover:bg-pysim-accent-container'}
+                  `}
+                >
+                  <span className="flex items-center gap-1.5 text-sm font-black">
+                    <span className="text-lg" aria-hidden="true">{item.icon}</span>
+                    {t(item.nameKey)}
+                  </span>
+                  <span className={`line-clamp-2 text-[11px] leading-snug ${targetingItem === item ? 'text-pysim-on-primary' : 'text-pysim-label'}`}>
+                    {t(item.descKey)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
 
-      </div>
+        <section className={`flex min-h-0 flex-col rounded-2xl border-2 bg-pysim-card p-3 shadow-sm transition-colors lg:flex-1 ${targetingItem ? 'border-pysim-accent' : 'border-pysim-outline-variant'}`}>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h3 className="text-sm font-black text-pysim-on-surface">{t('playersTitle')}</h3>
+            {spectating && !targetingItem && (
+              <span className="rounded-full border border-pysim-info-border bg-pysim-info-container px-2 py-0.5 text-[11px] font-bold text-pysim-info">👁 {t('watchHint')}</span>
+            )}
+            {targetingItem && (
+              <span className="rounded-full border border-pysim-accent-border bg-pysim-accent-container px-2 py-0.5 text-[11px] font-bold text-pysim-accent-strong motion-safe:animate-pulse">🎯 {t('pickTarget')}</span>
+            )}
+          </div>
 
+          <ul className="min-h-0 space-y-1.5 overflow-y-auto no-scrollbar lg:flex-1">
+            {/* You */}
+            <li className={`flex items-center gap-2.5 rounded-xl border px-2.5 py-2 ${
+              playerState.eliminated
+                ? 'border-pysim-accent-border bg-pysim-accent-container opacity-60'
+                : checkEffectActive('shield')
+                  ? 'border-pysim-info-border bg-pysim-info-container'
+                  : 'border-pysim-outline-variant bg-pysim-surface'
+            }`}>
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-pysim-accent-strong text-xs font-black text-pysim-on-primary">{(playerState.name || '?').charAt(0).toUpperCase()}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-black text-pysim-on-surface">{playerState.name} ({t('youLabel')})</span>
+                <span className="block text-[11px] font-semibold text-pysim-label">{playerState.eliminated ? t('eliminated') : t('lived')}</span>
+              </span>
+              {checkEffectActive('shield') && <Shield className="h-4 w-4 shrink-0 text-pysim-info" aria-label={t('firewallActive')} />}
+              <span className="shrink-0 rounded-lg border border-pysim-success-border bg-pysim-success-container px-2 py-0.5 text-xs font-black text-pysim-success-strong">⭐ {playerState.score} {t('ptsUnit')}</span>
+            </li>
+
+            {opponents.map((bot, i) => {
+              const canTarget = Boolean(targetingItem) && !bot.eliminated && !bot.isDebuffed;
+              const isUnselectableTarget = Boolean(targetingItem) && !bot.eliminated && bot.isDebuffed;
+              const clickable = canTarget || (!targetingItem && spectating && !bot.eliminated);
+              const progress = bot.hasSubmitted ? 100 : Math.round(Math.min(100, bot.progress || 0));
+              return (
+                <li key={i}>
+                  <button
+                    type="button"
+                    disabled={!clickable}
+                    onClick={() => {
+                      if (targetingItem) { handleTargetClick(i); return; }
+                      if (spectating) setWatchedPlayer(bot.name);
+                    }}
+                    title={isUnselectableTarget ? t('targetAlreadyHit') : undefined}
+                    className={`relative flex w-full items-center gap-2.5 overflow-hidden rounded-xl border px-2.5 py-2 text-left transition-colors disabled:cursor-default
+                      ${bot.eliminated ? 'border-pysim-outline-variant bg-pysim-surface opacity-55 grayscale' : 'border-pysim-outline-variant bg-pysim-card'}
+                      ${canTarget ? 'cursor-crosshair border-pysim-accent-border bg-pysim-accent-container/60 hover:border-pysim-accent hover:bg-pysim-accent-container' : ''}
+                      ${!targetingItem && spectating && !bot.eliminated ? 'hover:border-pysim-info-border' : ''}
+                      ${watchedPlayer === bot.name ? 'ring-2 ring-pysim-info' : ''}
+                      ${isUnselectableTarget ? 'opacity-50 grayscale' : ''}
+                    `}
+                  >
+                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${bot.eliminated ? 'bg-pysim-surface-high text-pysim-label' : 'bg-pysim-surface-container text-pysim-label'}`}>
+                      {bot.isBot ? '🤖' : (bot.name || '?').charAt(0).toUpperCase()}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className={`block truncate text-sm font-bold ${bot.eliminated ? 'text-pysim-label line-through' : 'text-pysim-on-surface-variant'}`}>{bot.name}</span>
+                      {bot.eliminated ? (
+                        <span className="block text-[11px] font-bold text-pysim-accent-strong">{t('eliminated')}</span>
+                      ) : canTarget ? (
+                        <span className="block text-[11px] font-black text-pysim-accent-strong">⚡ {t('clickToAttack')}</span>
+                      ) : isUnselectableTarget ? (
+                        <span className="block text-[11px] font-bold text-pysim-label">🚫 {t('targetAlreadyHit')}</span>
+                      ) : bot.isBot ? (
+                        // A bot's bar comes from the local bot simulation; a
+                        // human opponent only reports whether the answer is in.
+                        <span className="mt-1 flex items-center gap-2">
+                          <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-pysim-surface-container">
+                            <span
+                              className={`block h-1.5 rounded-full transition-all duration-500 ${bot.hasSubmitted ? 'bg-pysim-success' : 'bg-pysim-accent-strong'}`}
+                              style={{ width: `${progress}%` }}
+                            />
+                          </span>
+                          <span className="w-9 text-right text-[11px] font-bold tabular-nums text-pysim-label">{bot.hasSubmitted ? '✅' : `${progress}%`}</span>
+                        </span>
+                      ) : (
+                        <span className={`block text-[11px] font-bold ${bot.hasSubmitted ? 'text-pysim-success-strong' : 'text-pysim-label'}`}>
+                          {bot.hasSubmitted ? `✅ ${t('submittedBadge')}` : `✍️ ${t('watchingTyping')}`}
+                        </span>
+                      )}
+                    </span>
+                    <span className="shrink-0 font-mono text-xs font-black text-pysim-success-strong" title={t('cashLabel')}>🪙 {bot.cash}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      </aside>
     </div>
   );
 }

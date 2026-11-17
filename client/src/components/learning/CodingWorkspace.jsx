@@ -2,22 +2,65 @@ import React, { useEffect, useRef, useState } from 'react';
 import usePyodide from '../../hooks/usePyodide';
 import friendlyPyError from '../../utils/friendlyPyError';
 import Editor from '@monaco-editor/react';
+import { Link } from 'react-router-dom';
 import {
-  Play,
+  ArrowLeft,
   CheckCircle2,
+  Coins,
   Copy,
-  Camera,
-  Send,
-  X,
-  ChevronsRight,
-  MessageSquareCode,
+  ListChecks,
   Loader2,
+  MessageSquareCode,
+  Play,
   RefreshCcw,
-  Square,
+  RotateCcw,
+  Send,
 } from 'lucide-react';
+import CodeWorkbench, { BriefHeading, FileTab, ToolButton } from '../workbench/CodeWorkbench';
+import { ACCENTS } from '../workbench/accents.js';
+import WorkbenchMenu from '../workbench/WorkbenchMenu';
+import WorkbenchFooter from '../workbench/WorkbenchFooter';
+import LumiPanel from '../workbench/LumiPanel';
+import OutputPanel, { InputPrompt } from '../workbench/OutputPanel';
 import { API_BASE } from '../../config/api.js';
 import useLumiChat from '../../hooks/useLumiChat';
 import { buildLumiMessages } from '../../utils/lumiChat';
+import { useTranslation } from 'react-i18next';
+
+// Labels for a beginner: what each button does, in their language. The
+// grader's log lines start with a mark (✓ / ✗) the terminal colours by.
+const WORDS = {
+  th: {
+    coins: 'เหรียญ', instructions: 'โจทย์', example: 'ตัวอย่าง', input: 'ถ้าป้อน', output: 'ต้องได้', reward: 'รางวัล',
+    hideAi: 'ปิด Lumi', openAi: 'ถาม Lumi', run: 'ลองรัน', runTests: 'ตรวจคำตอบ', passed: 'ผ่านแล้ว',
+    output_: 'ผลลัพธ์', empty: 'กด “ลองรัน” เพื่อดูว่าโค้ดพิมพ์อะไรออกมา', clear: 'ล้างแชท', ask: 'ถาม Lumi เช่น ทำไมโค้ดนี้ error',
+    loading: 'กำลังเตรียม Python…', copy: 'คัดลอกโค้ด', shot: 'บันทึกภาพโค้ด',
+    grading: 'กำลังตรวจกับตัวอย่าง…', pass: (n) => `✓ ผ่านตัวอย่างที่ ${n}`, fail: (n) => `✗ ไม่ผ่านตัวอย่างที่ ${n}`,
+    expected: 'ควรได้', got: 'ได้จริง', allPassed: '✓ ผ่านครบ กด “ส่งคำตอบ” ได้เลย',
+    rewardLine: (xp, coins) => `ได้รับ +${xp} XP และ +${coins} เหรียญ`, submitted: 'ส่งคำตอบแล้ว',
+    submitError: '✗ ส่งไม่สำเร็จ', submitFallback: 'ส่งคำตอบไม่ได้', copied: 'คัดลอกโค้ดแล้ว', copyFailed: 'เบราว์เซอร์นี้คัดลอกโค้ดไม่ได้',
+    submitHint: 'ต้องกด “ตรวจคำตอบ” ให้ผ่านก่อนจึงส่งได้',
+    reset: 'เริ่มโค้ดใหม่จากตอนต้นแล้ว', resetLabel: 'เริ่มโค้ดใหม่', backToLearn: 'กลับไปหน้าบทเรียน', help: 'ช่วยเหลือ',
+    aiHint: 'ขอคำใบ้ หรือให้ช่วยดูว่าโค้ดผิดตรงไหน', more: 'เครื่องมือเพิ่มเติม',
+    step1: 'แก้หรือเขียนโค้ดในช่องทางขวา', step2: 'กด “ตรวจคำตอบ” ระบบจะลองโค้ดกับตัวอย่าง', step3: 'ผ่านแล้วกด “ส่งคำตอบ” เพื่อรับรางวัล',
+    reroll: 'เปลี่ยนโจทย์', rerollsLeft: (n) => `เปลี่ยนโจทย์ได้อีก ${n} ครั้ง`, solvedMeta: 'ส่งแล้ว กำลังโหลดโจทย์ใหม่',
+  },
+  en: {
+    coins: 'coins', instructions: 'Instructions', example: 'Example', input: 'Input', output: 'Output', reward: 'Reward',
+    hideAi: 'Hide Lumi', openAi: 'Ask Lumi', run: 'Run', runTests: 'Check answer', passed: 'Passed',
+    output_: 'Output', empty: 'Press “Run” to see what your code prints.', clear: 'Clear chat', ask: 'Ask Lumi, e.g. why does this error?',
+    loading: 'Getting Python ready…', copy: 'Copy code', shot: 'Save a picture of the code',
+    grading: 'Checking against the example…', pass: (n) => `✓ Example ${n} passed`, fail: (n) => `✗ Example ${n} failed`,
+    expected: 'Expected', got: 'Got', allPassed: '✓ All passed. You can submit now.',
+    rewardLine: (xp, coins) => `+${xp} XP and +${coins} coins`, submitted: 'Answer submitted.',
+    submitError: '✗ Could not submit', submitFallback: 'Unable to submit.', copied: 'Code copied.', copyFailed: 'This browser cannot copy the code.',
+    submitHint: 'Pass “Check answer” first to submit.',
+    reset: 'Code reset to the start.', resetLabel: 'Start over', backToLearn: 'Back to lessons', help: 'Help',
+    aiHint: 'Get a hint or have your code looked at', more: 'More tools',
+    step1: 'Fix or write the code on the right', step2: 'Press “Check answer” to test it on the example', step3: 'Once it passes, press “Submit” for the reward',
+    reroll: 'New task', rerollsLeft: (n) => `${n} new tasks left`, solvedMeta: 'Submitted, loading the next task',
+  },
+};
 
 
 export default function CodingWorkspace({
@@ -25,16 +68,12 @@ export default function CodingWorkspace({
   sectionLabel,
   title,
   accent = 'blue',
-  subtitle,
   instructions,
   example,
   initialCode,
   starterMessage,
   testCases,
   submitLabel,
-  progressLabel,
-  progressMeta,
-  nextLabel,
   quickActions = [],
   rewardXp = 0,
   rewardCoins = 0,
@@ -45,6 +84,8 @@ export default function CodingWorkspace({
   onTaskSubmitted,
   workspaceNotice = '',
 }) {
+  const { i18n } = useTranslation();
+  const w = String(i18n.language || 'th').startsWith('en') ? WORDS.en : WORDS.th;
   const [code, setCode] = useState(initialCode);
   const [terminalLines, setTerminalLines] = useState([]);
   // Python runs in the shared Web Worker (usePyodide) so an infinite loop in a
@@ -68,26 +109,7 @@ export default function CodingWorkspace({
   const terminalRef = useRef(null);
   const chatEndRef = useRef(null);
 
-  const accentStyles =
-    accent === 'rose'
-      ? {
-          text: 'text-rose-600',
-          border: 'border-rose-500',
-          softBg: 'bg-rose-50',
-          button: 'bg-rose-600 hover:bg-rose-700',
-          buttonSoft: 'text-rose-600 hover:text-rose-700',
-          panelRing: 'focus:border-rose-500',
-          tag: 'bg-rose-100 text-rose-700',
-        }
-      : {
-          text: 'text-blue-600',
-          border: 'border-blue-500',
-          softBg: 'bg-blue-50',
-          button: 'bg-blue-600 hover:bg-blue-700',
-          buttonSoft: 'text-blue-600 hover:text-blue-700',
-          panelRing: 'focus:border-blue-500',
-          tag: 'bg-blue-100 text-blue-700',
-        };
+  const tone = ACCENTS[accent === 'rose' ? 'rose' : 'blue'];
 
   const appendLine = (text) => setTerminalLines((prev) => [...prev, text]);
 
@@ -155,7 +177,7 @@ export default function CodingWorkspace({
   const handleRunTests = async () => {
     if (pyStatus !== 'ready' || isRunning) return;
     setIsRunning(true);
-    setTerminalLines(['--- Starting auto-grading ---']);
+    setTerminalLines([w.grading]);
     let allPassed = true;
     setIsSuccess(false);
     setHasPassedTests(false);
@@ -201,11 +223,11 @@ export default function CodingWorkspace({
       const actual = normalizeText(captured);
       const expected = normalizeText(test.expected);
       if (actual.includes(expected)) {
-        appendLine(`PASS Test Case ${index + 1}`);
+        appendLine(w.pass(index + 1));
       } else {
-        appendLine(`FAIL Test Case ${index + 1}`);
-        appendLine(`Expected: ${expected}`);
-        appendLine(`Got: ${actual}`);
+        appendLine(w.fail(index + 1));
+        appendLine(`${w.expected}: ${expected}`);
+        appendLine(`${w.got}: ${actual}`);
         allPassed = false;
         break;
       }
@@ -216,7 +238,7 @@ export default function CodingWorkspace({
     if (allPassed) {
       setIsSuccess(true);
       setHasPassedTests(true);
-      appendLine('All test cases passed.');
+      appendLine(w.allPassed);
     }
   };
 
@@ -225,14 +247,14 @@ export default function CodingWorkspace({
     setIsSubmitting(true);
     try {
       const result = await onSubmitTask({ taskId, code });
-      appendLine(`Reward: +${result?.reward?.xp || rewardXp} XP, +${result?.reward?.coins || rewardCoins} coins`);
-      appendLine(result?.message || 'Task submitted successfully.');
+      appendLine(w.rewardLine(result?.reward?.xp || rewardXp, result?.reward?.coins || rewardCoins));
+      appendLine(result?.message || w.submitted);
       setIsSuccess(true);
       setHasPassedTests(false);
       onTaskSubmitted?.(result);
     } catch (error) {
       const failure = error?.response?.data;
-      appendLine(`Submit Error: ${failure?.detail || failure?.error || error.message || 'Unable to submit task.'}`);
+      appendLine(`${w.submitError}: ${failure?.detail || failure?.error || error.message || w.submitFallback}`);
       if (failure?.hint) appendLine(`คำแนะนำ: ${failure.hint}`);
     } finally {
       setIsSubmitting(false);
@@ -288,387 +310,208 @@ export default function CodingWorkspace({
   const copyCode = async () => {
     try {
       await navigator.clipboard.writeText(code);
-      appendLine('Code copied to clipboard.');
+      appendLine(w.copied);
     } catch {
-      appendLine('Unable to copy code from this browser.');
+      appendLine(w.copyFailed);
     }
   };
 
+  const resetCode = () => {
+    setCode(initialCode);
+    setHasPassedTests(false);
+    setIsSuccess(false);
+    setTerminalLines([w.reset]);
+  };
+
+  const hasInput = String(example?.input ?? '').trim() !== '';
+  const brief = (
+    <div className="pb-6">
+      <div className="px-5 pb-4 pt-4">
+        <Link
+          to="/learn"
+          className="mb-3 inline-flex items-center gap-1.5 rounded-lg py-1 text-sm font-semibold text-slate-500 transition-colors hover:text-slate-900"
+        >
+          <ArrowLeft size={16} aria-hidden="true" />
+          {w.backToLearn}
+        </Link>
+        <p className={`text-sm font-bold ${tone.text}`}>{sectionLabel}</p>
+        <h1 className="mt-1 text-xl font-black leading-snug text-slate-900">{title}</h1>
+      </div>
+
+      <BriefHeading>{w.instructions}</BriefHeading>
+      <div className="space-y-3 px-5 py-4 text-[15px] leading-7 text-slate-800">
+        {instructions.map((instruction) => (
+          <p key={instruction}>{instruction}</p>
+        ))}
+        {example && String(example.output ?? '').trim() ? (
+          <div className="rounded-xl border border-slate-200 bg-white p-3 font-mono text-[13px] leading-6">
+            <p className="mb-1 font-sans text-xs font-bold text-slate-500">{w.example}</p>
+            {hasInput ? <p className="whitespace-pre-wrap text-slate-600">{w.input}: {example.input}</p> : null}
+            <p className="whitespace-pre-wrap font-bold text-slate-900">{w.output}: {example.output}</p>
+          </div>
+        ) : null}
+        <ol className="space-y-1.5 text-sm text-slate-600">
+          <li><span className="font-bold text-slate-800">1.</span> {w.step1}</li>
+          <li><span className="font-bold text-slate-800">2.</span> {w.step2}</li>
+          <li><span className="font-bold text-slate-800">3.</span> {w.step3}</li>
+        </ol>
+        {(rewardXp > 0 || rewardCoins > 0) ? (
+          <p className="inline-flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-1.5 text-sm font-bold text-amber-800">
+            <Coins size={15} aria-hidden="true" />
+            {w.reward} +{rewardXp} XP · +{rewardCoins} {w.coins}
+          </p>
+        ) : null}
+        {workspaceNotice ? <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">{workspaceNotice}</p> : null}
+      </div>
+
+      <BriefHeading>{w.help}</BriefHeading>
+      <div className="px-5 py-4">
+        <button
+          type="button"
+          onClick={() => setIsAiOpen(true)}
+          className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 text-left transition-colors hover:border-blue-300 hover:bg-blue-50"
+        >
+          <img src="/data_MiNiGame/NPC_lumi/lumi_smile.png" alt="" className="h-9 w-9 shrink-0 rounded-full bg-sky-50 object-contain" />
+          <span className="min-w-0">
+            <span className="block text-sm font-bold text-slate-900">{w.openAi}</span>
+            <span className="block text-xs text-slate-500">{w.aiHint}</span>
+          </span>
+        </button>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="h-full min-h-0 overflow-hidden">
-      <div className="mx-auto flex h-full max-w-[1560px] overflow-hidden rounded-[24px] border border-white/70 bg-white/88 shadow-[0_24px_60px_rgba(15,23,42,0.12)] backdrop-blur-xl">
-        {/* The brief. Everything here was a size or two too large for the
-            space it had: a 3xl-to-4xl title in a 290px column turned a short
-            problem name into three stacked lines, and 16px instructions at
-            28px line height pushed the worked example below the fold. */}
-        <aside className="hidden w-[300px] shrink-0 border-r border-slate-200 bg-slate-50/90 xl:flex xl:flex-col">
-          <div className="min-h-0 flex-1 overflow-y-auto p-5">
-            <p className={`mb-2 text-[11px] font-black uppercase tracking-[0.22em] ${accentStyles.text}`}>{sectionLabel}</p>
-            <h1 className="mb-5 text-xl font-black leading-tight tracking-tight text-slate-900 2xl:text-2xl">{title}</h1>
-
-            <h2 className={`mb-3 inline-block border-b-2 pb-0.5 text-sm font-black ${accentStyles.text} ${accentStyles.border}`}>
-              Instructions
-            </h2>
-
-            <div className="space-y-3 text-[13px] leading-6 text-slate-700">
-              {instructions.map((instruction) => (
-                <p key={instruction}>{instruction}</p>
-              ))}
-            </div>
-
-            <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-900 px-4 py-3 font-mono text-[12px] text-slate-100 shadow-inner">
-              <p className="mb-2 text-[11px] font-bold text-emerald-400">// Example output</p>
-              <p className="mb-1.5 whitespace-pre-wrap text-slate-300">Input: {example.input}</p>
-              <p className="whitespace-pre-wrap font-bold text-white">Output: {example.output}</p>
-            </div>
+    <div className="mx-auto flex h-full min-h-0 max-w-[1600px] flex-col">
+      <CodeWorkbench
+        accent={accent === 'rose' ? 'rose' : 'blue'}
+        isThai={w === WORDS.th}
+        brief={brief}
+        fileTabs={<FileTab name="main.py" active onSelect={() => {}} />}
+        editor={
+          <div data-tour="ai-task-editor" className="h-full">
+            <Editor
+              height="100%"
+              defaultLanguage="python"
+              theme="light"
+              value={code}
+              onChange={(value) => {
+                setCode(value || '');
+                setHasPassedTests(false);
+                setIsSuccess(false);
+              }}
+              options={{
+                fontSize: 15,
+                minimap: { enabled: false },
+                padding: { top: 12 },
+                scrollBeyondLastLine: false,
+                lineNumbersMinChars: 3,
+                tabSize: 4,
+                wordWrap: 'on',
+                automaticLayout: true,
+              }}
+            />
           </div>
-
-          <div className="border-t border-slate-200 bg-white/80 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-[13px] font-black text-slate-900">{progressLabel}</p>
-                <p className="mt-0.5 text-[11px] leading-4 text-slate-500">{progressMeta}</p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                {(rewardXp > 0 || rewardCoins > 0) ? (
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-right text-[10px] font-semibold text-slate-600">
-                    <div>Reward</div>
-                    <div className="mt-0.5 whitespace-nowrap font-black text-slate-900">+{rewardXp} XP • +{rewardCoins}</div>
-                  </div>
-                ) : null}
-                {nextLabel ? (
-                  <button className={`rounded-2xl px-4 py-2.5 text-sm font-bold text-white shadow-lg transition-colors ${accentStyles.button}`}>
-                    {nextLabel}
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          </div>
-        </aside>
-
-        <section className="flex min-w-0 flex-1 flex-col bg-white">
-          {/* On a wide screen the sidebar beside this already carries the
-              section label and the title, so repeating both here cost a whole
-              band of vertical space to say the same thing twice. Below xl the
-              sidebar is hidden and this is the only place the learner can read
-              what they are being asked to do, so it stays. */}
-          <div className="border-b border-slate-200 bg-white/90 px-4 py-2.5">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0 xl:hidden">
-                <p className={`text-[10px] font-black uppercase tracking-[0.22em] ${accentStyles.text}`}>{sectionLabel}</p>
-                <div className="mt-0.5 flex items-center gap-2">
-                  <h2 className="truncate text-base font-black text-slate-900">{title}</h2>
-                  {subtitle ? (
-                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${accentStyles.tag}`}>{subtitle}</span>
-                  ) : null}
-                </div>
-              </div>
-              <div className="hidden min-w-0 items-center gap-2 xl:flex">
-                {subtitle ? (
-                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${accentStyles.tag}`}>{subtitle}</span>
-                ) : null}
-              </div>
+        }
+        toolbarStart={
+          <WorkbenchMenu
+            label={w.more}
+            items={[
+              { id: 'copy', icon: Copy, label: w.copy, onClick: copyCode },
+              { id: 'reset', icon: RotateCcw, label: w.resetLabel, onClick: resetCode },
+              { id: 'lumi', icon: MessageSquareCode, label: w.openAi, onClick: () => setIsAiOpen(true) },
+            ]}
+          />
+        }
+        toolbarEnd={
+          <>
+            <ToolButton icon={Play} onClick={handleRun} disabled={isRunning || isLoading}>
+              {w.run}
+            </ToolButton>
+            {/* One filled button at a time: "check" until the answer passes,
+                then "send". Send stays visible but disabled before that, with
+                the reason on hover. */}
+            {hasPassedTests ? (
+              <ToolButton
+                icon={isSubmitting ? Loader2 : CheckCircle2}
+                busy={isSubmitting}
+                primary
+                accent={accent === 'rose' ? 'rose' : 'blue'}
+                onClick={handleSubmit}
+                disabled={isRunning || isLoading || isSubmitting}
+                data-tour="ai-task-submit"
+              >
+                {submitLabel}
+              </ToolButton>
+            ) : (
+              <>
+                <ToolButton
+                  icon={isRunning ? Loader2 : ListChecks}
+                  busy={isRunning}
+                  primary
+                  accent={accent === 'rose' ? 'rose' : 'blue'}
+                  onClick={handleRunTests}
+                  disabled={isRunning || isLoading}
+                  data-tour="ai-task-tests"
+                >
+                  {w.runTests}
+                </ToolButton>
+                <span title={w.submitHint} className="hidden sm:inline-flex">
+                  <ToolButton icon={Send} disabled data-tour="ai-task-submit">{submitLabel}</ToolButton>
+                </span>
+              </>
+            )}
+          </>
+        }
+        terminal={
+          <OutputPanel
+            ref={terminalRef}
+            title={w.output_}
+            lines={terminalLines}
+            emptyText={isLoading ? w.loading : w.empty}
+          >
+            {inputResolverRef.current ? (
+              <InputPrompt
+                prompt={currentPrompt}
+                value={currentInput}
+                onChange={setCurrentInput}
+                onEnter={() => handleInputKeyDown({ key: 'Enter' })}
+              />
+            ) : null}
+          </OutputPanel>
+        }
+        footer={
+          <WorkbenchFooter
+            title={title}
+            meta={isSuccess && !hasPassedTests ? w.solvedMeta : `${sectionLabel} · ${w.rerollsLeft(rerollsRemaining)}`}
+            extra={
               <button
                 type="button"
-                onClick={() => setIsAiOpen((value) => !value)}
-                className={`inline-flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold shadow-sm transition-colors ${isAiOpen ? `${accentStyles.button} text-white` : `border border-slate-200 bg-white ${accentStyles.buttonSoft}`}`}
+                onClick={onReroll}
+                disabled={!onReroll || rerollsRemaining <= 0 || rerolling}
+                className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-slate-300 px-3 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                <MessageSquareCode size={16} />
-                {isAiOpen ? 'Hide AI' : 'Open AI Helper'}
+                <RefreshCcw size={15} className={rerolling ? 'animate-spin' : ''} aria-hidden="true" />
+                {w.reroll}
               </button>
-            </div>
-          </div>
-
-          {/* The problem statement, for every screen narrower than xl.
-              The sidebar that carries it is hidden below that width, which left
-              the learner looking at a code editor and a title with no way to
-              read what they had been asked to do - the instructions existed in
-              exactly one place and that place was not on screen. A <details>
-              rather than a state flag: it opens and closes on its own, and it
-              is keyboard-reachable without any extra work. */}
-          <details open className="shrink-0 border-b border-slate-200 bg-slate-50/80 xl:hidden">
-            <summary className="cursor-pointer px-4 py-2 text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 hover:text-slate-700">
-              โจทย์
-            </summary>
-            <div className="space-y-2 px-4 pb-3 text-[13px] leading-6 text-slate-700">
-              {instructions.map((instruction) => (
-                <p key={instruction}>{instruction}</p>
-              ))}
-
-              <div className="rounded-xl border border-slate-200 bg-slate-900 px-3 py-2 font-mono text-[11px] text-slate-100">
-                <p className="mb-1 font-bold text-emerald-400">// Example output</p>
-                <p className="whitespace-pre-wrap text-slate-300">Input: {example.input}</p>
-                <p className="whitespace-pre-wrap font-bold text-white">Output: {example.output}</p>
-              </div>
-
-              {(rewardXp > 0 || rewardCoins > 0) ? (
-                <p className="text-[11px] font-bold text-slate-500">
-                  {progressLabel}: +{rewardXp} XP • +{rewardCoins} Coins
-                </p>
-              ) : null}
-            </div>
-          </details>
-
-          <div className={`relative flex-1 min-h-0 transition-[padding] duration-300 ${isAiOpen ? 'pr-0 lg:pr-[336px]' : ''}`}>
-            <div className="flex h-full min-h-0 flex-col p-2.5">
-              <div className="rounded-t-xl border border-slate-200 bg-slate-100/80 px-3 py-1.5 shadow-sm">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="font-mono text-xs font-bold text-slate-700">main.py</span>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={onReroll}
-                      disabled={!onReroll || rerollsRemaining <= 0 || rerolling}
-                      className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm transition-colors hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-                      title="เปลี่ยนเป็นโจทย์ใหม่"
-                    >
-                      <RefreshCcw size={14} className={rerolling ? 'animate-spin' : ''} />
-                      เปลี่ยนโจทย์ ({rerollsRemaining})
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-b-xl border border-t-0 border-slate-200 bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]">
-                <div className="relative min-h-0 flex-1 overflow-hidden bg-white">
-                  <div data-tour="ai-task-editor" className="h-full">
-                  <Editor
-                    height="100%"
-                    defaultLanguage="python"
-                    theme="light"
-                    value={code}
-                    onChange={(value) => {
-                      setCode(value || '');
-                      setHasPassedTests(false);
-                      setIsSuccess(false);
-                    }}
-                    options={{
-                      fontSize: 15,
-                      minimap: { enabled: false },
-                      padding: { top: 20, bottom: 84 },
-                      scrollBeyondLastLine: false,
-                      fontFamily: "'JetBrains Mono', 'Fira Code', Consolas, monospace",
-                      renderLineHighlight: 'line',
-                      lineNumbersMinChars: 3,
-                      tabSize: 4,
-                      scrollbar: {
-                        verticalScrollbarSize: 10,
-                        horizontalScrollbarSize: 10,
-                      },
-                    }}
-                  />
-                  </div>
-
-                  {isLoading ? (
-                    <div className={`absolute right-5 top-4 flex items-center gap-2 text-xs font-bold ${accentStyles.text}`}>
-                      <Loader2 size={14} className="animate-spin" />
-                      Python engine loading...
-                    </div>
-                  ) : null}
-
-                </div>
-
-                {/* The action bar used to float ON TOP of the editor, pinned to
-                    its bottom corners. On anything shorter than a desktop
-                    monitor that put Run / Run Tests / Submit directly over the
-                    learner's own code - seen on screen sitting across lines 8
-                    to 10 of a ten-line answer. It is a real row in the layout
-                    now, so it can never cover the code again. */}
-                <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-slate-50/80 px-3 py-2">
-                  <div className="flex gap-1.5">
-                    <button
-                      type="button"
-                      onClick={copyCode}
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition-colors hover:border-slate-300 hover:text-slate-800"
-                      title="Copy code"
-                    >
-                      <Copy size={14} />
-                    </button>
-                    <button
-                      type="button"
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition-colors hover:border-slate-300 hover:text-slate-800"
-                      title="Screenshot"
-                    >
-                      <Camera size={14} />
-                    </button>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={handleRun}
-                      disabled={isRunning || isLoading}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm transition-colors hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <Play size={14} fill="currentColor" />
-                      Run
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleRunTests}
-                      data-tour="ai-task-tests"
-                      disabled={isRunning || isLoading}
-                      className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold text-white shadow transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${isSuccess ? 'bg-emerald-500 hover:bg-emerald-600' : accentStyles.button}`}
-                    >
-                      {isSuccess ? <CheckCircle2 size={14} /> : null}
-                      {isSuccess ? 'Tests Passed' : 'Run Tests'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleSubmit}
-                      data-tour="ai-task-submit"
-                      disabled={isRunning || isLoading || isSubmitting || !hasPassedTests}
-                      className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold text-white shadow transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${accentStyles.button}`}
-                    >
-                      {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : null}
-                      {submitLabel}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="h-36 shrink-0 border-t border-slate-200 bg-slate-950 text-slate-100">
-                  <div className="border-b border-slate-800 px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">
-                    Terminal
-                  </div>
-                  <div ref={terminalRef} className="h-[calc(100%-29px)] overflow-y-auto p-4 font-mono text-[12px]">
-                    {terminalLines.length === 0 ? (
-                      <div className="flex h-full flex-col items-center justify-center space-y-3 text-slate-500">
-                        <ChevronsRight size={24} />
-                        <p>Run your code to see output here.</p>
-                        {workspaceNotice ? <p className="text-center text-xs text-amber-300">{workspaceNotice}</p> : null}
-                      </div>
-                    ) : null}
-                    {terminalLines.map((line, index) => (
-                      <div
-                        key={`${line}-${index}`}
-                        className={`mb-1 ${
-                          line.startsWith('PASS')
-                            ? 'font-bold text-emerald-400'
-                            : line.startsWith('FAIL') || line.startsWith('Error') || line.startsWith('System Error')
-                              ? 'font-bold text-red-400'
-                              : 'text-slate-200'
-                        }`}
-                      >
-                        {line}
-                      </div>
-                    ))}
-                    {inputResolverRef.current ? (
-                      <div className="mt-2 flex items-center font-bold text-emerald-400">
-                        <span>{currentPrompt} &gt; </span>
-                        <input
-                          autoFocus
-                          className="ml-2 flex-1 bg-transparent text-white outline-none"
-                          value={currentInput}
-                          onChange={(event) => setCurrentInput(event.target.value)}
-                          onKeyDown={handleInputKeyDown}
-                        />
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {isAiOpen ? (
-              <aside className="absolute inset-y-3 right-3 z-20 flex w-[min(312px,calc(100%-1.5rem))] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white/95 shadow-[0_24px_60px_rgba(15,23,42,0.18)] backdrop-blur-xl">
-                <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3.5">
-                  <div className="flex items-center gap-3">
-                    <button type="button" onClick={() => setIsAiOpen(false)} className="text-slate-400 transition-colors hover:text-slate-700">
-                      <X size={18} />
-                    </button>
-                      <span className="font-bold text-slate-900">Lumi AI Assistant</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setChatHistory([{ role: 'ai', text: starterMessage }])}
-                    className={`text-xs font-bold ${accentStyles.buttonSoft}`}
-                  >
-                    Clear chat
-                  </button>
-                </div>
-
-                <div className="flex-1 space-y-4 overflow-y-auto p-4">
-                  {chatHistory.map((message, index) => (
-                    <div key={`${message.role}-${index}`} className={`flex gap-3 ${message.role === 'ai' ? '' : 'flex-row-reverse'}`}>
-                      {message.role === 'ai' ? (
-                        <div className={`mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${accentStyles.softBg} ${accentStyles.text}`}>
-                          <MessageSquareCode size={16} />
-                        </div>
-                      ) : null}
-                      <div
-                          className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-7 whitespace-pre-wrap ${
-                          message.role === 'ai'
-                            ? 'rounded-tl-sm bg-slate-100 text-slate-700'
-                            : `${accentStyles.button} rounded-tr-sm text-white`
-                        }`}
-                      >
-                        {message.text}
-                      </div>
-                    </div>
-                  ))}
-
-                  {chatHistory.length === 1 ? (
-                    <div className="ml-12 space-y-2">
-                      <p className="mb-2 text-xs font-medium text-slate-400">Quick actions</p>
-                      {quickActions.map((action) => (
-                        <button
-                          key={action.prompt}
-                          type="button"
-                          onClick={() => sendAiMessage(action.prompt)}
-                          disabled={isAiResponding}
-                          className={`w-full rounded-2xl border border-slate-200 px-4 py-3 text-left text-sm font-semibold text-slate-700 transition-colors ${accent === 'rose' ? 'hover:bg-rose-50' : 'hover:bg-blue-50'}`}
-                        >
-                          {action.label}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-
-                  <div ref={chatEndRef} />
-                </div>
-
-                <div className="border-t border-slate-200 bg-white p-4">
-                  <form
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      sendAiMessage();
-                    }}
-                    className="relative"
-                  >
-                    <input
-                      value={chatInput}
-                      onChange={(event) => setChatInput(event.target.value)}
-                      placeholder="Ask Lumi for hints or bug ideas..."
-                      disabled={isAiResponding}
-                      className={`w-full rounded-2xl border border-slate-200 bg-slate-50 py-2.5 pl-4 pr-11 text-sm text-slate-900 outline-none transition-colors ${accentStyles.panelRing}`}
-                    />
-                    {isAiResponding ? (
-                      <button
-                        type="button"
-                        onClick={lumi.stop}
-                        aria-label="หยุดคำตอบของ Lumi"
-                        title="หยุดคำตอบ"
-                        className={`absolute right-3 top-1/2 -translate-y-1/2 ${accentStyles.buttonSoft}`}
-                      >
-                        <Square size={16} />
-                      </button>
-                    ) : (
-                      <button
-                        type="submit"
-                        aria-label="ส่งข้อความถึง Lumi"
-                        disabled={!chatInput.trim()}
-                        className={`absolute right-3 top-1/2 -translate-y-1/2 disabled:opacity-40 ${accentStyles.buttonSoft}`}
-                      >
-                        <Send size={18} />
-                      </button>
-                    )}
-                  </form>
-                </div>
-              </aside>
-            ) : null}
-          </div>
-        </section>
-      </div>
+            }
+          />
+        }
+        lumiOpen={isAiOpen}
+        lumiPanel={
+          <LumiPanel
+            messages={chatHistory}
+            quickActions={quickActions}
+            responding={isAiResponding}
+            onSend={(text) => sendAiMessage(text)}
+            onStop={lumi.stop}
+            onClear={() => setChatHistory([{ role: 'ai', text: starterMessage }])}
+            onClose={() => setIsAiOpen(false)}
+            isThai={w === WORDS.th}
+          />
+        }
+        onLumiClose={() => setIsAiOpen(false)}
+      />
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { displayCoins } from '../utils/coins.js';
 import { BookOpen, CircleHelp, Coins, Gamepad2, Globe, Lock, LogOut, Medal, MoreHorizontal, Palette, Store, Terminal, Trophy } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -21,7 +22,12 @@ const pageLabels = {
   '/achievements': ['ความสำเร็จ', 'Achievements'],
 };
 
-export default function ModeEntryHeader({ mode, user, children, onNavigate, onLogout }) {
+// subnav (optional): [{ path, label, icon, active }] - the pages inside the
+// current mode (Learning: lessons / Debug Lab / Challenge). It is a row of the
+// header, not a bar of its own under it: as a separate bar it sat outside the
+// page on the plain grid backdrop, ignored the theme, and was hidden on the
+// coding pages, so there was no way back from Debug Lab to the other two.
+export default function ModeEntryHeader({ mode, user, children, onNavigate, onLogout, subnav }) {
   const { i18n } = useTranslation();
   const { pathname } = useLocation();
   const isThai = i18n.language.startsWith('th');
@@ -117,7 +123,7 @@ export default function ModeEntryHeader({ mode, user, children, onNavigate, onLo
                 </div>
               </details>
               <div className="mode-entry-balance" data-tour="coins" aria-label={isThai ? 'เหรียญ' : 'Coins'} title={isThai ? 'เหรียญ' : 'Coins'}>
-                <Coins aria-hidden="true" /><span>{Number(user?.virtual_currency ?? user?.coins ?? 0).toLocaleString()}</span>
+                <Coins aria-hidden="true" /><span>{displayCoins(user?.virtual_currency ?? user?.coins ?? 0)}</span>
               </div>
               {children}
               <div
@@ -175,6 +181,15 @@ export default function ModeEntryHeader({ mode, user, children, onNavigate, onLo
               );
             })}
           </nav>
+          {subnav?.length ? (
+            <nav className="mode-entry-subnav" aria-label={isThai ? `หน้าใน${label}` : `${label} pages`} data-tour="learning-subnav">
+              {subnav.map((item) => (
+                <Link key={item.path} to={item.path} onClick={(event) => handleLink(event, item.path)} className="mode-entry-subnav__link" aria-current={item.active ? 'page' : undefined}>
+                  {item.icon ? <item.icon aria-hidden="true" /> : null}<span>{item.label}</span>
+                </Link>
+              ))}
+            </nav>
+          ) : null}
           {!unlocked && <p id="mode-unlock-hint" className="mode-entry-lock-hint"><Lock aria-hidden="true" />{lockMessage}</p>}
         </div>
       </header>

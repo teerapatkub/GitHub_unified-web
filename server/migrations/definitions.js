@@ -14,6 +14,8 @@ const {
   FOREST_ARTWORK_VERSION,
   THEME_ARTWORK_VERSION,
   THEME_ARTWORK_CLASSIC_VERSION,
+  LEVEL_CURVE_VERSION,
+  LEVEL_REWARDS_VERSION,
   CORE_SCHEMA_VERSION,
   DATA_API_SECURITY_VERSION,
   MINI_GAME_CHOICES_VERSION,
@@ -159,7 +161,23 @@ const createThemeArtworkClassicMigration = (up, signature) => defineMigration({
   up,
 });
 
+const createLevelCurveMigration = (up, signature) => defineMigration({
+  version: LEVEL_CURVE_VERSION,
+  name: 'level_curve_total_xp',
+  signature: signatureFor(up, signature),
+  up,
+});
+
+const createLevelRewardsMigration = (up, signature) => defineMigration({
+  version: LEVEL_REWARDS_VERSION,
+  name: 'level_reward_achievements',
+  signature: signatureFor(up, signature),
+  up,
+});
+
 module.exports = {
+  createLevelRewardsMigration,
+  createLevelCurveMigration,
   createThemeArtworkClassicMigration,
   createThemeArtworkMigration,
   createForestArtworkMigration,

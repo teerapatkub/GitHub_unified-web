@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronLeft, ChevronRight, CircleHelp, Play } from "lucide-react";
+import { ChevronLeft, ChevronRight, Play } from "lucide-react";
 import { useParams } from "react-router-dom";
 import usePyodide from "../hooks/usePyodide";
 import friendlyPyError from "../utils/friendlyPyError";
@@ -53,6 +53,7 @@ export default function LessonPage({
   const [showSummary, setShowSummary] = useState(false);
   const [showPostTestFailModal, setShowPostTestFailModal] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
+  const openGuide = () => setShowTutorial(true);
   const lessonTutorial = getWebTutorial("lesson-page");
   const [editableCodes, setEditableCodes] = useState({});
   const [savingQuiz, setSavingQuiz] = useState(false);
@@ -725,16 +726,8 @@ export default function LessonPage({
 
       {lessonTutorial ? (
         <>
-          <button
-            type="button"
-            onClick={() => setShowTutorial(true)}
-            aria-label="เปิดวิธีใช้งานเว็บ"
-            title="วิธีใช้งานเว็บ"
-            className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-xl border border-white/80 bg-pysim-primary text-white shadow-[0_12px_30px_rgba(15,23,42,0.22)] transition-all hover:-translate-y-1 hover:bg-pysim-primary/90 focus:outline-none focus:ring-4 focus:ring-pysim-primary/30 active:translate-y-0"
-          >
-            <CircleHelp className="h-7 w-7" aria-hidden="true" />
-          </button>
           <WebTutorialModal
+            onOpen={openGuide}
             tutorial={lessonTutorial}
             isOpen={showTutorial}
             onClose={() => setShowTutorial(false)}

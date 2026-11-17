@@ -92,6 +92,14 @@
   display: flex;
   gap: 0.5rem;
   overflow-x: auto;
+  /* overflow-x: auto turns overflow-y into auto too, and the links' 3px
+     underline sits a pixel past the row, so every page drew a stray
+     vertical scrollbar at the right end of the mode tabs. */
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.mode-entry-nav::-webkit-scrollbar {
+  display: none;
 }
 .mode-entry-nav__link {
   position: relative;
@@ -120,6 +128,47 @@
 .mode-entry-nav__link[aria-current='page'] {
   background: var(--mode-soft);
   color: var(--mode-accent);
+}
+/* The second row of the header: the pages inside the current mode. Quieter
+   than the mode tabs above it (smaller, no underline) so the two levels read
+   as parent and child, and on the header's own surface so it is plainly part
+   of the header rather than a separate card floating on the page. */
+.mode-entry-subnav {
+  display: flex;
+  gap: 0.25rem;
+  padding-block: 0.375rem;
+  border-top: 1px solid rgb(var(--c-surface-high));
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.mode-entry-subnav::-webkit-scrollbar {
+  display: none;
+}
+.mode-entry-subnav__link {
+  display: inline-flex;
+  min-height: 2.25rem;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.875rem;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: rgb(var(--c-on-surface-variant));
+  transition: background-color 150ms, color 150ms;
+}
+.mode-entry-subnav__link svg {
+  width: 0.9375rem;
+  height: 0.9375rem;
+}
+.mode-entry-subnav__link:hover {
+  background: var(--mode-soft);
+  color: var(--mode-accent);
+}
+.mode-entry-subnav__link[aria-current='page'] {
+  background: var(--mode-accent);
+  color: rgb(var(--c-on-primary));
 }
 .mode-entry-button {
   display: inline-flex;

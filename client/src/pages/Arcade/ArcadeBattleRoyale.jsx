@@ -644,7 +644,13 @@ export default function ArcadeBattleRoyale({ user: propUser, onLogout }) {
 
         {/* --- LOBBY PHASE VIEW (PUBLIC ROOM BROWSER & ROOM LOBBY) --- */}
         {phase === PHASES.LOBBY && (
-          <div className={isModeEntry ? "h-full w-full overflow-y-auto px-4 py-8 sm:px-6 max-w-7xl mx-auto space-y-6" : "h-full w-full overflow-y-auto p-6 max-w-6xl mx-auto space-y-6"}>
+          <div
+            className={isModeEntry ? "h-full w-full overflow-y-auto py-8 space-y-6" : "h-full w-full overflow-y-auto py-6 space-y-6"}
+            style={{ paddingInline: isModeEntry ? 'max(1rem, calc((100% - 80rem) / 2 + 1.5rem))' : 'max(1.5rem, calc((100% - 72rem) / 2 + 1.5rem))' }}
+          >
+            {/* The scroller spans the full width so its scrollbar sits at the
+                window edge; the content is centred by padding. A centred
+                max-width scroller drew its scrollbar in the middle of the page. */}
             
             {/* VIEW A: NO ROOM JOINED -> PUBLIC ROOM BROWSER */}
             {!currentRoom && restoringRoom ? (

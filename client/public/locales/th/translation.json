@@ -144,7 +144,8 @@
       "Medium": "ปานกลาง",
       "Hard": "ยาก",
       "Very Hard": "ยากมาก"
-    }
+    },
+    "specialFrame": "กรอบพิเศษ"
   },
   "arena": {
     "backToHub": "กลับไปหน้าหลัก",
@@ -416,7 +417,8 @@
       "reward": "รางวัล {{reward}} · {{difficulty}}"
     },
     "customize": "แต่งโปรไฟล์",
-    "change": "เปลี่ยน"
+    "change": "เปลี่ยน",
+    "maxLevel": "MAX"
   },
   "appearance": {
     "title": "แต่งโปรไฟล์",
@@ -453,5 +455,17 @@
     "saving": "กำลังบันทึก...",
     "saved": "บันทึกการแต่งโปรไฟล์แล้ว",
     "saveFailed": "บันทึกบางส่วนไม่สำเร็จ: {{list}}"
+  },
+  "achievementPopup": {
+    "close": "ปิด",
+    "levelUp": "ถึงเลเวล {{level}} แล้ว!",
+    "unlocked": "ปลดล็อกความสำเร็จ!",
+    "coins": "เหรียญ",
+    "newPicture": "รูปโปรไฟล์ใหม่",
+    "newFrame": "กรอบโปรไฟล์ใหม่",
+    "exclusive": "ของพิเศษที่ซื้อในร้านไม่ได้",
+    "wearNow": "ไปใส่เลย",
+    "next": "ถัดไป ({{left}})",
+    "great": "เยี่ยม!"
   }
 }

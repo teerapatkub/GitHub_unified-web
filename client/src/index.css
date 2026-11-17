@@ -393,8 +393,14 @@ button, input, select, textarea {
    animals and plants along the bottom - always sits behind whatever text is
    at the bottom of the screen. A light veil over the lower part, fixed with
    it, keeps that text readable while the art still shows through. Every shop
-   theme is light, so white works for all of them. */
-html[data-theme^="shop-theme-"] .bg-pysim-surface {
+   theme is light, so white works for all of them.
+
+   Only the page itself gets the art - the element that fills the screen
+   (min-h-screen / h-dvh). bg-pysim-surface is also the colour of many small
+   things inside a page (price chips, quiet buttons, the code tab strip, the
+   player card in Arcade); matched here too, each of those showed a window
+   onto the fixed art instead of a solid fill and read as see-through. */
+html[data-theme^="shop-theme-"] .bg-pysim-surface:is(.min-h-screen, .h-dvh) {
     background-color: var(--shop-theme-surface, rgba(255, 247, 251, 0.88)) !important;
     background-image:
         linear-gradient(to bottom,

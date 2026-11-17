@@ -6,18 +6,13 @@ import {
   RotateCcw,
   Play,
   CheckCircle2,
-  Terminal,
   Copy,
   MessageSquareCode,
-  Send,
-  X,
   Star,
   Coins,
   Trophy,
   Loader2,
   ArrowLeft,
-  CircleHelp,
-  Square,
 } from "lucide-react";
 import useLumiChat from "../hooks/useLumiChat";
 import { buildLumiMessages } from "../utils/lumiChat";
@@ -30,6 +25,11 @@ import { loadExerciseList } from './exercise-data.js';
 import usePyodide from "../hooks/usePyodide";
 import friendlyPyError from "../utils/friendlyPyError";
 import SkeletonLoading from "../components/ui/Skeleton";
+import CodeWorkbench, { BriefHeading, FileTab, ToolButton } from "../components/workbench/CodeWorkbench";
+import WorkbenchMenu from "../components/workbench/WorkbenchMenu";
+import WorkbenchFooter from "../components/workbench/WorkbenchFooter";
+import LumiPanel from "../components/workbench/LumiPanel";
+import OutputPanel, { InputPrompt } from "../components/workbench/OutputPanel";
 
 function RewardModal({ xp, currency, hasNext, onClose, onNext }) {
   return (
@@ -108,6 +108,7 @@ export default function ExercisePage({ lessonId, user, onUserRefresh, onNavigate
   const isAiResponding = lumi.isResponding;
   const stopLumi = lumi.stop;
   const [showTutorial, setShowTutorial] = useState(false);
+  const openGuide = () => setShowTutorial(true);
 
   const inputResolverRef = useRef(null);
   const terminalRef = useRef(null);
@@ -335,15 +336,15 @@ const handleSubmit = async () => {
         onUserRefresh?.({ ...user, ...result.user });
       }
 
-      appendLine("ผ่านทุกข้อและบันทึกแบบฝึกหัดแล้ว");
+      appendLine("✓ ผ่านทุกข้อและบันทึกแบบฝึกหัดแล้ว");
       setCelebrationQueue((prev) => [
         ...prev,
         ...(result?.xp_reward || result?.currency_reward
           ? [{
               id: `exercise-success-${Date.now()}`,
               type: "success",
-              title: "Exercise Cleared",
-              subtitle: "คุณผ่านทุก test case ของแบบฝึกหัดข้อนี้แล้ว",
+              title: "ผ่านแบบฝึกหัดแล้ว!",
+              subtitle: "โค้ดของคุณผ่านการตรวจทุกข้อของแบบฝึกหัดนี้",
               rewards: {
                 xp: Number(result?.xp_reward || 0),
                 coins: Number(result?.currency_reward || 0),
@@ -372,7 +373,7 @@ const handleSubmit = async () => {
       ]);
     } catch (error) {
       const body = error?.body;
-      appendLine(`Submit Error: ${body?.detail || error?.detail || error?.message || 'ส่งคำตอบไม่สำเร็จ'}`);
+      appendLine(`✗ ยังไม่ผ่าน: ${body?.detail || error?.detail || error?.message || 'ส่งคำตอบไม่สำเร็จ'}`);
       if (body?.hint) appendLine(`คำแนะนำ: ${body.hint}`);
       setLastFailure(body?.hint ? { hint: body.hint, errorLine: body.errorLine } : null);
     } finally {
@@ -390,38 +391,28 @@ const handleSubmit = async () => {
     }
   };
 
+  // Back to the starting files of this exercise (main.py from starter_code,
+  // any other file from its own content), on the first file.
+  const resetCode = () => {
+    if (!currentEx) return;
+    const files = currentEx.files?.length ? currentEx.files : ["main.py"];
+    const fresh = {};
+    files.forEach((file) => {
+      const name = typeof file === "string" ? file : file.name;
+      fresh[name] = name === "main.py" ? currentEx.starter_code || "" : (typeof file === "string" ? "" : file.content || "");
+    });
+    setFileContents(fresh);
+    setActiveFile(typeof files[0] === "string" ? files[0] : files[0].name);
+    setTerminalLines(["เริ่มโค้ดใหม่จากตอนต้นแล้ว"]);
+  };
+
   const copyCode = async () => {
     try {
-      await navigator.clipboard.writeText(code);
+      await navigator.clipboard.writeText(fileContents[activeFile] ?? code);
       appendLine("คัดลอกโค้ดแล้ว");
     } catch {
       appendLine("ไม่สามารถคัดลอกโค้ดได้ในเบราว์เซอร์นี้");
     }
-  };
-
-  const getTerminalLineClassName = (line) => {
-    if (line.startsWith("PASS") || line.startsWith("ผ่าน")) {
-      return "text-emerald-400";
-    }
-    if (
-      line.startsWith("FAIL") ||
-      line.startsWith("Error:") ||
-      line.startsWith("System Error:") ||
-      line.startsWith("Submit Error:")
-    ) {
-      return "text-red-400";
-    }
-    if (
-      line.startsWith("Expected:") ||
-      line.startsWith("Got:") ||
-      line.startsWith("Failed to load Python:")
-    ) {
-      return "text-yellow-400";
-    }
-    if (line.startsWith("---") || line.startsWith("Python runtime ready.")) {
-      return "text-blue-400 font-semibold";
-    }
-    return "text-gray-300";
   };
 
   const sendAiMessage = async (customMessage = null) => {
@@ -493,386 +484,181 @@ const handleSubmit = async () => {
     );
   }
 
-  return (
-    <div className="mx-auto flex h-full min-h-0 max-w-[1520px] flex-col px-2 pb-2 sm:px-3 sm:pb-3">
-<div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2">
-  {/* ฝั่งขวา: ใช้ flex-wrap gap-3 โดยไม่ต้องมี flex-1 ก็ได้ เพราะ justify-between จะดันออกจากกันเอง */}
-  <div className="flex flex-wrap justify-end gap-3">
-    <button
-      onClick={() => onNavigate?.("lesson", lessonId)}
-      className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-50"
-    >
-      <ArrowLeft size={16} />
-      กลับไปบทเรียน
-    </button>
-  </div>
-</div>
-      <div className="flex min-h-0 flex-1 overflow-hidden rounded-[22px] border border-white/70 bg-white/90 shadow-[0_18px_48px_rgba(15,23,42,0.10)]">
-        <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[248px_minmax(0,1fr)] xl:grid-cols-[276px_minmax(0,1fr)]">
-          <aside className="overflow-y-auto border-b border-slate-200 bg-slate-50/90 p-4 lg:border-b-0 lg:border-r lg:p-5">
-            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-blue-600">
-              Practice Exercise
-            </p>
-            <h1 className="mt-1 text-lg font-black leading-snug tracking-tight text-slate-900 sm:text-xl">
-              {exTitle(currentEx)}
-            </h1>
-            {progressError && <p role="alert" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800">{progressError}</p>}
+  const fileNames = (currentEx.files || [{ name: "main.py" }]).map((file) => (typeof file === "string" ? file : file.name));
+  const isLastExercise = currentExIdx >= exercises.length - 1;
+  const backToLesson = () => onNavigate?.("lesson", lessonId);
 
-            <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm">
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">
-                เลือกโจทย์
-              </p>
-              <div className="mt-2 space-y-1.5">
-                {exercises.map((exercise, index) => {
-                  const isActive = index === currentExIdx;
-                  const isPassed = Boolean(passedExercises[index]);
-
-                  return (
-                    <button
-                      key={exercise.exercise_id ?? index}
-                      type="button"
-                      onClick={() => setCurrentExIdx(index)}
-                      className={`flex w-full items-center justify-between rounded-xl border px-2.5 py-2 text-left text-xs font-semibold transition-colors ${
-                        isActive
-                          ? "border-blue-600 bg-blue-600 text-white"
-                          : isPassed
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-300"
-                          : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50"
-                      }`}
-                    >
-                      <span className="flex items-center gap-2">
-                        <span
-                          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-black ${
-                            isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
-                          }`}
-                        >
-                          {index + 1}
-                        </span>
-                        <span className="text-left leading-snug">{exTitle(exercise) || `โจทย์ที่ ${index + 1}`}</span>
-                      </span>
-                      {isPassed ? (
-                        <CheckCircle2 size={14} className={isActive ? "text-white" : "text-emerald-500"} />
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <h2 className="mt-5 inline-block border-b-2 border-blue-600 pb-0.5 text-sm font-black text-blue-600">
-              คำอธิบาย
-            </h2>
-            <p className="mt-2.5 whitespace-pre-line text-[13px] leading-6 text-slate-700">
-              {exDescription(currentEx)}
-            </p>
-
-            <p className="mt-4 rounded-2xl bg-slate-900 px-3.5 py-3 text-xs text-slate-100">
-              ลองรันโค้ดเพื่อดูผลลัพธ์ แล้วส่งคำตอบให้เซิร์ฟเวอร์ตรวจตามโจทย์
-            </p>
-            
-            <div className="mt-4 flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2.5">
-              <div>
-                <p className="text-base font-black leading-none text-slate-900">
-                  {completionCount}/{exercises.length}
-                </p>
-                <p className="mt-1 text-[10px] text-slate-500">ทำสำเร็จแล้ว</p>
-              </div>
-              <div className="text-right">
-                <div className="text-[10px] font-semibold text-slate-500">รางวัลข้อนี้</div>
-                <div className="text-xs font-black text-slate-900">
-                  +{currentEx.xp_reward || 0} XP · +{currentEx.currency_reward || 0} Coins
-                </div>
-              </div>
-            </div>
-          </aside>
-          
-          <section className={`relative flex min-h-0 min-w-0 flex-col ${isAiOpen ? "xl:pr-[320px]" : ""}`}>
-              <div className="flex min-h-0 flex-1 flex-col">
-{/* The editor takes whatever height is left, so the toolbar and terminal
-    below it always stay on screen - the same layout as CodingWorkspace
-    (Debug Lab / Challenge). A fixed-height editor here overflowed onto the
-    Run / Submit buttons at 100% zoom on a laptop screen. */}
-<div className="flex min-h-0 flex-1 flex-col overflow-hidden border-b border-slate-200">
-  <div className="shrink-0 border-b border-slate-200 bg-slate-50 px-3 py-2">
-    <div className="flex gap-2">
-      {/* 
-        ปรับให้ map ตัวแปรเป็น fileObj (ซึ่งเป็น Object) 
-        และเปลี่ยนการ fallback ให้เป็นโครงสร้าง Object ที่ถูกต้อง { name: "main.py" }
-      */}
-      {(currentEx.files || [{ name: "main.py" }]).map((fileObj) => {
-        // ดึงชื่อไฟล์ออกมาใช้งานอย่างปลอดภัย
-        const fileName = typeof fileObj === 'string' ? fileObj : fileObj.name;
-
-        return (
-          <button
-            key={fileName}
-            onClick={() => setActiveFile(fileName)}
-            className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
-              activeFile === fileName 
-                ? "bg-blue-600 text-white" 
-                : "bg-white text-slate-600 border border-slate-300 hover:bg-slate-50"
-            }`}
-          >
-            {/* ✅ แสดงเฉพาะชื่อไฟล์ที่เป็น String แล้วเรียบร้อย ไม่พังแน่นอนค่ะ! */}
-            {fileName}
-          </button>
-        );
-      })}
-    </div>
-  </div>
-
-  <div
-    data-tour="exercise-editor"
-    className="relative min-h-[160px] flex-1 overflow-hidden"
-  >
-    <Editor
-      height="100%"
-      defaultLanguage="python"
-      theme="light"
-      // 1. เปลี่ยนมาใช้ fileContents ตามไฟล์ที่เลือก
-      value={fileContents[activeFile] || ""} 
-      // 2. ปรับ onChange ให้บันทึกเข้าสู่ state ตาม activeFile
-      onChange={(value) => {
-        setFileContents(prev => ({
-          ...prev,
-          [activeFile]: value || ""
-        }));
-      }}
-      options={{
-        minimap: { enabled: false },
-        fontSize: 15,
-        lineNumbersMinChars: 3,
-        scrollBeyondLastLine: false,
-        wordWrap: "on",
-        // Re-measure when the box resizes; Monaco otherwise keeps the pixel
-        // height it measured first and spills over the toolbar below.
-        automaticLayout: true,
-      }}
-    />
-  </div>
-</div>
-<div className="flex w-full shrink-0 border-b border-slate-200 bg-slate-50 px-2 py-1.5 sm:px-4">
-  {/* เพิ่ม w-full ให้ div ลูก เพื่อให้มันขยายตัวเต็มพื้นที่ แล้ว justify-end จะดันปุ่มไปไว้ขวาสุด */}
-  <div className="flex w-full gap-2">
+  const brief = (
+    <div className="pb-6">
+      <div className="px-5 pb-4 pt-4">
         <button
-      onClick={() => setIsAiOpen((value) => !value)}
-      className={`inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-bold shadow-sm transition-colors ${
-        isAiOpen
-          ? "bg-blue-700 text-white hover:bg-blue-800"
-          : "border border-slate-200 bg-white text-blue-600 hover:bg-slate-50"
-      }`}
-    >
-      <MessageSquareCode size={16} />
-      {isAiOpen ? "ซ่อนผู้ช่วย AI" : "เปิดผู้ช่วย AI"}
-    </button>
-  </div>
-  <div className="flex w-full flex-wrap items-center justify-end gap-2">
-    <button
-      onClick={copyCode}
-      className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-50"
-    >
-      <Copy size={16} />
-      คัดลอก
-    </button>
-<button
-  onClick={() => {
-    if (!currentEx) return;
-
-    // 1. สร้างโครงสร้างข้อมูลเริ่มต้นขึ้นมาใหม่
-    const resetContents = {};
-
-    if (currentEx.files && currentEx.files.length > 0) {
-      currentEx.files.forEach((file) => {
-        const fileName = typeof file === 'string' ? file : file.name;
-        
-        // ถ้าเป็นไฟล์หลัก (main.py) ให้ใช้ starter_code เริ่มต้นของแบบฝึกหัดนั้น
-        // แต่ถ้าเป็นไฟล์อื่น ให้ใช้เนื้อหาเริ่มต้น (content) ที่แนบมากับไฟล์นั้น ๆ
-        let defaultContent = "";
-        if (fileName === "main.py") {
-          defaultContent = currentEx.starter_code || "";
-        } else {
-          defaultContent = typeof file === 'string' ? "" : (file.content || "");
-        }
-
-        resetContents[fileName] = defaultContent;
-      });
-
-      // 2. อัปเดตเนื้อหาทุกไฟล์ใน State หลักกลับเป็นค่าเริ่มต้น
-      setFileContents(resetContents);
-
-      // 3. ตั้งหน้าแท็บที่เปิดอยู่กลับไปที่ไฟล์แรกสุดเสมอ (เช่น main.py)
-      const firstFile = currentEx.files[0];
-      const firstFileName = typeof firstFile === 'string' ? firstFile : firstFile.name;
-      setActiveFile(firstFileName);
-    } else {
-      // กรณี fallback หากไม่มีไฟล์อื่นเลย ให้รีเซ็ตเฉพาะ main.py ตัวเดียว
-      setFileContents({ "main.py": currentEx.starter_code || "" });
-      setActiveFile("main.py");
-    }
-  }}
-  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-50"
->
-  <RotateCcw size={16} />
-  รีเซ็ตโค้ด
-</button>
-    <button
-      onClick={handleRun}
-      disabled={!pyReady || isRunning}
-      data-tour="run-code"
-      className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-    >
-      <Play size={16} />
-      Run
-    </button>
-    <button
-      onClick={handleSubmit}
-      disabled={!pyReady || isRunning}
-      data-tour="submit-exercise"
-      className="inline-flex items-center gap-2 rounded-xl bg-blue-700 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-blue-300"
-    >
-      <CheckCircle2 size={16} />
-      ส่งแบบฝึกหัด
-    </button>
-  </div>
-</div>
-              <div className="flex h-[150px] shrink-0 flex-col bg-[#070d18] xl:h-[185px]">
-                <div className="flex items-center gap-2 border-b border-gray-800/50 bg-gray-900/30 px-4 py-1.5">
-                  <Terminal size={12} className="text-gray-500" />
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">
-                    Terminal
-                  </span>
-                </div>
-
-                <div
-                  ref={terminalRef}
-                  className="flex-1 overflow-y-auto p-3 font-mono text-xs"
-                >
-                  {terminalLines.length === 0 ? (
-                    <p className="text-slate-500">Run your code to see output here.</p>
-                  ) : (
-                    terminalLines.map((line, index) => (
-                      <div key={`${line}-${index}`} className={`mb-0.5 leading-snug ${getTerminalLineClassName(line)}`}>{line}</div>
-                    ))
-                  )}
-
-                  {lastFailure ? (
-                    <button
-                      type="button"
-                      onClick={askLumiAboutError}
-                      disabled={isAiResponding}
-                      className="mt-3 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-600"
-                    >
-                      <MessageSquareCode size={14} />
-                      อธิบายให้ฟังหน่อย
-                    </button>
-                  ) : null}
-
-                  {inputResolverRef.current ? (
-                    <div className="flex items-center text-blue-400">
-                      <span>{currentPrompt} &gt;&nbsp;</span>
-                      <input
-                        autoFocus
-                        value={currentInput}
-                        onChange={(event) => setCurrentInput(event.target.value)}
-                        onKeyDown={handleInputKeyDown}
-                        className="flex-1 bg-transparent text-white outline-none"
-                      />
-                    </div>
-                  ) : null}
-                </div>
-
-              </div>
-            </div>
-
-            {isAiOpen ? (
-              <aside className="absolute inset-y-3 right-3 z-20 hidden w-[300px] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white/95 shadow-[0_24px_60px_rgba(15,23,42,0.18)] backdrop-blur-xl xl:flex">
-                <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3.5">
-                  <div className="flex items-center gap-3">
-                    <button type="button" onClick={() => setIsAiOpen(false)} className="text-slate-400 transition-colors hover:text-slate-700">
-                      <X size={18} />
-                    </button>
-                    <span className="font-bold text-slate-900">Lumi AI Assistant</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setChatHistory([
-                        {
-                          role: "ai",
-                          text: `เราพร้อมช่วยในโจทย์ "${exTitle(currentEx)}" ถ้าต้องการ hint หรือให้ดูโค้ดของคุณ ส่งข้อความมาได้เลย`,
-                        },
-                      ])
-                    }
-                    className="text-xs font-bold text-blue-600"
-                  >
-                    ล้างแชต
-                  </button>
-                </div>
-
-                <div className="flex-1 space-y-4 overflow-y-auto p-4">
-                  {chatHistory.map((message, index) => (
-                    <div key={`${message.role}-${index}`} className={`flex gap-3 ${message.role === "ai" ? "" : "flex-row-reverse"}`}>
-                      {message.role === "ai" ? (
-                        <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
-                          <MessageSquareCode size={16} />
-                        </div>
-                      ) : null}
-                      <div
-                        className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-7 whitespace-pre-wrap ${
-                          message.role === "ai"
-                            ? "rounded-tl-sm bg-slate-100 text-slate-700"
-                            : "rounded-tr-sm bg-blue-700 text-white"
-                        }`}
-                      >
-                        {message.text}
-                      </div>
-                    </div>
-                  ))}
-                  <div ref={chatEndRef} />
-                </div>
-
-                <div className="border-t border-slate-200 bg-white p-4">
-                  <form
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      sendAiMessage();
-                    }}
-                    className="relative"
-                  >
-                    <input
-                      value={chatInput}
-                      onChange={(event) => setChatInput(event.target.value)}
-                      placeholder="ถาม Lumi เรื่องโจทย์หรือโค้ด..."
-                      disabled={isAiResponding}
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-2.5 pl-4 pr-11 text-sm text-slate-900 outline-none transition-colors focus:border-blue-500"
-                    />
-                    {isAiResponding ? (
-                      <button
-                        type="button"
-                        onClick={lumi.stop}
-                        aria-label="หยุดคำตอบของ Lumi"
-                        title="หยุดคำตอบ"
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-600"
-                      >
-                        <Square size={16} />
-                      </button>
-                    ) : (
-                      <button
-                        type="submit"
-                        aria-label="ส่งข้อความถึง Lumi"
-                        disabled={!chatInput.trim()}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-600 disabled:opacity-40"
-                      >
-                        <Send size={18} />
-                      </button>
-                    )}
-                  </form>
-                </div>
-              </aside>
-            ) : null}
-          </section>
-        </div>
+          type="button"
+          onClick={backToLesson}
+          className="mb-3 inline-flex items-center gap-1.5 rounded-lg py-1 text-sm font-semibold text-slate-500 transition-colors hover:text-slate-900"
+        >
+          <ArrowLeft size={16} aria-hidden="true" />
+          กลับไปบทเรียน
+        </button>
+        <p className="text-sm font-bold text-blue-700">แบบฝึกหัด {currentExIdx + 1} / {exercises.length}</p>
+        <h1 className="mt-1 text-xl font-black leading-snug text-slate-900">{exTitle(currentEx)}</h1>
+        {progressError ? (
+          <p role="alert" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800">{progressError}</p>
+        ) : null}
       </div>
+
+      <BriefHeading>โจทย์</BriefHeading>
+      <div className="px-5 py-4">
+        <p className="whitespace-pre-line text-[15px] leading-7 text-slate-800">{exDescription(currentEx)}</p>
+        <ol className="mt-4 space-y-1.5 text-sm text-slate-600">
+          <li><span className="font-bold text-slate-800">1.</span> เขียนโค้ดในช่องทางขวา</li>
+          <li><span className="font-bold text-slate-800">2.</span> กด <span className="font-bold text-slate-800">ลองรัน</span> เพื่อดูผลลัพธ์ ลองได้ไม่จำกัด</li>
+          <li><span className="font-bold text-slate-800">3.</span> มั่นใจแล้วกด <span className="font-bold text-slate-800">ส่งแบบฝึกหัด</span> ระบบจะตรวจและให้รางวัลถ้าถูก</li>
+        </ol>
+        <p className="mt-4 inline-flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-1.5 text-sm font-bold text-amber-800">
+          <Coins size={15} aria-hidden="true" />
+          รางวัล +{currentEx.xp_reward || 0} XP · +{currentEx.currency_reward || 0} เหรียญ
+        </p>
+      </div>
+
+      <BriefHeading>ช่วยเหลือ</BriefHeading>
+      <div className="space-y-2 px-5 py-4">
+        <button
+          type="button"
+          onClick={() => setIsAiOpen(true)}
+          className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 text-left transition-colors hover:border-blue-300 hover:bg-blue-50"
+        >
+          <img src="/data_MiNiGame/NPC_lumi/lumi_smile.png" alt="" className="h-9 w-9 shrink-0 rounded-full bg-sky-50 object-contain" />
+          <span className="min-w-0">
+            <span className="block text-sm font-bold text-slate-900">ถาม Lumi</span>
+            <span className="block text-xs text-slate-500">ขอคำใบ้ หรือให้ช่วยดูว่าโค้ดผิดตรงไหน</span>
+          </span>
+        </button>
+        {lastFailure ? (
+          <button
+            type="button"
+            onClick={askLumiAboutError}
+            disabled={isAiResponding}
+            className="flex w-full items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-3 py-3 text-left text-sm font-bold text-red-800 transition-colors hover:bg-red-100 disabled:opacity-50"
+          >
+            <MessageSquareCode size={18} aria-hidden="true" />
+            ส่งไม่ผ่าน ให้ Lumi อธิบายว่าผิดตรงไหน
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+
+  const lumiPanel = (
+    <LumiPanel
+      messages={chatHistory}
+      quickActions={[
+        { label: "อธิบายโจทย์ข้อนี้ให้หน่อย", prompt: "ช่วยอธิบายโจทย์ข้อนี้แบบเข้าใจง่ายหน่อย" },
+        { label: "ขอคำใบ้สั้น ๆ", prompt: "ขอคำใบ้สั้น ๆ สำหรับข้อนี้ ยังไม่ต้องเฉลย" },
+        { label: "ช่วยดูโค้ดของฉันหน่อย", prompt: "ช่วยดูโค้ดของฉันหน่อยว่าควรแก้ตรงไหน" },
+      ]}
+      responding={isAiResponding}
+      onSend={(text) => sendAiMessage(text)}
+      onStop={lumi.stop}
+      onClear={() =>
+        setChatHistory([
+          { role: "ai", text: `เราพร้อมช่วยในโจทย์ "${exTitle(currentEx)}" ถ้าต้องการ hint หรือให้ดูโค้ดของคุณ ส่งข้อความมาได้เลย` },
+        ])
+      }
+      onClose={() => setIsAiOpen(false)}
+      isThai={lang === "th"}
+    />
+  );
+
+  return (
+    <div className="mx-auto flex h-full min-h-0 max-w-[1600px] flex-col">
+      <CodeWorkbench
+        isThai={lang === "th"}
+        brief={brief}
+        fileTabs={fileNames.map((name) => (
+          <FileTab key={name} name={name} active={activeFile === name} onSelect={() => setActiveFile(name)} />
+        ))}
+        editor={
+          <div data-tour="exercise-editor" className="h-full">
+            <Editor
+              height="100%"
+              defaultLanguage="python"
+              theme="light"
+              value={fileContents[activeFile] || ""}
+              onChange={(value) => setFileContents((prev) => ({ ...prev, [activeFile]: value || "" }))}
+              options={{
+                minimap: { enabled: false },
+                fontSize: 15,
+                lineNumbersMinChars: 3,
+                scrollBeyondLastLine: false,
+                wordWrap: "on",
+                padding: { top: 12 },
+                // Re-measure when the box resizes (Lumi opening, the phone
+                // switch); Monaco otherwise keeps the size it measured first.
+                automaticLayout: true,
+              }}
+            />
+          </div>
+        }
+        toolbarStart={
+          <WorkbenchMenu
+            items={[
+              { id: "copy", icon: Copy, label: "คัดลอกโค้ด", onClick: copyCode },
+              { id: "reset", icon: RotateCcw, label: "เริ่มโค้ดใหม่", onClick: resetCode },
+              { id: "lumi", icon: MessageSquareCode, label: "ถาม Lumi", onClick: () => setIsAiOpen(true) },
+            ]}
+          />
+        }
+        toolbarEnd={
+          <>
+            <ToolButton icon={Play} onClick={handleRun} disabled={!pyReady || isRunning} data-tour="run-code">
+              ลองรัน
+            </ToolButton>
+            <ToolButton icon={isRunning ? Loader2 : CheckCircle2} busy={isRunning} primary onClick={handleSubmit} disabled={!pyReady || isRunning} data-tour="submit-exercise">
+              ส่งแบบฝึกหัด
+            </ToolButton>
+          </>
+        }
+        terminal={
+          <OutputPanel
+            ref={terminalRef}
+            lines={terminalLines}
+            emptyText={pyReady ? "กด “ลองรัน” เพื่อดูว่าโค้ดพิมพ์อะไรออกมา" : "กำลังเตรียม Python…"}
+          >
+            {inputResolverRef.current ? (
+              <InputPrompt
+                prompt={currentPrompt}
+                value={currentInput}
+                onChange={setCurrentInput}
+                onEnter={() => handleInputKeyDown({ key: "Enter" })}
+              />
+            ) : null}
+          </OutputPanel>
+        }
+        footer={
+          <WorkbenchFooter
+            title={exTitle(currentEx)}
+            meta={`ข้อ ${currentExIdx + 1} / ${exercises.length} · ผ่านแล้ว ${completionCount} ข้อ`}
+            done={Boolean(passedExercises[currentExIdx])}
+            items={exercises.map((exercise, index) => ({
+              id: exercise.exercise_id ?? index,
+              label: exTitle(exercise) || `โจทย์ที่ ${index + 1}`,
+              done: Boolean(passedExercises[index]),
+              active: index === currentExIdx,
+              onSelect: () => setCurrentExIdx(index),
+            }))}
+            listLabel="แบบฝึกหัดในบทนี้"
+            back={currentExIdx > 0
+              ? { label: "ข้อก่อน", onClick: () => setCurrentExIdx((index) => Math.max(0, index - 1)) }
+              : { label: "บทเรียน", onClick: backToLesson }}
+            next={isLastExercise
+              ? { label: "กลับบทเรียน", onClick: backToLesson, highlight: Boolean(passedExercises[currentExIdx]) }
+              : { label: "ข้อถัดไป", onClick: () => setCurrentExIdx((index) => Math.min(exercises.length - 1, index + 1)), highlight: Boolean(passedExercises[currentExIdx]) }}
+          />
+        }
+        lumiOpen={isAiOpen}
+        lumiPanel={lumiPanel}
+        onLumiClose={() => setIsAiOpen(false)}
+      />
 
       <ProgressCelebration
         event={celebrationQueue[0] || null}
@@ -887,16 +673,8 @@ const handleSubmit = async () => {
 
       {exerciseTutorial ? (
         <>
-          <button
-            type="button"
-            onClick={() => setShowTutorial(true)}
-            aria-label="เปิดวิธีใช้งานเว็บ"
-            title="วิธีใช้งานเว็บ"
-            className="fixed bottom-6 left-6 z-40 flex h-14 w-14 items-center justify-center rounded-xl border border-white/80 bg-pysim-primary text-white shadow-[0_12px_30px_rgba(15,23,42,0.22)] transition-all hover:-translate-y-1 hover:bg-pysim-primary/90 focus:outline-none focus:ring-4 focus:ring-pysim-primary/30 active:translate-y-0"
-          >
-            <CircleHelp className="h-7 w-7" aria-hidden="true" />
-          </button>
           <WebTutorialModal
+            onOpen={openGuide}
             tutorial={exerciseTutorial}
             isOpen={showTutorial}
             onClose={() => setShowTutorial(false)}

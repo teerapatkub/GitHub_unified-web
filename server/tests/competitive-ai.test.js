@@ -121,3 +121,42 @@ test('the description example is the solution\'s real run, and the form gets ter
   assert.equal(result.rewardCoins, 900);
   assert.equal(result.timeLimitSec, 600);
 });
+
+// Fix list item 5 (2026-11-12): a poster can pick several lesson topics at once
+// (List + Loop) to ask for a problem that uses them together.
+test('generation takes up to three topics; a combination is written live, not from the one-topic pool', async t => {
+  const generated = [];
+  const taken = [];
+  const pool = { take: async (topic) => { taken.push(topic); return { title: 'from pool', description: 'd', testCases: [] }; } };
+  const app = express(); app.use(express.json());
+  app.use((req, _res, next) => { req.player = { user_id: req.headers['x-id'], role: 'user', level: 10 }; next(); });
+  app.use(createCompetitiveAiRouter({ pool, generate: async data => { generated.push(data); return { title: 'live', verifiedCases: 8, topic: data.topic }; } }));
+  const server = app.listen(0, '127.0.0.1'); await new Promise(r => server.once('listening', r));
+  t.after(() => new Promise(r => { server.close(r); server.closeAllConnections(); }));
+  const post = (id, body) => fetch(`http://127.0.0.1:${server.address().port}/generate`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-id': id }, body: JSON.stringify(body) });
+
+  for (const [id, topics] of [['a', []], ['b', ['Loop', 'nope']], ['c', ['Loop', 'Loop']], ['d', ['Loop', 'List', 'Math', 'String']], ['e', 'Loop']]) {
+    assert.equal((await post(id, { topics })).status, 400, `topics ${JSON.stringify(topics)} should be refused`);
+  }
+
+  const combo = await post('f', { topics: ['Loop', 'List'] });
+  assert.equal(combo.status, 200);
+  // Order follows the topic list, whatever order they were clicked in.
+  assert.deepEqual(generated, [{ topic: 'Loop + List', topics: ['Loop', 'List'], scope: 'community' }]);
+  assert.deepEqual(taken, [], 'a combination never comes from the one-topic pool');
+
+  const single = await (await post('g', { topics: ['Math'] })).json();
+  assert.equal(single.source, 'pool');
+  assert.deepEqual(taken, ['Math']);
+});
+
+test('a problem for several topics asks the model to use every one of them', async () => {
+  let instruction = '';
+  const result = await generateChallenge({ topic: 'List + Loop', topics: ['List', 'Loop'], scope: 'community' }, {
+    ask: async (request) => { instruction = request.instruction; return draft(); },
+  });
+  assert.match(instruction, /"List"/);
+  assert.match(instruction, /"Loop"/);
+  assert.match(instruction, /every one/);
+  assert.equal(result.topic, 'List + Loop');
+});

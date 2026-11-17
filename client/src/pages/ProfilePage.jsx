@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import ProfileAppearance from '../components/ProfileAppearance';
 import { assetUrl } from '../config/api.js';
+import { displayCoins } from '../utils/coins.js';
 import { requestJson } from '../config/api-client.js';
 import SkeletonLoading from '../components/ui/Skeleton.jsx';
 import { useTranslation } from 'react-i18next';
@@ -344,7 +345,9 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
                                         {p('level', { level: progression.level })}
                                     </span>
                                     <span className="text-xs font-bold text-pysim-outline">
-                                        {progression.xp_into_level} / {progression.xp_needed_this_level} XP
+                                        {progression.max_level
+                                            ? p('maxLevel', { defaultValue: 'MAX' })
+                                            : `${progression.xp_into_level.toLocaleString()} / ${progression.xp_needed_this_level.toLocaleString()} XP`}
                                     </span>
                                 </div>
                                 <ProgressBar percent={progression.xp_percent} className="mt-2" />
@@ -352,7 +355,7 @@ export default function ProfilePage({ user: propUser, onUserRefresh }) {
 
                             <div className="mt-5 flex flex-wrap justify-center gap-4 sm:justify-start">
                                 <span className="inline-flex items-center gap-1.5 text-sm font-bold text-amber-600">
-                                    <Coins size={16} /> {p('coins', { count: user.virtual_currency.toLocaleString() })}
+                                    <Coins size={16} /> {p('coins', { count: displayCoins(user.virtual_currency) })}
                                 </span>
                                 <span className="inline-flex items-center gap-1.5 text-sm font-bold text-orange-500">
                                     <Flame size={16} /> {p('streak', { days: progression.streak_days })}

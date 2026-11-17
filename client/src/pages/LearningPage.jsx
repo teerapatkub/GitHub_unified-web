@@ -4,9 +4,8 @@ import {
   Lock,
   PlayCircle,
   CheckCircle2,
-  CircleHelp,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { useTranslation } from "react-i18next";
 import { API_BASE } from '../config/api.js';
@@ -14,30 +13,12 @@ import WebTutorialModal from "../components/WebTutorialModal";
 import { getWebTutorial } from "../data/webTutorials";
 import SkeletonLoading from "../components/ui/Skeleton";
 
-const getLevelProgress = (xp = 0) => {
-  const numericXp = Number(xp || 0);
-  let level = 1;
-  let remainingXp = numericXp;
-  let requiredXpForNextLevel = 120;
-
-  while (remainingXp >= requiredXpForNextLevel) {
-    remainingXp -= requiredXpForNextLevel;
-    level += 1;
-    requiredXpForNextLevel = 120 * level;
-  }
-
-  return {
-    level,
-    xpInCurrentLevel: remainingXp,
-    xpNeededThisLevel: Math.max(1, requiredXpForNextLevel),
-  };
-};
-
 export default function LearningPage({ onNavigate, user }) {
   const [modules, setModules] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
+  const openGuide = () => setShowTutorial(true);
   const { t } = useTranslation();
   const learningTutorial = getWebTutorial("learning-overview");
   const userId = user?.user_id;
@@ -48,20 +29,18 @@ export default function LearningPage({ onNavigate, user }) {
     return !translated || translated === key ? fallback : translated;
   };
 
+  // The level bar comes from the server (server/levels.js, fix list item 11).
+  // There used to be a 120 x level curve here as well, which disagreed with the
+  // server's; with no progression yet (a guest, a cached account) the bar is
+  // simply empty rather than computed a second way.
   const progression = user?.progression || {};
-  const totalXp = Number(user?.xp || 0);
   const streakDays = Number(user?.streak_days || 0);
-  const storedLevel = Number(user?.level ?? 1);
-  const levelProgress = getLevelProgress(totalXp);
-  // The server sends a `progression` block; fall back to the local curve when it
-  // is absent so guests and stale /profile responses still render a sane bar.
-  const currentLevel = Number(progression.level || Math.max(storedLevel, levelProgress.level));
-  const currentLevelXp = Number(progression.xpIntoLevel ?? levelProgress.xpInCurrentLevel);
-  const xpNeededThisLevel = Number(progression.xpNeededThisLevel || levelProgress.xpNeededThisLevel || 100);
-  const xpProgressPercent = Number(
-    progression.xpProgressPercent
-    ?? Math.min(100, Math.round((currentLevelXp / (xpNeededThisLevel || 1)) * 100))
-  );
+  const totalXp = Number(user?.xp || 0);
+  const currentLevel = Number(progression.level || user?.level || 1);
+  const atMaxLevel = Boolean(progression.maxLevel);
+  const currentLevelXp = Number(progression.xpIntoLevel || 0);
+  const xpNeededThisLevel = Number(progression.xpNeededThisLevel || 0);
+  const xpProgressPercent = Number(progression.xpProgressPercent || 0);
   const promotionExamEligible = Boolean(progression.promotionExamEligible);
   const promotionStageLabel = progression.promotionStage === "intermediate_to_advanced"
     ? "Intermediate → Advanced"
@@ -112,11 +91,13 @@ export default function LearningPage({ onNavigate, user }) {
     };
   }, [userId, userLevel]);
 
-  const continueLearning = () => {
-    const nextLesson = modules
+  // The one lesson the page leads with: the first unfinished lesson this
+  // level can open, in course order.
+  const nextLesson = useMemo(() => modules
       .flatMap((module) =>
         (module.lessons || []).map((lesson) => ({
           ...lesson,
+          source: lesson,
           moduleData: module,
           moduleId: Number(module.module_id || 0),
           moduleOrder: Number(module.order_index || 0),
@@ -132,8 +113,13 @@ export default function LearningPage({ onNavigate, user }) {
           a.moduleId - b.moduleId ||
           a.moduleOrder - b.moduleOrder ||
           Number(a.order_index || 0) - Number(b.order_index || 0)
-      )[0];
+      )[0], [modules, currentLevel]);
+  const nextLessonNumber = nextLesson
+    ? (nextLesson.moduleData.lessons || []).findIndex((lesson) => lesson === nextLesson.source) + 1
+    : 0;
+  const startedAlready = modules.some((module) => (module.lessons || []).some((lesson) => lesson.is_completed));
 
+  const continueLearning = () => {
     if (!nextLesson) {
       setShowCompleteModal(true);
       return;
@@ -152,7 +138,12 @@ export default function LearningPage({ onNavigate, user }) {
 
   return (
     <div className="mode-entry mode-entry--learn min-h-screen bg-pysim-surface pb-20">
-      <HeroSection />
+      <NextStep
+        lesson={nextLesson}
+        lessonNumber={nextLessonNumber}
+        startedAlready={startedAlready}
+        onContinue={continueLearning}
+      />
 
       <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 py-8 sm:px-6 md:flex-row">
         <aside className="w-full space-y-8 md:w-72 md:shrink-0">
@@ -193,9 +184,9 @@ export default function LearningPage({ onNavigate, user }) {
                 <div className="mt-2 flex items-center justify-between text-[11px] font-semibold text-pysim-outline">
                   <span>LV. {currentLevel}</span>
                   <span>
-                    {currentLevelXp} / {xpNeededThisLevel} XP
+                    {atMaxLevel ? 'MAX' : `${currentLevelXp.toLocaleString()} / ${xpNeededThisLevel.toLocaleString()} XP`}
                   </span>
-                  <span>LV. {currentLevel + 1}</span>
+                  <span>{atMaxLevel ? '' : `LV. ${currentLevel + 1}`}</span>
                 </div>
               </div>
 
@@ -218,29 +209,16 @@ export default function LearningPage({ onNavigate, user }) {
               </div>
             </div>
 
-            <div className="pt-4">
-              <button
-                type="button"
-                onClick={continueLearning}
-                data-tour="continue-learning"
-                className="mode-entry-action flex w-full items-center justify-center gap-2 min-h-11 rounded-xl bg-pysim-secondary-container py-3 text-sm font-bold tracking-wide text-pysim-on-secondary-container transition-all hover:opacity-90 active:scale-95"
-              >
-                เรียนต่อ
-              </button>
-            </div>
           </div>
         </aside>
 
         <section className="min-w-0 flex-1 space-y-8">
-          <header className="space-y-2">
-            <h1 className="mode-entry-title text-pysim-primary">
-              {resolveText("hero.title", "เส้นทางการเรียนรู้ของคุณ")}
-            </h1>
-            <p className="max-w-2xl text-lg text-pysim-on-surface-variant">
-              {resolveText(
-                "hero.subtitle",
-                "เรียนรู้ Python อย่างเป็นขั้นตอน ผ่านบทเรียน แบบทดสอบ และแบบฝึกหัดที่ต่อเนื่องกัน"
-              )}
+          <header className="space-y-1">
+            <h2 className="text-2xl font-black tracking-tight text-pysim-primary">
+              {resolveText("learning.allLessons", "บทเรียนทั้งหมด")}
+            </h2>
+            <p className="max-w-2xl text-sm text-pysim-on-surface-variant">
+              {resolveText("learning.allLessonsHint", "เรียนตามลำดับจากบนลงล่าง หมวดที่มีแม่กุญแจจะเปิดเมื่อเลเวลถึง")}
             </p>
           </header>
 
@@ -249,7 +227,7 @@ export default function LearningPage({ onNavigate, user }) {
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.24em] text-violet-600">
-                    Promotion Exam Ready
+                    พร้อมสอบเลื่อนขั้น
                   </p>
                   <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-950">
                     ถึงเวลาสอบเลื่อนขั้นแล้ว
@@ -332,16 +310,8 @@ export default function LearningPage({ onNavigate, user }) {
 
       {learningTutorial ? (
         <>
-          <button
-            type="button"
-            onClick={() => setShowTutorial(true)}
-            aria-label="เปิดวิธีใช้งานเว็บ"
-            title="วิธีใช้งานเว็บ"
-            className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-xl border border-white/80 bg-pysim-primary text-white shadow-[0_12px_30px_rgba(15,23,42,0.22)] transition-all hover:-translate-y-1 hover:bg-pysim-primary/90 focus:outline-none focus:ring-4 focus:ring-pysim-primary/30 active:translate-y-0"
-          >
-            <CircleHelp className="h-7 w-7" aria-hidden="true" />
-          </button>
           <WebTutorialModal
+            onOpen={openGuide}
             tutorial={learningTutorial}
             isOpen={showTutorial}
             onClose={() => setShowTutorial(false)}
@@ -458,7 +428,7 @@ const ModuleAccordion = ({
               <CheckCircle2 className="h-5 w-5 text-pysim-primary" />
             ) : (
               <span className="rounded bg-pysim-primary-fixed px-2 py-1 text-xs font-bold text-pysim-on-primary-fixed">
-                ACTIVE
+                กำลังเรียน
               </span>
             )}
           </div>
@@ -600,53 +570,50 @@ const ModuleAccordion = ({
   );
 };
 
-const HeroSection = () => {
+// The top of the learning home: what to do next, and one button that does
+// it. It replaced a slogan banner ("start your learning journey") that filled
+// a phone's whole first screen and pushed "continue" below the fold.
+const NextStep = ({ lesson, lessonNumber, startedAlready, onContinue }) => {
   const { t } = useTranslation();
-
   const resolveText = (key, fallback) => {
     const translated = t(key);
     return !translated || translated === key ? fallback : translated;
   };
+  const moduleTitle = lesson?.moduleData?.title;
 
   return (
-    <div className="relative min-h-[280px] w-full overflow-hidden select-none">
-      <div className="absolute inset-0 python-gradient"></div>
-      <div className="absolute -right-12 -top-12 h-64 w-64 rounded-full bg-pysim-secondary-container/20 blur-3xl"></div>
-      <div className="absolute bottom-0 left-0 h-24 w-full bg-gradient-to-t from-pysim-surface to-transparent"></div>
-
-      <div className="relative mx-auto flex min-h-[280px] max-w-7xl flex-col justify-center px-4 py-6 sm:px-6">
-        <div className="mode-entry-card max-w-3xl rounded-[28px] bg-white/[0.92] px-5 py-6 sm:px-8 sm:py-7 shadow-[0_18px_55px_rgba(15,23,42,0.08)] backdrop-blur-sm">
-          <Motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-            className="mb-4 flex items-center gap-2"
+    <div className="python-gradient">
+      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
+        <div className="mode-entry-card flex flex-col gap-5 rounded-2xl bg-white/95 p-5 shadow-[0_18px_55px_rgba(15,23,42,0.10)] sm:flex-row sm:items-center sm:justify-between sm:p-7">
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-pysim-secondary">
+              {lesson
+                ? startedAlready
+                  ? resolveText("learning.nextUp", "ทำต่อจากครั้งก่อน")
+                  : resolveText("learning.firstUp", "เริ่มบทแรกได้เลย")
+                : resolveText("learning.allDone", "เรียนครบทุกบทที่เปิดอยู่แล้ว")}
+            </p>
+            <h1 className="mt-1 text-2xl font-black leading-snug tracking-tight text-pysim-on-surface sm:text-3xl">
+              {lesson ? lesson.title : resolveText("learning.allDoneTitle", "เก่งมาก! รอบทใหม่หรือลองโหมดอื่นได้")}
+            </h1>
+            {lesson && moduleTitle ? (
+              <p className="mt-1.5 text-sm text-pysim-on-surface-variant">
+                {moduleTitle}
+                {lessonNumber > 0 ? ` · ${resolveText("learning.lessonNo", "บทที่")} ${lessonNumber} / ${(lesson.moduleData.lessons || []).length}` : ""}
+              </p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={onContinue}
+            data-tour="continue-learning"
+            className="mode-entry-action inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-pysim-primary px-6 py-3 text-base font-bold text-white shadow-md transition-colors hover:bg-pysim-primary/90 focus:outline-none focus-visible:ring-4 focus-visible:ring-pysim-primary/30 sm:w-auto"
           >
-            <span className="text-xl font-black text-pysim-primary">
-              PyArena Academy
-            </span>
-          </Motion.div>
-
-          <Motion.h1
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.2 }}
-            className="mode-entry-title text-pysim-on-surface"
-          >
-            {resolveText("hero.title", "เริ่มต้นเส้นทางการเรียนรู้")}
-          </Motion.h1>
-
-          <Motion.p
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.3 }}
-            className="mt-4 max-w-2xl text-lg leading-8 text-pysim-on-surface-variant"
-          >
-            {resolveText(
-              "hero.subtitle",
-              "เรียนรู้ไปพร้อมกับความสนุก พัฒนาทักษะของคุณผ่านบทเรียนที่ออกแบบให้ค่อย ๆ เข้าใจง่าย"
-            )}
-          </Motion.p>
+            <PlayCircle className="h-5 w-5" aria-hidden="true" />
+            {lesson
+              ? startedAlready ? resolveText("learning.continue", "เรียนต่อ") : resolveText("learning.start", "เริ่มเรียน")
+              : resolveText("learning.viewSummary", "ดูสรุป")}
+          </button>
         </div>
       </div>
     </div>

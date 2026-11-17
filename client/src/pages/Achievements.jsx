@@ -108,12 +108,19 @@ export default function Achievements({ user }) {
                                                         <Coins size={14} /> {Number(ach.reward_money).toLocaleString()}
                                                     </span>
                                                 )}
-                                                {ach.reward_item_url && (
-                                                    <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-2 py-1 text-[11px] font-bold text-violet-700">
-                                                        <img src={assetUrl(ach.reward_item_url)} alt="" className="h-5 w-5 rounded-full object-cover" />
-                                                        {t('achievements.specialPicture', 'รูปพิเศษ')}: {ach.reward_item_name}
+                                                {/* Every item it gives - the level rewards at 50 and 100 give
+                                                    a frame and a picture (fix list item 12). */}
+                                                {(Array.isArray(ach.reward_items) && ach.reward_items.length > 0
+                                                    ? ach.reward_items
+                                                    : ach.reward_item_url ? [{ url: ach.reward_item_url, name: ach.reward_item_name, type: 'PROFILE_PICTURE' }] : []
+                                                ).map((item) => (
+                                                    <span key={item.url} className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-2 py-1 text-[11px] font-bold text-violet-700">
+                                                        <img src={assetUrl(item.url)} alt="" className={`h-5 w-5 ${item.type === 'PROFILE_PICTURE' ? 'rounded-full object-cover' : 'object-contain'}`} />
+                                                        {item.type === 'PROFILE_PICTURE'
+                                                            ? t('achievements.specialPicture', 'รูปพิเศษ')
+                                                            : t('achievements.specialFrame', 'กรอบพิเศษ')}: {item.name}
                                                     </span>
-                                                )}
+                                                ))}
                                             </div>
                                         </div>
 

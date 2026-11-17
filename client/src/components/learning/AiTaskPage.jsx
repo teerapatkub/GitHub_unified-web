@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import { AlertTriangle, CircleHelp } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import CodingWorkspace from './CodingWorkspace';
 import ProgressCelebration from './ProgressCelebration';
 import WebTutorialModal from '../WebTutorialModal';
@@ -15,15 +15,19 @@ const MODE_COPY = {
       { label: 'ช่วยดูบั๊กให้หน่อย', prompt: 'ช่วยหาให้หน่อยว่าโค้ดฉันผิดตรงไหน ขอโค้ดที่ถูกต้องหน่อย' },
       { label: 'ให้ hint สั้น ๆ', prompt: 'ช่วยให้ hint สั้น ๆ สำหรับการแก้โจทย์นี้หน่อย' },
     ],
-    progressLabel: 'Debug Reward',
+    progressLabel: 'รางวัลเมื่อแก้สำเร็จ',
+    sectionLabel: 'ฝึกแก้บั๊ก',
+    submitLabel: 'ส่งคำตอบ',
   },
   challenge: {
     quickActions: [
       { label: 'ขอ hint สั้น ๆ', prompt: 'ช่วยให้ hint สั้น ๆ สำหรับโจทย์ข้อนี้หน่อย' },
       { label: 'ช่วยดูแนวทางโค้ด', prompt: 'ช่วยดูแนวทางจากโค้ดตอนนี้หน่อยว่าควรแก้ตรงไหนบ้าง' },
-      { label: 'Where is the bug in my code?', prompt: 'หาให้หน่อยว่าโค้ดฉันผิดตรงไหน ขอโค้ดที่ถูกต้องหน่อย' },
+      { label: 'โค้ดฉันผิดตรงไหน', prompt: 'หาให้หน่อยว่าโค้ดฉันผิดตรงไหน ขอโค้ดที่ถูกต้องหน่อย' },
     ],
-    progressLabel: 'Challenge Reward',
+    progressLabel: 'รางวัลเมื่อทำสำเร็จ',
+    sectionLabel: 'โจทย์ท้าทาย',
+    submitLabel: 'ส่งคำตอบ',
   },
 };
 
@@ -34,6 +38,7 @@ export default function AiTaskPage({ mode = 'exercise', user, onUserRefresh }) {
   const [rerolling, setRerolling] = useState(false);
   const [celebrationQueue, setCelebrationQueue] = useState([]);
   const [showTutorial, setShowTutorial] = useState(false);
+  const openGuide = () => setShowTutorial(true);
 
   const userId = user?.user_id;
   const modeCopy = MODE_COPY[mode] || MODE_COPY.exercise;
@@ -198,10 +203,6 @@ export default function AiTaskPage({ mode = 'exercise', user, onUserRefresh }) {
     setCelebrationQueue((prev) => prev.slice(1));
   }, []);
 
-  const progressMeta = useMemo(() => {
-    if (!task) return '';
-    return `+${task.rewardXp} XP • +${task.rewardCoins} Coins • เปลี่ยนโจทย์ได้อีก ${task.rerollsRemaining} ครั้ง`;
-  }, [task]);
 
   if (loading) {
     return (
@@ -241,10 +242,9 @@ export default function AiTaskPage({ mode = 'exercise', user, onUserRefresh }) {
     <CodingWorkspace
       user={user}
       taskId={task.taskId}
-      sectionLabel={task.sectionLabel}
+      sectionLabel={modeCopy.sectionLabel || task.sectionLabel}
       title={task.title}
       accent={task.accent}
-      subtitle={task.subtitle}
       instructions={task.instructions}
       example={task.example}
       initialCode={task.starterCode}
@@ -252,9 +252,7 @@ export default function AiTaskPage({ mode = 'exercise', user, onUserRefresh }) {
         ? 'สวัสดีค่ะ เราคือ Lumi ผู้ช่วยประจำด่าน Challenge นี้ ถ้าอยากได้ hint หรืออยากให้ช่วยมองบั๊กจากโค้ดที่เขียนอยู่ เรียกเราได้เลยนะคะ ✨'
         : 'สวัสดีค่ะ เราคือ Lumi ผู้ช่วยของห้อง Debug Lab นี้ ถ้าติดบั๊กหรืออยากได้ hint ถามเราได้เลยนะคะ ✨'}
       testCases={task.example ? [{ input: task.example.input, expected: task.example.output }] : []}
-      submitLabel={mode === 'challenge' ? 'Submit challenge' : 'Submit answer'}
-      progressLabel={modeCopy.progressLabel}
-      progressMeta={progressMeta}
+      submitLabel={modeCopy.submitLabel}
       quickActions={modeCopy.quickActions}
       rewardXp={task.rewardXp}
       rewardCoins={task.rewardCoins}
@@ -267,16 +265,8 @@ export default function AiTaskPage({ mode = 'exercise', user, onUserRefresh }) {
     />
     {tutorial ? (
       <>
-        <button
-          type="button"
-          onClick={() => setShowTutorial(true)}
-          aria-label="เปิดวิธีใช้งานเว็บ"
-          title="วิธีใช้งานเว็บ"
-          className="fixed bottom-6 left-6 z-40 flex h-14 w-14 items-center justify-center rounded-xl border border-white/80 bg-pysim-primary text-white shadow-[0_12px_30px_rgba(15,23,42,0.22)] transition-all hover:-translate-y-1 hover:bg-pysim-primary/90 focus:outline-none focus:ring-4 focus:ring-pysim-primary/30 active:translate-y-0"
-        >
-          <CircleHelp className="h-7 w-7" aria-hidden="true" />
-        </button>
         <WebTutorialModal
+          onOpen={openGuide}
           tutorial={tutorial}
           isOpen={showTutorial}
           onClose={() => setShowTutorial(false)}

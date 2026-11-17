@@ -24,7 +24,9 @@ import {
   ListChecks,
   Trash2,
   ShoppingBag,
-  Flame
+  Flame,
+  X,
+  Check
 } from 'lucide-react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import Editor from '@monaco-editor/react';
@@ -67,14 +69,16 @@ const arenaFallbacks = {
 };
 
 const scoringRubric = [
-  { key: 'correctness', label: 'Correctness', weight: 50, icon: ShieldCheck, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-  { key: 'complexity', label: 'Efficiency', weight: 20, icon: Gauge, color: 'text-blue-600', bg: 'bg-blue-50' },
-  { key: 'cleanCode', label: 'Clean Code', weight: 30, icon: Sparkles, color: 'text-violet-600', bg: 'bg-violet-50' },
+  { key: 'correctness', label: 'Correctness', th: 'ถูกต้อง', weight: 50, icon: ShieldCheck, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+  { key: 'complexity', label: 'Efficiency', th: 'ทำงานเร็ว', weight: 20, icon: Gauge, color: 'text-blue-600', bg: 'bg-blue-50' },
+  { key: 'cleanCode', label: 'Clean Code', th: 'อ่านง่าย', weight: 30, icon: Sparkles, color: 'text-violet-600', bg: 'bg-violet-50' },
 ];
 
 const defaultPostTestCases = [
   { input: '', expected: '' },
 ];
+
+const MAX_TOPICS = 3; // matches the server's MAX_TOPICS (competitiveAi.js)
 
 const challengeTemplates = [
   { category: 'Loop', guide: 'เหมาะกับโจทย์ที่ต้องทำซ้ำ เช่น รวมค่า นับจำนวน หรือพิมพ์รูปแบบหลายบรรทัด' },
@@ -215,6 +219,7 @@ const getLoadErrorKey = (error, fallback) => {
 
 export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
   const { t: translate, i18n } = useTranslation();
+  const isThaiUi = !String(i18n.language || 'th').startsWith('en');
   const t = (key, fallback) => {
     if (key.startsWith('arena.')) {
       return translate(key, arenaFallbacks[key.replace('arena.', '')] || fallback || key);
@@ -253,7 +258,11 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
   const [postReward, setPostReward] = useState(300);
   const [postTimeLimit, setPostTimeLimit] = useState(300);
   const [postTestCases, setPostTestCases] = useState(defaultPostTestCases);
-  const [selectedLessonTemplate, setSelectedLessonTemplate] = useState(challengeTemplates[0]);
+  // Lesson topics for "Generated โจทย์": up to MAX_TOPICS together, e.g.
+  // List + Loop (fix list item 5). They only steer generation - nothing about
+  // them is posted - so changing them leaves the form as it is.
+  const [selectedTopics, setSelectedTopics] = useState([challengeTemplates[0].category]);
+  const [topicLimitHit, setTopicLimitHit] = useState(false);
   const [isRunningTests, setIsRunningTests] = useState(false);
   const [now, setNow] = useState(Date.now());
 
@@ -727,14 +736,25 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
     setPostTestCases((cases) => cases.length > 1 ? cases.filter((_, caseIndex) => caseIndex !== index) : cases);
   };
 
-  const applyChallengeTemplate = (template) => {
-    setSelectedLessonTemplate(template);
-    setPostTitle("");
-    setPostDesc("");
-    setPostReward(300);
-    setPostTimeLimit(300);
-    setPostTestCases(defaultPostTestCases);
+  // Picking a topic used to wipe the title, description and test cases, so
+  // trying a second topic lost what had been written. It no longer touches
+  // the form; the last topic cannot be cleared, there is always one.
+  const toggleTopic = (category) => {
+    setTopicLimitHit(false);
+    setSelectedTopics((current) => {
+      if (current.includes(category)) {
+        return current.length > 1 ? current.filter((item) => item !== category) : current;
+      }
+      if (current.length >= MAX_TOPICS) {
+        setTopicLimitHit(true);
+        return current;
+      }
+      // Keep the list's own order whatever the click order was.
+      return challengeTemplates.map((item) => item.category).filter((item) => item === category || current.includes(item));
+    });
   };
+  const selectedTemplates = challengeTemplates.filter((template) => selectedTopics.includes(template.category));
+  const topicLabel = selectedTopics.join(' + ');
 
   return (
     <div className={`${!isEditorOpen ? 'mode-entry mode-entry--competitive ' : ''}min-h-screen bg-pysim-surface text-slate-800 flex flex-col font-sans antialiased overflow-x-hidden relative`}>
@@ -752,18 +772,18 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
             <Trophy className="h-5 w-5" />
           </span>
           <div>
-            <h1 className={!isEditorOpen ? "mode-entry-title text-slate-800" : "text-sm font-black text-slate-800"}>Competitive Arena</h1>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-blue-500">Community-driven coding challenges</p>
+            <h1 className={!isEditorOpen ? "mode-entry-title text-slate-800" : "text-sm font-black text-slate-800"}>{isThaiUi ? 'กระดานโจทย์' : 'Competitive Arena'}</h1>
+            <p className="text-xs font-semibold text-blue-600">{isThaiUi ? 'โจทย์จากเพื่อนผู้เล่น ทำให้ผ่านแล้วรับเหรียญ' : 'Challenges posted by players. Solve one to earn coins.'}</p>
           </div>
         </div>
 
-        <div data-tour="competitive-scoring" className={`${!isEditorOpen ? 'flex flex-wrap' : 'grid grid-cols-3'} gap-2 text-[10px] font-black uppercase text-slate-500`}>
+        <div data-tour="competitive-scoring" className={`${!isEditorOpen ? 'flex flex-wrap' : 'grid grid-cols-3'} gap-2 text-[11px] font-bold text-slate-600`}>
           {scoringRubric.map((item) => {
             const Icon = item.icon;
             return (
               <div key={item.key} className={`flex items-center gap-2 rounded-xl px-3 py-2 ${item.bg}`}>
                 <Icon className={`h-3.5 w-3.5 ${item.color}`} />
-                <span>{item.weight}% {item.label}</span>
+                <span>{isThaiUi ? `คะแนน${item.th} ${item.weight}%` : `${item.weight}% ${item.label}`}</span>
               </div>
             );
           })}
@@ -783,15 +803,19 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
             
             {/* POST CHALLENGE BOX (like Facebook write post) */}
             <div data-tour="competitive-post" className="mode-entry-card bg-white border border-slate-200 rounded-3xl p-5 shadow-sm">
-              <div className="flex items-center space-x-3 mb-4">
-                <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center">
-                  <User className="h-4 w-4 text-slate-400" />
+              <div className={`flex flex-wrap items-center justify-between gap-3 ${showPostForm ? 'mb-4' : ''}`}>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-slate-800">{isThaiUi ? 'มีโจทย์อยากให้คนอื่นลอง?' : 'Have a task for others to try?'}</p>
+                  <p className="text-xs text-slate-500">{isThaiUi ? 'โพสต์แล้วได้โบนัสทุกครั้งที่มีคนส่งคำตอบ' : 'You earn a bonus each time someone submits.'}</p>
                 </div>
-                <button 
+                <button
+                  type="button"
                   onClick={() => setShowPostForm(!showPostForm)}
-                  className="mode-entry-action flex-1 text-left px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-400 text-xs font-bold hover:bg-slate-100 transition-colors"
+                  aria-expanded={showPostForm}
+                  className="mode-entry-action inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-white px-4 py-2.5 text-sm font-bold text-blue-700 transition-colors hover:bg-blue-50"
                 >
-                  {t('arena.postChallenge')}...
+                  {showPostForm ? <X className="h-4 w-4" aria-hidden="true" /> : <PlusCircle className="h-4 w-4" aria-hidden="true" />}
+                  {showPostForm ? (isThaiUi ? 'ปิด' : 'Close') : t('arena.postChallenge')}
                 </button>
               </div>
 
@@ -807,31 +831,47 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                     <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4">
                       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                         <div>
-                          <p className="text-[10px] font-black uppercase tracking-widest text-blue-600">Python Lesson Topic</p>
-                          <p className="mt-1 text-[11px] font-semibold text-slate-500">เลือกหมวดบทเรียน แล้วกรอกโจทย์เองหรือใช้ Generated โจทย์</p>
+                          <p id="topic-picker-label" className="text-[10px] font-black uppercase tracking-widest text-blue-600">{isThaiUi ? 'หมวดบทเรียน' : 'Python lesson topic'}</p>
+                          <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                            {isThaiUi
+                              ? `เลือกได้ 1-${MAX_TOPICS} หมวด เช่น List + Loop แล้วเขียนโจทย์เอง หรือให้ระบบสร้างโจทย์ที่ใช้ทุกหมวดที่เลือก`
+                              : `Pick 1-${MAX_TOPICS} topics, e.g. List + Loop, then write the problem or generate one that uses all of them.`}
+                          </p>
                         </div>
-                        <div className="rounded-xl bg-white px-3 py-2 text-[10px] font-black uppercase tracking-widest text-blue-600 ring-1 ring-blue-100">
-                          {selectedLessonTemplate?.category}
+                        <div className="rounded-xl bg-white px-3 py-2 text-[10px] font-black uppercase tracking-widest text-blue-600 ring-1 ring-blue-100" aria-live="polite">
+                          {topicLabel}
                         </div>
                       </div>
-                      <div className="flex flex-wrap gap-2">
-                        {challengeTemplates.map((template) => (
-                          <button
-                            key={template.category}
-                            type="button"
-                            onClick={() => applyChallengeTemplate(template)}
-                            className={`rounded-full border px-3 py-1.5 text-[10px] font-black transition-colors ${selectedLessonTemplate?.category === template.category ? 'border-blue-500 bg-blue-600 text-white' : 'border-blue-100 bg-white text-slate-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700'}`}
-                          >
-                            {template.category}
-                          </button>
+                      <div role="group" aria-labelledby="topic-picker-label" className="flex flex-wrap gap-2">
+                        {challengeTemplates.map((template) => {
+                          const picked = selectedTopics.includes(template.category);
+                          return (
+                            <button
+                              key={template.category}
+                              type="button"
+                              aria-pressed={picked}
+                              onClick={() => toggleTopic(template.category)}
+                              className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-[10px] font-black transition-colors ${picked ? 'border-blue-500 bg-blue-600 text-white' : 'border-blue-100 bg-white text-slate-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700'}`}
+                            >
+                              {picked ? <Check className="h-3 w-3" aria-hidden="true" /> : null}
+                              {template.category}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {topicLimitHit ? (
+                        <p role="status" className="mt-2 text-[11px] font-bold text-amber-700">
+                          {isThaiUi ? `เลือกได้สูงสุด ${MAX_TOPICS} หมวด เอาหมวดที่เลือกไว้ออกก่อนแล้วค่อยเลือกหมวดใหม่` : `Up to ${MAX_TOPICS} topics. Remove one before adding another.`}
+                        </p>
+                      ) : null}
+                      <ul className="mt-3 space-y-1 rounded-xl bg-white/80 px-3 py-2 text-[11px] font-semibold leading-relaxed text-slate-500 ring-1 ring-blue-100">
+                        {selectedTemplates.map((template) => (
+                          <li key={template.category}><span className="font-black text-slate-700">{template.category}:</span> {template.guide}</li>
                         ))}
-                      </div>
-                      <p className="mt-3 rounded-xl bg-white/80 px-3 py-2 text-[11px] font-semibold leading-relaxed text-slate-500 ring-1 ring-blue-100">
-                        {selectedLessonTemplate?.guide}
-                      </p>
+                      </ul>
                     </div>
 
-                    <CompetitiveGenerator topic={selectedLessonTemplate?.category || 'Python'} onApply={draft => {
+                    <CompetitiveGenerator topics={selectedTopics} onApply={draft => {
                       setPostTitle(draft.title); setPostDesc(draft.description); setPostTestCases(draft.testCases);
                       // Drafts from before the server suggested terms have none.
                       if (Number(draft.rewardCoins) > 0) setPostReward(Number(draft.rewardCoins));
@@ -1005,24 +1045,36 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
             {!leaderboardError && !leaderboardLoaded && <SkeletonLoading variant="cards" label={t('arena.leaderboardLoading')} />}
             {!leaderboardError && leaderboardLoaded && leaderboard.length === 0 && <div className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-500">{t('arena.leaderboardEmpty')}</div>}
             {!leaderboardError && leaderboard.length > 0 && (
-              <div className="grid gap-3 md:grid-cols-3">
-                {leaderboard.slice(0, 3).map((entry, index) => (
-                  <div key={`${entry.user_id}-${entry.challenge_id}-${index}`} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                    <div className="mb-2 flex items-center justify-between">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Rank {index + 1}</span>
-                      <Trophy className={`h-4 w-4 ${index === 0 ? 'text-amber-500' : 'text-slate-400'}`} />
-                    </div>
-                    <p className="truncate text-sm font-black text-slate-800">{entry.username || 'Coder'}</p>
-                    <p className="mt-1 truncate text-[11px] font-medium text-slate-500">
-                      ทำแล้ว {Number(entry.challenge_count || 0)} โจทย์ • เฉลี่ย {Number(entry.avg_score || 0)}/100
-                    </p>
-                    <p className="mt-3 text-xl font-black text-blue-600">{Number(entry.score || 0).toLocaleString()} คะแนนรวม</p>
-                  </div>
-                ))}
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <p className="mb-2 flex items-center gap-2 text-sm font-bold text-slate-800">
+                  <Trophy className="h-4 w-4 text-amber-500" aria-hidden="true" />
+                  {isThaiUi ? 'ผู้นำตอนนี้' : 'Top players'}
+                </p>
+                <ol className="divide-y divide-slate-100">
+                  {leaderboard.slice(0, 3).map((entry, index) => (
+                    <li key={`${entry.user_id}-${entry.challenge_id}-${index}`} className="flex items-center gap-3 py-2">
+                      <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-black ${index === 0 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>{index + 1}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-bold text-slate-800">{entry.username || 'Coder'}</span>
+                        <span className="block truncate text-[11px] text-slate-500">
+                          {isThaiUi
+                            ? `ทำแล้ว ${Number(entry.challenge_count || 0)} โจทย์ • เฉลี่ย ${Number(entry.avg_score || 0)}/100`
+                            : `${Number(entry.challenge_count || 0)} solved • avg ${Number(entry.avg_score || 0)}/100`}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-sm font-black text-blue-600">{Number(entry.score || 0).toLocaleString()} {isThaiUi ? 'คะแนน' : 'pts'}</span>
+                    </li>
+                  ))}
+                </ol>
               </div>
             )}
 
             {/* FEED ACTIVE POSTS LIST */}
+            {feedLoaded && !feedError && challenges.length > 0 && (
+              <h2 className="px-1 pt-2 text-lg font-black text-slate-800">
+                {isThaiUi ? `โจทย์ที่เปิดให้ทำ · ${challenges.length} ข้อ` : `Open challenges · ${challenges.length}`}
+              </h2>
+            )}
             {!feedLoaded ? (
               <SkeletonLoading variant="list" label={t('arena.feedLoading')} />
             ) : feedError ? (
@@ -1050,8 +1102,8 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                         </div>
                         <div>
                           <span className="block text-xs font-bold text-slate-700">{c.creator_name}</span>
-                          <span className="block text-[8px] text-slate-400 font-bold uppercase tracking-wider">
-                            Challenge #{c.challenge_id} • {c.is_test ? "SYSTEM TEST CHALLENGE" : String(c.creator_role || '').toLowerCase() === 'admin' ? "ADMIN CHALLENGE" : "USER CONTRIBUTOR"}
+                          <span className="block text-[11px] text-slate-400 font-semibold">
+                            {isThaiUi ? 'โจทย์' : 'Challenge'} #{c.challenge_id} • {c.is_test ? (isThaiUi ? 'โจทย์ทดสอบระบบ' : 'System test') : String(c.creator_role || '').toLowerCase() === 'admin' ? (isThaiUi ? 'โจทย์จากผู้ดูแล' : 'From an admin') : (isThaiUi ? 'โจทย์จากผู้เล่น' : 'From a player')}
                           </span>
                         </div>
                       </div>
@@ -1107,22 +1159,11 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
                           </span>
                         )}
                       </div>
-                      <div className="grid gap-2 sm:grid-cols-3">
-                        {scoringRubric.map((item) => {
-                          const Icon = item.icon;
-                          return (
-                            <div key={item.key} className="flex items-center gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-                              <Icon className={`h-3.5 w-3.5 ${item.color}`} />
-                              <span className="text-[10px] font-black uppercase text-slate-500">{item.weight}% {item.label}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
                       {testCases.length > 0 && (
                         <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-3">
                           <div className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-blue-600">
                             <ListChecks className="h-3.5 w-3.5" />
-                            {testCases.length} Test Case{testCases.length > 1 ? 's' : ''}
+                            {isThaiUi ? `ตัวอย่างสำหรับตรวจ ${testCases.length} ชุด` : `${testCases.length} test case${testCases.length > 1 ? 's' : ''}`}
                           </div>
                           <div className="grid gap-2 md:grid-cols-2">
                             {testCases.slice(0, 2).map((testCase, index) => (
@@ -1235,7 +1276,7 @@ export default function CompetitiveArena({ user, onLogout, onUserUpdate }) {
 
                 {activeTabId && (
                   <div className={`mr-2 rounded-lg px-3 py-1.5 text-[10px] font-black uppercase tracking-widest ${isActiveExpired ? 'bg-rose-50 text-rose-600' : 'bg-blue-50 text-blue-600'}`}>
-                    {isActiveExpired ? 'Time up' : `Time ${formatRemainingTime(remainingSeconds)}`}
+                    {isActiveExpired ? (isThaiUi ? 'หมดเวลา' : 'Time up') : `${isThaiUi ? 'เหลือ' : 'Time'} ${formatRemainingTime(remainingSeconds)}`}
                   </div>
                 )}
 

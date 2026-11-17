@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Trophy, ArrowLeft, RefreshCw, Crown, Medal, ChevronRight } from 'lucide-react';
 import { assetUrl } from '../config/api.js';
+import { displayCoins } from '../utils/coins.js';
 import { loadLeaderboard } from './leaderboard-data.js';
 import SkeletonLoading from '../components/ui/Skeleton.jsx';
 import { useTranslation } from 'react-i18next';
@@ -45,7 +46,7 @@ const PODIUM_STYLES = {
 };
 
 function playerDetail(board, row, lb) {
-  return board.detail?.(row) || lb('levelCoins', { level: row.level, coins: row.coins });
+  return board.detail?.(row) || lb('levelCoins', { level: row.level, coins: displayCoins(row.coins) });
 }
 
 function PodiumCard({ row, board, isMe, lb }) {
@@ -97,7 +98,8 @@ const BOARD_DEFS = [
             : null),
     },
     { key: 'competitive', tone: 'text-blue-600', format: (row, lb) => lb('boards.competitive.format', { value: row.metric }) },
-    { key: 'coins', tone: 'text-amber-600', format: (row) => `🪙 ${row.metric.toLocaleString()}` },
+    // Balances stop at 99,999 on screen (utils/coins.js); the order is still by the real amount.
+    { key: 'coins', tone: 'text-amber-600', format: (row) => `🪙 ${displayCoins(row.metric)}` },
     { key: 'cosmetics', tone: 'text-purple-600', format: (row, lb) => lb('boards.cosmetics.format', { value: row.metric }) },
 ];
 

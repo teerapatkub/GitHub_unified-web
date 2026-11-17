@@ -34,9 +34,11 @@ export function NavBar({ items, className }) {
                 isActive ? "text-blue-700 bg-blue-50/80" : "",
               )}
             >
-              <span className="hidden md:inline">{item.name}</span>
-              <span className="md:hidden">
-                <Icon size={18} strokeWidth={2.5} />
+              {/* Icon and word on every screen: on a phone the icons alone
+                  (a book, a flask, a target) did not say which page was which. */}
+              <span className="inline-flex items-center justify-center gap-1.5">
+                <Icon className="h-4 w-4 shrink-0" strokeWidth={2.5} aria-hidden="true" />
+                <span>{item.name}</span>
               </span>
               {isActive && (
                 <Motion.div

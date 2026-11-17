@@ -28,9 +28,11 @@ test('learning rewards are paid only for a correct answer', { timeout: 600_000 }
   t.after(() => db.end());
 
   const userId = server.userId;
-  // A level well above what any one reward could reach, so a level-up never
-  // resets the stored xp and the wallet difference is exactly what was paid.
-  await db.query('UPDATE users SET level = 50, xp = 0, virtual_currency = 0 WHERE user_id = $1', [userId]);
+  // A level well above what any one reward could reach, with the XP that level
+  // starts at (server/levels.js), so the wallet difference is exactly what was
+  // paid and no reward crosses a level.
+  await db.query('UPDATE users SET level = 50, xp = $2, virtual_currency = 0 WHERE user_id = $1',
+    [userId, require('../levels').xpForLevel(50)]);
 
   const wallet = async () => {
     const { rows: [u] } = await db.query('SELECT xp, virtual_currency FROM users WHERE user_id = $1', [userId]);

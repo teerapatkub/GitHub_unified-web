@@ -5,9 +5,9 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { TheInfiniteGrid } from './components/ui/the-infinite-grid';
-import { NavBar } from './components/ui/tubelight-navbar';
 import MouseEffectLayer from './components/MouseEffectLayer';
 import ThemeSceneLayer from './components/ThemeSceneLayer';
+import AchievementUnlockPopup from './components/AchievementUnlockPopup';
 import ModeEntryHeader from './components/ModeEntryHeader';
 import TourHost from './components/tour/TourHost';
 import useModeTransition from './hooks/useModeTransition';
@@ -139,7 +139,7 @@ function AppContent() {
   const navigate = useNavigate();
   const location = useLocation();
   useModeTransition(location.pathname);
-  const { i18n: appI18n } = useTranslation();
+  const { t, i18n: appI18n } = useTranslation();
 
   // One title per page, in the reader's language (Spec 0005 #11).
   useEffect(() => {
@@ -394,6 +394,14 @@ function AppContent() {
     .some(route => location.pathname === route || location.pathname.startsWith(`${route}/`));
   const isCodingWorkspace = ['/exercise', '/mini-game', '/challenge', '/debug', '/promotion-exam']
     .some(route => location.pathname.startsWith(route));
+  // Lessons / Debug Lab / Challenge, shown as the header's second row on every
+  // learning page - the coding pages included (สิ่งที่ต้องแก้ไข.md ข้อ 4).
+  const learningSubnav = isLearningRoute ? [
+    { path: '/learn', label: t('navbar.learn', 'บทเรียน'), icon: BookOpen,
+      active: !location.pathname.startsWith('/debug') && !location.pathname.startsWith('/challenge') },
+    { path: '/debug', label: t('navbar.debug', 'แก้ไขโค้ด'), icon: FlaskConical, active: location.pathname.startsWith('/debug') },
+    { path: '/challenge', label: t('navbar.challenge', 'ความท้าทาย'), icon: Target, active: location.pathname.startsWith('/challenge') },
+  ] : undefined;
   const isAdminUser = user?.role === 'admin';
   const guard = (kind, element) => {
     const access = accessForRoute({ ready: authReady, user, kind });
@@ -416,10 +424,11 @@ function AppContent() {
       {authError && <div role="alert" className="relative z-50 bg-rose-50 p-4 text-center text-sm text-rose-700">{authError} <button className="underline" onClick={() => window.location.reload()}>ลองใหม่</button></div>}
       <MouseEffectLayer user={user} />
       <ThemeSceneLayer />
+      <AchievementUnlockPopup user={user} pathname={location.pathname} onUserRefresh={refreshUserProfile} />
       <ToastHost />
       <TheInfiniteGrid>
         {!hideNavbar && !isSimulationMode && (
-          <ModeEntryHeader mode={isLearningRoute ? 'learn' : undefined} user={user} onLogout={handleLogout} />
+          <ModeEntryHeader mode={isLearningRoute ? 'learn' : undefined} user={user} onLogout={handleLogout} subnav={learningSubnav} />
         )}
 
         {/* Lumi's menu-bar tour: opens by itself on a new player's first visit
@@ -427,10 +436,6 @@ function AppContent() {
             Keyed by route so moving to another page ends it unrecorded. */}
         {user && !hideNavbar && (
           <TourHost key={location.pathname} tourId="app-overview" user={user} autoStart={location.pathname === '/learn'} fallback />
-        )}
-
-        {isLearningRoute && !hideNavbar && !isCodingWorkspace && (
-          <div className="mode-entry mode-entry-shortcuts"><BottomNavBarSimple /></div>
         )}
 
         {/* The page area is the document's one <main> landmark (audit P2 #10);
@@ -564,15 +569,3 @@ function AppContent() {
   );
 }
 
-// Learning shortcuts stay separate from the account and mode navigation.
-const BottomNavBarSimple = () => {
-  const { t } = useTranslation();
-
-  const navItems = [
-    { name: t('navbar.learn', 'บทเรียน'), icon: BookOpen, url: '/learn' },
-    { name: t('navbar.debug', 'แก้ไขโค้ด'), icon: FlaskConical, url: '/debug' },
-    { name: t('navbar.challenge', 'ความท้าทาย'), icon: Target, url: '/challenge' },
-  ];
-
-  return <NavBar items={navItems} />;
-};

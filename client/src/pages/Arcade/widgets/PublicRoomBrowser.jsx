@@ -16,53 +16,50 @@ export default function PublicRoomBrowser({
   return (
     <div className="space-y-6">
 
-      {/* Header & Quick Code Search Bar */}
-      <div className="mode-entry-card bg-pysim-card p-5 sm:p-8 rounded-3xl shadow-sm border border-pysim-outline-variant flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden">
-        <div className="space-y-2 text-left">
-          <span className="px-3 py-1 text-label font-black uppercase tracking-widest text-pysim-accent-strong bg-pysim-accent-container rounded-full border border-pysim-accent-border">
-            PyArena Arcade
-          </span>
+      {/* What this mode is, then the two ways in: make a room (the main
+          action) or type a code a friend sent. The search box used to sit
+          beside "create" as an equal and was labelled "random code". */}
+      <div className="mode-entry-card bg-pysim-card p-5 sm:p-8 rounded-3xl shadow-sm border border-pysim-outline-variant flex flex-col lg:flex-row lg:items-end justify-between gap-6">
+        <div className="max-w-2xl space-y-2 text-left">
           <h1 className="mode-entry-title text-pysim-on-surface">
             {t('publicRoomsTitle')}
           </h1>
           <p className="text-sm leading-relaxed text-pysim-label">
             {t('publicRoomsSubtitle')}
           </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-          {/* Quick Search Input Form */}
-          <form onSubmit={handleSearchJoin} data-tour="arcade-search" className="mode-entry-room-search flex items-center gap-2 bg-pysim-surface p-1.5 rounded-2xl border border-pysim-outline-variant">
-            <input
-              type="text"
-              aria-label={t('searchCodePlaceholder')}
-              placeholder={t('searchCodePlaceholder')}
-              value={searchCode}
-              onChange={(e) => setSearchCode(e.target.value)}
-              className="bg-transparent px-3 py-1.5 text-xs font-mono font-bold text-pysim-on-surface placeholder-pysim-label focus:outline-none w-48"
-            />
-            <button
-              type="submit"
-              className="mode-entry-button"
-            >
-              {t('searchRoomBtn')}
-            </button>
-          </form>
-
           <button
             onClick={() => setShowCreateModal(true)}
             data-tour="arcade-create"
-            className="mode-entry-button mode-entry-button--primary"
+            className="mode-entry-button mode-entry-button--primary !mt-4"
           >
             <span>{t('createRoomBtn')}</span>
           </button>
         </div>
+
+        <form onSubmit={handleSearchJoin} data-tour="arcade-search" className="w-full lg:w-auto">
+          <label htmlFor="arcade-room-code" className="mb-1.5 block text-xs font-bold text-pysim-label">
+            {t('joinByCodeLabel')}
+          </label>
+          <div className="mode-entry-room-search flex items-center gap-2 bg-pysim-surface p-1.5 rounded-2xl border border-pysim-outline-variant">
+            <input
+              id="arcade-room-code"
+              type="text"
+              placeholder={t('searchCodePlaceholder')}
+              value={searchCode}
+              onChange={(e) => setSearchCode(e.target.value)}
+              className="bg-transparent px-3 py-1.5 text-sm font-mono font-bold text-pysim-on-surface placeholder-pysim-label focus:outline-none w-48"
+            />
+            <button type="submit" className="mode-entry-button">
+              {t('searchRoomBtn')}
+            </button>
+          </div>
+        </form>
       </div>
 
       {/* Rooms Grid */}
       <div className="space-y-3" data-tour="arcade-rooms">
         <div className="flex justify-between items-center px-2">
-          <span className="text-xs font-black text-pysim-label uppercase tracking-widest">
+          <span className="text-sm font-bold text-pysim-on-surface-variant">
             {t('openRoomsLabel')} ({roomsLoaded ? rooms.length : '…'} {t('roomsUnit')})
           </span>
           <button type="button" onClick={() => fetchRooms(true)} className="inline-flex min-h-target-primary items-center rounded-xl px-3 text-xs font-bold text-pysim-accent-strong hover:bg-pysim-accent-container hover:underline">
@@ -85,7 +82,7 @@ export default function PublicRoomBrowser({
             </p>
             <button
               onClick={() => setShowCreateModal(true)}
-              className="mode-entry-button mode-entry-button--primary mt-4"
+              className="mode-entry-button mt-4"
             >
               {t('createFirstRoomBtn')}
             </button>

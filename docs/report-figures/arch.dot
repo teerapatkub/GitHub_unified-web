@@ -1,0 +1,20 @@
+digraph A { graph [rankdir=TB, fontname="Loma", dpi=200, pad=0.3, nodesep=0.35, ranksep=0.6, newrank=true];
+node [shape=box, style="rounded", color="#444444", fontname="Loma", fontsize=12, width=2.6];
+edge [fontname="Loma", fontsize=10, color="#555555"];
+user [label="ผู้ใช้ (เบราว์เซอร์ / มือถือ)\nReact 19 · Monaco Editor · Pyodide (ลองรันเท่านั้น)"];
+gate [label="ทางเข้าสาธารณะ HTTPS\nเครื่อง server ของ มข. หรือ Tailscale Funnel"];
+subgraph cluster_s { label="เครื่อง server (Docker Compose)"; style="rounded"; color="#4a6fa5"; fontsize=13;
+ app [label="app: Node.js 22 + Express 5\nเสิร์ฟหน้าเว็บที่ build แล้ว + REST API /api/*", width=3.6];
+ tick [label="Match Ticker ทุก 1 วินาที\nปิดรอบ Arcade · คัดออก · บอท"];
+ grade [label="ตัวตรวจคำตอบ\nproblemGrader.js → spawn Python (venv)\n+ quality-probe.py วัดคุณภาพ Arcade"];
+ llm [label="ollama 0.30: LLM ในเครื่อง\nTyphoon 2.5 (Qwen3 4B)\nLumi · สร้างโจทย์ · คำแนะนำ"];
+ {rank=same; tick; grade; llm}
+ app -> tick [arrowhead=none]; app -> grade; app -> llm [label="/v1"]; }
+subgraph cluster_x { label="Supabase (cloud)"; style="rounded"; color="#4a6fa5"; fontsize=13;
+ db [shape=cylinder, label="PostgreSQL\n68 ตาราง", width=1.8]; auth [label="Supabase Auth\nอีเมล + Google OAuth\n(Gmail SMTP)", width=2]; store [label="Storage\nรูปที่แอดมินอัปโหลด", width=2]; }
+user -> gate [label="  HTTPS · REST Polling ทุก ~2 วินาที"]; gate -> app;
+user -> auth [label="เข้าสู่ระบบ", constraint=false, color="#999999"];
+app -> db [label="DATABASE_URL (TLS)"]; tick -> db; app -> auth [label="ตรวจ token"]; app -> store;
+note [shape=plaintext, width=0, label="AI ทุกงานรันในเครื่องตั้งแต่ 22 ต.ค. 2569 (Spec 0004) แทน NVIDIA API และ Google Gemini", fontsize=10];
+db -> note [style=invis];
+}

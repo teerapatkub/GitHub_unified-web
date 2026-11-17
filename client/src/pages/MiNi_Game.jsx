@@ -14,7 +14,6 @@ import {
   MapPinned,
   Send,
   X,
-  CircleHelp,
   Square,
 } from "lucide-react";
 import { API_BASE } from '../config/api.js';
@@ -246,6 +245,7 @@ export default function MiNi_Game({ lessonId, user, onUserRefresh, onNavigate })
   const lumi = useLumiChat();
   const isAiResponding = lumi.isResponding;
   const [showTutorial, setShowTutorial] = useState(false);
+  const openGuide = () => setShowTutorial(true);
 
   const terminalRef = useRef(null);
   const chatEndRef = useRef(null);
@@ -1802,16 +1802,8 @@ if (result?.is_module_completed) {
 
       {miniGameTutorial ? (
         <>
-          <button
-            type="button"
-            onClick={() => setShowTutorial(true)}
-            aria-label="เปิดวิธีใช้งานเว็บ"
-            title="วิธีใช้งานเว็บ"
-            className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-xl border border-white/80 bg-pysim-primary text-white shadow-[0_12px_30px_rgba(15,23,42,0.22)] transition-all hover:-translate-y-1 hover:bg-pysim-primary/90 focus:outline-none focus:ring-4 focus:ring-pysim-primary/30 active:translate-y-0"
-          >
-            <CircleHelp className="h-7 w-7" aria-hidden="true" />
-          </button>
           <WebTutorialModal
+            onOpen={openGuide}
             tutorial={miniGameTutorial}
             isOpen={showTutorial}
             onClose={() => setShowTutorial(false)}

@@ -238,12 +238,10 @@ const applyXpRewardToUser = async (executor, userId, xpDelta = 0, coinDelta = 0)
     }
 
     const currentUser = userRows[0];
-    const currentLevel = Number(currentUser.level ?? 1);
-    const nextXp = Number(currentUser.xp ?? 0) + Number(xpDelta || 0);
     const nextCoins = Number(currentUser.virtual_currency ?? 0) + Number(coinDelta || 0);
-    const computedLevel = computeLevelFromXp(nextXp);
-    const nextLevel = Math.max(currentLevel, computedLevel);
-    const storedXp = nextLevel > currentLevel ? 0 : nextXp;
+    // users.xp is total XP and levels follow server/levels.js (fix list
+    // item 11). It used to be reset to 0 on every level-up here.
+    const { level: nextLevel, xp: storedXp } = levels.addXp(currentUser, xpDelta);
 
     await executor.execute(
         'UPDATE users SET xp = ?, virtual_currency = ?, level = ? WHERE user_id = ?',
@@ -991,7 +989,8 @@ const extractFirstJsonBlock = (rawText = '') => {
     return null;
 };
 
-const computeLevelFromXp = (xp = 0) => Math.max(1, Math.floor(Number(xp || 0) / 1000) + 1);
+// XP to level: server/levels.js (fix list item 11).
+const levels = require('./levels');
 
 // ==========================================================================
 // Achievements.
@@ -1117,7 +1116,10 @@ async function evaluateAchievements(userId, username = null) {
                FROM achievements a
               WHERE a.is_active = 1 AND a.metric IS NOT NULL
                 AND NOT EXISTS (SELECT 1 FROM user_achievements ua
-                                 WHERE ua.user_id = ? AND ua.achievement_id = a.achievement_id)`,
+                                 WHERE ua.user_id = ? AND ua.achievement_id = a.achievement_id)
+              -- Lowest goal first, so a player who crosses several levels at once
+              -- unlocks (and is told about) level 20 before level 50.
+              ORDER BY a.metric, a.threshold, a.achievement_id`,
             [uid]
         );
         if (defs.length === 0) return [];
@@ -1147,11 +1149,16 @@ async function evaluateAchievements(userId, username = null) {
             // A non-coin reward: the exclusive picture drops into the same
             // inventory a shop purchase would, so it shows up in the player's
             // avatar options and can be worn like any owned picture (item 9).
-            if (def.reward_item_id) {
+            // Level 50 and 100 hand out a frame and a picture; the second sits in
+            // achievement_reward_items (migrate-level-rewards.js, item 12).
+            const [extraItems] = await db.execute(
+                'SELECT item_id FROM achievement_reward_items WHERE achievement_id = ?', [def.achievement_id]);
+            const rewardItemIds = [def.reward_item_id, ...extraItems.map((r) => r.item_id)].filter(Boolean);
+            for (const itemId of rewardItemIds) {
                 await db.execute(
                     `INSERT INTO user_inventory (user_id, item_id)
                      SELECT ?, ? WHERE NOT EXISTS (SELECT 1 FROM user_inventory WHERE user_id = ? AND item_id = ?)`,
-                    [uid, def.reward_item_id, uid, def.reward_item_id]
+                    [uid, itemId, uid, itemId]
                 );
             }
             unlocked.push({ achievement_id: def.achievement_id, code: def.code, name: def.name, reward, reward_item_id: def.reward_item_id || null });
@@ -1642,6 +1649,7 @@ app.get('/api/user/profile/:userId', async (req, res) => {
         user.mouse_effect_data = safeJsonParse(user.mouse_effect_data, []) || [];
 
         const streakDays = await computeUserStreak(db, req.params.userId);
+        const progress = levels.progressFor(user.level, user.xp);
 
         res.json({
             ...user,
@@ -1649,6 +1657,14 @@ app.get('/api/user/profile/:userId', async (req, res) => {
             xp: Number(user.xp || 0),
             virtual_currency: Number(user.virtual_currency || 0),
             streak_days: streakDays,
+            // What the learning page's level bar draws (server/levels.js).
+            progression: {
+                level: progress.level,
+                xpIntoLevel: progress.xp_into_level,
+                xpNeededThisLevel: progress.xp_needed_this_level,
+                xpProgressPercent: progress.xp_percent,
+                maxLevel: progress.max_level,
+            },
             avatar: resolveAvatar(user),
             tutorials_seen: Array.isArray(user.tutorials_seen) ? user.tutorials_seen : [],
         });
@@ -1877,9 +1893,7 @@ app.get('/api/profile/:userId', async (req, res) => {
             [user.username]
         );
 
-        const level = Number(user.level || 1);
-        const xp = Number(user.xp || 0);
-        const xpIntoLevel = xp % 1000;
+        const progress = levels.progressFor(user.level, user.xp);
         const streakDays = await computeUserStreak(db, userId);
 
         res.json({
@@ -1900,12 +1914,13 @@ app.get('/api/profile/:userId', async (req, res) => {
                 avatar_options: avatarOptions,
             },
             progression: {
-                level,
-                xp,
-                xp_into_level: xpIntoLevel,
-                xp_needed_this_level: 1000,
-                xp_percent: Math.min(100, Math.round((xpIntoLevel / 1000) * 100)),
-                skill_tier: normalizePlayerLevel(level),
+                level: progress.level,
+                xp: progress.xp,
+                xp_into_level: progress.xp_into_level,
+                xp_needed_this_level: progress.xp_needed_this_level,
+                xp_percent: progress.xp_percent,
+                max_level: progress.max_level,
+                skill_tier: normalizePlayerLevel(progress.level),
                 streak_days: streakDays,
             },
             learning: {
@@ -2297,10 +2312,8 @@ app.post('/api/learning/ai-task/submit', async (req, res) => {
         }
 
         const user = userRows[0];
-        const nextXp = Number(user.xp || 0) + Number(task.reward_xp || 0);
         const nextCoins = Number(user.virtual_currency || 0) + Number(task.reward_coins || 0);
-        const computedLevel = computeLevelFromXp(nextXp);
-        const nextLevel = Math.max(Number(user.level || 1), computedLevel);
+        const { level: nextLevel, xp: nextXp } = levels.addXp(user, task.reward_xp);
 
         await connection.execute(
             'UPDATE users SET xp = ?, virtual_currency = ?, level = ? WHERE user_id = ?',
@@ -2322,6 +2335,8 @@ app.post('/api/learning/ai-task/submit', async (req, res) => {
                 xp: nextXp,
                 virtual_currency: nextCoins,
             },
+            // A Debug Lab reward can cross a level that pays a reward (item 12).
+            new_achievements: await evaluateAchievements(userId),
         });
     } catch (error) {
         await connection.rollback();
@@ -2623,7 +2638,14 @@ app.get(['/achievements/:userId', '/api/achievements/:userId'], async (req, res)
         SELECT a.*,
             (SELECT COUNT(*) FROM user_achievements ua WHERE ua.achievement_id = a.achievement_id) * 100.0 / NULLIF((SELECT COUNT(*) FROM users), 0) as global_percent,
             CASE WHEN ua_me.id IS NOT NULL THEN 1 ELSE 0 END as is_unlocked,
-            ri.asset_url AS reward_item_url, ri.name AS reward_item_name
+            ri.asset_url AS reward_item_url, ri.name AS reward_item_name,
+            -- Every item the achievement gives, the extra ones included (item 12).
+            (SELECT COALESCE(json_agg(json_build_object('name', si.name, 'url', si.asset_url, 'type', si.item_type)
+                                      ORDER BY si.item_type DESC), '[]'::json)
+               FROM shop_items si
+              WHERE si.item_id = a.reward_item_id
+                 OR si.item_id IN (SELECT ari.item_id FROM achievement_reward_items ari
+                                    WHERE ari.achievement_id = a.achievement_id)) AS reward_items
         FROM achievements a
         LEFT JOIN user_achievements ua_me ON a.achievement_id = ua_me.achievement_id AND ua_me.user_id = ?
         LEFT JOIN shop_items ri ON ri.item_id = a.reward_item_id
@@ -2636,6 +2658,53 @@ app.get(['/achievements/:userId', '/api/achievements/:userId'], async (req, res)
     } catch (err) {
         console.error('❌ Achievements Error:', err.message);
         res.status(500).json({ error: 'Failed to fetch achievements' });
+    }
+});
+
+// Achievement unlocks the player has not been shown (item 12). Unlocks happen in
+// many places - a lesson, a purchase, an Arcade match, a Debug Lab task - and
+// most of those screens never said anything; the client asks here instead and
+// shows a popup for each, then marks them seen.
+app.get('/api/achievement-unlocks/unseen', async (req, res) => {
+    if (!req.player) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    try {
+        const [rows] = await db.execute(
+            `SELECT ua.achievement_id, a.code, a.name, a.description, a.icon, a.reward_money, a.metric, a.threshold,
+                    (SELECT COALESCE(json_agg(json_build_object('name', si.name, 'url', si.asset_url, 'type', si.item_type)
+                                              ORDER BY si.item_type DESC), '[]'::json)
+                       FROM shop_items si
+                      WHERE si.item_id = a.reward_item_id
+                         OR si.item_id IN (SELECT ari.item_id FROM achievement_reward_items ari
+                                            WHERE ari.achievement_id = a.achievement_id)) AS reward_items
+               FROM user_achievements ua
+               JOIN achievements a ON a.achievement_id = ua.achievement_id
+              WHERE ua.user_id = ? AND ua.seen_at IS NULL
+              ORDER BY ua.unlocked_at ASC, ua.achievement_id ASC
+              LIMIT 20`,
+            [req.player.user_id]
+        );
+        res.json({ unlocks: rows.map((r) => ({ ...r, reward_money: Math.round(Number(r.reward_money || 0)) })) });
+    } catch (err) {
+        console.error('❌ unseen achievements error:', describeError(err));
+        res.status(500).json({ error: 'Failed to load achievement unlocks' });
+    }
+});
+
+app.post('/api/achievement-unlocks/seen', async (req, res) => {
+    if (!req.player) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบ' });
+    const ids = (Array.isArray(req.body?.achievement_ids) ? req.body.achievement_ids : [])
+        .map(Number).filter((id) => Number.isInteger(id) && id > 0).slice(0, 50);
+    if (ids.length === 0) return res.json({ success: true, marked: 0 });
+    try {
+        const [result] = await db.execute(
+            `UPDATE user_achievements SET seen_at = CURRENT_TIMESTAMP
+              WHERE user_id = ? AND seen_at IS NULL AND achievement_id IN (${ids.map(() => '?').join(', ')})`,
+            [req.player.user_id, ...ids]
+        );
+        res.json({ success: true, marked: Number(result?.affectedRows || 0) });
+    } catch (err) {
+        console.error('❌ mark achievements seen error:', describeError(err));
+        res.status(500).json({ error: 'Failed to mark achievements seen' });
     }
 });
 
@@ -7307,6 +7376,8 @@ const {
   createForestArtworkMigration,
   createThemeArtworkMigration,
   createThemeArtworkClassicMigration,
+  createLevelCurveMigration,
+  createLevelRewardsMigration,
 } = require('./migrations/definitions');
 const { applyDataApiSecurity } = require('./security/data-api-security');
 const authProvisioningSchemaSql = fs.readFileSync(
@@ -7446,6 +7517,20 @@ const applicationMigrations = [
   createThemeArtworkClassicMigration(
     () => require('./migrate-theme-artwork-classic').migrateThemeArtworkClassic(db),
     require('fs').readFileSync(require.resolve('./migrate-theme-artwork-classic'), 'utf8'),
+  ),
+  // users.xp becomes total XP on the level curve in levels.js; levels kept
+  // (fix list item 11, 2026-11-17).
+  createLevelCurveMigration(
+    () => require('./migrate-level-curve').migrateLevelCurve(db),
+    // Only this file: levels.js may change later, and its source in the
+    // checksum would stop every migrated database from booting.
+    require('fs').readFileSync(require.resolve('./migrate-level-curve'), 'utf8'),
+  ),
+  // Level rewards every 10 levels, cosmetics at 25/50/75/100, and the
+  // unseen-unlock marker the popup reads (fix list item 12).
+  createLevelRewardsMigration(
+    () => require('./migrate-level-rewards').migrateLevelRewards(db),
+    require('fs').readFileSync(require.resolve('./migrate-level-rewards'), 'utf8'),
   ),
 ];
 
